@@ -31,6 +31,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-backlog-receive.sh`  | Ingerir idempotentemente um outbox confinado de handoff remoto através do sq-tasks             |
 | `sq-board-github.sh`     | Monitor opt-in de issues GitHub: listar issues elegíveis, pollar mudanças, reportar status agregado, aprovar sugestões de dispatch (requer tracker.kind: github no WORKFLOW.md) |
 | `sq-decision-hold.sh`    | Criar, verificar, completar e resolver decisões duráveis retidas pelo comandante                 |
+| `sq-card-lint.sh`        | Verificação somente de aviso para desvio de gramática de cartões de decisão em relatórios e registros de decisão          |
 | `sq-learn.sh`            | Capturar uma lição operacional durável em `data/learnings.md`                         |
 | `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab; briefs strike e recon exigem decisão explícita de playbook (`--playbook <id>@<version>`, ou `--no-playbook` com o motivo em uma linha), e `--profile` anexa um conjunto de restrições ao playbook selecionado   |
 | `sq-drill-drive.sh`      | Conduzir chamadas AXI com recuperação limitada de custódia de runs falhos; o cabeçalho do script é dono do contrato de retry e parada |

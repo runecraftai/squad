@@ -138,8 +138,10 @@ The picker degrades fzf, then whiptail, then dialog, then bash read, then the re
 | File | Purpose |
 |------|---------|
 | `bin/sq-ask.sh` | Renderer, prose parser, answer parser, validator, picker |
+| `bin/sq-card-lint.sh` | Warning-only grammar drift check for report and decision records; its header owns the codes |
 | `docs/decision-card-examples.md` | Three worked examples with golden prose |
 | `tests/sq-ask.test.sh` | Renderer, parser, validator, picker, and doc-drift tests |
+| `tests/sq-card-lint.test.sh` | Lint codes, fenced-example skipping, and the always-zero exit contract |
 | `tests/fixtures/decision-prose/` | Golden cards and prose |
 
 ## Design decisions

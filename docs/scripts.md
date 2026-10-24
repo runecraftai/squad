@@ -28,6 +28,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO base               |
 | `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through sq-tasks             |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |
+| `sq-card-lint.sh`        | Warning-only decision-card grammar drift check for report and decision records          |
 | `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs; strike and recon briefs require an explicit playbook decision (`--playbook <id>@<version>`, or a one-line `--no-playbook` reason none applies), and `--profile` attaches a constraint set to a selected playbook   |
 | `sq-drill-drive.sh`      | Drive AXI calls with bounded failed-run custody recovery; its header owns the retry and stop contract |
 | `sq-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |

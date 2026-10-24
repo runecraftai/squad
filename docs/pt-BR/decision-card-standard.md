@@ -140,8 +140,10 @@ O picker degrada de fzf para whiptail, dialog, leitura bash e por fim a opção 
 | Arquivo | Propósito |
 |---------|-----------|
 | `bin/sq-ask.sh` | Renderizador, parser de prosa, parser de resposta, validador, picker |
+| `bin/sq-card-lint.sh` | Verificação somente de aviso para desvio de gramática em relatórios e registros de decisão; o cabeçalho define os códigos |
 | `docs/decision-card-examples.md` | Três exemplos com prosa de referência |
 | `tests/sq-ask.test.sh` | Testes de renderizador, parser, validador, picker e deriva de docs |
+| `tests/sq-card-lint.test.sh` | Códigos de lint, pulo de exemplos em cercas e o contrato de saída sempre zero |
 | `tests/fixtures/decision-prose/` | Cartões e prosa de referência |
 
 ## Decisões de design
