@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,6 +15,7 @@ from pathlib import Path
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MAX_TEXT = 240
 MAX_RESPONSE = 65536
+DEADLINE_SECONDS = 3
 
 
 def redact(value):
@@ -25,7 +27,7 @@ def redact(value):
         (r"(?i)\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]"),
         (r"\bghp_[A-Za-z0-9]{8,}\b", "[REDACTED]"),
         (r"\bAKIA[A-Z0-9]{16}\b", "[REDACTED]"),
-        (r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", "[REDACTED]"),
+        (r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "[REDACTED]"),
         (r"-----BEGIN [^-]*KEY(?: BLOCK)?-----.*?(?:-----END [^-]*KEY(?: BLOCK)?-----|\Z)", "[REDACTED]"),
         (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
         (r"(https?://)[^/@\s]+@", r"\1[REDACTED]@"),
@@ -38,6 +40,26 @@ def redact(value):
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
+
+
+def fetch_with_deadline(request, seconds):
+    outcome = {}
+
+    def run():
+        try:
+            with urllib.request.build_opener(NoRedirect).open(request, timeout=seconds) as response:
+                outcome["body"] = response.read(MAX_RESPONSE)
+        except BaseException as error:
+            outcome["error"] = error
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError("jev deadline exceeded")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["body"]
 
 
 def project_enabled(config_path, project):
@@ -135,8 +157,7 @@ def main():
         method="POST",
     )
     try:
-        with urllib.request.build_opener(NoRedirect).open(request, timeout=3) as response:
-            answer = json.loads(response.read(MAX_RESPONSE))
+        answer = json.loads(fetch_with_deadline(request, DEADLINE_SECONDS))
         choice = answer.get("choice")
         if choice not in lanes or answer.get("type") != "choice":
             raise ValueError("invalid recommendation")

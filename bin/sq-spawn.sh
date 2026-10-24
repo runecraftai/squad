@@ -1511,18 +1511,18 @@ if ! grep -q '>>.*\.status' "$BRIEF"; then
   exit 1
 fi
 
-# Jev is advisory shadow-only: its response is logged separately and never
-# supplies any spawn argument or changes the dispatch decision above.
-python3 "$SCRIPT_DIR/sq-jev-call.py" --id "$ID" --project "$PROJ_ABS" \
-  --task-type "$KIND" --brief "$BRIEF" --project-config "$CONFIG/crew-dispatch.json" \
-  --config "$CONFIG/jev-dispatch.json" --data "$DATA" >/dev/null 2>&1 || true
-
 # An unedited scaffold still carries the standalone {TASK} placeholder line;
 # refuse before any endpoint exists so the operator never receives it.
 if grep -qx '{TASK}' "$BRIEF"; then
   echo "error: brief $BRIEF still contains the literal {TASK} placeholder; replace it with the task description, acceptance criteria, and constraints before spawning" >&2
   exit 1
 fi
+
+# Jev is advisory shadow-only: its response is logged separately and never
+# supplies any spawn argument or changes the dispatch decision above.
+python3 "$SCRIPT_DIR/sq-jev-call.py" --id "$ID" --project "$PROJ_ABS" \
+  --task-type "$KIND" --brief "$BRIEF" --project-config "$CONFIG/crew-dispatch.json" \
+  --config "$CONFIG/jev-dispatch.json" --data "$DATA" >/dev/null 2>&1 || true
 
 # Optional execution-playbook identity is validated before endpoint creation.
 PLAYBOOK_LINES=$(grep -c '^Execution playbook: ' "$BRIEF" 2>/dev/null || true)
