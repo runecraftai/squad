@@ -18,22 +18,23 @@ root = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location("jev", root / "bin/sq-jev-call.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-with tempfile.TemporaryDirectory() as td:
-    base = pathlib.Path(td)
-    project = base / "project"
-    project.mkdir()
-    config = base / "jev.json"
-    data = base / "data"
-    config.write_text(json.dumps({"enabled_projects": [str(project)]}))
-    captured = {}
+OK_REPLY = {"type": "choice", "choice": "claude/sonnet", "confidence": .8,
+            "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}}
 
+
+def serve(record, state):
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
-            captured["path"] = self.path
-            captured["auth"] = self.headers.get("Authorization")
-            captured["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            body = json.dumps({"type": "choice", "choice": "claude/sonnet", "confidence": .8,
-                               "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}}).encode()
+            record["path"] = self.path
+            record["auth"] = self.headers.get("Authorization")
+            record["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if state.get("location"):
+                self.send_response(302)
+                self.send_header("Location", state["location"])
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            body = json.dumps(state["reply"]).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -43,6 +44,21 @@ with tempfile.TemporaryDirectory() as td:
 
     server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+with tempfile.TemporaryDirectory() as td:
+    base = pathlib.Path(td)
+    project = base / "project"
+    project.mkdir()
+    config = base / "jev.json"
+    data = base / "data"
+    config.write_text(json.dumps({"enabled_projects": [str(project)]}))
+    captured = {}
+    redirected = {}
+    state = {"reply": OK_REPLY}
+    server = serve(captured, state)
+    target = serve(redirected, {"reply": OK_REPLY})
     url = f"http://127.0.0.1:{server.server_port}/v1/systemone"
     argv = [sys.executable, str(root / "bin/sq-jev-call.py"), "--id", "task",
             "--project", str(project), "--task-type", "feature", "--title", "title",
@@ -50,14 +66,15 @@ with tempfile.TemporaryDirectory() as td:
             "eyJabc.def.ghi https://user:pass@example.invalid KEY=value", "--file-count", "3",
             "--lanes-json", '{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"}',
             "--config", str(config), "--data", str(data), "--url", url]
+    env = {**os.environ, "TYPESAFE_API_KEY": "runtime-test-key"}
     try:
-        # No project opt-in means no request and no log, even with a key.
         config.write_text('{"enabled_projects":[]}')
-        disabled = subprocess.run(argv, text=True, capture_output=True, env={**os.environ, "TYPESAFE_API_KEY":"runtime-test-key"})
+        disabled = subprocess.run(argv, text=True, capture_output=True, env=env)
         assert json.loads(disabled.stdout) == {"status": "disabled"}
         assert not captured and not (data / "task/dispatch.jsonl").exists()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
-        missing = subprocess.run(argv, text=True, capture_output=True, env={k:v for k,v in os.environ.items() if k != "TYPESAFE_API_KEY"})
+        missing = subprocess.run(argv, text=True, capture_output=True,
+                                 env={k: v for k, v in os.environ.items() if k != "TYPESAFE_API_KEY"})
         assert json.loads(missing.stdout) == {"status": "missing_key"}
         dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
         payload = json.loads(dry.stdout)
@@ -68,7 +85,20 @@ with tempfile.TemporaryDirectory() as td:
                            "https://[REDACTED]@example.invalid [REDACTED]","file_count":3},
                            ensure_ascii=True,separators=(",",":"))}
         assert not captured
-        env = {**os.environ, "TYPESAFE_API_KEY":"runtime-test-key"}
+
+        state["location"] = f"http://localhost:{target.server_port}/v1/systemone"
+        redirect = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(redirect.stdout) == {"status": "error"}
+        assert not redirected and not (data / "task/dispatch.jsonl").exists()
+        state["location"] = None
+
+        captured.clear()
+        state["reply"] = {"type": "choice", "choice": ["claude/sonnet"], "confidence": .8}
+        unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(unhashable.stdout) == {"status": "error"} and unhashable.stderr == ""
+        assert not (data / "task/dispatch.jsonl").exists()
+        state["reply"] = OK_REPLY
+
         result = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         assert captured["path"] == "/v1/systemone" and captured["auth"] == "Bearer runtime-test-key"
@@ -82,7 +112,14 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
         boundary = module.redact("x" * 230 + " sk-abcd1234567890")
         assert len(boundary) == 240 and "sk-" not in boundary
+        assert module.redact("-----BEGIN PGP PRIVATE KEY BLOCK-----\nabc") == "[REDACTED]"
+        assert module.redact("-----BEGIN RSA PRIVATE KEY-----\nMIIabc") == "[REDACTED]"
+        assert module.redact('TOKEN="a b" end') == "[REDACTED] end"
+        assert module.redact("TOKEN='a b' end") == "[REDACTED] end"
+        assert module.redact('TOKEN="abc def') == "[REDACTED]"
+        assert module.redact(r'TOKEN="a\"b c" end') == "[REDACTED] end"
     finally:
         server.shutdown()
-print("PASS: Jev projection, project opt-in, no-key, dry-run, shadow event and fake HTTP contract")
+        target.shutdown()
+print("PASS: Jev projection, project opt-in, no-key, dry-run, redirect refusal, unhashable choice, redaction fixtures, shadow event and fake HTTP contract")
 PY

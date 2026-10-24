@@ -25,8 +25,8 @@ def redact(value):
         (r"\bghp_[A-Za-z0-9]{8,}\b", "[REDACTED]"),
         (r"\bAKIA[A-Z0-9]{16}\b", "[REDACTED]"),
         (r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", "[REDACTED]"),
-        (r"-----BEGIN [^-]*KEY-----.*?(?:-----END [^-]*KEY-----|\Z)", "[REDACTED]"),
-        (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"[^\"]*\"|'[^']*'|\S+)", "[REDACTED]"),
+        (r"-----BEGIN [^-]*KEY(?: BLOCK)?-----.*?(?:-----END [^-]*KEY(?: BLOCK)?-----|\Z)", "[REDACTED]"),
+        (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
         (r"(https?://)[^/@\s]+@", r"\1[REDACTED]@"),
     ]
     for pattern, replacement in patterns:
