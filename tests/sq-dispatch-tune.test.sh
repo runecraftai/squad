@@ -424,9 +424,10 @@ else
   printf '%s\n' '{"timestamp":"2026-10-20T11:00:00+00:00","id":"closed-b","event":"decision","harness":"pi","model":"gpt-5","effort":"high","profile":"pi/gpt-5/high"}' > "$UNREADABLE_DATA/closed-b/dispatch.jsonl"
   chmod 000 "$UNREADABLE_DATA/closed-b/dispatch.jsonl"
   output=$(SQUAD_STATE_OVERRIDE="$UNREADABLE_STATE" SQUAD_DATA_OVERRIDE="$UNREADABLE_DATA" "$TUNE" --json 2>&1)
-  if echo "$output" | grep -q '"profile":"claude/opus/xhigh"' &&
+  if echo "$output" | grep -q '"profile":"claude/opus/xhigh","tasks":1' &&
+     echo "$output" | grep -q '"profile":"no-profile/no-profile/no-profile","tasks":1,"success":0' &&
      ! echo "$output" | grep -q 'pi/gpt-5/high'; then
-    pass "an unreadable dispatch log does not hide other tasks and never falls back to meta"
+    pass "an unreadable dispatch log is a pending no-profile dispatch and never falls back to meta or status"
   else
     fail "unreadable log dropped a task: $output"
   fi
@@ -849,8 +850,8 @@ write_log "$TMP_ROOT/open-data" open-a \
 mkdir -p "$TMP_ROOT/open-state"
 echo "done: PR ok" > "$TMP_ROOT/open-state/open-a.status"
 output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/open-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/open-data" "$TUNE" --json 2>&1)
-if echo "$output" | grep -q '"tasks":0' && ! echo "$output" | grep -q 'no-profile'; then
-  pass "a logged task without an outcome is not completed from its status file"
+if echo "$output" | grep -q '"profile":"claude/sonnet/default","tasks":1,"success":0'; then
+  pass "a logged task without an outcome is a pending dispatch, not completed from its status file"
 else
   fail "logged task without outcome read from status: $output"
 fi

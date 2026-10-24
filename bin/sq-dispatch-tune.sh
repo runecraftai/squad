@@ -23,7 +23,7 @@
 # Lane = the decision profile name recorded at intake; "(no-profile)" when the
 # decision recorded only a reason, or the task has no log.
 # Outcome = done or landed (success) or failed, from the log's outcome rows,
-# else a logged task is skipped; a task without a log takes the last done/failed line
+# else a logged task with no terminal row is a pending dispatch; a task without a log takes the last done/failed line
 # of state/<id>.status. A released outcome (teardown)
 # counts toward its lane and profile dispatch totals, never as a success or failure;
 # success rate is done over done plus failed, as in the lane table.
@@ -311,10 +311,12 @@ for name in names:
     failed_class = ""
     released_class = ""
     stamps = []
-    in_window = False
+    try:
+        in_window = int(os.lstat(path).st_mtime) >= cutoff
+    except OSError:
+        in_window = False
     if readable:
         try:
-            in_window = int(os.stat(path).st_mtime) >= cutoff
             with open(path, encoding="utf-8", errors="replace") as handle:
                 for line in handle:
                     try:
@@ -342,7 +344,6 @@ for name in names:
             decision = None
             spawn = None
             results = set()
-            in_window = False
     profile = decision.get("profile") if isinstance(decision, dict) else None
     lane = text(profile) if isinstance(profile, str) and profile else "(no-profile)"
     failure = ""
@@ -374,10 +375,9 @@ collect_logged_tasks() {
   while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window; do
     [ "$in_window" = "1" ] || continue
 
-    outcome="$log_outcome"
-    case "$outcome" in
-      done|failed|released) ;;
-      *) continue ;; # no terminal state in the log
+    case "$log_outcome" in
+      done|failed|released) outcome="$log_outcome" ;;
+      *) outcome="pending" ;; # no terminal state in the log: a dispatch with no outcome yet
     esac
 
     case "$outcome:$log_class" in
@@ -469,13 +469,14 @@ resolve_status_fallbacks() {
   STATUS_BUCKETS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-status.XXXXXX")
   RESOLVED_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-resolved.XXXXXX")
   if command -v python3 >/dev/null 2>&1; then
-    python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
+    python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" "$LOGGED_IDS" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
 import os
 import sys
 sys.path.insert(0, sys.argv[1])
 from sq_dispatch_failure import status_failure_class
 
 state, cutoff = sys.argv[2], int(sys.argv[3])
+logged = set(sys.argv[4].split("\n"))
 try:
     names = sorted(os.listdir(state))
 except OSError:
@@ -485,7 +486,7 @@ for name in names:
         continue
     task_id = name[: -len(".status")]
     path = os.path.join(state, name)
-    if "\t" in task_id or "\n" in task_id or os.path.islink(path) or not os.path.isfile(path):
+    if task_id in logged or "\t" in task_id or "\n" in task_id or os.path.islink(path) or not os.path.isfile(path):
         continue
     if int(os.stat(path).st_mtime) < cutoff:
         continue
