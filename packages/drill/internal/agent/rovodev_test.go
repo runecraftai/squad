@@ -468,12 +468,8 @@ func TestRovodevAgent_FullFlow(t *testing.T) {
 
 	// Create agent with a mock server already running
 	a := &rovodevAgent{
-		bin:    "acli",
-		server: &managedServer{port: 0}, // will be overridden
-	}
-	// Parse the test server's port from URL
-	a.server = &managedServer{
-		port: mustParsePort(server.URL),
+		bin:     "acli",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	var chunks []string
@@ -538,8 +534,8 @@ func TestRovodevAgent_NoSchema(t *testing.T) {
 	defer server.Close()
 
 	a := &rovodevAgent{
-		bin:    "acli",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "acli",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	result, err := a.Run(context.Background(), RunOpts{

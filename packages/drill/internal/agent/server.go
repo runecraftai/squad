@@ -130,6 +130,57 @@ func startServerWithPort(ctx context.Context, agentName, bin string, args []stri
 	return srv, nil
 }
 
+// serverPool keeps one managed server per execution policy. Review lenses run
+// concurrently under separate sandboxes, so a server is never handed to a
+// caller whose policy it was not launched under, and it stops with its policy.
+type serverPool struct {
+	mu      sync.Mutex
+	servers map[ProcessExecutionPolicy]*managedServer
+}
+
+func (p *serverPool) ensure(policy ProcessExecutionPolicy, start func() (*managedServer, error)) (*managedServer, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if srv := p.servers[policy]; srv != nil {
+		return srv, nil
+	}
+	srv, err := start()
+	if err != nil {
+		return nil, err
+	}
+	if policy != nil {
+		if err := policy.OnClose(func() { p.stop(policy) }); err != nil {
+			srv.shutdown()
+			return nil, err
+		}
+	}
+	if p.servers == nil {
+		p.servers = make(map[ProcessExecutionPolicy]*managedServer)
+	}
+	p.servers[policy] = srv
+	return srv, nil
+}
+
+func (p *serverPool) stop(policy ProcessExecutionPolicy) {
+	p.mu.Lock()
+	srv := p.servers[policy]
+	delete(p.servers, policy)
+	p.mu.Unlock()
+	if srv != nil {
+		srv.shutdown()
+	}
+}
+
+func (p *serverPool) stopAll() {
+	p.mu.Lock()
+	servers := p.servers
+	p.servers = nil
+	p.mu.Unlock()
+	for _, srv := range servers {
+		srv.shutdown()
+	}
+}
+
 // baseURL returns the server's base URL.
 func (s *managedServer) baseURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%d", s.port)

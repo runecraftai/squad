@@ -22,9 +22,11 @@ type Agent interface {
 }
 
 // ProcessExecutionPolicy confines a native agent process and synchronizes its private Git result.
+// OnClose registers a stop hook that runs when the policy closes; it fails once the policy is closing.
 type ProcessExecutionPolicy interface {
 	Command(*exec.Cmd) error
 	Sync() error
+	OnClose(stop func()) error
 }
 
 // RunOpts configures a single agent invocation.

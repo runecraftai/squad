@@ -27,6 +27,7 @@ type fixtureRunExecutionPolicy struct{ workDir string }
 func (p fixtureRunExecutionPolicy) Command(*exec.Cmd) error { return nil }
 func (p fixtureRunExecutionPolicy) Sync() error             { return nil }
 func (p fixtureRunExecutionPolicy) Close() error            { return nil }
+func (p fixtureRunExecutionPolicy) OnClose(func()) error    { return nil }
 func (p fixtureRunExecutionPolicy) RunCommand(ctx context.Context, command string, env []string) ([]byte, int, error) {
 	name, args := "sh", []string{"-c", command}
 	if runtime.GOOS == "windows" {

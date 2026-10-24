@@ -23,6 +23,7 @@ type ExecutionPolicy interface {
 	Command(*exec.Cmd) error
 	RunCommand(context.Context, string, []string) ([]byte, int, error)
 	Sync() error
+	OnClose(stop func()) error
 	Close() error
 }
 
@@ -33,7 +34,9 @@ type Policy struct {
 	gitDir     string
 	gitFile    string
 	syncedHead string
+	closing    bool
 	closed     bool
+	onClose    []func()
 	mu         sync.Mutex
 	syncMu     sync.Mutex
 }
@@ -532,18 +535,40 @@ func (p *Policy) isClosed() bool {
 	return p.closed
 }
 
-// Close removes task-private Git objects and execution metadata.
+// OnClose registers stop to run when the policy closes, before the execution
+// metadata and every copied launch home are removed.
+func (p *Policy) OnClose(stop func()) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closing || p.closed {
+		return errors.New(Name + ": execution policy is unavailable")
+	}
+	p.onClose = append(p.onClose, stop)
+	return nil
+}
+
+// Close stops registered owners, then removes task-private Git objects,
+// execution metadata, and all copied provider credentials.
 func (p *Policy) Close() error {
 	if p == nil {
 		return nil
+	}
+	p.mu.Lock()
+	if p.closing {
+		p.mu.Unlock()
+		return nil
+	}
+	p.closing = true
+	stops := p.onClose
+	p.onClose = nil
+	p.mu.Unlock()
+	for i := len(stops) - 1; i >= 0; i-- {
+		stops[i]()
 	}
 	p.syncMu.Lock()
 	defer p.syncMu.Unlock()
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed {
-		return nil
-	}
 	p.closed = true
 	return os.RemoveAll(p.root)
 }

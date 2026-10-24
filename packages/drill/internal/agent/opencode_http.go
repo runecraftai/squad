@@ -11,21 +11,21 @@ import (
 )
 
 func (a *opencodeAgent) ensureServer(ctx context.Context, cwd string, policy ProcessExecutionPolicy) (string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.server != nil {
-		return a.server.baseURL(), nil
-	}
-	port, err := getAvailablePort()
+	srv, err := a.servers.ensure(policy, func() (*managedServer, error) {
+		port, err := getAvailablePort()
+		if err != nil {
+			return nil, fmt.Errorf("opencode port: %w", err)
+		}
+		args := buildOpencodeServeArgs(a.extraArgs, port)
+		srv, err := startServerWithPort(ctx, "opencode", a.bin, args, cwd, "/global/health", port, policy)
+		if err != nil {
+			return nil, fmt.Errorf("opencode server: %w", err)
+		}
+		return srv, nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("opencode port: %w", err)
+		return "", err
 	}
-	args := buildOpencodeServeArgs(a.extraArgs, port)
-	srv, err := startServerWithPort(ctx, "opencode", a.bin, args, cwd, "/global/health", port, policy)
-	if err != nil {
-		return "", fmt.Errorf("opencode server: %w", err)
-	}
-	a.server = srv
 	return srv.baseURL(), nil
 }
 
