@@ -539,6 +539,11 @@ afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition
   printf 'Working...\n12k tokens USD 0.42' > "$pane"
   fm_write_meta "$state/afk-busy.meta" "window=$win" "backend=tmux" "harness=pi"
   printf 'working: setup complete\n' > "$state/afk-busy.status"
+  if [ "$case_name" = old-terminal ]; then
+    # An already-escalated historical done line; the task then starts a new busy turn.
+    printf 'done: previous turn\n' > "$state/afk-busy.status"
+    printf '%s' 'done: previous turn' > "$state/.subsuper-seen-status-afk-busy"
+  fi
   printf '%s' "$(stat -c '%s:%Y' "$state/afk-busy.status" 2>/dev/null || stat -f '%z:%Fm' "$state/afk-busy.status")" \
     > "$state/.seen-afk-busy_status"
   gen=$("$ROOT/bin/sq-busy-event.sh" arm "$state" afk-busy)
@@ -702,10 +707,16 @@ SH
   unset SQUAD_FAKE_CREW_STATE
 
   case "$case_name" in
-    frozen|episode|mode-transition|capture-retry|idle-episode|busy-idle|repeat-hash)
+    frozen|episode|mode-transition|capture-retry|idle-episode|busy-idle|repeat-hash|old-terminal)
       if [ "$case_name" != idle-episode ] && [ "$case_name" != busy-idle ]; then
         grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
           || fail "$case_name: frozen busy pane was absorbed instead of escalating"
+      fi
+      if [ "$case_name" = old-terminal ]; then
+        [ "$(grep -c "busy expired without activity" "$state/.subsuper-escalations")" -eq 1 ] \
+          || fail "old terminal status did not yield exactly one busy-expiry escalation"
+        grep -F "terminal" "$state/.subsuper-escalations" >/dev/null 2>&1 \
+          && fail "old terminal status escalated the frozen busy episode as terminal"
       fi
       grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 \
         || fail "frozen afk busy escalation did not flag a possible wedge"
@@ -725,7 +736,7 @@ SH
 
 test_afk_busy_handoff_escalates_through_daemon_recheck() {
   local case_name
-  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step repeat-hash; do
+  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step repeat-hash old-terminal; do
     afk_busy_daemon_case "$case_name"
   done
   pass "away-mode episodes survive capture gaps and mode changes, restart busy/idle clocks, and defer active steps"

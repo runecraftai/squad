@@ -1410,7 +1410,7 @@ is_wake_reason() {  # <reason>
 # Side effects: logging, marker records, escalation buffer appends.
 handle_wake() {  # <reason> <state>
   local reason=$1 state=$2 decision action distilled task last stale_detail episode
-  local kind="" arg=""
+  local kind="" arg="" busy_handoff=0
   case "$reason" in
     routine:*) reason=${reason#routine: } ;;
   esac
@@ -1425,6 +1425,13 @@ handle_wake() {  # <reason> <state>
               case "$arg" in *" ("*) stale_detail="${arg#*" ("}"; arg="${arg%% \(*}" ;; esac
               decision=$(classify_stale "$arg" "$state")
               case "$stale_detail" in
+                busy\ expired\ without\ activity*)
+                  # The sentry already proved the task is not finished, so an
+                  # old terminal status line must not classify this handoff.
+                  busy_handoff=1
+                  case "$decision" in
+                    escalate\|*) decision="self|busy expired without activity: $arg" ;;
+                  esac ;;
                 idle\ *s,\ possible\ wedge,\ escalation\ *)
                   decision="escalate|${reason#stale: }" ;;
               esac ;;
@@ -1483,7 +1490,7 @@ handle_wake() {  # <reason> <state>
         # Nonterminal progress verbs keep possible-wedge markers even if free text
         # once looked commander-relevant or was written into a seen marker.
         _clear_wedge=0
-        if [ -n "$last" ] && status_is_commander_relevant "$last"; then
+        if [ "$busy_handoff" != 1 ] && [ -n "$last" ] && status_is_commander_relevant "$last"; then
           if status_is_terminal_verb "$last"; then
             _clear_wedge=1
           else
