@@ -501,8 +501,8 @@ func jsonPayloadCandidates(text string, arrays bool) []jsonCandidate {
 			body := text[contentStart:]
 			end, next := indexJSONFenceClose(body)
 			if end < 0 {
-				candidates = append(candidates, jsonCandidate{text: body, fenced: true})
-				break
+				i = contentStart - 1
+				continue
 			}
 			candidates = append(candidates, jsonCandidate{text: body[:end], fenced: true})
 			i = contentStart + next - 1
@@ -737,6 +737,9 @@ func scanBalancedArray(text string, start int) (int, bool) {
 			}
 			continue
 		}
+		if c == '`' && strings.HasPrefix(text[i:], "```") && isFenceOpener(text, i) {
+			return 0, false
+		}
 		switch c {
 		case '"':
 			inString = true
@@ -782,6 +785,9 @@ func scanBalancedObject(text string, start int) (int, bool) {
 				inString = false
 			}
 			continue
+		}
+		if c == '`' && strings.HasPrefix(text[i:], "```") && isFenceOpener(text, i) {
+			return 0, false
 		}
 		switch c {
 		case '"':

@@ -1391,6 +1391,39 @@ func TestFinalizeTextResult_ProseBracketsDoNotBlockRoundSummary(t *testing.T) {
 	}
 }
 
+func TestFinalizeTextResult_RecoversUnclosedFencedPayloadWithTrailingProse(t *testing.T) {
+	text := "Summary:\n```json\n{\"summary\":\"x\"}\nThat's all."
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unclosed fenced payload followed by prose must recover, got: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.Summary != "x" {
+		t.Errorf("summary = %q, want x", output.Summary)
+	}
+}
+
+func TestFinalizeTextResult_StrayBraceInProseDoesNotSwallowFencedPayload(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	text := "Missing `{` in parser.\n```json\n" + object + "\n```\nFixed the `}` in bar.go."
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("fenced payload after a stray prose brace must recover, got: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+	if _, ok := got["findings"]; !ok {
+		t.Fatalf("normalized output lacks findings: %s", result.Output)
+	}
+}
+
 func TestFinalizeTextResult_RefusesAmbiguousFindingsPayloads(t *testing.T) {
 	payload := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
 	text := "First result: " + payload + " Second result: " + payload
