@@ -2625,6 +2625,31 @@ test_busy_static_afk_hands_off_once_per_hash() {
   pass "AFK hands a static busy pane to the daemon once per distinct hash, never as a repeated wedge"
 }
 
+# An active drill run-step must suppress the away-mode busy handoff just as the
+# non-afk wedge timer defers it: no wake and no handed-off hash while it runs.
+test_busy_static_afk_run_step_defers_handoff() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case busy-static-afk-run); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-busy-afk-run"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/busy-afk-run.meta"
+  record_pi_busy "$state" busy-afk-run
+  printf 'working: validation running\n' > "$state/busy-afk-run.status"
+  sig=$(seen_sig "$state/busy-afk-run.status"); printf '%s' "$sig" > "$state/.seen-busy-afk-run_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  date '+%s' > "$state/.afk"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240 \
+    SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running'
+  pid=$!
+  wait_live "$pid" 30 || { reap "$pid"; fail "afk busy run-step exited: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "afk busy pane handed off during an active run-step: $(cat "$out")"
+  [ ! -e "$state/.stale-$key" ] || fail "afk busy run-step recorded a handed-off hash"
+  pass "an active drill run-step suppresses the away-mode busy handoff"
+}
+
 test_busy_static_pane_defers_while_run_step_active() {
   local dir state fakebin out capture_file window key sig pid since
   dir=$(make_case busy-static-active-run); state="$dir/state"; fakebin="$dir/fakebin"
@@ -3200,6 +3225,7 @@ test_busy_static_pane_escalates_without_turn_age
 test_busy_changing_pane_resets_expiry
 test_busy_tall_pane_above_tail_progress_resets_expiry
 test_busy_static_afk_hands_off_once_per_hash
+test_busy_static_afk_run_step_defers_handoff
 test_busy_static_pane_defers_while_run_step_active
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_nonterminal_stale_not_working_surfaced
