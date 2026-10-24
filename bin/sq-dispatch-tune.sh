@@ -29,8 +29,8 @@
 # success rate is done over done plus failed, as in the lane table.
 # Fallback = a logged task's failure_class of provider or quota, even on a released
 # task (guard and other are misses); the log is authoritative and its status file is never read.
-# A task without a log takes its fallback from the last done or failed status line; a blocked
-# or paused line counts only when no done or failed line exists.
+# A task without a log takes its fallback from the last done or failed status line; a status
+# file with neither is skipped, so a blocked or paused line never counts.
 # Teardown removes the status file, so a torn-down task without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
@@ -261,14 +261,17 @@ record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <f
 # Rows are unit-separator delimited so empty fields survive `read`.
 collect_log_rows() {
   [ "$LOG_READER" -eq 1 ] || return 0
-  if ! python3 - "$DATA" "$CUTOFF" > "$LOG_FILE" 2>/dev/null <<'PY'
+  if ! python3 - "$SCRIPT_DIR" "$DATA" "$CUTOFF" > "$LOG_FILE" 2>/dev/null <<'PY'
 import datetime
 import json
 import os
 import re
 import sys
 
-data_dir, cutoff = sys.argv[1], int(sys.argv[2])
+sys.path.insert(0, sys.argv[1])
+from sq_dispatch_failure import FAILURE_CLASSES
+
+data_dir, cutoff = sys.argv[2], int(sys.argv[3])
 id_pattern = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
@@ -285,9 +288,6 @@ def moment(value):
         return None
 
 
-FAILURE_CLASSES = ("provider", "quota", "guard", "other")
-
-
 def triple(row):
     if not isinstance(row, dict):
         return ["", "", ""]
@@ -302,46 +302,58 @@ except OSError:
 for name in names:
     folder = os.path.join(data_dir, name)
     path = os.path.join(folder, "dispatch.jsonl")
-    if not id_pattern.fullmatch(name) or os.path.islink(folder):
+    if not id_pattern.fullmatch(name) or not os.path.lexists(path):
         continue
-    if os.path.islink(path) or not os.path.isfile(path):
-        continue
-    try:
-        in_window = int(os.stat(path).st_mtime) >= cutoff
-        decision = None
-        spawn = None
-        results = set()
-        failure = ""
-        stamps = []
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                try:
-                    row = json.loads(line)
-                except (ValueError, RecursionError):
-                    continue
-                if not isinstance(row, dict):
-                    continue
-                when = moment(row.get("timestamp"))
-                if when is not None:
-                    stamps.append(when)
-                event = row.get("event")
-                if event == "decision":
-                    decision = row
-                elif event == "spawn":
-                    spawn = row
-                elif event == "outcome" and isinstance(row.get("result"), str):
-                    results.add(row["result"])
-                    failure = row["failure_class"] if row.get("failure_class") in FAILURE_CLASSES else ""
-    except OSError:
-        continue
+    readable = not os.path.islink(folder) and not os.path.islink(path) and os.path.isfile(path)
+    decision = None
+    spawn = None
+    results = set()
+    failed_class = ""
+    released_class = ""
+    stamps = []
+    in_window = False
+    if readable:
+        try:
+            in_window = int(os.stat(path).st_mtime) >= cutoff
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    try:
+                        row = json.loads(line)
+                    except (ValueError, RecursionError):
+                        continue
+                    if not isinstance(row, dict):
+                        continue
+                    when = moment(row.get("timestamp"))
+                    if when is not None:
+                        stamps.append(when)
+                    event = row.get("event")
+                    if event == "decision":
+                        decision = row
+                    elif event == "spawn":
+                        spawn = row
+                    elif event == "outcome" and isinstance(row.get("result"), str):
+                        results.add(row["result"])
+                        bucket = row["failure_class"] if row.get("failure_class") in FAILURE_CLASSES else ""
+                        if row["result"] == "failed":
+                            failed_class = bucket
+                        elif row["result"] == "released":
+                            released_class = bucket
+        except OSError:
+            decision = None
+            spawn = None
+            results = set()
+            in_window = False
     profile = decision.get("profile") if isinstance(decision, dict) else None
     lane = text(profile) if isinstance(profile, str) and profile else "(no-profile)"
+    failure = ""
     if results & {"done", "landed"}:
         outcome = "done"
     elif "failed" in results:
         outcome = "failed"
+        failure = failed_class
     elif "released" in results:
         outcome = "released"
+        failure = released_class
     else:
         outcome = "none"
     span = int(max(stamps) - min(stamps)) if len(stamps) > 1 else 0
@@ -555,7 +567,7 @@ compute_lanes() {
     total[lane]++
     if ($5 == "done") success[lane]++
     else if ($5 == "failed") failure[lane]++
-    if ($10 != "-" && $10 != $7) off[lane]++
+    if ($7 != no_profile && $10 != "-" && $10 != $7) off[lane]++
     if ($9 == "hit") hit[lane]++
     if ($9 == "hit" || $9 == "miss") observed[lane]++
     if ($7 != no_profile) chosen[lane SUBSEP $7]++
@@ -743,7 +755,7 @@ emit_fallback_markdown() {
   read -r hits observed unknown < <(fallback_totals)
   echo "## Fallback Rate"
   echo ""
-  echo "A fallback is a provider or quota failure: a logged task reads its log's failure_class only, and a task without a log reads its last done or failed status line (blocked or paused when neither exists)."
+  echo "A fallback is a provider or quota failure: a logged task reads its log's failure_class only, and a task without a log reads its last done or failed status line (a status file with neither is skipped)."
   echo "A logged done task without a failure_class is clean; a released or failed one without a failure_class is unknown."
   echo ""
   echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (failure class or status file present)"
