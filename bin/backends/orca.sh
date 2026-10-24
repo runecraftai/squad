@@ -204,14 +204,8 @@ fm_backend_orca_capture() {  # <terminal-id> <lines>
 }
 
 fm_backend_orca_capture_rendered() {  # <terminal-id>
-  local terminal=$1 out source text
-  fm_backend_orca_tool_check || return 1
-  out=$(orca terminal read --terminal "$terminal" --screen --json) || return 1
-  source=$(fm_backend_orca_json_field source "$out") || return 1
-  [ "$source" = screen ] || return 1
-  text=$(fm_backend_orca_json_text "$out") || return 1
-  [ -n "$text" ] || return 1
-  printf '%s' "$text"
+  echo 'error: orca complete rendered viewport is unverified; cannot evaluate busy expiry' >&2
+  return 1
 }
 
 fm_backend_orca_json_text() {  # <json>
@@ -251,7 +245,6 @@ if (field === "limited") v = scalar(r.limited ?? term.limited);
 if (field === "oldestCursor") v = scalar(r.oldestCursor || term.oldestCursor);
 if (field === "nextCursor") v = scalar(r.nextCursor || term.nextCursor);
 if (field === "latestCursor") v = scalar(r.latestCursor || term.latestCursor);
-if (field === "source") v = scalar(r.source || term.source);
 if (!v) process.exit(1);
 process.stdout.write(v);
 ' "$field"

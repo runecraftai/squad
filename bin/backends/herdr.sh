@@ -2598,8 +2598,8 @@ fm_backend_herdr_capture() {  # <target> <lines>
 }
 
 fm_backend_herdr_capture_rendered() {  # <target>
-  fm_backend_herdr_target_ready "$1" || return 1
-  fm_backend_herdr_cli "$SQUAD_BACKEND_HERDR_SESSION" pane read "$SQUAD_BACKEND_HERDR_PANE" --source visible 2>/dev/null
+  echo 'error: herdr complete rendered viewport is unverified; cannot evaluate busy expiry' >&2
+  return 1
 }
 
 fm_backend_herdr_capture_ansi() {  # <target> <lines>

@@ -2861,18 +2861,19 @@ test_capture_calls_pane_read() {
   pass "fm_backend_herdr_capture: calls 'pane read <pane> --source recent --lines N' with the session set"
 }
 
-test_capture_rendered_reads_visible_source() {
-  local dir log resp fb out
+test_capture_rendered_reports_unverified_interface() {
+  local dir log resp fb out status
   dir="$TMP_ROOT/capture-rendered"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  printf 'visible row\nUSD 0.42\n' > "$resp/1.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" SQUAD_HERDR_LOG="$log" SQUAD_HERDR_RESPONSES="$resp" \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_capture_rendered default:w1:p2' "$ROOT" )
-  [ "$out" = $'visible row\nUSD 0.42' ] || fail "rendered capture did not pass through the visible snapshot, got '$out'"
-  assert_contains "$(cat "$log")" "HERDR_SESSION=default"$'\x1f''pane'$'\x1f''read'$'\x1f''w1:p2'$'\x1f''--source'$'\x1f''visible' \
-    "rendered capture did not read the visible source"
-  assert_not_contains "$(cat "$log")" $'\x1f''--lines' "rendered capture applied a tail line bound"
-  pass "fm_backend_herdr_capture_rendered: reads the visible screen source with no tail bound"
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_capture_rendered default:w1:p2' "$ROOT" 2>"$dir/error" )
+  status=$?
+  [ "$status" -ne 0 ] || fail "unverified Herdr viewport was treated as complete"
+  [ -z "$out" ] || fail "unverified Herdr viewport returned static evidence"
+  [ ! -s "$log" ] || fail "unverified Herdr viewport guessed a CLI call"
+  grep -F "herdr complete rendered viewport is unverified" "$dir/error" >/dev/null \
+    || fail "unverified Herdr viewport did not name its limitation"
+  pass "unverified Herdr viewport returns cannot-evaluate without a speculative CLI call"
 }
 
 test_capture_works_around_small_lines_bug() {
@@ -4320,7 +4321,7 @@ test_list_live_scoped_to_this_homes_workspace_only
 test_parse_target
 test_normalize_key
 test_capture_calls_pane_read
-test_capture_rendered_reads_visible_source
+test_capture_rendered_reports_unverified_interface
 test_capture_works_around_small_lines_bug
 test_capture_preserves_pane_read_failure
 test_send_key_normalizes_and_targets_pane
