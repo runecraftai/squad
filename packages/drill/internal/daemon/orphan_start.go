@@ -57,6 +57,9 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 	if strings.Trim(p.PreviousRunID, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
 		return refuse("invalid prior run identity")
 	}
+	if retired := retiredPRState(prior); retired != "" {
+		return refuse("the branch is retired: the run's pull request was " + retired + "; no fresh run was started")
+	}
 	repo, err := m.db.GetRepo(p.RepoID)
 	if err != nil || repo == nil {
 		return refuse("repository registration is unavailable")
@@ -93,6 +96,19 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 		return refuse("the requested commit does not descend from the audited released local head")
 	}
 	return repo, prior, nil
+}
+
+// retiredPRState returns the terminal pull-request state that retires a
+// branch, or "" when the run's branch is still live.
+func retiredPRState(run *db.Run) string {
+	if run == nil || run.PRState == nil {
+		return ""
+	}
+	switch state := strings.ToLower(strings.TrimSpace(*run.PRState)); state {
+	case "merged", "closed":
+		return state
+	}
+	return ""
 }
 
 // validateOrphanBranchOwnership proves no run currently owns the branch and

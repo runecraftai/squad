@@ -378,6 +378,103 @@ func TestRecoverPushedRunWithLostUnpublishedTailReleasesCustody(t *testing.T) {
 	}
 }
 
+// TestRecoverRetiredBranchRefusesEvenWithLostUnpublishedTail pins retirement as
+// absolute: a merged or closed pull request outranks orphan release, so a run
+// whose unpublished tail is gone still refuses with a named retirement error
+// instead of returning custody and inviting a fresh run.
+func TestRecoverRetiredBranchRefusesEvenWithLostUnpublishedTail(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		prState    string
+		wantState  string
+		wantSafety string
+	}{
+		{prState: "merged", wantState: StateMergedRemoteRetained, wantSafety: "blocked_merged"},
+		{prState: "closed", wantState: StateClosed, wantSafety: "blocked_closed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.prState, func(t *testing.T) {
+			f := newRecoverFixture(t, types.RunFailed)
+			mustRun(t, f.local, "push", f.remote, "refs/heads/feature/recover:refs/heads/feature/recover")
+			if err := f.db.UpdateRunPushBinding(f.run.ID, db.PushBinding{
+				HeadSHA: f.submitted, TargetKind: "upstream", TargetFingerprint: TargetFingerprint(f.remote), Ref: "refs/heads/feature/recover",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			missing := strings.Repeat("b", 40)
+			if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.db.UpdateRunPRState(f.run.ID, tc.prState); err != nil {
+				t.Fatal(err)
+			}
+
+			pre := f.service.InspectCached(f.ctx)
+			if pre.State != tc.wantState || pre.Safety != tc.wantSafety || pre.PRState != tc.prState {
+				t.Fatalf("retired classification = %#v", pre)
+			}
+			if pre.NextAction != nil {
+				t.Fatalf("retired branch offers an action: %#v", pre.NextAction)
+			}
+
+			localRefs := mustRun(t, f.local, "show-ref")
+			gateRefs := mustRun(t, f.gate, "show-ref")
+			state := f.service.Recover(f.ctx, false)
+			if state.Recovered || state.Changed {
+				t.Fatalf("retired branch reported recovery: %#v", state)
+			}
+			if state.State != tc.wantState || state.Safety != "blocked_recover_retired" {
+				t.Fatalf("retired refusal = %#v", state)
+			}
+			if !strings.Contains(state.Error, "retired") || !strings.Contains(state.Error, tc.prState) {
+				t.Fatalf("retired refusal does not name retirement: %q", state.Error)
+			}
+			if mustRun(t, f.local, "show-ref") != localRefs || mustRun(t, f.gate, "show-ref") != gateRefs {
+				t.Fatal("retired refusal moved a ref")
+			}
+			if f.custodyReturned() {
+				t.Fatal("retired branch returned custody")
+			}
+		})
+	}
+}
+
+// TestCustodyReturnedBranchMergedLaterClassifiesAsRetired covers a run released
+// while its pull request was still live and merged afterwards: the release
+// stamp may not mask the retirement, and recovery must refuse it.
+func TestCustodyReturnedBranchMergedLaterClassifiesAsRetired(t *testing.T) {
+	t.Parallel()
+
+	f := newRecoverFixture(t, types.RunFailed)
+	mustRun(t, f.local, "push", f.remote, "refs/heads/feature/recover:refs/heads/feature/recover")
+	if err := f.db.UpdateRunPushBinding(f.run.ID, db.PushBinding{
+		HeadSHA: f.submitted, TargetKind: "upstream", TargetFingerprint: TargetFingerprint(f.remote), Ref: "refs/heads/feature/recover",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	missing := strings.Repeat("c", 40)
+	if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	released := f.service.Recover(f.ctx, false)
+	if !released.Recovered || released.State != StateCustodyReturned {
+		t.Fatalf("live orphan release = %#v", released)
+	}
+	if err := f.db.UpdateRunPRState(f.run.ID, "merged"); err != nil {
+		t.Fatal(err)
+	}
+
+	state := f.service.InspectCached(f.ctx)
+	if state.State != StateMergedRemoteRetained || state.Safety != "blocked_merged" {
+		t.Fatalf("merged after release = %#v", state)
+	}
+	refused := f.service.Recover(f.ctx, false)
+	if refused.Recovered || refused.Safety != "blocked_recover_retired" || !strings.Contains(refused.Error, "retired") {
+		t.Fatalf("recover of retired released branch = %#v", refused)
+	}
+}
+
 func (f *recoverFixture) anchorRef() string { return "refs/drill/recover/" + f.run.ID }
 
 func (f *recoverFixture) custodyReturned() bool {

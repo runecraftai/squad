@@ -196,3 +196,49 @@ func TestOrphanReleaseWithLostPublishedTailStartsFreshRun(t *testing.T) {
 		t.Fatalf("fresh start moved gate branch to %s, want %s", got, published)
 	}
 }
+
+// TestOrphanStartRefusesRetiredBranch proves a merged or closed pull request
+// retires the branch for fresh starts too: the daemon admission refuses the
+// released orphan even though its custody stamp and missing head qualify.
+func TestOrphanStartRefusesRetiredBranch(t *testing.T) {
+	for _, state := range []string{"merged", "closed"} {
+		t.Run(state, func(t *testing.T) {
+			p, d := startTestDaemonWithSteps(t, func() []pipeline.Step {
+				return []pipeline.Step{&mockPassStep{name: types.StepReview}}
+			})
+			repo, head := setupTestGitRepo(t, p, d, "orphan-retired")
+			prior, err := d.InsertRun(repo.ID, "main", head, head)
+			if err != nil {
+				t.Fatal(err)
+			}
+			missing := strings.Repeat("d", 40)
+			if err := d.UpdateRunStatusWithVerifiedHead(prior.ID, types.RunFailed, missing); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.ReleaseOrphanedRun(prior.ID, missing, head, ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := d.UpdateRunPRState(prior.ID, state); err != nil {
+				t.Fatal(err)
+			}
+			client, err := ipc.Dial(p.Socket())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			request := &ipc.OrphanStartParams{RepoID: repo.ID, Branch: "main", PreviousRunID: prior.ID, HeadSHA: head, CheckOnly: true, Intent: "preserve all accepted requirements"}
+			var result ipc.OrphanStartResult
+			callErr := client.Call(ipc.MethodStartOrphan, request, &result)
+			if callErr == nil || !strings.Contains(callErr.Error(), "orphan_start_refused") || !strings.Contains(callErr.Error(), "retired") || !strings.Contains(callErr.Error(), state) {
+				t.Fatalf("retired start admitted: %#v, %v", result, callErr)
+			}
+			if got := gitOutput(t, p.RepoDir(repo.ID), "rev-parse", "refs/heads/main"); got != head {
+				t.Fatal("refused retired start moved gate branch")
+			}
+			runs, err := d.GetRunsByRepo(repo.ID)
+			if err != nil || len(runs) != 1 {
+				t.Fatalf("refused retired start created a run: %#v, %v", runs, err)
+			}
+		})
+	}
+}

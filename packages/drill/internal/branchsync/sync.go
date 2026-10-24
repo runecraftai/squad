@@ -524,6 +524,11 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 		return refusal
 	}
 	state, run, _ := s.inspect(ctx)
+	// Retirement is terminal for the branch and outranks every release path:
+	// a merged or closed pull request refuses before any custody is returned.
+	if refusal, retired := retiredRefusal(state, run); retired {
+		return refusal
+	}
 	if run != nil && run.CustodyReturnedAt != nil {
 		state.Recovered = true
 		state.Changed = false
@@ -661,6 +666,9 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 // tail past the published head was lost. It never moves any ref or worktree.
 func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state State) State {
 	fresh, selected, _ := s.inspect(ctx)
+	if refusal, retired := retiredRefusal(fresh, selected); retired {
+		return refusal
+	}
 	if selected == nil || selected.ID != run.ID || selected.HeadSHA != run.HeadSHA ||
 		fresh.State != StatePipelineOwned || fresh.Local.Branch != state.Local.Branch ||
 		fresh.Local.Head != state.Local.Head {
@@ -1056,6 +1064,16 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 		state.NextAction = &NextAction{Code: "continue_active_run", Command: "drill axi status"}
 		return state, run, false
 	}
+	// Terminal PR lifecycle retires the branch regardless of local dirtiness,
+	// custody history, or later target configuration. Refresh may classify
+	// retained versus removed only while the exact original target binding
+	// still matches.
+	if retiredState, retiredSafety, retired := retiredRunState(run); retired {
+		state.State = retiredState
+		state.Safety = retiredSafety
+		state.NextAction = nil
+		return state, run, true
+	}
 	if run.LastPushedSHA == nil || run.PushTargetFingerprint == nil || run.PushRef == nil || run.PushGeneration == nil || run.SubmittedHeadSHA == nil {
 		if run.SubmittedHeadSHA != nil && run.HeadSHA != ptr(run.SubmittedHeadSHA) {
 			if run.CustodyReturnedAt != nil {
@@ -1102,19 +1120,6 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 			s.classifyPipelineOwned(ctx, &state, run, "the pipeline head has not been successfully bound to the push target; do not make local follow-up commits yet")
 			return state, run, false
 		}
-	}
-	// Terminal PR lifecycle retires the branch regardless of local dirtiness
-	// or later target configuration. Refresh may classify retained versus
-	// removed only while the exact original target binding still matches.
-	if state.PRState == "merged" {
-		state.State = StateMergedRemoteRetained
-		state.Safety = "blocked_merged"
-		return state, run, true
-	}
-	if state.PRState == "closed" {
-		state.State = StateClosed
-		state.Safety = "blocked_closed"
-		return state, run, true
 	}
 	if ptr(run.PushRef) != "refs/heads/"+branch || ptr(run.PushTargetFingerprint) != TargetFingerprint(s.Repo.PushURL()) || ptr(run.PushTargetKind) != targetKind(s.Repo) {
 		state.State = StateTargetChanged
@@ -1533,6 +1538,30 @@ func targetKind(repo *db.Repo) string {
 		return "fork"
 	}
 	return "upstream"
+}
+
+// retiredRunState reports the retired branch classification for a run whose
+// pull request was merged or closed. Retirement is permanent: it outranks every
+// release and fresh-start classification.
+func retiredRunState(run *db.Run) (string, string, bool) {
+	if run == nil {
+		return "", "", false
+	}
+	switch normalizePRState(run.PRState) {
+	case "merged":
+		return StateMergedRemoteRetained, "blocked_merged", true
+	case "closed":
+		return StateClosed, "blocked_closed", true
+	}
+	return "", "", false
+}
+
+func retiredRefusal(state State, run *db.Run) (State, bool) {
+	retiredState, _, retired := retiredRunState(run)
+	if !retired {
+		return State{}, false
+	}
+	return blockedPlan(state, retiredState, "blocked_recover_retired", "the branch is retired: its pull request was "+normalizePRState(run.PRState)+"; no files or refs were changed and no fresh run was started"), true
 }
 
 func normalizePRState(state *string) string {
