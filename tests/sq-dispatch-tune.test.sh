@@ -444,7 +444,7 @@ else
   pass "decision reason text is never printed"
 fi
 
-# One unreadable log must not blank the others: the readable task keeps its real profile.
+# One unreadable log must not blank the others, and it stays authoritative: its meta is never used.
 UNREADABLE_DATA="$TMP_ROOT/unreadable-data"
 write_log "$UNREADABLE_DATA" closed-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"closed-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"closed-scope","quota_summary":{"status":"unknown"}}' \
@@ -466,8 +466,8 @@ else
   chmod 000 "$UNREADABLE_DATA/closed-b/dispatch.jsonl"
   output=$(SQUAD_STATE_OVERRIDE="$UNREADABLE_STATE" SQUAD_DATA_OVERRIDE="$UNREADABLE_DATA" "$TUNE" --json 2>&1)
   if echo "$output" | grep -q '"profile":"claude/opus/xhigh"' &&
-     echo "$output" | grep -q '"profile":"pi/gpt-5/high"'; then
-    pass "an unreadable dispatch log does not hide the other tasks or the meta fallback"
+     ! echo "$output" | grep -q 'pi/gpt-5/high'; then
+    pass "an unreadable dispatch log does not hide other tasks and never falls back to meta"
   else
     fail "unreadable log dropped a task: $output"
   fi
@@ -651,6 +651,30 @@ else
   fail "released quota fallback mis-counted: $output"
 fi
 
+# A failed quota row survives a later teardown released row with no class: still a fallback hit.
+write_log "$TMP_ROOT/failed-then-released-data" frq-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"frq-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"frq-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:00:05+00:00","id":"frq-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
+  '{"timestamp":"2026-10-20T10:10:00+00:00","id":"frq-a","event":"outcome","source":"status-notify","result":"failed","failure_class":"quota"}' \
+  '{"timestamp":"2026-10-20T10:30:00+00:00","id":"frq-a","event":"outcome","source":"teardown","result":"released"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/failed-then-released-data" "$TUNE" --json --by-lane --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":1,"observed":1,"unknown":0,"rate":100.0}'; then
+  pass "a failed quota row keeps its class when a later released row has none"
+else
+  fail "failed quota class lost to released row: $output"
+fi
+
+# A log with a decision row but no spawn row is the no-profile bucket: its recommendation is not an off-recommendation.
+write_log "$TMP_ROOT/no-spawn-data" nsp-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"nsp-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"nsp-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:20:00+00:00","id":"nsp-a","event":"outcome","source":"status-notify","result":"done"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-spawn-data" "$TUNE" --json --by-lane 2>&1)
+if echo "$output" | grep -q '"lane":"nsp-lane","dispatches":1,"success_rate":100.0,"off_recommendation":0,"chosen":\[\]'; then
+  pass "a decision without a spawn row is not counted as an off-recommendation"
+else
+  fail "no-spawn decision counted as off-recommendation: $output"
+fi
+
 # A released-only task counts toward its profile totals, but its profile has no success rate.
 write_log "$TMP_ROOT/released-profile-data" relp-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"relp-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
@@ -733,7 +757,7 @@ write_log "$TMP_ROOT/chosen-data" dec-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"dec-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"dec-lane","quota_summary":{"status":"unknown"}}' \
   '{"timestamp":"2026-10-20T10:20:00+00:00","id":"dec-a","event":"outcome","source":"status-notify","result":"done"}'
 output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/chosen-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/chosen-data" "$TUNE" --json --by-lane 2>&1)
-if echo "$output" | grep -q '"lane":"dec-lane","dispatches":1,"success_rate":100.0,"off_recommendation":1,"chosen":\[\]' && ! echo "$output" | grep -q 'pi/gpt-5/high'; then
+if echo "$output" | grep -q '"lane":"dec-lane","dispatches":1,"success_rate":100.0,"off_recommendation":0,"chosen":\[\]' && ! echo "$output" | grep -q 'pi/gpt-5/high'; then
   pass "a decision without a spawn row keeps its lane out of the chosen models, ignoring meta"
 else
   fail "decision-only lane chosen models wrong: $output"

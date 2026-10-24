@@ -302,46 +302,58 @@ except OSError:
 for name in names:
     folder = os.path.join(data_dir, name)
     path = os.path.join(folder, "dispatch.jsonl")
-    if not id_pattern.fullmatch(name) or os.path.islink(folder):
+    if not id_pattern.fullmatch(name) or not os.path.lexists(path):
         continue
-    if os.path.islink(path) or not os.path.isfile(path):
-        continue
-    try:
-        in_window = int(os.stat(path).st_mtime) >= cutoff
-        decision = None
-        spawn = None
-        results = set()
-        failure = ""
-        stamps = []
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                try:
-                    row = json.loads(line)
-                except (ValueError, RecursionError):
-                    continue
-                if not isinstance(row, dict):
-                    continue
-                when = moment(row.get("timestamp"))
-                if when is not None:
-                    stamps.append(when)
-                event = row.get("event")
-                if event == "decision":
-                    decision = row
-                elif event == "spawn":
-                    spawn = row
-                elif event == "outcome" and isinstance(row.get("result"), str):
-                    results.add(row["result"])
-                    failure = row["failure_class"] if row.get("failure_class") in FAILURE_CLASSES else ""
-    except OSError:
-        continue
+    readable = not os.path.islink(folder) and not os.path.islink(path) and os.path.isfile(path)
+    decision = None
+    spawn = None
+    results = set()
+    failed_class = ""
+    released_class = ""
+    stamps = []
+    in_window = False
+    if readable:
+        try:
+            in_window = int(os.stat(path).st_mtime) >= cutoff
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    try:
+                        row = json.loads(line)
+                    except (ValueError, RecursionError):
+                        continue
+                    if not isinstance(row, dict):
+                        continue
+                    when = moment(row.get("timestamp"))
+                    if when is not None:
+                        stamps.append(when)
+                    event = row.get("event")
+                    if event == "decision":
+                        decision = row
+                    elif event == "spawn":
+                        spawn = row
+                    elif event == "outcome" and isinstance(row.get("result"), str):
+                        results.add(row["result"])
+                        bucket = row["failure_class"] if row.get("failure_class") in FAILURE_CLASSES else ""
+                        if row["result"] == "failed":
+                            failed_class = bucket
+                        elif row["result"] == "released":
+                            released_class = bucket
+        except OSError:
+            decision = None
+            spawn = None
+            results = set()
+            in_window = False
     profile = decision.get("profile") if isinstance(decision, dict) else None
     lane = text(profile) if isinstance(profile, str) and profile else "(no-profile)"
+    failure = ""
     if results & {"done", "landed"}:
         outcome = "done"
     elif "failed" in results:
         outcome = "failed"
+        failure = failed_class
     elif "released" in results:
         outcome = "released"
+        failure = released_class
     else:
         outcome = "none"
     span = int(max(stamps) - min(stamps)) if len(stamps) > 1 else 0
@@ -555,7 +567,7 @@ compute_lanes() {
     total[lane]++
     if ($5 == "done") success[lane]++
     else if ($5 == "failed") failure[lane]++
-    if ($10 != "-" && $10 != $7) off[lane]++
+    if ($7 != no_profile && $10 != "-" && $10 != $7) off[lane]++
     if ($9 == "hit") hit[lane]++
     if ($9 == "hit" || $9 == "miss") observed[lane]++
     if ($7 != no_profile) chosen[lane SUBSEP $7]++
