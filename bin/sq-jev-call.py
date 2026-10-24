@@ -20,7 +20,8 @@ MAX_RESPONSE = 65536
 DEADLINE_SECONDS = 3
 
 
-KNOWN_NAMES = ("claude", "codex", "gemini", "sonnet", "opus", "haiku", "gpt")
+KNOWN_NAMES = ("claude", "codex", "gemini", "sonnet", "opus", "haiku", "gpt", "grok", "llama", "mistral",
+               "deepseek", "qwen", "pi", "cursor", "aider", "copilot", "opencode")
 
 
 def redact(value, names=()):
@@ -40,7 +41,9 @@ def redact(value, names=()):
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
     terms = sorted({term for term in set(names) | set(KNOWN_NAMES) if term}, key=len, reverse=True)
-    value = re.sub(r"(?i)(?<![A-Za-z0-9])(?:" + "|".join(re.escape(term) for term in terms) + r")(?![A-Za-z0-9])",
+    alternatives = [re.escape(term) for term in terms] + [r"o[0-9]"]
+    value = re.sub(r"(?i)(?<![A-Za-z0-9])(?:" + "|".join(alternatives) + r")"
+                   r"(?:[._-]?[0-9][A-Za-z0-9]*|[._-][A-Za-z0-9]+)*(?![A-Za-z0-9])",
                    "[REDACTED]", value)
     return value[:MAX_TEXT]
 
@@ -172,8 +175,7 @@ def main():
         return 0
     key = os.environ.get("TYPESAFE_API_KEY")
     if not key and not args.dry_run:
-        print(json.dumps({"status": "missing_key"}))
-        return 0
+        return finish(args, {"status": "unavailable", "reason": "missing_key"})
     if args.brief:
         try:
             lines = Path(args.brief).read_text(errors="replace").splitlines()
