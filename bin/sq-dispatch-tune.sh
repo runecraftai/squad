@@ -197,24 +197,6 @@ status_outcome() { # <status_file>
   grep -E '^(done|failed):' "$1" 2>/dev/null | tail -1 | cut -d: -f1 || true
 }
 
-# Classify a status file with the writer's last-terminal-line rule. Prints hit,
-# miss, or unknown only, never the status text; unknown when python3 is missing.
-status_fallback() { # <status_file>
-  local bucket
-  bucket=$(python3 - "$SCRIPT_DIR" "$1" 2>/dev/null <<'PY' || true
-import sys
-sys.path.insert(0, sys.argv[1])
-from sq_dispatch_failure import status_failure_class
-print(status_failure_class(sys.argv[2]) or "none")
-PY
-)
-  case "$bucket" in
-    provider|quota) echo hit ;;
-    none|guard|other) echo miss ;;
-    *) echo unknown ;;
-  esac
-}
-
 # Print a value, or "redacted" when it looks like a credential or token.
 redact_shape() { # <value>
   if printf '%s' "$1" | grep -E -i -q -- "$SECRET_SHAPE_RE"; then
@@ -234,8 +216,10 @@ TASKS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-tune.XXXXXX")
 LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-logs.XXXXXX")
 METRICS_FILE=""
 LANES_FILE=""
+STATUS_BUCKETS_FILE=""
+RESOLVED_FILE=""
 LANE_ROWS=()
-trap 'rm -f "$TASKS_FILE" "$LOG_FILE" "$METRICS_FILE" "$LANES_FILE"' EXIT
+trap 'rm -f "$TASKS_FILE" "$LOG_FILE" "$METRICS_FILE" "$LANES_FILE" "$STATUS_BUCKETS_FILE" "$RESOLVED_FILE"' EXIT
 TASKS_COUNT=0
 LOG_READER=0
 if command -v python3 >/dev/null 2>&1; then
@@ -385,7 +369,7 @@ collect_logged_tasks() {
       released:*) fallback="unknown" ;;
       *) fallback="unknown"
          if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
-           fallback=$(status_fallback "$status_file")
+           fallback="pending"
          fi ;;
     esac
 
@@ -455,7 +439,7 @@ collect_status_tasks() {
 
     fallback=unknown
     if [ ! -L "$status_file" ]; then
-      fallback=$(status_fallback "$status_file")
+      fallback="pending"
     fi
     record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "$duration" \
       "(no-profile)" "$fallback" "-"
@@ -469,7 +453,46 @@ collect_tasks() {
   collect_status_tasks
 }
 
+# Classify each status file with the writer's last-terminal-line rule in one python3
+# pass, then join the buckets onto the rows marked pending. Rows print hit, miss, or
+# unknown only, never the status text; unknown when python3 is missing.
+resolve_status_fallbacks() {
+  [ "$TASKS_COUNT" -gt 0 ] || return 0
+  STATUS_BUCKETS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-status.XXXXXX")
+  RESOLVED_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-resolved.XXXXXX")
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$SCRIPT_DIR" "$STATE" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
+import os
+import sys
+sys.path.insert(0, sys.argv[1])
+from sq_dispatch_failure import status_failure_class
+
+state = sys.argv[2]
+try:
+    names = sorted(os.listdir(state))
+except OSError:
+    names = []
+for name in names:
+    if not name.endswith(".status"):
+        continue
+    task_id = name[: -len(".status")]
+    path = os.path.join(state, name)
+    if "\t" in task_id or "\n" in task_id or os.path.islink(path) or not os.path.isfile(path):
+        continue
+    print(f"{task_id}\t{status_failure_class(path) or 'none'}")
+PY
+  fi
+  awk -F'\t' -v OFS='\t' -v buckets="$STATUS_BUCKETS_FILE" '
+    FILENAME == buckets { bucket[$1] = $2; next }
+    $9 == "pending" {
+      b = ($1 in bucket) ? bucket[$1] : ""
+      $9 = (b == "provider" || b == "quota") ? "hit" : (b == "none" || b == "guard" || b == "other") ? "miss" : "unknown"
+    }
+    { print }' "$STATUS_BUCKETS_FILE" "$TASKS_FILE" > "$RESOLVED_FILE" && mv "$RESOLVED_FILE" "$TASKS_FILE"
+}
+
 collect_tasks
+resolve_status_fallbacks
 
 if [ "$TASKS_COUNT" -eq 0 ]; then
   if [ "$OUTPUT_FORMAT" = "json" ]; then
@@ -548,7 +571,8 @@ compute_lanes() {
 
 # Fallback counts as "hits observed unknown", optionally for one lane.
 fallback_totals() { # [lane]
-  awk -F'\t' -v lane="${1:-}" '
+  LANE_FILTER="${1:-}" awk -F'\t' '
+    BEGIN { lane = ENVIRON["LANE_FILTER"] }
     lane != "" && $8 != lane { next }
     $9 == "hit" { hits++ }
     $9 == "hit" || $9 == "miss" { observed++ }
