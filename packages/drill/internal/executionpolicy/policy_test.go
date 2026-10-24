@@ -94,6 +94,61 @@ func TestRepositoryCommandCannotReadOutsideExecutionCopy(t *testing.T) {
 	}
 }
 
+func TestStandardCloneLayoutRunsConfinedCommandsOnPrivateGit(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("drill-repository-execution-v1 requires Linux and Bubblewrap; unsupported hosts must refuse execution")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable in this test environment; production policy acknowledgement must fail")
+	}
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.Mkdir(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git(t, source, "init", "-q")
+	git(t, source, "config", "user.name", "Policy Test")
+	git(t, source, "config", "user.email", "policy@example.invalid")
+	if err := os.WriteFile(filepath.Join(source, "tracked.txt"), []byte("tracked\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git(t, source, "add", "tracked.txt")
+	git(t, source, "commit", "-m", "fixture")
+	repo := filepath.Join(root, "clone")
+	git(t, root, "clone", "-q", source, repo)
+	if info, err := os.Stat(filepath.Join(repo, ".git")); err != nil || !info.IsDir() {
+		t.Fatalf("standard clone layout unavailable: info=%v err=%v", info, err)
+	}
+	configBefore, err := os.ReadFile(filepath.Join(repo, ".git", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := New(repo)
+	if err != nil {
+		t.Fatalf("mandatory policy setup on standard clone: %v", err)
+	}
+	defer policy.Close()
+	out, code, err := policy.RunCommand(context.Background(), "git log -1 --format=%s", nil)
+	if err != nil || code != 0 || strings.TrimSpace(string(out)) != "fixture" {
+		t.Fatalf("private Git history unavailable: output=%q code=%d err=%v", out, code, err)
+	}
+	if _, code, err := policy.RunCommand(context.Background(), "printf compromised >> .git/config", nil); err != nil || code == 0 {
+		t.Fatalf("sandbox rewrote private Git config: code=%d err=%v", code, err)
+	}
+	configAfter, err := os.ReadFile(filepath.Join(repo, ".git", "config"))
+	if err != nil || string(configBefore) != string(configAfter) {
+		t.Fatalf("confined command changed host Git config: err=%v", err)
+	}
+	original := git(t, repo, "rev-parse", "HEAD")
+	commit := "printf changed > confined.txt && git add confined.txt && GIT_AUTHOR_NAME='Sandbox Agent' GIT_AUTHOR_EMAIL=sandbox@example.invalid GIT_COMMITTER_NAME='Sandbox Agent' GIT_COMMITTER_EMAIL=sandbox@example.invalid git commit -m sandbox-commit"
+	if out, code, err := policy.RunCommand(context.Background(), commit, nil); err != nil || code != 0 {
+		t.Fatalf("confined git commit failed: output=%q code=%d err=%v", out, code, err)
+	}
+	if got := git(t, repo, "rev-parse", "HEAD"); got == original {
+		t.Fatal("authorized private commit was not imported into the standard clone")
+	}
+}
+
 func TestSandboxCannotPlantHostGitHookInPrivateConfig(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("requires Linux and Bubblewrap")

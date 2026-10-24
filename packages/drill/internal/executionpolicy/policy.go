@@ -29,16 +29,18 @@ type ExecutionPolicy interface {
 
 // Policy is one short-lived, run-scoped sandbox with its own Git database.
 type Policy struct {
-	workDir    string
-	root       string
-	gitDir     string
-	gitFile    string
-	syncedHead string
-	closing    bool
-	closed     bool
-	onClose    []func()
-	mu         sync.Mutex
-	syncMu     sync.Mutex
+	workDir      string
+	root         string
+	gitDir       string
+	gitFile      string
+	gitLink      string
+	gitLinkIsDir bool
+	syncedHead   string
+	closing      bool
+	closed       bool
+	onClose      []func()
+	mu           sync.Mutex
+	syncMu       sync.Mutex
 }
 
 // New acknowledges the mandatory execution policy before any repository
@@ -91,11 +93,19 @@ func New(workDir string) (*Policy, error) {
 	if _, err := gitOutput(gitDir, "symbolic-ref", "HEAD", "refs/heads/drill-execution"); err != nil {
 		return fail(fmt.Errorf("%s: initialize task-private Git branch: %w", Name, err))
 	}
-	gitFile := filepath.Join(root, "git-pointer")
-	if err := os.WriteFile(gitFile, []byte("gitdir: /run/drill-execution/git\n"), 0o400); err != nil {
-		return fail(fmt.Errorf("%s: prepare private Git pointer: %w", Name, err))
+	gitLink := filepath.Join(abs, ".git")
+	gitLinkIsDir := false
+	if info, statErr := os.Stat(gitLink); statErr == nil && info.IsDir() {
+		gitLinkIsDir = true
 	}
-	p := &Policy{workDir: abs, root: root, gitDir: gitDir, gitFile: gitFile, syncedHead: initialHead}
+	gitFile := ""
+	if !gitLinkIsDir {
+		gitFile = filepath.Join(root, "git-pointer")
+		if err := os.WriteFile(gitFile, []byte("gitdir: /run/drill-execution/git\n"), 0o400); err != nil {
+			return fail(fmt.Errorf("%s: prepare private Git pointer: %w", Name, err))
+		}
+	}
+	p := &Policy{workDir: abs, root: root, gitDir: gitDir, gitFile: gitFile, gitLink: gitLink, gitLinkIsDir: gitLinkIsDir, syncedHead: initialHead}
 	if err := p.acknowledge(bubblewrap); err != nil {
 		return fail(err)
 	}
@@ -141,11 +151,15 @@ func (p *Policy) baseArgs(home string) []string {
 	for _, root := range toolDirs.roots {
 		args = append(args, "--ro-bind", root, root)
 	}
-	args = append(args, "--bind", p.workDir, p.workDir,
-		"--bind", p.gitDir, "/run/drill-execution/git",
-		"--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config",
-		"--ro-bind", p.gitFile, filepath.Join(p.workDir, ".git"),
-		"--bind", home, "/run/drill-execution/home",
+	args = append(args, "--bind", p.workDir, p.workDir, "--bind", p.gitDir, "/run/drill-execution/git")
+	if p.gitLinkIsDir {
+		args = append(args, "--bind", p.gitDir, p.gitLink,
+			"--ro-bind", filepath.Join(p.gitDir, "config"), filepath.Join(p.gitLink, "config"))
+	} else {
+		args = append(args, "--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config",
+			"--ro-bind", p.gitFile, p.gitLink)
+	}
+	args = append(args, "--bind", home, "/run/drill-execution/home",
 		"--setenv", "HOME", "/run/drill-execution/home", "--setenv", "TMPDIR", "/tmp",
 		"--setenv", "PATH", strings.Join(append(toolDirs.bins, "/usr/local/bin", "/usr/bin", "/bin"), string(os.PathListSeparator)))
 	for _, key := range []string{"LANG", "LC_ALL", "TERM", "CI"} {

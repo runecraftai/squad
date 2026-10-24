@@ -336,6 +336,15 @@ func shortReviewSHA(sha string) string {
 	return sha
 }
 
+type reviewLensExecutionPolicy interface {
+	agent.ProcessExecutionPolicy
+	Close() error
+}
+
+var newReviewLensExecutionPolicy = func(checkout string) (reviewLensExecutionPolicy, error) {
+	return executionpolicy.New(checkout)
+}
+
 func runReviewLens(ctx context.Context, a agent.Agent, policy agent.ProcessExecutionPolicy, repoDir string, snapshot ReviewSnapshot, index int, timeout time.Duration, logf func(string)) (out reviewLensResult) {
 	lens := reviewLensInstructions[index]
 	out.Lens = lens.name
@@ -366,7 +375,7 @@ func runReviewLens(ctx context.Context, a agent.Agent, policy agent.ProcessExecu
 	}
 	lensCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	lensPolicy, err := executionpolicy.New(checkout)
+	lensPolicy, err := newReviewLensExecutionPolicy(checkout)
 	if err != nil {
 		out.Err = fmt.Errorf("create confined review lens: %w", err)
 		return

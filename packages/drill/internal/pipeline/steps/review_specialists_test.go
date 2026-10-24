@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
 
@@ -681,9 +683,17 @@ func TestReviewStep_SpecializedBatchDetectsOfficialWorktreeMutation(t *testing.T
 }
 
 func TestReviewLensCannotReadOutsideExecutionCopy(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("drill-repository-execution-v1 requires Linux and Bubblewrap")
+	}
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("Bubblewrap unavailable")
 	}
+	previousPolicyFactory := newReviewLensExecutionPolicy
+	newReviewLensExecutionPolicy = func(checkout string) (reviewLensExecutionPolicy, error) {
+		return executionpolicy.New(checkout)
+	}
+	t.Cleanup(func() { newReviewLensExecutionPolicy = previousPolicyFactory })
 	dir, _, head := setupGitRepo(t)
 	outsideDir, err := os.MkdirTemp("/var/tmp", "drill-review-lens-outside-")
 	if err != nil {

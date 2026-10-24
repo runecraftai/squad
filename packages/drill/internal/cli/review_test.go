@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 )
 
 type standaloneReviewTestAgent struct {
@@ -160,9 +162,17 @@ func TestReviewCommandReportsRepositoryAndReviewedSHAs(t *testing.T) {
 }
 
 func TestStandaloneReviewLensesCannotReadOutsideExecutionCopy(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("drill-repository-execution-v1 requires Linux and Bubblewrap")
+	}
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("Bubblewrap unavailable")
 	}
+	previousPolicyFactory := newReviewExecutionPolicy
+	newReviewExecutionPolicy = func(workDir string) (reviewExecutionPolicy, error) {
+		return executionpolicy.New(workDir)
+	}
+	t.Cleanup(func() { newReviewExecutionPolicy = previousPolicyFactory })
 	root, base, head := prepareStandaloneReviewRepo(t)
 	outsideDir, err := os.MkdirTemp("/var/tmp", "drill-review-outside-")
 	if err != nil {

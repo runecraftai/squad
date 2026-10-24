@@ -320,6 +320,11 @@ func (m *RunManager) resumeRecoveredRun(plan recoveredRunPlan) {
 		cancel(nil)
 		_ = m.db.UpdateRunErrorStatus(plan.run.ID, err.Error(), types.RunFailed)
 		_ = plan.agent.Close()
+		if removeErr := m.withWorktreeLock(plan.run.RepoID, func() error {
+			return git.WorktreeRemove(context.Background(), plan.gateDir, plan.workDir)
+		}); removeErr != nil {
+			slog.Warn("failed to remove recovered worktree after policy failure", "path", plan.workDir, "error", removeErr)
+		}
 		return
 	}
 	executor := pipeline.NewExecutor(m.db, m.paths, plan.cfg, plan.agent, plan.steps, m.broadcast)

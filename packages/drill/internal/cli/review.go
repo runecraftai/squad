@@ -26,6 +26,15 @@ var standaloneReviewAgentFactory = func(ctx context.Context, cfg *config.Config)
 	return agent.NewWithOptions(cfg.Agent, cfg.AgentPath(), cfg.AgentArgsFor(cfg.Agent), agent.Options{DisableProjectSettings: true, ACPRegistryOverrides: cfg.ACPRegistryOverrides})
 }
 
+type reviewExecutionPolicy interface {
+	agent.ProcessExecutionPolicy
+	Close() error
+}
+
+var newReviewExecutionPolicy = func(workDir string) (reviewExecutionPolicy, error) {
+	return executionpolicy.New(workDir)
+}
+
 type standaloneReviewResult struct {
 	Repository string         `json:"repository"`
 	BaseSHA    string         `json:"base_sha"`
@@ -91,7 +100,7 @@ func newReviewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			policy, err := executionpolicy.New(worktree)
+			policy, err := newReviewExecutionPolicy(worktree)
 			if err != nil {
 				_ = ag.Close()
 				return err
