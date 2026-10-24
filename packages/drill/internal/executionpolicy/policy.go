@@ -221,7 +221,7 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 		}
 	}
 	allowedEnv := sandboxEnv(cmd.Env)
-	if e2eBuild && filepath.Base(tool) == "fakeagent" {
+	if e2eBuild {
 		fixtureArgs, fixtureEnv, err := fakeAgentFixtureAccess(p.workDir, cmd.Env)
 		if err != nil {
 			return err

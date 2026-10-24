@@ -94,10 +94,7 @@ func TestRepositoryCommandCannotReadOutsideExecutionCopy(t *testing.T) {
 	}
 }
 
-func TestBinaryNamedLikeFixtureDoesNotEnableFixtureAccess(t *testing.T) {
-	if e2eBuild {
-		t.Skip("fixture behavior is enabled only in the explicit e2e build")
-	}
+func TestFixtureAccessIsGatedByBuildNotExecutableName(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("requires Linux and Bubblewrap")
 	}
@@ -110,24 +107,26 @@ func TestBinaryNamedLikeFixtureDoesNotEnableFixtureAccess(t *testing.T) {
 	if err := os.WriteFile(fixture, []byte("scenario: synthetic\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fake := filepath.Join(root, "fakeagent")
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	policy, err := New(repo)
 	if err != nil {
 		t.Skipf("execution sandbox unavailable: %v", err)
 	}
 	defer policy.Close()
-	cmd := exec.Command(fake)
-	cmd.Dir = repo
-	cmd.Env = []string{"FAKEAGENT_FIXTURE=" + fixture}
-	if err := policy.Command(cmd); err != nil {
-		t.Fatal(err)
-	}
-	args := strings.Join(cmd.Args, "\\x00")
-	if strings.Contains(args, fixture) || strings.Contains(strings.Join(cmd.Env, "\\x00"), "FAKEAGENT_FIXTURE") {
-		t.Fatalf("production binary name enabled fixture access: args=%q env=%q", args, cmd.Env)
+	for _, name := range []string{"fakeagent", "synthetic-agent"} {
+		fake := filepath.Join(root, name)
+		if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(fake)
+		cmd.Dir = repo
+		cmd.Env = []string{"FAKEAGENT_FIXTURE=" + fixture}
+		if err := policy.Command(cmd); err != nil {
+			t.Fatal(err)
+		}
+		granted := strings.Contains(strings.Join(cmd.Args, "\x00"), fixture)
+		if granted != e2eBuild {
+			t.Fatalf("binary %q fixture access = %t, want %t (e2e build = %t): args=%q", name, granted, e2eBuild, e2eBuild, cmd.Args)
+		}
 	}
 }
 
