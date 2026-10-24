@@ -242,7 +242,11 @@ func runShellCommand(ctx context.Context, dir, cmdStr string) (string, int, erro
 }
 
 func runStepShellCommand(sctx *pipeline.StepContext, cmdStr string) (string, int, error) {
-	return runShellCommandWithEnv(sctx.Ctx, sctx.WorkDir, sctx.Env, cmdStr)
+	if sctx.ExecutionPolicy == nil {
+		return "", -1, fmt.Errorf("drill-repository-execution-v1: daemon did not acknowledge the mandatory execution policy")
+	}
+	output, exitCode, err := sctx.ExecutionPolicy.RunCommand(sctx.Ctx, cmdStr, sctx.Env)
+	return string(output), exitCode, err
 }
 
 func runShellCommandWithEnv(ctx context.Context, dir string, env []string, cmdStr string) (string, int, error) {

@@ -14,10 +14,13 @@ var ErrFatalGateReconciliation = errors.New("fatal gate reconciliation")
 
 // StepContext provides shared resources to pipeline steps during execution.
 type StepContext struct {
-	Ctx                    context.Context
-	Run                    *db.Run
-	Repo                   *db.Repo
-	WorkDir                string
+	Ctx             context.Context
+	Run             *db.Run
+	Repo            *db.Repo
+	WorkDir         string
+	ExecutionPolicy interface {
+		RunCommand(context.Context, string, []string) ([]byte, int, error)
+	}
 	Agent                  agent.Agent
 	Config                 *config.Config
 	DB                     *db.DB

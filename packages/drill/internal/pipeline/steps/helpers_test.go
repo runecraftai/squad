@@ -22,6 +22,13 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
 
+type fixtureExecutionPolicy struct{ dir string }
+
+func (p fixtureExecutionPolicy) RunCommand(ctx context.Context, script string, env []string) ([]byte, int, error) {
+	output, code, err := runShellCommandWithEnv(ctx, p.dir, env, script)
+	return []byte(output), code, err
+}
+
 type mockAgent struct {
 	name  string
 	runFn func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error)
@@ -147,16 +154,17 @@ func newTestContext(t *testing.T, ag agent.Agent, workDir, baseSHA, headSHA stri
 	t.Cleanup(func() { database.Close() })
 
 	return &pipeline.StepContext{
-		Ctx:      context.Background(),
-		Run:      &db.Run{ID: "run-1", RepoID: "repo-1", Branch: "refs/heads/feature", HeadSHA: headSHA, BaseSHA: baseSHA},
-		Repo:     &db.Repo{ID: "repo-1", WorkingPath: workDir, UpstreamURL: "https://github.com/test/repo", DefaultBranch: "main"},
-		WorkDir:  workDir,
-		Agent:    ag,
-		Config:   &config.Config{Agent: types.AgentClaude, Commands: cmds},
-		DB:       database,
-		Log:      func(s string) {},
-		LogChunk: func(s string) {},
-		LogFile:  func(s string) {},
+		Ctx:             context.Background(),
+		Run:             &db.Run{ID: "run-1", RepoID: "repo-1", Branch: "refs/heads/feature", HeadSHA: headSHA, BaseSHA: baseSHA},
+		Repo:            &db.Repo{ID: "repo-1", WorkingPath: workDir, UpstreamURL: "https://github.com/test/repo", DefaultBranch: "main"},
+		WorkDir:         workDir,
+		ExecutionPolicy: fixtureExecutionPolicy{dir: workDir},
+		Agent:           ag,
+		Config:          &config.Config{Agent: types.AgentClaude, Commands: cmds},
+		DB:              database,
+		Log:             func(s string) {},
+		LogChunk:        func(s string) {},
+		LogFile:         func(s string) {},
 	}
 }
 

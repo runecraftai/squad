@@ -82,7 +82,7 @@ func (a *claudeAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, error
 
 	var stderrBuf []byte
 	var stderrWG sync.WaitGroup
-	started, err := startNativeAgentCommand(cmd)
+	started, err := startNativeAgentCommand(cmd, opts.ExecutionPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("claude start: %w", err)
 	}

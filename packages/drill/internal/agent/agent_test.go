@@ -1066,7 +1066,9 @@ func TestFinalizeTextResult_MultipleFencesPicksLargestValidJSON(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	var got struct {
-		Findings []struct{ Rule string `json:"rule"` } `json:"findings"`
+		Findings []struct {
+			Rule string `json:"rule"`
+		} `json:"findings"`
 	}
 	if err := json.Unmarshal(result.Output, &got); err != nil {
 		t.Fatalf("failed to parse output: %v", err)
@@ -1145,7 +1147,9 @@ func TestFinalizeTextResult_RegressionReviewWithExtraFences(t *testing.T) {
 		t.Fatalf("unexpected error on regression fixture: %v", err)
 	}
 	var got struct {
-		Findings []struct{ Severity string `json:"severity"` } `json:"findings"`
+		Findings []struct {
+			Severity string `json:"severity"`
+		} `json:"findings"`
 	}
 	if err := json.Unmarshal(result.Output, &got); err != nil {
 		t.Fatalf("failed to parse output: %v", err)

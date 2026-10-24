@@ -5,8 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
 )
+
+func TestRunStepShellCommandRefusesWithoutAcknowledgedPolicy(t *testing.T) {
+	_, _, err := runStepShellCommand(&pipeline.StepContext{}, "touch should-not-run")
+	if err == nil || !strings.Contains(err.Error(), "drill-repository-execution-v1") {
+		t.Fatalf("missing policy should be named and refused: %v", err)
+	}
+}
 
 func TestRunShellCommandWithEnv_UsesShAndIgnoresUserShell(t *testing.T) {
 	if runtime.GOOS == "windows" {

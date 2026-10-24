@@ -22,7 +22,7 @@ func TestStartServerWithPort_DetectsEarlyExit(t *testing.T) {
 	}
 
 	start := time.Now()
-	srv, err := startServerWithPort(context.Background(), "test", bin, nil, t.TempDir(), "/healthcheck", 1)
+	srv, err := startServerWithPort(context.Background(), "test", bin, nil, t.TempDir(), "/healthcheck", 1, nil)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -141,6 +141,7 @@ func TestManagedServerOutputIsSeparatedFromLifecycleFailureSummary(t *testing.T)
 		t.TempDir(),
 		"/healthcheck",
 		1,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected managed server startup failure")
@@ -185,7 +186,7 @@ func TestStartServerWithPort_RemovesPIDFileOnEarlyExit(t *testing.T) {
 	SetServerPIDsDir(pidsDir)
 	t.Cleanup(func() { SetServerPIDsDir("") })
 
-	srv, err := startServerWithPort(context.Background(), "test", bin, nil, t.TempDir(), "/healthcheck", 1)
+	srv, err := startServerWithPort(context.Background(), "test", bin, nil, t.TempDir(), "/healthcheck", 1, nil)
 	if err == nil {
 		srv.shutdown()
 		t.Fatal("expected error when server exits before becoming healthy")

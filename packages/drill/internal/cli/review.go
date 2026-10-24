@@ -11,6 +11,7 @@ import (
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/paths"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline/steps"
@@ -90,6 +91,13 @@ func newReviewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			policy, err := executionpolicy.New(worktree)
+			if err != nil {
+				_ = ag.Close()
+				return err
+			}
+			defer policy.Close()
+			ag = agent.WithExecutionPolicy(ag, policy)
 			defer ag.Close()
 			findings, err := steps.RunStandaloneReview(cmd.Context(), ag, worktree, baseSHA, headSHA, intent, cfg.Review.Topology.MaxParallel, cfg.Review.Topology.Timeout, func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) })
 			if err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
 	"github.com/runecraftai/squad/packages/drill/internal/db"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/gateguidance"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
@@ -53,9 +54,10 @@ type Executor struct {
 
 	// sessions manages this run's durable review-loop agent sessions; shared
 	// carries run-scoped step-to-step results. Both are created per Execute.
-	sessions *RunSessions
-	shared   *RunShared
-	workDir  string
+	sessions        *RunSessions
+	shared          *RunShared
+	workDir         string
+	executionPolicy executionpolicy.ExecutionPolicy
 
 	mu          sync.Mutex
 	approvalCh  chan approvalResponse // buffered channel for approval responses
@@ -70,6 +72,11 @@ type Executor struct {
 	// use the package constants. Tests shrink these to avoid slow sleeps.
 	stepLivenessPollInterval  time.Duration
 	stepLivenessConfirmations int
+}
+
+// SetExecutionPolicy attaches the daemon-acknowledged run-scoped policy.
+func (e *Executor) SetExecutionPolicy(policy executionpolicy.ExecutionPolicy) {
+	e.executionPolicy = policy
 }
 
 // SetSkippedSteps configures steps that should be marked skipped without running.
@@ -711,7 +718,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 
 	stepAgent := e.agent
 	if stepAgent != nil {
-		stepAgent = &gateStepBoundaryAgent{inner: stepAgent, phase: stepName}
+		stepAgent = &gateStepBoundaryAgent{inner: stepAgent, phase: stepName, policy: e.executionPolicy}
 		stepAgent = &lifecycleAgent{inner: stepAgent, onLifecycle: onAgentLifecycle}
 		stepAgent = &perfRecordingAgent{
 			inner:    stepAgent,
@@ -737,6 +744,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 		Run:              run,
 		Repo:             repo,
 		WorkDir:          workDir,
+		ExecutionPolicy:  e.executionPolicy,
 		Agent:            stepAgent,
 		Config:           e.config,
 		DB:               e.db,
@@ -1116,14 +1124,16 @@ func nonConvergenceError(stepName types.StepName, totalRounds, maxRounds, autoFi
 }
 
 type gateStepBoundaryAgent struct {
-	inner agent.Agent
-	phase types.StepName
+	inner  agent.Agent
+	phase  types.StepName
+	policy executionpolicy.ExecutionPolicy
 }
 
 func (a *gateStepBoundaryAgent) Name() string { return a.inner.Name() }
 
 func (a *gateStepBoundaryAgent) Run(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
 	opts.Prompt = gateguidance.PromptBoundary(string(a.phase)) + opts.Prompt
+	opts.ExecutionPolicy = a.policy
 	return a.inner.Run(ctx, opts)
 }
 

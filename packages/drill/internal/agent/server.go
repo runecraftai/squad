@@ -56,6 +56,7 @@ type managedServer struct {
 	waitErr       error         // result of cmd.Wait; only read after exited is closed
 	healthTimeout time.Duration // health-check deadline; defaults to defaultHealthTimeout when zero
 	stopping      atomic.Bool
+	policy        ProcessExecutionPolicy
 }
 
 // getAvailablePort finds an ephemeral port by binding to :0 and releasing.
@@ -73,7 +74,7 @@ func getAvailablePort() (int, error) {
 // The process is not tied to ctx - it outlives individual Run calls and is stopped via shutdown().
 // ctx is only used for the health check timeout.
 // agentName tags the PID tracking file so crash-recovery can identify orphans.
-func startServerWithPort(ctx context.Context, agentName, bin string, args []string, cwd string, healthPath string, port int) (*managedServer, error) {
+func startServerWithPort(ctx context.Context, agentName, bin string, args []string, cwd string, healthPath string, port int, policy ProcessExecutionPolicy) (*managedServer, error) {
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = cwd
 	cmd.Stdin = nil
@@ -82,6 +83,11 @@ func startServerWithPort(ctx context.Context, agentName, bin string, args []stri
 	cmd.Stdout = out // server stdout goes to the configured sink for debugging
 	cmd.Stderr = out
 	configureManagedServerCmd(cmd)
+	if policy != nil {
+		if err := policy.Command(cmd); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := cmd.Start(); err != nil {
 		slog.Warn("managed agent server failed to start", "agent", agentName, "error", err)
@@ -100,7 +106,7 @@ func startServerWithPort(ctx context.Context, agentName, bin string, args []stri
 		StartedAt:      time.Now().UTC(),
 	})
 
-	srv := &managedServer{cmd: cmd, port: port, pidFile: pidFile, exited: make(chan struct{}), healthTimeout: defaultHealthTimeout}
+	srv := &managedServer{cmd: cmd, port: port, pidFile: pidFile, exited: make(chan struct{}), healthTimeout: defaultHealthTimeout, policy: policy}
 	go func() {
 		srv.waitErr = cmd.Wait()
 		if srv.stopping.Load() {
@@ -191,6 +197,13 @@ func serverExitedBeforeHealthyError(waitErr error) error {
 // exited - if SIGKILL fails to reap it, the file is left on disk so a
 // future daemon can finish the job.
 func (s *managedServer) shutdown() {
+	defer func() {
+		if s.policy != nil {
+			if err := s.policy.Sync(); err != nil {
+				slog.Error("failed to synchronize managed agent server Git result", "error", err)
+			}
+		}
+	}()
 	s.stopping.Store(true)
 	if s.cmd == nil || s.cmd.Process == nil {
 		removeServerPIDFile(s.pidFile)
