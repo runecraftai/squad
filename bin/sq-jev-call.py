@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Shadow-only Jev recommendation client; never used to resolve dispatch."""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+API_URL = "https://api.typesafe.ai/v1/systemone"
+MAX_TEXT = 240
+
+
+def redact(value):
+    home = os.path.expanduser("~")
+    if home and home != "/":
+        value = value.replace(home, "~")
+    value = value.replace("$HOME", "~")
+    patterns = [
+        (r"(?i)\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]"),
+        (r"\bghp_[A-Za-z0-9]{8,}\b", "[REDACTED]"),
+        (r"\bAKIA[A-Z0-9]{16}\b", "[REDACTED]"),
+        (r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", "[REDACTED]"),
+        (r"-----BEGIN [^-]*KEY-----.*?-----END [^-]*KEY-----", "[REDACTED]"),
+        (r"(?im)\b[A-Z][A-Z0-9_]{1,}=([^\s]+)", "[REDACTED]"),
+        (r"(https?://)[^/@\s]+@", r"\1[REDACTED]@"),
+    ]
+    for pattern, replacement in patterns:
+        value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
+    return value[:MAX_TEXT]
+
+
+def project_enabled(config_path, project):
+    try:
+        config = json.loads(Path(config_path).read_text())
+        enabled = config.get("enabled_projects", [])
+        return isinstance(enabled, list) and os.path.realpath(project) in {
+            os.path.realpath(item) for item in enabled if isinstance(item, str)
+        }
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--id", required=True)
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--task-type", required=True)
+    parser.add_argument("--title", default="")
+    parser.add_argument("--description", default="")
+    parser.add_argument("--brief")
+    parser.add_argument("--project-config", default="config/crew-dispatch.json")
+    parser.add_argument("--file-count", type=int)
+    parser.add_argument("--lanes-json", help="JSON object mapping allowed lane ids to descriptions")
+    parser.add_argument("--config", default=os.environ.get("SQUAD_CONFIG_OVERRIDE", "config/jev-dispatch.json"))
+    parser.add_argument("--data", default=os.environ.get("SQUAD_DATA_OVERRIDE", "data"))
+    parser.add_argument("--url", default=API_URL, help=argparse.SUPPRESS)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    if not project_enabled(args.config, args.project):
+        print(json.dumps({"status": "disabled"}))
+        return 0
+    key = os.environ.get("TYPESAFE_API_KEY")
+    if not key and not args.dry_run:
+        print(json.dumps({"status": "missing_key"}))
+        return 0
+    if args.brief:
+        try:
+            lines = Path(args.brief).read_text(errors="replace").splitlines()
+            heading = next((line.lstrip("# ").strip() for line in lines if line.startswith("# ")), "")
+            paragraph = " ".join(line.strip() for line in lines if line.strip() and not line.startswith("#"))
+            args.title = args.title or heading
+            args.description = args.description or paragraph
+        except OSError:
+            pass
+    if args.lanes_json:
+        lanes = json.loads(args.lanes_json)
+    else:
+        try:
+            dispatch = json.loads(Path(args.project_config).read_text())
+            profiles = []
+            for rule in dispatch.get("rules", []):
+                use = rule.get("use", [])
+                profiles.extend(use if isinstance(use, list) else [use])
+            default = dispatch.get("default", [])
+            profiles.extend(default if isinstance(default, list) else [default])
+            lanes = {"/".join(str(profile.get(key, "default")) for key in ("harness", "model")):
+                     "/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
+                     for profile in profiles if isinstance(profile, dict) and profile.get("harness")}
+        except (OSError, ValueError, AttributeError):
+            lanes = {}
+    if not isinstance(lanes, dict) or not lanes:
+        print(json.dumps({"status": "disabled"}))
+        return 0
+    file_count = args.file_count
+    if file_count is None:
+        try:
+            tracked = subprocess.run(["git", "-C", args.project, "ls-files", "-z"],
+                                     capture_output=True, check=True).stdout
+            file_count = len([path for path in tracked.split(b"\0") if path])
+        except (OSError, subprocess.SubprocessError):
+            file_count = 0
+    projection = {
+        "task_type": redact(args.task_type),
+        "title": redact(args.title),
+        "description": redact(args.description),
+        "file_count": file_count,
+    }
+    payload = {
+        "type": "choice",
+        "criteria": {str(name): str(description) for name, description in lanes.items()},
+        "instructions": "Recommend the best-fitting lane for this task. Task projection: "
+        + json.dumps(projection, ensure_ascii=True, separators=(",", ":")),
+    }
+    if args.dry_run:
+        print(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
+        return 0
+    parsed_url = urllib.parse.urlparse(args.url)
+    if args.url != API_URL and parsed_url.hostname not in ("127.0.0.1", "localhost", "::1"):
+        print(json.dumps({"status": "error"}))
+        return 0
+    request = urllib.request.Request(
+        args.url, data=json.dumps(payload).encode(),
+        headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            answer = json.loads(response.read())
+        choice = answer.get("choice")
+        if choice not in lanes or answer.get("type") != "choice":
+            raise ValueError("invalid recommendation")
+        event = {"choice": choice, "confidence": answer.get("confidence"),
+                 "probabilities": answer.get("probabilities"), "label": "recommendation"}
+        env = os.environ.copy()
+        env.pop("TYPESAFE_API_KEY", None)
+        env["SQUAD_DATA_OVERRIDE"] = args.data
+        env["SQUAD_RECOMMENDATION_JSON"] = json.dumps(event)
+        subprocess.run([str(Path(__file__).with_name("sq-dispatch-log.sh")),
+                        args.id, "recommendation"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        print(json.dumps({"status": "recommended", "choice": choice}))
+    except (urllib.error.URLError, TimeoutError, ValueError, AttributeError, OSError,
+            json.JSONDecodeError, subprocess.SubprocessError):
+        print(json.dumps({"status": "error"}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
