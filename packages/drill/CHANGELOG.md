@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.10](https://github.com/runecraftai/squad/compare/drill-v0.1.9...drill-v0.1.10) (2026-10-24)
+
+
+### Features
+
+* **sq-brief:** tell operators to ask instead of coding through ambiguity ([#282](https://github.com/runecraftai/squad/issues/282)) ([bffcec5](https://github.com/runecraftai/squad/commit/bffcec540f7e1eeafdc6d284a789b95ed639b4a4))
+
+
+### Bug Fixes
+
+* **pipeline:** prioritize pending decisions and count executed fixes ([#279](https://github.com/runecraftai/squad/issues/279)) ([e654a25](https://github.com/runecraftai/squad/commit/e654a2570528c67544064b66e81d0abec08599e4))
+
 ## [0.1.9](https://github.com/runecraftai/squad/compare/drill-v0.1.8...drill-v0.1.9) (2026-10-22)
 
 
