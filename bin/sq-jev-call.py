@@ -8,8 +8,6 @@ import re
 import subprocess
 import sys
 import threading
-import http.client
-import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -31,7 +29,11 @@ def redact(value, names=()):
     value = value.replace("$HOME", "~")
     patterns = [
         (r"(?i)(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}", "[REDACTED]"),
-        (r"ghp_[A-Za-z0-9]{8,}", "[REDACTED]"),
+        (r"(?<![A-Za-z0-9])(?:gh[pousr]_|glpat-)[A-Za-z0-9_-]{8,}", "[REDACTED]"),
+        (r"github_pat_[A-Za-z0-9_]{8,}", "[REDACTED]"),
+        (r"xox[abprs]-[A-Za-z0-9-]{8,}", "[REDACTED]"),
+        (r"AIza[0-9A-Za-z_-]{20,}", "[REDACTED]"),
+        (r"(?i)\bbearer\s+\S+", "[REDACTED]"),
         (r"AKIA[A-Z0-9]{16}[A-Za-z0-9]*", "[REDACTED]"),
         (r"eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "[REDACTED]"),
         (r"-----BEGIN [^-]*KEY(?: BLOCK)?-----.*?(?:-----END [^-]*KEY(?: BLOCK)?-----|\Z)", "[REDACTED]"),
@@ -217,7 +219,7 @@ def main():
     )
     try:
         event = classify(json.loads(fetch_with_deadline(request, DEADLINE_SECONDS)), lanes)
-    except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, OSError):
+    except Exception:
         event = {"status": "unavailable", "reason": "service_error"}
     return finish(args, event)
 
