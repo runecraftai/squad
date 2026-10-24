@@ -374,9 +374,9 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       elif [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
         n=$(( $(cat "$escalation_file" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "$escalation_file"
-        reason="stale: $win (idle ${age}s${context}, possible wedge, escalation $n)"
+        reason="stale: $win (idle ${age}s, possible wedge, escalation $n${context})"
         if [ "$n" -ge "$SQUAD_WEDGE_DEMAND_INSPECT_COUNT" ]; then
-          reason="stale: $win (idle ${age}s${context}, possible wedge, escalation $n, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
+          reason="stale: $win (idle ${age}s, possible wedge, escalation $n${context}, demand-deep-inspection: same pane has wedge-escalated $n times in a row - do not re-absorb on the run-step/pane state alone)"
         fi
         fm_wake_append stale "$win" "$reason" || exit 1
         rm -f "$since_file"
@@ -1163,7 +1163,7 @@ EOF
     if [ "$busy_now" -eq 0 ]; then
       # A busy claim expires only on the whole rendered pane (including the
       # footer cost/token gauge), so progress above the bottom 40 lines counts.
-      rendered=$(fm_backend_capture "$backend" "$w" "$BUSY_PANE_CAPTURE_LINES" "$(window_label "$w")" 2>/dev/null) || continue
+      rendered=$(fm_backend_capture_rendered "$backend" "$w" "$BUSY_PANE_CAPTURE_LINES" "$(window_label "$w")" 2>/dev/null) || continue
       h=$(printf '%s' "$rendered" | hash_pane)
     else
       h=$(printf '%s' "$tail40" | hash_pane)

@@ -769,6 +769,21 @@ fm_backend_capture() {  # <backend> <target> <lines> [expected-label]
   esac
 }
 
+# fm_backend_capture_rendered: plain-text capture of the rendered viewport, used
+# to hash a busy claim's whole pane. tmux and zellij read only the visible screen
+# (zellij's --full would dump the entire scrollback); other backends keep their
+# bounded tail capture.
+fm_backend_capture_rendered() {  # <backend> <target> <lines> [expected-label]
+  local backend=$1
+  shift
+  fm_backend_source "$backend" || return 1
+  case "$backend" in
+    tmux) fm_backend_tmux_capture_rendered "$@" ;;
+    zellij) fm_backend_zellij_capture_rendered "$@" ;;
+    *) fm_backend_capture "$backend" "$@" ;;
+  esac
+}
+
 # fm_backend_send_key: one backend-supported named special key.
 fm_backend_send_key() {  # <backend> <target> <key> [expected-label]
   local backend=$1

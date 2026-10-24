@@ -40,6 +40,12 @@ fm_backend_tmux_capture() {  # <target> <lines>
   tmux capture-pane -p -t "$1" -S -"$2"
 }
 
+# fm_backend_tmux_capture_rendered: the visible rendered screen only, without
+# scrollback history. Used to hash a busy claim's whole rendered pane.
+fm_backend_tmux_capture_rendered() {  # <target> [lines]
+  tmux capture-pane -p -t "$1"
+}
+
 # fm_backend_tmux_send_key: one named key. Mirrors sq-send.sh's --key path:
 # `tmux display-message -p -t "$T" '#{pane_id}' >/dev/null`, then
 # `tmux send-keys -t "$T" "$2"`.
