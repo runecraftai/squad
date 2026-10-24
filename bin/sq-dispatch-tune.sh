@@ -294,8 +294,7 @@ for name in names:
     if os.path.islink(path) or not os.path.isfile(path):
         continue
     try:
-        if int(os.stat(path).st_mtime) < cutoff:
-            continue
+        in_window = int(os.stat(path).st_mtime) >= cutoff
         decision = None
         spawn = None
         results = set()
@@ -333,7 +332,7 @@ for name in names:
     else:
         outcome = "none"
     span = int(max(stamps) - min(stamps)) if len(stamps) > 1 else 0
-    columns = [name, lane, *triple(decision), *triple(spawn), outcome, failure, str(span)]
+    columns = [name, lane, *triple(decision), *triple(spawn), outcome, failure, str(span), "1" if in_window else "0"]
     sys.stdout.write("\x1f".join(columns) + "\n")
 PY
   then
@@ -344,10 +343,11 @@ PY
 
 # Tasks with a dispatch log: the log decides lane, profile, and recommendation.
 collect_logged_tasks() {
-  local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration
+  local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window
   local status_file status_result outcome harness model effort recommended meta_file fallback
 
-  while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration; do
+  while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window; do
+    [ "$in_window" = "1" ] || continue
     status_file="$STATE/$task_id.status"
     status_result=""
     if [ -f "$status_file" ] && [ ! -L "$status_file" ]; then
