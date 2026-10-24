@@ -32,7 +32,6 @@ type Policy struct {
 	root       string
 	gitDir     string
 	gitFile    string
-	homes      []string
 	syncedHead string
 	closed     bool
 	mu         sync.Mutex
@@ -190,9 +189,6 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 		_ = os.RemoveAll(home)
 		return fmt.Errorf("%s: secure fresh launch home: %w", Name, err)
 	}
-	p.mu.Lock()
-	p.homes = append(p.homes, home)
-	p.mu.Unlock()
 	if err := p.mountAgentCredentials(filepath.Base(cmd.Path), home); err != nil {
 		return err
 	}
