@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import threading
+import http.client
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -30,7 +31,7 @@ def redact(value):
         (r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "[REDACTED]"),
         (r"-----BEGIN [^-]*KEY(?: BLOCK)?-----.*?(?:-----END [^-]*KEY(?: BLOCK)?-----|\Z)", "[REDACTED]"),
         (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
-        (r"([A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]+@", r"\1[REDACTED]@"),
+        (r"([A-Za-z][A-Za-z0-9+.-]*://)\S*@", r"\1[REDACTED]@"),
     ]
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
@@ -161,8 +162,11 @@ def main():
         choice = answer.get("choice")
         if choice not in lanes or answer.get("type") != "choice":
             raise ValueError("invalid recommendation")
+        probabilities = answer.get("probabilities")
+        if isinstance(probabilities, dict):
+            probabilities = {name: value for name, value in probabilities.items() if name in lanes}
         event = {"choice": choice, "confidence": answer.get("confidence"),
-                 "probabilities": answer.get("probabilities"), "label": "recommendation"}
+                 "probabilities": probabilities, "label": "recommendation"}
         env = os.environ.copy()
         env.pop("TYPESAFE_API_KEY", None)
         env["SQUAD_DATA_OVERRIDE"] = args.data
@@ -171,8 +175,8 @@ def main():
                         args.id, "recommendation"], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
         print(json.dumps({"status": "recommended", "choice": choice}))
-    except (urllib.error.URLError, TimeoutError, ValueError, TypeError, AttributeError, OSError,
-            json.JSONDecodeError, subprocess.SubprocessError):
+    except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, TypeError,
+            AttributeError, OSError, json.JSONDecodeError, subprocess.SubprocessError):
         print(json.dumps({"status": "error"}))
     return 0
 

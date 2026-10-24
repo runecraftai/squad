@@ -133,12 +133,19 @@ with tempfile.TemporaryDirectory() as td:
         result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         assert captured["path"] == "/v1/systemone" and captured["auth"] == "Bearer runtime-test-key"
-        assert set(captured["body"]) == {"type", "criteria", "instructions"}
-        assert "sk-abcd" not in json.dumps(captured["body"]) and "$HOME" not in json.dumps(captured["body"])
+        assert captured["body"] == payload
         rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
         assert rows == [{"timestamp": rows[0]["timestamp"], "id":"task", "event":"recommendation",
                          "label":"recommendation", "choice":"claude/sonnet", "confidence":.8,
                          "probabilities":{"claude/sonnet":.8,"pi/gpt":.2}}]
+        state["reply"] = {**OK_REPLY, "probabilities": {"claude/sonnet": .8, "pi/gpt": .1, "sq-send": .1}}
+        leak_data = base / "leak"
+        leak_argv = argv[:argv.index("--data") + 1] + [str(leak_data)] + argv[argv.index("--data") + 2:]
+        leak = subprocess.run(leak_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(leak.stdout) == {"status":"recommended","choice":"claude/sonnet"}
+        leak_rows = [json.loads(line) for line in (leak_data / "task/dispatch.jsonl").read_text().splitlines()]
+        assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1}
+        state["reply"] = OK_REPLY
         assert "runtime-test-key" not in str(argv)
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
         boundary = module.redact("x" * 230 + " sk-abcd1234567890")
@@ -150,6 +157,8 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("TOKEN='a b' end") == "[REDACTED] end"
         assert module.redact('TOKEN="abc def') == "[REDACTED]"
         assert module.redact(r'TOKEN="a\"b c" end') == "[REDACTED] end"
+        assert module.redact("postgres://user:pa/ss@db") == "postgres://[REDACTED]@db"
+        assert module.redact("https://u:p@ss@host") == "https://[REDACTED]@host"
         assert module.redact("postgres://user:pass@db.invalid/app") == "postgres://[REDACTED]@db.invalid/app"
         assert module.redact("redis://:secret@cache.invalid:6379") == "redis://[REDACTED]@cache.invalid:6379"
         assert module.redact("ssh://deploy:pw@host.invalid") == "ssh://[REDACTED]@host.invalid"
