@@ -39,7 +39,7 @@ def redact(value, names=()):
     ]
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
-    terms = sorted(set(names) | set(KNOWN_NAMES), key=len, reverse=True)
+    terms = sorted({term for term in set(names) | set(KNOWN_NAMES) if term}, key=len, reverse=True)
     value = re.sub(r"(?i)(?<![A-Za-z0-9])(?:" + "|".join(re.escape(term) for term in terms) + r")(?![A-Za-z0-9])",
                    "[REDACTED]", value)
     return value[:MAX_TEXT]
