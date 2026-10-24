@@ -82,7 +82,7 @@ def project_enabled(config_path, project):
         return isinstance(enabled, list) and os.path.realpath(project) in {
             os.path.realpath(item) for item in enabled if isinstance(item, str)
         }
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, RecursionError):
         return False
 
 
@@ -113,7 +113,7 @@ def load_lanes(args):
             profiles.extend(default if isinstance(default, list) else [default])
             lanes = {"/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
                      for profile in profiles if isinstance(profile, dict) and profile.get("harness")}
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, RecursionError):
         return set()
     return set(lanes) if isinstance(lanes, (dict, set)) else set()
 
