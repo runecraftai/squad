@@ -1358,7 +1358,7 @@ func TestFinalizeTextResult_RecoversFindingsPayloadsFromProse(t *testing.T) {
 	}
 }
 
-func TestFinalizeTextResult_LastValidPayloadFollowsTextualOrder(t *testing.T) {
+func TestFinalizeTextResult_ValidFenceWinsOverEarlierBarePayload(t *testing.T) {
 	text := `Earlier draft: {"step":"first"} then the final answer:` + "\n```json\n" + `{"step":"second"}` + "\n```\n"
 	result, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
 	if err != nil {
@@ -1371,7 +1371,24 @@ func TestFinalizeTextResult_LastValidPayloadFollowsTextualOrder(t *testing.T) {
 		t.Fatalf("failed to parse output: %v", err)
 	}
 	if got.Step != "second" {
-		t.Errorf("step = %q, want the textually last payload second", got.Step)
+		t.Errorf("step = %q, want the fenced payload second", got.Step)
+	}
+}
+
+func TestFinalizeTextResult_LastBarePayloadWinsForNonFindingsSchema(t *testing.T) {
+	text := `Earlier draft: {"step":"first"} then the final answer: {"step":"second"}`
+	result, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct {
+		Step string `json:"step"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if got.Step != "second" {
+		t.Errorf("step = %q, want the textually last bare payload second", got.Step)
 	}
 }
 
