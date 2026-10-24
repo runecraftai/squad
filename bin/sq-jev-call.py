@@ -171,9 +171,11 @@ def main():
         env.pop("TYPESAFE_API_KEY", None)
         env["SQUAD_DATA_OVERRIDE"] = args.data
         env["SQUAD_RECOMMENDATION_JSON"] = json.dumps(event)
-        subprocess.run([str(Path(__file__).with_name("sq-dispatch-log.sh")),
-                        args.id, "recommendation"], check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+        logged = subprocess.run([str(Path(__file__).with_name("sq-dispatch-log.sh")),
+                                 args.id, "recommendation"], check=True,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env)
+        if logged.stderr:
+            raise OSError("recommendation not recorded")
         print(json.dumps({"status": "recommended", "choice": choice}))
     except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, TypeError,
             AttributeError, OSError, json.JSONDecodeError, subprocess.SubprocessError):
