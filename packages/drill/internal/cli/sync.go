@@ -263,7 +263,7 @@ func printHumanSyncState(cmd *cobra.Command, state branchsync.State) {
 		fmt.Fprintf(w, "  pipeline: %s\n", state.Pipeline.PushedHead)
 	} else if state.Pipeline.CurrentHead != "" && state.Pipeline.CurrentHead != state.Local.Head {
 		label := "preserved"
-		if state.Pipeline.PreservedHeadMissing {
+		if state.Pipeline.PreservedHeadMissing || state.Pipeline.CustodyReturnNote != "" {
 			label = "recorded"
 		}
 		fmt.Fprintf(w, "  %s: %s (run %s, %s)\n", label, state.Pipeline.CurrentHead, state.Pipeline.RunID, state.Pipeline.Status)

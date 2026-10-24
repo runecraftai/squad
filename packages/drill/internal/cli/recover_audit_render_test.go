@@ -57,6 +57,11 @@ func TestHumanRecoverShowsLossAuditBeforeRelease(t *testing.T) {
 			t.Errorf("pre-release audit missing %q:\n%s", want, out)
 		}
 	}
+	for _, unwanted := range []string{"preserved", "preserve"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("pre-release output claims preservation with %q:\n%s", unwanted, out)
+		}
+	}
 	if got := cliGit(t, f.local, "rev-parse", "HEAD"); got != f.submitted {
 		t.Fatal("refused confirmation moved HEAD")
 	}
@@ -71,9 +76,14 @@ func TestHumanRecoverShowsLossAuditAfterRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("orphan recovery: %v\n%s", err, out)
 	}
-	for _, want := range []string{runID, missing, f.submitted, "unpublished fixes are lost", "audit:"} {
+	for _, want := range []string{runID, missing, f.submitted, "recorded: " + missing, "unpublished fixes are lost", "audit:"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("post-release audit missing %q:\n%s", want, out)
+		}
+	}
+	for _, unwanted := range []string{"preserved", "preserve"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("post-release output claims preservation with %q:\n%s", unwanted, out)
 		}
 	}
 	if got := cliGit(t, f.local, "rev-parse", "HEAD"); got != f.submitted {
