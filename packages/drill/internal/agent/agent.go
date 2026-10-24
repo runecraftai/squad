@@ -508,7 +508,7 @@ func jsonPayloadCandidates(text string, arrays bool) []jsonCandidate {
 
 		switch text[i] {
 		case '{':
-			if end, ok := scanBalancedObject(text, i); ok {
+			if end, ok := scanBalancedObject(text, i); ok && json.Valid([]byte(text[i:end])) {
 				candidates = append(candidates, jsonCandidate{text: text[i:end]})
 				i = end - 1
 			}
@@ -564,36 +564,6 @@ func isFenceOpener(text string, i int) bool {
 		return false
 	}
 	return !strings.Contains(info, "`")
-}
-
-// indexJSONFenceOpen returns the byte offset of the content immediately
-// following an opening ```json fence (the char after the info line's
-// newline), or -1 if no opener exists.
-func indexJSONFenceOpen(text string) int {
-	for searchStart := 0; searchStart < len(text); {
-		i := strings.Index(text[searchStart:], "```")
-		if i < 0 {
-			return -1
-		}
-		i += searchStart
-		if !isFenceOpener(text, i) {
-			// Inline-code mention of a fence in prose, not a real fence
-			// block: skip just the backticks and keep searching so a real
-			// ```json fence later in the text is still found.
-			searchStart = i + 3
-			continue
-		}
-		contentStart, info := fenceContentStart(text, i)
-		if strings.EqualFold(strings.TrimSpace(info), "json") {
-			return contentStart
-		}
-		next := skipFenceBlock(text[contentStart:])
-		if next < 0 {
-			return -1
-		}
-		searchStart = contentStart + next
-	}
-	return -1
 }
 
 func fenceContentStart(text string, fenceStart int) (int, string) {
