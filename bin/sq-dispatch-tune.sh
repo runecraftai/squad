@@ -17,9 +17,9 @@
 #   sq-dispatch-tune.sh --fallback-rate          # share of provider or quota failures
 #
 # Profile = harness + model + effort. The dispatched profile is the log's spawn
-# row; a log without one uses state/<id>.meta, then the decision's recommended
-# profile. A task without a log uses state/<id>.meta. With none of these, the
-# profile is "no-profile/no-profile/no-profile", a bucket outside the chosen-model totals.
+# row; a log without one is the no-profile bucket, even when state/<id>.meta exists.
+# A task without a log uses state/<id>.meta. With none of these, the profile is
+# "no-profile/no-profile/no-profile", a bucket outside the chosen-model totals.
 # Lane = the decision profile name recorded at intake; "(no-profile)" when the
 # decision recorded only a reason, or the task has no log.
 # Outcome = done or landed (success) or failed, from the log's outcome rows,
@@ -356,7 +356,7 @@ PY
 # Tasks with a dispatch log: the log decides lane, profile, and recommendation.
 collect_logged_tasks() {
   local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window
-  local outcome harness model effort recommended meta_file fallback profile
+  local outcome harness model effort recommended fallback profile
 
   while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window; do
     [ "$in_window" = "1" ] || continue
@@ -373,22 +373,10 @@ collect_logged_tasks() {
       *) fallback="unknown" ;;
     esac
 
-    harness=""; model=""; effort=""
+    harness=""; model=""; effort=""; profile=""
     if [ -n "$spawn_h" ]; then
       harness="$spawn_h"; model="$spawn_m"; effort="$spawn_e"
     else
-      meta_file="$STATE/$task_id.meta"
-      if [ -f "$meta_file" ]; then
-        harness=$(meta_value "$meta_file" harness)
-        model=$(meta_value "$meta_file" model)
-        effort=$(meta_value "$meta_file" effort)
-      fi
-      if [ -z "$harness$model$effort" ]; then
-        harness="$rec_h"; model="$rec_m"; effort="$rec_e"
-      fi
-    fi
-    profile=""
-    if [ -z "$harness$model$effort" ]; then
       profile="$NO_PROFILE_LABEL"
     fi
     harness=${harness:-unknown}; model=${model:-unknown}; effort=${effort:-unknown}
@@ -592,13 +580,40 @@ fallback_totals() { # [lane]
     END { printf "%d %d %d\n", hits + 0, observed + 0, unknown + 0 }' "$TASKS_FILE"
 }
 
+# Best, worst and fastest profiles from the metrics file. The no-profile bucket is
+# never selected: it appears only as its own count.
+select_profiles() { # <metrics file>
+  best_rate=0; best_profile=""; worst_rate=100; worst_profile=""
+  fastest_dur=999999; fastest_profile=""; fastest_rate=0
+  local profile total success failure rate avg_dur rate_int avg_int
+  while IFS=$'\t' read -r profile total success failure rate avg_dur; do
+    [ "$profile" = "$NO_PROFILE_LABEL" ] && continue
+    # Released-only profiles have no rate.
+    [ $((success + failure)) -ge 1 ] || continue
+    rate_int="${rate%.*}"
+    avg_int="${avg_dur%.*}"
+    if [ "$rate_int" -gt "${best_rate%.*}" ] 2>/dev/null || [ "$best_rate" = "0" ]; then
+      best_rate="$rate"; best_profile="$profile"
+    fi
+    if [ "$rate_int" -lt "${worst_rate%.*}" ] 2>/dev/null || [ "$worst_rate" = "100" ]; then
+      worst_rate="$rate"; worst_profile="$profile"
+    fi
+    if [ "$avg_int" -lt "$fastest_dur" ] 2>/dev/null; then
+      fastest_dur="$avg_int"; fastest_profile="$profile"; fastest_rate="$rate"
+    fi
+  done < "$1"
+}
+
+# Avoid candidates as profile, failures, decided: at least 3 of each, no-profile excluded.
+avoid_rows() { # <metrics file>
+  awk -F'\t' -v no_profile="$NO_PROFILE_LABEL" '
+    $1 != no_profile && $4 >= 3 && $3 + $4 >= 3 { printf "%s\t%d\t%d\n", $1, $4, $3 + $4 }' "$1"
+}
+
 # Generate markdown output.
 emit_markdown() {
   local metrics_file="$1"
   local profile total success failure rate avg_dur
-  local best_rate=0 best_profile="" worst_rate=100 worst_profile=""
-  local fastest_dur=999999 fastest_profile="" fastest_rate=0
-
   echo "# Dispatch Profile Analysis"
   echo ""
   echo "**Period:** last ${PERIOD_DAYS} days"
@@ -617,28 +632,10 @@ emit_markdown() {
     printf '| %s | %s | %s | %s |' \
       "$(md_cell "$profile")" "$total" "$(pct_text "$success" $((success + failure)))" "$(fmt_duration "${avg_dur%.*}")"
     echo ""
-
-    # Track best/worst for recommendations; released-only profiles have no rate.
-    if [ $((success + failure)) -ge 1 ]; then
-      rate_int="${rate%.*}"
-      if [ "$rate_int" -gt "${best_rate%.*}" ] 2>/dev/null || [ "$best_rate" = "0" ]; then
-        best_rate="$rate"
-        best_profile="$profile"
-      fi
-      if [ "$rate_int" -lt "${worst_rate%.*}" ] 2>/dev/null || [ "$worst_rate" = "100" ]; then
-        worst_rate="$rate"
-        worst_profile="$profile"
-      fi
-      avg_int="${avg_dur%.*}"
-      if [ "$avg_int" -lt "$fastest_dur" ] 2>/dev/null; then
-        fastest_dur="$avg_int"
-        fastest_profile="$profile"
-        fastest_rate="$rate"
-      fi
-    fi
   done < "$metrics_file"
 
   echo ""
+  select_profiles "$metrics_file"
 
   if [ "$BY_LANE" -eq 1 ]; then
     emit_lanes_markdown
@@ -675,15 +672,12 @@ emit_markdown() {
   fi
 
   # Consistently failing model/harness combos.
-  while IFS=$'\t' read -r profile total success failure rate avg_dur; do
-    local decided=$((success + failure))
-    if [ "$failure" -ge 3 ] 2>/dev/null && [ "$decided" -ge 3 ] 2>/dev/null; then
-      local fail_pct
-      fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
-      echo "- **Avoid ${profile}:** ${fail_pct}% failure rate (${failure}/${decided} tasks failed)"
-      has_recommendations=1
-    fi
-  done < "$metrics_file"
+  while IFS=$'\t' read -r profile failure decided; do
+    local fail_pct
+    fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
+    echo "- **Avoid ${profile}:** ${fail_pct}% failure rate (${failure}/${decided} tasks failed)"
+    has_recommendations=1
+  done < <(avoid_rows "$metrics_file")
 
   if [ "$has_recommendations" -eq 0 ]; then
     echo "- No strong recommendations. All profiles performing within normal range."
@@ -817,24 +811,7 @@ emit_json() {
   # Build recommendations array.
   local recs_json="["
   local first_rec=1
-  local best_rate=0 best_profile="" worst_rate=100 worst_profile=""
-  local fastest_dur=999999 fastest_profile="" fastest_rate=0
-
-  while IFS=$'\t' read -r profile total success failure rate avg_dur; do
-    rate_int="${rate%.*}"
-    avg_int="${avg_dur%.*}"
-    if [ $((success + failure)) -ge 1 ]; then
-      if [ "$rate_int" -gt "${best_rate%.*}" ] 2>/dev/null || [ "$best_rate" = "0" ]; then
-        best_rate="$rate"; best_profile="$profile"
-      fi
-      if [ "$rate_int" -lt "${worst_rate%.*}" ] 2>/dev/null || [ "$worst_rate" = "100" ]; then
-        worst_rate="$rate"; worst_profile="$profile"
-      fi
-      if [ "$avg_int" -lt "$fastest_dur" ] 2>/dev/null; then
-        fastest_dur="$avg_int"; fastest_profile="$profile"; fastest_rate="$rate"
-      fi
-    fi
-  done < "$metrics_file"
+  select_profiles "$metrics_file"
 
   local bp ep wp
   bp=$(json_escape "$best_profile")
@@ -863,18 +840,15 @@ emit_json() {
       "$wp" "$worst_rate")
   fi
 
-  while IFS=$'\t' read -r profile total success failure rate avg_dur; do
-    local decided=$((success + failure))
-    if [ "$failure" -ge 3 ] 2>/dev/null && [ "$decided" -ge 3 ] 2>/dev/null; then
-      local fail_pct ep2
-      fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
-      ep2=$(json_escape "$profile")
-      [ "$first_rec" -eq 0 ] && recs_json+=","
-      first_rec=0
-      recs_json+=$(printf '{"action":"avoid","profile":"%s","reason":"%d%% failure rate (%d/%d tasks)"}' \
-        "$ep2" "$fail_pct" "$failure" "$decided")
-    fi
-  done < "$metrics_file"
+  while IFS=$'\t' read -r profile failure decided; do
+    local fail_pct ep2
+    fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
+    ep2=$(json_escape "$profile")
+    [ "$first_rec" -eq 0 ] && recs_json+=","
+    first_rec=0
+    recs_json+=$(printf '{"action":"avoid","profile":"%s","reason":"%d%% failure rate (%d/%d tasks)"}' \
+      "$ep2" "$fail_pct" "$failure" "$decided")
+  done < <(avoid_rows "$metrics_file")
 
   recs_json+="]"
 

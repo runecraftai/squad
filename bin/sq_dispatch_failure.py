@@ -17,7 +17,7 @@ def line_failure_class(text):
     return "other"
 
 
-def status_failure_class(path):
+def status_failure_class(path, kinds=("failed", "blocked", "paused")):
     if os.path.islink(path) or not os.path.isfile(path):
         return None
     outcome = None
@@ -35,7 +35,7 @@ def status_failure_class(path):
     except OSError:
         return None
     last = outcome or stall
-    if last is None or last.group(1) == "done":
+    if last is None or last.group(1) not in kinds:
         return None
     return line_failure_class(last.group(2))
 

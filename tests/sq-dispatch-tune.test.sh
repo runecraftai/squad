@@ -700,18 +700,28 @@ else
   fail "markdown report missing success-rate rule: $output"
 fi
 
-# A decision-only log (no spawn row, no meta) reports its recommended profile, never unknown.
+# A decision-only log (no spawn row) is the no-profile bucket, never its recommended profile or unknown.
 write_log "$TMP_ROOT/decision-only-data" deconly-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"deconly-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"deconly-lane","quota_summary":{"status":"unknown"}}' \
   '{"timestamp":"2026-10-20T10:20:00+00:00","id":"deconly-a","event":"outcome","source":"status-notify","result":"done"}'
 output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/chosen-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/decision-only-data" "$TUNE" --json --by-lane 2>&1)
-if echo "$output" | grep -q '"profile":"claude/sonnet/default"' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
-  pass "a decision-only log falls back to its decision profile instead of unknown"
+if echo "$output" | grep -q '"profile":"no-profile/no-profile/no-profile"' && ! echo "$output" | grep -q 'unknown/unknown/unknown' && ! echo "$output" | grep -q 'claude/sonnet'; then
+  pass "a decision-only log reads as the no-profile bucket instead of its recommended profile"
 else
-  fail "decision-only log read as unknown: $output"
+  fail "decision-only log read as recommended profile or unknown: $output"
 fi
 
-# With no spawn row, the chosen profile comes from state/<id>.meta, not the recommendation.
+# A meta file never supplies the profile of a task that has a log without a spawn row.
+mkdir -p "$TMP_ROOT/deconly-meta-state"
+printf 'harness=codex\nmodel=gpt\neffort=high\n' > "$TMP_ROOT/deconly-meta-state/deconly-a.meta"
+output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/deconly-meta-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/decision-only-data" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q '"profile":"no-profile/no-profile/no-profile"' && ! echo "$output" | grep -q 'codex/gpt/high'; then
+  pass "a log without a spawn row ignores its meta and reads as the no-profile bucket"
+else
+  fail "decision-only log took its meta profile: $output"
+fi
+
+# With no spawn row, the log's lane keeps its dispatch but its chosen models stay empty, even with meta.
 mkdir -p "$TMP_ROOT/chosen-state"
 cat > "$TMP_ROOT/chosen-state/dec-a.meta" <<'METAEOF'
 harness=pi
@@ -723,10 +733,10 @@ write_log "$TMP_ROOT/chosen-data" dec-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"dec-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"dec-lane","quota_summary":{"status":"unknown"}}' \
   '{"timestamp":"2026-10-20T10:20:00+00:00","id":"dec-a","event":"outcome","source":"status-notify","result":"done"}'
 output=$(SQUAD_STATE_OVERRIDE="$TMP_ROOT/chosen-state" SQUAD_DATA_OVERRIDE="$TMP_ROOT/chosen-data" "$TUNE" --json --by-lane 2>&1)
-if echo "$output" | grep -q '"lane":"dec-lane","dispatches":1,"success_rate":100.0,"off_recommendation":1,"chosen":\[{"profile":"pi/gpt-5/high","dispatches":1}\]'; then
-  pass "a decision without a spawn row takes its chosen profile from meta"
+if echo "$output" | grep -q '"lane":"dec-lane","dispatches":1,"success_rate":100.0,"off_recommendation":1,"chosen":\[\]' && ! echo "$output" | grep -q 'pi/gpt-5/high'; then
+  pass "a decision without a spawn row keeps its lane out of the chosen models, ignoring meta"
 else
-  fail "decision-only chosen profile wrong: $output"
+  fail "decision-only lane chosen models wrong: $output"
 fi
 
 # The writer records a failure class from the status line, so the fallback survives status removal.
