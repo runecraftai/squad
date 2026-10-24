@@ -870,16 +870,26 @@ else
   fail "logged task without outcome read from status: $output"
 fi
 
-# The status-only path uses the last terminal line: a later policy line replaces an earlier provider line.
-STATUS_LAST_STATE="$TMP_ROOT/status-last-state"
-mkdir -p "$STATUS_LAST_STATE"
-printf 'failed: provider overloaded\nblocked: policy refused\n' > "$STATUS_LAST_STATE/slast-a.status"
-output=$(SQUAD_STATE_OVERRIDE="$STATUS_LAST_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json --fallback-rate 2>&1)
-if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate":0.0}'; then
-  pass "a status whose last terminal line is a guard refusal is a miss, not an earlier provider failure"
-else
-  fail "status-only last terminal line not used: $output"
-fi
+# Status-only classes follow the shared rule: the last done or failed line decides, and a blocked or paused
+# line supplies a class only when no done or failed line exists.
+STATUS_RULE_STATE="$TMP_ROOT/status-rule-state"
+mkdir -p "$STATUS_RULE_STATE"
+status_rule_case() { # <name> <status text> <hit|miss>
+  local name=$1 text=$2 expect=$3 hits=0 output
+  rm -f "$STATUS_RULE_STATE"/*.status
+  printf '%b' "$text" > "$STATUS_RULE_STATE/$name.status"
+  output=$(SQUAD_STATE_OVERRIDE="$STATUS_RULE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json --fallback-rate 2>&1)
+  [ "$expect" = hit ] && hits=1
+  if echo "$output" | grep -q "\"fallback\":{\"hits\":$hits,\"observed\":1,\"unknown\":0,"; then
+    pass "status-only $name is a fallback $expect"
+  else
+    fail "status-only $name fallback wrong: $output"
+  fi
+}
+status_rule_case provider-then-blocked 'failed: provider overloaded\nblocked: policy refused\n' hit
+status_rule_case done-then-blocked-quota 'done: PR ok\nblocked: quota exhausted\n' miss
+status_rule_case failed-guard-then-blocked-quota 'failed: guard refusal\nblocked: quota exhausted\n' miss
+status_rule_case blocked-quota-then-failed-provider 'blocked: quota exhausted\nfailed: provider overloaded\n' hit
 
 # A log reader failure aborts the report: non-zero exit, a stderr message, and no partial report on stdout.
 FAKE_PY_BIN="$TMP_ROOT/fake-python-bin"

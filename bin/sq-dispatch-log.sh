@@ -20,9 +20,11 @@
 # outcome may carry failure_class=provider|quota|guard|other, and only on failed rows
 # and on released rows sourced from a blocked or paused line; landed and done rows
 # carry none. status-notify passes --failure-class for the line it reports (none
-# for done). Without the flag the writer derives it from state/<id>.status: a failed
-# row takes the last failed line, a released row takes the last blocked or paused
-# line when no done or failed line exists. Only the bucket is stored, never the
+# for done). Without the flag the writer derives it from state/<id>.status with the
+# reader's rule: only done and failed lines decide, the last one in order wins, and
+# a failed row keeps a class only when that last decisive line is failed. Blocked or
+# paused lines supply a class only when no done or failed line exists, so a released
+# row takes its class only from that case. Only the bucket is stored, never the
 # status text. Teardown and status-notify write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
@@ -47,7 +49,7 @@ import sys
 import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
-from sq_dispatch_failure import FAILURE_CLASSES, status_failure_class
+from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
 
 SECRET_SHAPE = re.compile(
     r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
@@ -105,12 +107,11 @@ if args.event == "decision":
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
     status = os.path.join(sys.argv[2], args.id + ".status")
+    kind, derived = status_verdict(status)
     if args.result == "failed":
-        bucket = args.failure_class
-        if bucket is None:
-            bucket = status_failure_class(status, ("failed",))
+        bucket = args.failure_class if args.failure_class is not None else derived if kind == "failed" else None
     elif args.result == "released":
-        bucket = status_failure_class(status, ("blocked", "paused"))
+        bucket = derived if kind in ("blocked", "paused") else None
     else:
         bucket = None
     if bucket not in (None, "none"):

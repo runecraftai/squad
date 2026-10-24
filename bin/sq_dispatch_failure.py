@@ -18,21 +18,30 @@ def line_failure_class(text):
     return "other"
 
 
-def status_failure_class(path, kinds=("failed", "blocked", "paused")):
+def status_verdict(path):
     if os.path.islink(path) or not os.path.isfile(path):
-        return None
-    last = None
+        return None, None
+    decisive = None
+    stopped = None
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 match = TERMINAL_LINE.match(line.rstrip("\n"))
-                if match:
-                    last = match
+                if match is None:
+                    continue
+                if match.group(1) in ("done", "failed"):
+                    decisive = match
+                else:
+                    stopped = match
     except OSError:
-        return None
-    if last is None or last.group(1) not in kinds:
-        return None
-    return line_failure_class(last.group(2))
+        return None, None
+    chosen = decisive or stopped
+    if chosen is None:
+        return None, None
+    kind = chosen.group(1)
+    if kind == "done":
+        return kind, None
+    return kind, line_failure_class(chosen.group(2))
 
 
 if __name__ == "__main__":

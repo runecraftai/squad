@@ -475,7 +475,7 @@ resolve_status_fallbacks() {
 import os
 import sys
 sys.path.insert(0, sys.argv[1])
-from sq_dispatch_failure import status_failure_class
+from sq_dispatch_failure import status_verdict
 
 state, cutoff = sys.argv[2], int(sys.argv[3])
 with open(sys.argv[4], encoding="utf-8", errors="replace") as handle:
@@ -493,7 +493,8 @@ for name in names:
         continue
     if int(os.stat(path).st_mtime) < cutoff:
         continue
-    print(f"{task_id}\t{status_failure_class(path) or 'none'}")
+    _, bucket = status_verdict(path)
+    print(f"{task_id}\t{bucket or 'none'}")
 PY
   if awk -F'\t' -v OFS='\t' -v buckets="$STATUS_BUCKETS_FILE" '
     FILENAME == buckets { bucket[$1] = $2; next }
