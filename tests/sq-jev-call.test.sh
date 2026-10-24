@@ -117,10 +117,15 @@ with tempfile.TemporaryDirectory() as td:
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unhashable.stdout) == {"status": "error"} and unhashable.stderr == ""
         assert not (data / "task/dispatch.jsonl").exists()
-        state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": None}
-        unrecorded = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
-        assert json.loads(unrecorded.stdout) == {"status": "error"}
-        assert not (data / "task/dispatch.jsonl").exists()
+        captured.clear()
+        state["reply"] = {"type": "choice", "choice": "claude/sonnet"}
+        bare = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(bare.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        bare_rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
+        assert [{key: value for key, value in row.items() if key != "timestamp"} for row in bare_rows] == [
+            {"id": "task", "event": "recommendation", "label": "recommendation", "choice": "claude/sonnet"}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = OK_REPLY
         state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": .8, "padding": "x" * 70000}
         oversized = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(oversized.stdout) == {"status": "error"}
@@ -137,7 +142,13 @@ with tempfile.TemporaryDirectory() as td:
         slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
                               env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
         assert time.monotonic() - started < 10
-        assert json.loads(slow.stdout)["instructions"].endswith('"file_count":0}')
+        assert json.loads(slow.stdout) == {"status": "unavailable"}
+        captured.clear()
+        unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True,
+                                    env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                                         "TYPESAFE_API_KEY": "runtime-test-key"})
+        assert json.loads(unmeasured.stdout) == {"status": "unavailable"}
+        assert not captured and not (data / "task/dispatch.jsonl").exists()
 
         result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}

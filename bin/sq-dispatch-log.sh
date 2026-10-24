@@ -90,15 +90,17 @@ if args.event == "recommendation":
         raise ValueError("invalid recommendation choice")
     record.update(label="recommendation", choice=choice)
     confidence = recommendation.get("confidence")
-    if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
-        raise ValueError("invalid recommendation confidence")
-    record["confidence"] = confidence
+    if confidence is not None:
+        if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            raise ValueError("invalid recommendation confidence")
+        record["confidence"] = confidence
     probabilities = recommendation.get("probabilities")
-    if not isinstance(probabilities, dict) or any(
-            not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
-            for k, v in probabilities.items()):
-        raise ValueError("invalid recommendation probabilities")
-    record["probabilities"] = probabilities
+    if probabilities is not None:
+        if not isinstance(probabilities, dict) or any(
+                not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
+                for k, v in probabilities.items()):
+            raise ValueError("invalid recommendation probabilities")
+        record["probabilities"] = probabilities
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
 line = (json.dumps(record, separators=(",", ":"), ensure_ascii=True) + "\n").encode()

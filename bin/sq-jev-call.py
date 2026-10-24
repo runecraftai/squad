@@ -132,7 +132,8 @@ def main():
                                      capture_output=True, check=True, timeout=3).stdout
             file_count = len([path for path in tracked.split(b"\0") if path])
         except (OSError, subprocess.SubprocessError):
-            file_count = 0
+            print(json.dumps({"status": "unavailable"}))
+            return 0
     projection = {
         "task_type": redact(args.task_type),
         "title": redact(args.title),
@@ -162,11 +163,12 @@ def main():
         choice = answer.get("choice")
         if choice not in lanes or answer.get("type") != "choice":
             raise ValueError("invalid recommendation")
+        event = {"choice": choice, "label": "recommendation"}
+        if answer.get("confidence") is not None:
+            event["confidence"] = answer["confidence"]
         probabilities = answer.get("probabilities")
         if isinstance(probabilities, dict):
-            probabilities = {name: value for name, value in probabilities.items() if name in lanes}
-        event = {"choice": choice, "confidence": answer.get("confidence"),
-                 "probabilities": probabilities, "label": "recommendation"}
+            event["probabilities"] = {name: value for name, value in probabilities.items() if name in lanes}
         env = os.environ.copy()
         env.pop("TYPESAFE_API_KEY", None)
         env["SQUAD_DATA_OVERRIDE"] = args.data
