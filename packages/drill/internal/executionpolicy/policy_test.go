@@ -214,7 +214,8 @@ func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
 	}
 	t.Setenv("HOME", home)
 	claude := filepath.Join(root, "claude")
-	if err := os.WriteFile(claude, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+	probeScript := "#!/bin/sh\ncat /run/drill-execution/home/.claude/.credentials.json; echo; echo own > /run/drill-execution/home/own-launch-marker; cat /run/drill-execution/home/own-launch-marker\n"
+	if err := os.WriteFile(claude, []byte(probeScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	policy, err := New(repo)
@@ -228,11 +229,14 @@ func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstHome := boundLaunchHome(t, first.Args)
-	marker := filepath.Join(firstHome, "previous-launch-secret")
-	if err := os.WriteFile(marker, []byte("previous launch token"), 0o600); err != nil {
+	if data, err := os.ReadFile(filepath.Join(firstHome, ".claude", ".credentials.json")); err != nil || !strings.Contains(string(data), "host-token") {
+		t.Fatalf("launch home lacks its provider credential: data=%q err=%v", data, err)
+	}
+	firstCredential := filepath.Join(firstHome, ".claude", ".credentials.json")
+	if err := os.WriteFile(firstCredential, []byte(`{"token":"previous-launch-token"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	probe := exec.Command("/bin/sh", "-c", "cat /run/drill-execution/home/previous-launch-secret; echo prev=$?; echo own > /run/drill-execution/home/own-launch-marker; cat /run/drill-execution/home/own-launch-marker")
+	probe := exec.Command(claude)
 	probe.Dir = repo
 	if err := policy.Command(probe); err != nil {
 		t.Fatal(err)
@@ -245,17 +249,14 @@ func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("confined probe failed: output=%q err=%v", out, err)
 	}
-	if strings.Contains(string(out), "previous launch token") || strings.Contains(string(out), "prev=0") {
-		t.Fatalf("previous launch secret is reachable from next launch home: output=%q", out)
+	if strings.Contains(string(out), "previous-launch-token") {
+		t.Fatalf("previous launch credential is reachable from next launch home: output=%q", out)
 	}
-	if !strings.Contains(string(out), "prev=") {
-		t.Fatalf("probe did not report the previous-launch read: output=%q", out)
+	if !strings.Contains(string(out), "host-token") {
+		t.Fatalf("next launch home lacks a fresh provider credential: output=%q", out)
 	}
 	if data, err := os.ReadFile(filepath.Join(secondHome, "own-launch-marker")); err != nil || strings.TrimSpace(string(data)) != "own" {
 		t.Fatalf("next launch home is not writable by its own launch: data=%q err=%v", data, err)
-	}
-	if data, err := os.ReadFile(filepath.Join(firstHome, ".claude", ".credentials.json")); err != nil || !strings.Contains(string(data), "host-token") {
-		t.Fatalf("launch home lacks its provider credential: data=%q err=%v", data, err)
 	}
 }
 

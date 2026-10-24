@@ -372,12 +372,11 @@ func runReviewLens(ctx context.Context, a agent.Agent, policy agent.ProcessExecu
 		return
 	}
 	defer lensPolicy.Close()
-	policy = lensPolicy
 	prompt := string(snapshot.ContextForLens(lens.prompt)) + "\nReturn JSON only matching the supplied schema. Include every inspected file."
 	if logf != nil {
 		logf("review lens " + lens.name + " started")
 	}
-	result, err := a.Run(lensCtx, agent.RunOpts{Prompt: prompt, ExecutionPolicy: policy, CWD: checkout, JSONSchema: json.RawMessage(reviewCandidateSchema), Purpose: "review-lens:" + lens.name, Workload: snapshot.Workload})
+	result, err := a.Run(lensCtx, agent.RunOpts{Prompt: prompt, ExecutionPolicy: lensPolicy, CWD: checkout, JSONSchema: json.RawMessage(reviewCandidateSchema), Purpose: "review-lens:" + lens.name, Workload: snapshot.Workload})
 	if err != nil {
 		out.Err = fmt.Errorf("lens %s: %w", lens.name, err)
 	} else if err := json.Unmarshal(result.Output, &out.Output); err != nil {

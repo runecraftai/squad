@@ -685,7 +685,12 @@ func TestReviewLensCannotReadOutsideExecutionCopy(t *testing.T) {
 		t.Skip("Bubblewrap unavailable")
 	}
 	dir, _, head := setupGitRepo(t)
-	outside := filepath.Join(filepath.Dir(dir), "review-lens-outside-canary")
+	outsideDir, err := os.MkdirTemp("/var/tmp", "drill-review-lens-outside-")
+	if err != nil {
+		t.Skipf("cannot create outside canary: %v", err)
+	}
+	defer os.RemoveAll(outsideDir)
+	outside := filepath.Join(outsideDir, "synthetic-secret")
 	if err := os.WriteFile(outside, []byte("review-lens-outside-secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
