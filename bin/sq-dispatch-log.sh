@@ -16,6 +16,18 @@
 # remaining_tokens, remaining_requests and/or status (available/tight/unknown).
 # An omitted quota summary records {"status":"unknown"}; raw quota/auth payloads
 # are not accepted. No brief, environment credentials, or status text is read.
+# harness, model and effort values that look like a credential or token are
+# refused and nothing is written.
+# outcome may carry failure_class=provider|quota|guard|other, and only on failed rows
+# and on released rows sourced from a blocked or paused line; landed and done rows
+# carry none. status-notify passes --failure-class for the line it reports (none
+# for done). Without the flag the writer derives it from state/<id>.status with the
+# reader's rule: only done and failed lines decide, the last one in order wins, a
+# landed row counts as done, and a failed row keeps a class only when that last
+# decisive line is failed. Blocked or paused lines supply a class only when no done
+# or failed line exists, so a released row takes its class only from that case.
+# Only the bucket is stored, never the status text. Teardown and status-notify
+# write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
 # unsafe paths, lock contention beyond that budget, missing dependencies and
@@ -24,8 +36,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SCRIPT_DIR/..}}}"
 DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
+STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 
-if ! python3 - "$DATA" "$@" 2>/dev/null <<'PY'
+if ! SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" 2>/dev/null <<'PY'
 import argparse
 import datetime
 import fcntl
@@ -36,6 +49,18 @@ import re
 import stat
 import sys
 import time
+
+sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
+from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
+
+SECRET_SHAPE = re.compile(
+    r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
+    r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"
+    r"|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]"
+    r"|(token|secret|passwd|password|api[_-]?key|credential)[=:]"
+    r"|(?<![A-Za-z0-9_+/])(?!(?:[0-9a-f]{40}|[0-9a-f]{64})(?![A-Za-z0-9_+/]))[A-Za-z0-9_+/]{32,}",
+    re.IGNORECASE)
+
 
 parser = argparse.ArgumentParser(description="Append one private dispatch event (best effort).")
 parser.add_argument("id")
@@ -53,7 +78,8 @@ command = commands.add_parser("recommendation")
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
 command.add_argument("--result", required=True, choices=("done", "failed", "landed", "released"))
-args = parser.parse_args(sys.argv[2:])
+command.add_argument("--failure-class", choices=FAILURE_CLASSES + ("none",))
+args = parser.parse_args(sys.argv[3:])
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
     raise ValueError("invalid id")
 record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -61,13 +87,13 @@ record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
 if args.event in ("decision", "spawn"):
     for field in ("harness", "model", "effort"):
         value = getattr(args, field)
-        if not re.fullmatch(r"[!-~]{1,128}", value):
+        if not re.fullmatch(r"[!-~]{1,128}", value) or SECRET_SHAPE.search(value):
             raise ValueError("invalid choice")
         record[field] = value
 if args.event == "decision":
     field = "profile" if args.profile is not None else "reason"
     value = getattr(args, field)
-    if not value or len(value) > 256 or any(ord(c) < 32 for c in value):
+    if not value or len(value) > 256 or any(ord(c) < 32 for c in value) or SECRET_SHAPE.search(value):
         raise ValueError("invalid rationale")
     record[field] = value
     quota = json.loads(args.quota_summary)
@@ -112,6 +138,16 @@ if args.event == "recommendation":
         raise ValueError("invalid recommendation status")
 if args.event == "outcome":
     record.update(source=args.source, result=args.result)
+    status = os.path.join(sys.argv[2], args.id + ".status")
+    kind, derived = status_verdict(status)
+    if args.result == "failed":
+        bucket = args.failure_class if args.failure_class is not None else derived if kind == "failed" else None
+    elif args.result == "released":
+        bucket = derived if kind in ("blocked", "paused") else None
+    else:
+        bucket = None
+    if bucket not in (None, "none"):
+        record["failure_class"] = bucket
 line = (json.dumps(record, separators=(",", ":"), ensure_ascii=True) + "\n").encode()
 os.umask(0o077)
 os.makedirs(sys.argv[1], mode=0o700, exist_ok=True)

@@ -48,6 +48,12 @@ def serve(record, state):
     return server
 
 
+def recorded_rows(data):
+    path = data / "task/dispatch.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+    return [{key: value for key, value in row.items() if key != "timestamp"} for row in rows]
+
+
 with tempfile.TemporaryDirectory() as td:
     base = pathlib.Path(td)
     project = base / "project"
@@ -88,12 +94,17 @@ with tempfile.TemporaryDirectory() as td:
         assert json.loads(absent.stdout) == {"status": "disabled"}
         assert not captured and not (data / "task/dispatch.jsonl").exists()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
-        missing =subprocess.run(argv, text=True, capture_output=True,
+        missing = subprocess.run(argv, text=True, capture_output=True, check=True,
                                  env={k: v for k, v in os.environ.items() if k != "TYPESAFE_API_KEY"})
-        assert json.loads(missing.stdout) == {"status": "missing_key"}
+        assert json.loads(missing.stdout) == {"status": "unavailable", "reason": "missing_key"}
+        assert not captured and recorded_rows(data) == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "missing_key"}]
+        (data / "task/dispatch.jsonl").unlink()
         dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
         payload = json.loads(dry.stdout)
         assert payload == {"type":"choice",
+                           "criteria":{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"},
                            "instructions":"Recommend the best-fitting lane for this task. Task projection: "
                            + json.dumps({"task_type":"feature","title":"title","description":
                            "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
@@ -107,9 +118,7 @@ with tempfile.TemporaryDirectory() as td:
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
 
         def recorded():
-            path = data / "task/dispatch.jsonl"
-            rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
-            return [{key: value for key, value in row.items() if key != "timestamp"} for row in rows]
+            return recorded_rows(data)
 
         state["location"] = f"http://localhost:{target.server_port}/v1/systemone"
         redirect = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
@@ -153,7 +162,9 @@ with tempfile.TemporaryDirectory() as td:
         slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
                               env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
         assert time.monotonic() - started < 10
-        assert json.loads(slow.stdout) == {"type": "choice", "instructions":
+        assert json.loads(slow.stdout) == {"type": "choice",
+                                           "criteria": {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"},
+                                           "instructions":
                                            "Recommend the best-fitting lane for this task. Task projection: "
                                            + json.dumps({"task_type": "feature", "title": "title", "description":
                                                          "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
@@ -178,14 +189,14 @@ with tempfile.TemporaryDirectory() as td:
              "status": "unavailable", "reason": "no_lanes"}]
         (data / "task/dispatch.jsonl").unlink()
         brief = base / "brief.md"
-        brief.write_text("# Port lanes\nMove the sonnet and opus work to codex for this task.\n")
+        brief.write_text("# Port lanes\nMove the sonnet and opus work to codex for this task; use kimi with Gemini 2.5 Pro.\n")
         brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
         brief_argv += ["--brief", str(brief), "--dry-run"]
         briefed = subprocess.run(brief_argv, text=True, capture_output=True, check=True)
         assert json.loads(briefed.stdout) == {"type": "choice", "instructions":
                                               "Recommend the best-fitting lane for this task. Task projection: "
                                               + json.dumps({"task_type": "feature", "title": "title", "description":
-                                                            "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task.",
+                                                            "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task; use [REDACTED] with [REDACTED].",
                                                             "file_count": 3},
                                                            ensure_ascii=True, separators=(",", ":"))}
 
@@ -228,6 +239,10 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("sk-abcd1234567890 and task-sk-abcd1234567890") == "[REDACTED] and task-[REDACTED]"
         assert module.redact("XeyJX.abc.def end") == "X[REDACTED] end"
         assert module.redact("a, b", [""]) == "a, b"
+        assert module.redact("try o3 then grok-4, gpt4 and llama3.1.") == "try [REDACTED] then [REDACTED], [REDACTED] and [REDACTED]."
+        assert module.redact("pipeline claude-sonnet-5 o3-mini") == "pipeline [REDACTED] [REDACTED]"
+        assert module.redact("pi day with cursor and qwen2.5") == "[REDACTED] day with [REDACTED] and [REDACTED]"
+        assert module.redact("kimi with Gemini 2.5 Pro and Claude 3.5 Sonnet") == "[REDACTED] with [REDACTED] and [REDACTED]"
     finally:
         server.shutdown()
         target.shutdown()

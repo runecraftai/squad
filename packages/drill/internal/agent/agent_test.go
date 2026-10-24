@@ -1155,29 +1155,29 @@ func TestFinalizeTextResult_RegressionReviewWithExtraFences(t *testing.T) {
 	}
 }
 
-func TestFencedJSONCandidates_IgnoreBackticksInsideJSONString(t *testing.T) {
+func TestJSONPayloadCandidates_IgnoreBackticksInsideJSONString(t *testing.T) {
 	text := "review complete\n```json\n{\"summary\":\"quoted ```snippet``` in markdown\",\"findings\":[]}\n```\npostlude"
 
-	got := fencedJSONCandidates(text)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 candidate, got %d", len(got))
+	got := jsonPayloadCandidates(text, false)
+	if len(got) != 1 || !got[0].fenced {
+		t.Fatalf("expected 1 fenced candidate, got %+v", got)
 	}
 	want := "{\"summary\":\"quoted ```snippet``` in markdown\",\"findings\":[]}\n"
-	if got[0] != want {
-		t.Fatalf("candidate = %q, want %q", got[0], want)
+	if got[0].text != want {
+		t.Fatalf("candidate = %q, want %q", got[0].text, want)
 	}
 }
 
-func TestFencedJSONCandidates_AllowIndentedClosingFence(t *testing.T) {
+func TestJSONPayloadCandidates_AllowIndentedClosingFence(t *testing.T) {
 	text := "review complete\n```json\n{\"summary\":\"ok\",\"findings\":[]}\n   ```\nnext paragraph"
 
-	got := fencedJSONCandidates(text)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 candidate, got %d", len(got))
+	got := jsonPayloadCandidates(text, false)
+	if len(got) != 1 || !got[0].fenced {
+		t.Fatalf("expected 1 fenced candidate, got %+v", got)
 	}
 	want := "{\"summary\":\"ok\",\"findings\":[]}\n"
-	if got[0] != want {
-		t.Fatalf("candidate = %q, want %q", got[0], want)
+	if got[0].text != want {
+		t.Fatalf("candidate = %q, want %q", got[0].text, want)
 	}
 }
 
@@ -1193,8 +1193,8 @@ func TestFinalizeTextResult_WithSchemaIgnoresJSONInsideNonJSONFence(t *testing.T
 		"Final answer: not valid JSON",
 	}, "\n")
 
-	if got := fencedJSONCandidates(text); len(got) != 0 {
-		t.Fatalf("expected no fenced JSON candidates, got %q", got)
+	if got := jsonPayloadCandidates(text, false); len(got) != 0 {
+		t.Fatalf("expected no JSON candidates, got %+v", got)
 	}
 
 	_, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
@@ -1325,6 +1325,235 @@ func TestFinalizeTextResult_BareFindingsArrayParsesAsObjectForm(t *testing.T) {
 	}
 	if got.Findings[2].ReviewScope != "source" {
 		t.Errorf("finding without review_scope = %q, want schema default source", got.Findings[2].ReviewScope)
+	}
+}
+
+func TestFinalizeTextResult_RecoversFindingsPayloadsFromProse(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	array := `[{"severity":"info","description":"one finding","action":"no-op","review_scope":"source"}]`
+	tests := []struct {
+		name string
+		text string
+	}{
+		{name: "prose then object", text: "Here are my findings: " + object},
+		{name: "prose then array", text: "Here are my findings: " + array},
+		{name: "prose then fenced object", text: "Here are my findings:\n```json\n" + object + "\n```"},
+		{name: "prose then unclosed fenced object", text: "Here are my findings:\n```json\n" + object},
+		{name: "prose braces are not payloads", text: "The note {\"note\":\"x\"} and {is just prose} before the findings: " + object + " and {this is prose too}."},
+		{name: "prose braces wrapping a payload", text: "Wrapped {" + object + "} in prose."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := finalizeTextResult("pi", tt.text, reviewFindingsSchemaShape, TokenUsage{})
+			if err != nil {
+				t.Fatalf("findings payload should be recovered: %v", err)
+			}
+			var got map[string]json.RawMessage
+			if err := json.Unmarshal(result.Output, &got); err != nil {
+				t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+			}
+			if _, ok := got["findings"]; !ok {
+				t.Fatalf("normalized output lacks findings: %s", result.Output)
+			}
+		})
+	}
+}
+
+func TestFinalizeTextResult_ValidFenceWinsOverEarlierBarePayload(t *testing.T) {
+	text := `Earlier draft: {"step":"first"} then the final answer:` + "\n```json\n" + `{"step":"second"}` + "\n```\n"
+	result, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct {
+		Step string `json:"step"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if got.Step != "second" {
+		t.Errorf("step = %q, want the fenced payload second", got.Step)
+	}
+}
+
+func TestFinalizeTextResult_LastBarePayloadWinsForNonFindingsSchema(t *testing.T) {
+	text := `Earlier draft: {"step":"first"} then the final answer: {"step":"second"}`
+	result, err := finalizeTextResult("codex", text, json.RawMessage(`{"type":"object"}`), TokenUsage{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got struct {
+		Step string `json:"step"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if got.Step != "second" {
+		t.Errorf("step = %q, want the textually last bare payload second", got.Step)
+	}
+}
+
+func TestFinalizeTextResult_ProseBracketsDoNotBlockRoundSummary(t *testing.T) {
+	text := "Renamed items[0] in parser and left the rest alone."
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("prose with brackets must still become the round summary, got: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.Summary != text {
+		t.Errorf("summary = %q, want %q", output.Summary, text)
+	}
+}
+
+func TestFinalizeTextResult_RecoversUnclosedFencedPayloadWithTrailingProse(t *testing.T) {
+	text := "Summary:\n```json\n{\"summary\":\"x\"}\nThat's all."
+	result, err := finalizeTextResult("pi", text, commitSummarySchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("unclosed fenced payload followed by prose must recover, got: %v", err)
+	}
+	var output struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("failed to parse output: %v", err)
+	}
+	if output.Summary != "x" {
+		t.Errorf("summary = %q, want x", output.Summary)
+	}
+}
+
+func TestFinalizeTextResult_StrayBraceInProseDoesNotSwallowBarePayload(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	text := "Use the { syntax. " + object + " Fixed the } bar."
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("bare payload after a stray prose brace must recover, got: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+	if _, ok := got["findings"]; !ok {
+		t.Fatalf("normalized output lacks findings: %s", result.Output)
+	}
+}
+
+func TestFinalizeTextResult_StrayBraceInProseDoesNotSwallowFencedPayload(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	text := "Missing `{` in parser.\n```json\n" + object + "\n```\nFixed the `}` in bar.go."
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("fenced payload after a stray prose brace must recover, got: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+	if _, ok := got["findings"]; !ok {
+		t.Fatalf("normalized output lacks findings: %s", result.Output)
+	}
+}
+
+func TestFinalizeTextResult_CodeBracketsInProseAreNotPayloads(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	t.Run("bracket without payload fails loudly", func(t *testing.T) {
+		_, err := finalizeTextResult("pi", "Checked the []byte path, no issues.", reviewFindingsSchemaShape, TokenUsage{})
+		if err == nil {
+			t.Fatal("prose code brackets with no payload must not normalize to zero findings")
+		}
+	})
+	t.Run("standalone empty brackets in prose fail loudly", func(t *testing.T) {
+		_, err := finalizeTextResult("pi", "Checked the [] path, no issues.", reviewFindingsSchemaShape, TokenUsage{})
+		if err == nil {
+			t.Fatal("empty brackets in prose must not normalize to zero findings")
+		}
+	})
+	t.Run("code bracket does not make a fenced payload ambiguous", func(t *testing.T) {
+		text := "Checked the []byte path.\n```json\n" + object + "\n```"
+		result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+		if err != nil {
+			t.Fatalf("fenced payload after a code bracket must recover, got: %v", err)
+		}
+		var got map[string]json.RawMessage
+		if err := json.Unmarshal(result.Output, &got); err != nil {
+			t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+		}
+		if _, ok := got["findings"]; !ok {
+			t.Fatalf("normalized output lacks findings: %s", result.Output)
+		}
+	})
+}
+
+func TestFinalizeTextResult_RefusesAmbiguousFindingsPayloads(t *testing.T) {
+	first := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	second := `{"findings":[],"risk_level":"low","risk_rationale":"different","risk_scope":"source-or-external"}`
+	text := "First result: " + first + " Second result: " + second
+	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected ambiguous findings payloads to be refused")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "ambiguous") {
+		t.Fatalf("error = %v, want actionable ambiguity message", err)
+	}
+}
+
+func TestFinalizeTextResult_IdenticalBarePayloadsAreNotAmbiguous(t *testing.T) {
+	payload := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	result, err := finalizeTextResult("pi", "First: "+payload+" Again: "+payload, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("identical payloads are one payload, got: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+}
+
+func TestFinalizeTextResult_LastValidFencedPayloadWinsOverProseDuplicates(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	text := "Draft: " + object + " Two candidates:\n```json\n" + object + "\n```\n```json\n" + object + "\n```"
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("fenced payload must keep fence precedence, got: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+}
+
+func TestFinalizeTextResult_ValidFenceTakesPrecedenceOverBarePayloads(t *testing.T) {
+	bare := `{"findings":[],"risk_level":"low","risk_rationale":"bare draft","risk_scope":"source-or-external"}`
+	fenced := `{"findings":[],"risk_level":"low","risk_rationale":"fenced final","risk_scope":"source-or-external"}`
+	text := "Draft: " + bare + "\nFinal:\n```json\n" + fenced + "\n```"
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("valid fence must take precedence over unfenced candidates, got: %v", err)
+	}
+	var got struct {
+		RiskRationale string `json:"risk_rationale"`
+	}
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+	if got.RiskRationale != "fenced final" {
+		t.Errorf("risk_rationale = %q, want the fenced payload", got.RiskRationale)
+	}
+}
+
+func TestFinalizeTextResult_UnclosedFencedPayloadKeepsItsSyntaxError(t *testing.T) {
+	text := "Review complete.\n```json\n{\"findings\": [{\"id\":"
+	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("truncated unclosed payload must fail")
+	}
+	if !strings.Contains(err.Error(), "unexpected end of JSON input") {
+		t.Fatalf("error = %v, want the fenced payload's truncation error rather than the whole-text parse error", err)
 	}
 }
 

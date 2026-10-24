@@ -8,8 +8,6 @@ import re
 import subprocess
 import sys
 import threading
-import http.client
-import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -20,7 +18,8 @@ MAX_RESPONSE = 65536
 DEADLINE_SECONDS = 3
 
 
-KNOWN_NAMES = ("claude", "codex", "gemini", "sonnet", "opus", "haiku", "gpt")
+KNOWN_NAMES = ("claude", "codex", "gemini", "sonnet", "opus", "haiku", "gpt", "grok", "llama", "mistral",
+               "deepseek", "qwen", "pi", "cursor", "aider", "copilot", "opencode", "kimi", "muse")
 
 
 def redact(value, names=()):
@@ -30,17 +29,24 @@ def redact(value, names=()):
     value = value.replace("$HOME", "~")
     patterns = [
         (r"(?i)(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}", "[REDACTED]"),
-        (r"ghp_[A-Za-z0-9]{8,}", "[REDACTED]"),
+        (r"(?<![A-Za-z0-9])(?:gh[pousr]_|glpat-)[A-Za-z0-9_-]{8,}", "[REDACTED]"),
+        (r"github_pat_[A-Za-z0-9_]{8,}", "[REDACTED]"),
+        (r"xox[abprs]-[A-Za-z0-9-]{8,}", "[REDACTED]"),
+        (r"AIza[0-9A-Za-z_-]{20,}", "[REDACTED]"),
+        (r"(?i)\bbearer\s+\S+", "[REDACTED]"),
         (r"AKIA[A-Z0-9]{16}[A-Za-z0-9]*", "[REDACTED]"),
         (r"eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "[REDACTED]"),
         (r"-----BEGIN [^-]*KEY(?: BLOCK)?-----.*?(?:-----END [^-]*KEY(?: BLOCK)?-----|\Z)", "[REDACTED]"),
-        (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
         (r"([A-Za-z][A-Za-z0-9+.-]{0,31}://)\S*@", r"\1[REDACTED]@"),
+        (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
     ]
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
     terms = sorted({term for term in set(names) | set(KNOWN_NAMES) if term}, key=len, reverse=True)
-    value = re.sub(r"(?i)(?<![A-Za-z0-9])(?:" + "|".join(re.escape(term) for term in terms) + r")(?![A-Za-z0-9])",
+    alternatives = [re.escape(term) for term in terms] + [r"o[0-9]"]
+    value = re.sub(r"(?i)(?<![A-Za-z0-9])(?:" + "|".join(alternatives) + r")"
+                   r"(?:[._-]?[0-9][A-Za-z0-9]*|[._-][A-Za-z0-9]+|"
+                   r"[ \t]+[0-9][A-Za-z0-9._+-]*(?:[ \t]+(?:pro|flash|thinking|preview|nano|mini))?)*(?![A-Za-z0-9])",
                    "[REDACTED]", value)
     return value[:MAX_TEXT]
 
@@ -77,7 +83,7 @@ def project_enabled(config_path, project):
         return isinstance(enabled, list) and os.path.realpath(project) in {
             os.path.realpath(item) for item in enabled if isinstance(item, str)
         }
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, RecursionError):
         return False
 
 
@@ -108,7 +114,7 @@ def load_lanes(args):
             profiles.extend(default if isinstance(default, list) else [default])
             lanes = {"/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
                      for profile in profiles if isinstance(profile, dict) and profile.get("harness")}
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, RecursionError):
         return set()
     return set(lanes) if isinstance(lanes, (dict, set)) else set()
 
@@ -172,8 +178,7 @@ def main():
         return 0
     key = os.environ.get("TYPESAFE_API_KEY")
     if not key and not args.dry_run:
-        print(json.dumps({"status": "missing_key"}))
-        return 0
+        return finish(args, {"status": "unavailable", "reason": "missing_key"})
     if args.brief:
         try:
             lines = Path(args.brief).read_text(errors="replace").splitlines()
@@ -194,11 +199,13 @@ def main():
     }
     payload = {
         "type": "choice",
+        "criteria": {lane: lane for lane in sorted(lanes)},
         "instructions": "Recommend the best-fitting lane for this task. Task projection: "
         + json.dumps(projection, ensure_ascii=True, separators=(",", ":")),
     }
+    body = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
     if args.dry_run:
-        print(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
+        print(body)
         return 0
     if not lanes:
         return finish(args, {"status": "unavailable", "reason": "no_lanes"})
@@ -206,16 +213,15 @@ def main():
         return finish(args, {"status": "unavailable", "reason": "file_count_unmeasured"})
     parsed_url = urllib.parse.urlparse(args.url)
     if args.url != API_URL and parsed_url.hostname not in ("127.0.0.1", "localhost", "::1"):
-        print(json.dumps({"status": "error"}))
-        return 0
+        return finish(args, {"status": "unavailable", "reason": "endpoint_refused"})
     request = urllib.request.Request(
-        args.url, data=json.dumps(payload).encode(),
+        args.url, data=body.encode(),
         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
         method="POST",
     )
     try:
         event = classify(json.loads(fetch_with_deadline(request, DEADLINE_SECONDS)), lanes)
-    except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, OSError):
+    except Exception:
         event = {"status": "unavailable", "reason": "service_error"}
     return finish(args, event)
 
