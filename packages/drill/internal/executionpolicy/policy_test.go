@@ -157,32 +157,40 @@ func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
 		t.Skipf("execution sandbox unavailable: %v", err)
 	}
 	defer policy.Close()
-	launchHomes := make([]string, 0, 2)
-	for i := 0; i < 2; i++ {
-		cmd := exec.Command(claude)
-		cmd.Dir = repo
-		if err := policy.Command(cmd); err != nil {
-			t.Fatal(err)
-		}
-		launchHome := boundLaunchHome(t, cmd.Args)
-		launchHomes = append(launchHomes, launchHome)
-		if i == 0 {
-			marker := filepath.Join(launchHome, "previous-launch-secret")
-			if err := os.WriteFile(marker, []byte("previous launch token"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
+	first := exec.Command(claude)
+	first.Dir = repo
+	if err := policy.Command(first); err != nil {
+		t.Fatal(err)
 	}
-	if launchHomes[0] == launchHomes[1] {
-		t.Fatalf("launch homes = %q, want distinct homes", launchHomes)
+	firstHome := boundLaunchHome(t, first.Args)
+	marker := filepath.Join(firstHome, "previous-launch-secret")
+	if err := os.WriteFile(marker, []byte("previous launch token"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(launchHomes[1], "previous-launch-secret")); !os.IsNotExist(err) {
-		t.Fatalf("previous launch secret is reachable from next launch home: err=%v", err)
+	probe := exec.Command("/bin/sh", "-c", "cat "+marker+"; echo prev=$?; echo own > /run/drill-execution/home/own-launch-marker; cat /run/drill-execution/home/own-launch-marker")
+	probe.Dir = repo
+	if err := policy.Command(probe); err != nil {
+		t.Fatal(err)
 	}
-	for i, launchHome := range launchHomes {
-		if data, err := os.ReadFile(filepath.Join(launchHome, ".claude", ".credentials.json")); err != nil || !strings.Contains(string(data), "host-token") {
-			t.Fatalf("launch home %d lacks its provider credential: data=%q err=%v", i, data, err)
-		}
+	secondHome := boundLaunchHome(t, probe.Args)
+	if firstHome == secondHome {
+		t.Fatalf("launch homes = %q, want distinct homes", firstHome)
+	}
+	out, err := probe.CombinedOutput()
+	if err != nil {
+		t.Fatalf("confined probe failed: output=%q err=%v", out, err)
+	}
+	if strings.Contains(string(out), "previous launch token") || strings.Contains(string(out), "prev=0") {
+		t.Fatalf("previous launch secret is reachable from next launch home: output=%q", out)
+	}
+	if !strings.Contains(string(out), "prev=") {
+		t.Fatalf("probe did not report the previous-launch read: output=%q", out)
+	}
+	if data, err := os.ReadFile(filepath.Join(secondHome, "own-launch-marker")); err != nil || strings.TrimSpace(string(data)) != "own" {
+		t.Fatalf("next launch home is not writable by its own launch: data=%q err=%v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(firstHome, ".claude", ".credentials.json")); err != nil || !strings.Contains(string(data), "host-token") {
+		t.Fatalf("launch home lacks its provider credential: data=%q err=%v", data, err)
 	}
 }
 

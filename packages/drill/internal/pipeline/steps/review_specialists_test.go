@@ -690,14 +690,28 @@ func TestReviewLensCannotReadOutsideExecutionCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	var parentPolicy agent.ProcessExecutionPolicy = fixtureExecutionPolicy{dir: dir}
-	var output string
+	var output, inside string
 	a := controlledReviewAgent{run: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		insideFile := filepath.Join(opts.CWD, "lens-inside-canary")
+		if err := os.WriteFile(insideFile, []byte("review-lens-inside-marker"), 0o600); err != nil {
+			return nil, err
+		}
+		insideCmd := exec.CommandContext(ctx, "cat", insideFile)
+		insideCmd.Dir = opts.CWD
+		if err := opts.ExecutionPolicy.Command(insideCmd); err != nil {
+			return nil, err
+		}
+		data, err := insideCmd.CombinedOutput()
+		inside = string(data)
+		if err != nil {
+			return nil, err
+		}
 		cmd := exec.CommandContext(ctx, "cat", outside)
 		cmd.Dir = opts.CWD
 		if err := opts.ExecutionPolicy.Command(cmd); err != nil {
 			return nil, err
 		}
-		data, err := cmd.CombinedOutput()
+		data, err = cmd.CombinedOutput()
 		output = string(data)
 		if err != nil {
 			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
@@ -706,6 +720,9 @@ func TestReviewLensCannotReadOutsideExecutionCopy(t *testing.T) {
 	}}
 	snapshot := newReviewSnapshot("", "", "", head, "", nil, "", "", "", "")
 	result := runReviewLens(context.Background(), a, parentPolicy, dir, snapshot, 0, time.Second, nil)
+	if !strings.Contains(inside, "review-lens-inside-marker") {
+		t.Fatalf("review lens could not read its own execution copy: %q", inside)
+	}
 	if strings.Contains(output, "review-lens-outside-secret") {
 		t.Fatalf("review lens read a synthetic file outside its execution copy: %q", output)
 	}
