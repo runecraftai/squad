@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -134,16 +135,65 @@ func startServerWithPort(ctx context.Context, agentName, bin string, args []stri
 // concurrently under separate sandboxes, so a server is never handed to a
 // caller whose policy it was not launched under, and it stops with its policy.
 type serverPool struct {
-	mu      sync.Mutex
-	servers map[ProcessExecutionPolicy]*managedServer
+	mu       sync.Mutex
+	servers  map[ProcessExecutionPolicy]*managedServer
+	starting map[ProcessExecutionPolicy]*pendingServer
 }
 
+// pendingServer is a server whose start is in flight. Callers asking for the
+// same policy wait on done instead of launching a second server.
+type pendingServer struct {
+	done    chan struct{}
+	srv     *managedServer
+	err     error
+	stopped bool // set under pool.mu when the policy or pool closes mid-start
+}
+
+var errServerPoolStopped = errors.New("server pool stopped before server started")
+
+// ensure returns the server for policy, starting it with start if needed. The
+// pool lock is not held while start runs, so a slow health check only delays
+// callers for the same policy.
 func (p *serverPool) ensure(policy ProcessExecutionPolicy, start func() (*managedServer, error)) (*managedServer, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if srv := p.servers[policy]; srv != nil {
+		p.mu.Unlock()
 		return srv, nil
 	}
+	if pending := p.starting[policy]; pending != nil {
+		p.mu.Unlock()
+		<-pending.done
+		return pending.srv, pending.err
+	}
+	pending := &pendingServer{done: make(chan struct{})}
+	if p.starting == nil {
+		p.starting = make(map[ProcessExecutionPolicy]*pendingServer)
+	}
+	p.starting[policy] = pending
+	p.mu.Unlock()
+
+	srv, err := launchPooledServer(p, policy, start)
+
+	p.mu.Lock()
+	delete(p.starting, policy)
+	stopped := pending.stopped
+	if err == nil && !stopped {
+		if p.servers == nil {
+			p.servers = make(map[ProcessExecutionPolicy]*managedServer)
+		}
+		p.servers[policy] = srv
+	}
+	p.mu.Unlock()
+	if err == nil && stopped {
+		srv.shutdown()
+		srv, err = nil, errServerPoolStopped
+	}
+	pending.srv, pending.err = srv, err
+	close(pending.done)
+	return srv, err
+}
+
+func launchPooledServer(p *serverPool, policy ProcessExecutionPolicy, start func() (*managedServer, error)) (*managedServer, error) {
 	srv, err := start()
 	if err != nil {
 		return nil, err
@@ -154,10 +204,6 @@ func (p *serverPool) ensure(policy ProcessExecutionPolicy, start func() (*manage
 			return nil, err
 		}
 	}
-	if p.servers == nil {
-		p.servers = make(map[ProcessExecutionPolicy]*managedServer)
-	}
-	p.servers[policy] = srv
 	return srv, nil
 }
 
@@ -165,6 +211,9 @@ func (p *serverPool) stop(policy ProcessExecutionPolicy) {
 	p.mu.Lock()
 	srv := p.servers[policy]
 	delete(p.servers, policy)
+	if pending := p.starting[policy]; pending != nil {
+		pending.stopped = true
+	}
 	p.mu.Unlock()
 	if srv != nil {
 		srv.shutdown()
@@ -175,6 +224,9 @@ func (p *serverPool) stopAll() {
 	p.mu.Lock()
 	servers := p.servers
 	p.servers = nil
+	for _, pending := range p.starting {
+		pending.stopped = true
+	}
 	p.mu.Unlock()
 	for _, srv := range servers {
 		srv.shutdown()

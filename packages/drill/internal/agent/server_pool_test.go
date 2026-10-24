@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"sync"
 	"testing"
+	"time"
 )
 
 type lifecyclePolicy struct {
@@ -58,6 +59,48 @@ func startSleepingServer(t *testing.T) *managedServer {
 		close(srv.exited)
 	}()
 	return srv
+}
+
+func TestServerPoolSlowStartDoesNotBlockOtherPolicies(t *testing.T) {
+	var pool serverPool
+	defer pool.stopAll()
+	slowSrv := startSleepingServer(t)
+	fastSrv := startSleepingServer(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	slow := func() (*managedServer, error) {
+		close(entered)
+		<-release
+		return slowSrv, nil
+	}
+	fast := func() (*managedServer, error) { return fastSrv, nil }
+	lensA, lensB := &lifecyclePolicy{}, &lifecyclePolicy{}
+
+	slowDone := make(chan error, 1)
+	go func() {
+		_, err := pool.ensure(lensA, slow)
+		slowDone <- err
+	}()
+	<-entered
+
+	fastGot := make(chan *managedServer, 1)
+	go func() {
+		srv, _ := pool.ensure(lensB, fast)
+		fastGot <- srv
+	}()
+	select {
+	case srv := <-fastGot:
+		if srv != fastSrv {
+			t.Fatalf("lens B got %p, want its own server %p", srv, fastSrv)
+		}
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("lens B waited on lens A's in-flight server start")
+	}
+	close(release)
+	if err := <-slowDone; err != nil {
+		t.Fatalf("start server for lens A: %v", err)
+	}
 }
 
 func TestServerPoolBindsServerToItsPolicy(t *testing.T) {
