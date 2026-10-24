@@ -28,14 +28,15 @@ type ExecutionPolicy interface {
 
 // Policy is one short-lived, run-scoped sandbox with its own Git database.
 type Policy struct {
-	workDir string
-	root    string
-	gitDir  string
-	gitFile string
-	home    string
-	closed  bool
-	mu      sync.Mutex
-	syncMu  sync.Mutex
+	workDir    string
+	root       string
+	gitDir     string
+	gitFile    string
+	home       string
+	syncedHead string
+	closed     bool
+	mu         sync.Mutex
+	syncMu     sync.Mutex
 }
 
 // New acknowledges the mandatory execution policy before any repository
@@ -96,7 +97,7 @@ func New(workDir string) (*Policy, error) {
 	if err := os.WriteFile(gitFile, []byte("gitdir: /run/drill-execution/git\n"), 0o400); err != nil {
 		return fail(fmt.Errorf("%s: prepare private Git pointer: %w", Name, err))
 	}
-	p := &Policy{workDir: abs, root: root, gitDir: gitDir, gitFile: gitFile, home: home}
+	p := &Policy{workDir: abs, root: root, gitDir: gitDir, gitFile: gitFile, home: home, syncedHead: initialHead}
 	if err := p.acknowledge(bubblewrap); err != nil {
 		return fail(err)
 	}
@@ -181,6 +182,11 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 		argv = []string{cmd.Path}
 	}
 	args := p.baseArgs()
+	schemaBinds, err := executionSchemaAccess(argv)
+	if err != nil {
+		return err
+	}
+	args = append(args, schemaBinds...)
 	if err := p.mountAgentCredentials(filepath.Base(cmd.Path)); err != nil {
 		return err
 	}
@@ -329,6 +335,21 @@ func fakeAgentFixtureAccess(workDir string, env []string) ([]string, []string, e
 	return binds, variables, nil
 }
 
+func executionSchemaAccess(argv []string) ([]string, error) {
+	var binds []string
+	for _, arg := range argv {
+		if !filepath.IsAbs(arg) || !strings.HasPrefix(filepath.Base(arg), "drill-codex-schema-") || !strings.HasSuffix(arg, ".json") || filepath.Dir(arg) != os.TempDir() {
+			continue
+		}
+		info, err := os.Stat(arg)
+		if err != nil || !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s: generated agent schema is unavailable: %s", Name, arg)
+		}
+		binds = append(binds, "--ro-bind", arg, arg)
+	}
+	return binds, nil
+}
+
 func sandboxEnv(env []string) []string {
 	allowed := map[string]bool{"LANG": true, "LC_ALL": true, "TERM": true, "CI": true,
 		"OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true, "GEMINI_API_KEY": true,
@@ -437,6 +458,9 @@ func (p *Policy) Sync() error {
 	}
 	p.syncMu.Lock()
 	defer p.syncMu.Unlock()
+	if p.isClosed() {
+		return errors.New(Name + ": execution policy is unavailable")
+	}
 	privateHead, err := gitOutput(p.gitDir, "rev-parse", "HEAD")
 	if err != nil {
 		return fmt.Errorf("%s: read private Git head: %w", Name, err)
@@ -446,6 +470,7 @@ func (p *Policy) Sync() error {
 		return fmt.Errorf("%s: read host execution-copy head: %w", Name, err)
 	}
 	if privateHead == hostHead {
+		p.syncedHead = hostHead
 		return nil
 	}
 	if _, err := gitOutput(p.gitDir, "fetch", "--no-write-fetch-head", "--no-tags", p.workDir, hostHead); err != nil {
@@ -458,10 +483,21 @@ func (p *Policy) Sync() error {
 		if _, err := gitOutput(p.gitDir, "reset", "--mixed", hostHead); err != nil {
 			return fmt.Errorf("%s: refresh private Git index: %w", Name, err)
 		}
+		p.syncedHead = hostHead
 		return nil
 	}
 	if _, err := gitOutput(p.gitDir, "merge-base", "--is-ancestor", hostHead, privateHead); err != nil {
-		return fmt.Errorf("%s: host and private Git histories diverged", Name)
+		if privateHead != p.syncedHead {
+			return fmt.Errorf("%s: host and private Git histories diverged", Name)
+		}
+		if _, err := gitOutput(p.gitDir, "update-ref", "refs/heads/drill-execution", hostHead, privateHead); err != nil {
+			return fmt.Errorf("%s: align private Git after host history rewrite: %w", Name, err)
+		}
+		if _, err := gitOutput(p.gitDir, "reset", "--mixed", hostHead); err != nil {
+			return fmt.Errorf("%s: refresh private Git index after host history rewrite: %w", Name, err)
+		}
+		p.syncedHead = hostHead
+		return nil
 	}
 	if _, err := gitOutput(p.workDir, "fetch", "--no-write-fetch-head", "--no-tags", p.gitDir, privateHead); err != nil {
 		return fmt.Errorf("%s: import private Git result: %w", Name, err)
@@ -472,6 +508,7 @@ func (p *Policy) Sync() error {
 	if _, err := gitOutput(p.workDir, "reset", "--mixed", privateHead); err != nil {
 		return fmt.Errorf("%s: refresh execution-copy index: %w", Name, err)
 	}
+	p.syncedHead = privateHead
 	return nil
 }
 
@@ -483,7 +520,14 @@ func (p *Policy) isClosed() bool {
 
 // Close removes task-private Git objects and execution metadata.
 func (p *Policy) Close() error {
-	if p == nil || p.closed {
+	if p == nil {
+		return nil
+	}
+	p.syncMu.Lock()
+	defer p.syncMu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
 		return nil
 	}
 	p.closed = true

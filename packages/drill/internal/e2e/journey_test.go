@@ -824,7 +824,7 @@ func assertInitOutput(t *testing.T, h *Harness, out string) {
 	if path, err := filepath.EvalSymlinks(h.WorkDir); err == nil {
 		resolved = path
 	}
-	for _, want := range []string{resolved, "git push drill", "|__| |_/", "Gate initialized"} {
+	for _, want := range []string{resolved, "git push drill", "___  ____ _ _    _", "Gate initialized"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("init output should contain %q, got:\n%s", want, out)
 		}
@@ -1100,8 +1100,7 @@ func assertAgentEditCommitRun(t *testing.T, h *Harness) {
 	}
 	formatted, err := h.runGit(ctx, h.UpstreamDir, "show", "refs/heads/agent-edits:formatted-by-push.txt")
 	if err != nil {
-		pushLog, _ := os.ReadFile(filepath.Join(h.DrillHome, "logs", run.ID, "push.log"))
-		t.Fatalf("read formatted file from upstream: %v\n%s\npush=%s", err, formatted, pushLog)
+		t.Fatalf("read formatted file from upstream: %v\n%s", err, formatted)
 	}
 	if string(formatted) != "formatted" {
 		t.Fatalf("formatted-by-push.txt contents = %q", string(formatted))
@@ -1322,14 +1321,12 @@ func assertGateRefDeletionDoesNotCreateRun(t *testing.T, h *Harness, branch stri
 
 func assertConfiguredCommandRun(t *testing.T, h *Harness) {
 	t.Helper()
-	testCommandLog := filepath.Join(h.DrillHome, "configured-test-command.log")
 	testCommand := filepath.Join(h.BinDir, "nm-test-e2e")
-	if err := os.WriteFile(testCommand, []byte("#!/bin/sh\nprintf test-ran > \""+testCommandLog+"\"\n"), 0o755); err != nil {
+	if err := os.WriteFile(testCommand, []byte("#!/bin/sh\nprintf test-ran\n"), 0o755); err != nil {
 		t.Fatalf("write e2e test command: %v", err)
 	}
-	lintCommandLog := filepath.Join(h.DrillHome, "configured-lint-command.log")
 	lintCommand := filepath.Join(h.BinDir, "nm-lint-e2e")
-	if err := os.WriteFile(lintCommand, []byte("#!/bin/sh\nprintf lint-ran > \""+lintCommandLog+"\"\n"), 0o755); err != nil {
+	if err := os.WriteFile(lintCommand, []byte("#!/bin/sh\nprintf lint-ran\n"), 0o755); err != nil {
 		t.Fatalf("write e2e lint command: %v", err)
 	}
 	config := "ignore_patterns:\n  - '*.generated.go'\n  - 'vendor/**'\ncommands:\n  test: nm-test-e2e\n  lint: nm-lint-e2e\n"
@@ -1354,12 +1351,12 @@ func assertConfiguredCommandRun(t *testing.T, h *Harness) {
 	if len(findings.Tested) != 1 || findings.Tested[0] != "nm-test-e2e" {
 		t.Fatalf("expected configured test command to be recorded, got %+v", findings.Tested)
 	}
-	logData, err := os.ReadFile(testCommandLog)
+	testLog, err := h.Run("axi", "logs", "--step", "test", "--full")
 	if err != nil {
-		t.Fatalf("read configured test command log: %v", err)
+		t.Fatalf("read configured test command output: %v\n%s", err, testLog)
 	}
-	if string(logData) != "test-ran" {
-		t.Fatalf("configured test command log = %q", string(logData))
+	if !strings.Contains(testLog, "test-ran") {
+		t.Fatalf("configured test output missing marker:\n%s", testLog)
 	}
 	lintStep, ok := findStep(run.Steps, types.StepLint)
 	if !ok {
@@ -1368,12 +1365,12 @@ func assertConfiguredCommandRun(t *testing.T, h *Harness) {
 	if lintStep.FindingsJSON != nil {
 		t.Fatalf("expected configured passing lint command to record no findings, got %s", *lintStep.FindingsJSON)
 	}
-	lintLogData, err := os.ReadFile(lintCommandLog)
+	lintLog, err := h.Run("axi", "logs", "--step", "lint", "--full")
 	if err != nil {
-		t.Fatalf("read configured lint command log: %v", err)
+		t.Fatalf("read configured lint command output: %v\n%s", err, lintLog)
 	}
-	if string(lintLogData) != "lint-ran" {
-		t.Fatalf("configured lint command log = %q", string(lintLogData))
+	if !strings.Contains(lintLog, "lint-ran") {
+		t.Fatalf("configured lint output missing marker:\n%s", lintLog)
 	}
 	invs := h.AgentInvocations()
 	if sawPromptContainingAll(invs, "You are validating a code change by testing it", "branch: configured-commands") {
