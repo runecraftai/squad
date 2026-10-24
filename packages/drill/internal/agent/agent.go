@@ -304,37 +304,42 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	// whole payload.
 	bareFindingsPayload := isJSONArrayValue([]byte(text)) && isFindingsObjectSchema(validationSchema)
 
-	candidates := fencedJSONCandidates(text)
 	var parsed []json.RawMessage
 	var candidateErr error
-	for _, candidate := range candidates {
-		fenced, err := parseStructuredCandidate([]byte(candidate), validationSchema)
+	for _, candidate := range fencedJSONCandidates(text) {
+		payload, err := parseStructuredCandidate([]byte(candidate), validationSchema)
 		if err == nil {
-			parsed = append(parsed, fenced)
-			continue
-		}
-		if candidateErr == nil {
+			parsed = append(parsed, payload)
+		} else if candidateErr == nil {
 			candidateErr = err
 		}
+	}
+	for _, candidate := range balancedJSONCandidates(text) {
+		payload, err := parseStructuredCandidate([]byte(candidate), validationSchema)
+		if err == nil {
+			parsed = append(parsed, payload)
+		} else if candidateErr == nil && !isJSONSyntaxError(err) {
+			candidateErr = err
+		}
+	}
+	if len(parsed) > 1 && isFindingsObjectSchema(validationSchema) {
+		return nil, fmt.Errorf("ambiguous structured output: found %d valid findings payloads", len(parsed))
 	}
 	switch len(parsed) {
 	case 0:
 	case 1:
 		return parsed[0], nil
 	default:
-		// Multiple fences parsed as valid JSON. Pick the last one
-		// deterministically: real review output places its findings
-		// payload last after any illustrative examples, so the final
-		// valid fence is the one the agent meant. This fixes the
-		// "multiple JSON code fences found in output" false failure
-		// when review agents wrap explanation text in code fences.
+		// For non-findings schemas, retain the established convention that
+		// the last valid fenced or balanced candidate is the intended result.
 		return parsed[len(parsed)-1], nil
 	}
 
-	if bare, err := lastBareJSONObject(text, validationSchema); err == nil && bare != nil {
-		return bare, nil
-	} else if candidateErr == nil && err != nil && !isJSONSyntaxError(err) {
-		candidateErr = err
+	if candidateErr == nil {
+		_, err := lastBareJSONObject(text, validationSchema)
+		if err != nil && !isJSONSyntaxError(err) {
+			candidateErr = err
+		}
 	}
 
 	if candidateErr != nil {
@@ -676,6 +681,79 @@ func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, e
 		return nil, validationErr
 	}
 	return nil, syntaxErr
+}
+
+// balancedJSONCandidates finds balanced object and array payloads embedded in
+// prose, excluding fenced blocks (which are extracted separately). Each
+// candidate is still subject to the same strict JSON and schema validation as
+// whole-text and fenced output.
+func balancedJSONCandidates(text string) []string {
+	var candidates []string
+	for i := 0; i < len(text); i++ {
+		if strings.HasPrefix(text[i:], "```") {
+			if !isFenceOpener(text, i) {
+				continue
+			}
+			contentStart, _ := fenceContentStart(text, i)
+			next := skipFenceBlock(text[contentStart:])
+			if next < 0 {
+				i = contentStart - 1
+				continue
+			}
+			i = contentStart + next - 1
+			continue
+		}
+
+		switch text[i] {
+		case '{':
+			if end, ok := scanBalancedObject(text, i); ok {
+				candidates = append(candidates, text[i:end])
+				i = end - 1
+			}
+		case '[':
+			if end, ok := scanBalancedArray(text, i); ok {
+				candidates = append(candidates, text[i:end])
+			}
+		}
+	}
+	return candidates
+}
+
+// scanBalancedArray is the bracket counterpart to scanBalancedObject. It
+// respects JSON string literals so brackets inside strings do not affect the
+// depth count.
+func scanBalancedArray(text string, start int) (int, bool) {
+	depth := 0
+	inString := false
+	escape := false
+	for i := start; i < len(text); i++ {
+		c := text[i]
+		if inString {
+			if escape {
+				escape = false
+				continue
+			}
+			switch c {
+			case '\\':
+				escape = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return i + 1, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // isJSONSyntaxError reports whether err is a JSON syntax error (the candidate

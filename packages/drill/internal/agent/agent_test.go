@@ -1328,6 +1328,47 @@ func TestFinalizeTextResult_BareFindingsArrayParsesAsObjectForm(t *testing.T) {
 	}
 }
 
+func TestFinalizeTextResult_RecoversFindingsPayloadsFromProse(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	array := `[]`
+	tests := []struct {
+		name string
+		text string
+	}{
+		{name: "prose then object", text: "Here are my findings: " + object},
+		{name: "prose then array", text: "Here are my findings: " + array},
+		{name: "prose then fenced object", text: "Here are my findings:\n```json\n" + object + "\n```"},
+		{name: "prose braces are not payloads", text: "The note {is just prose} before the findings: " + object + " and {this is prose too}."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := finalizeTextResult("pi", tt.text, reviewFindingsSchemaShape, TokenUsage{})
+			if err != nil {
+				t.Fatalf("findings payload should be recovered: %v", err)
+			}
+			var got map[string]json.RawMessage
+			if err := json.Unmarshal(result.Output, &got); err != nil {
+				t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+			}
+			if _, ok := got["findings"]; !ok {
+				t.Fatalf("normalized output lacks findings: %s", result.Output)
+			}
+		})
+	}
+}
+
+func TestFinalizeTextResult_RefusesAmbiguousFindingsPayloads(t *testing.T) {
+	payload := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	text := "First result: " + payload + " Second result: " + payload
+	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("expected ambiguous findings payloads to be refused")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "ambiguous") {
+		t.Fatalf("error = %v, want actionable ambiguity message", err)
+	}
+}
+
 // TestFinalizeTextResult_BareFindingsArrayKeepsPerFindingValidation keeps the
 // array form as strict as the object form: the accepted shape is new, the
 // per-finding contract is not loosened.
