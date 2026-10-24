@@ -21,11 +21,12 @@
 # and on released rows sourced from a blocked or paused line; landed and done rows
 # carry none. status-notify passes --failure-class for the line it reports (none
 # for done). Without the flag the writer derives it from state/<id>.status with the
-# reader's rule: only done and failed lines decide, the last one in order wins, and
-# a failed row keeps a class only when that last decisive line is failed. Blocked or
-# paused lines supply a class only when no done or failed line exists, so a released
-# row takes its class only from that case. Only the bucket is stored, never the
-# status text. Teardown and status-notify write outcome before removing status.
+# reader's rule: only done and failed lines decide, the last one in order wins, a
+# landed row counts as done, and a failed row keeps a class only when that last
+# decisive line is failed. Blocked or paused lines supply a class only when no done
+# or failed line exists, so a released row takes its class only from that case.
+# Only the bucket is stored, never the status text. Teardown and status-notify
+# write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
 # unsafe paths, lock contention beyond that budget, missing dependencies and
