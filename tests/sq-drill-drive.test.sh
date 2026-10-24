@@ -37,7 +37,7 @@ case "$2" in
     count=$(wc -l < "$RECOVERY_TEST/count" | tr -d ' ')
     count=$((count + 1))
     echo x >> "$RECOVERY_TEST/count"
-    if [ "$MODE" = gate ] || { [ "$MODE" = retry-gate ] && [ "$count" -eq 2 ]; }; then
+    if [ "$MODE" = gate ] || { { [ "$MODE" = retry-gate ] || [ "$MODE" = orphan ]; } && [ "$count" -eq 2 ]; }; then
       printf 'run:\n  id: run-%s\n  status: running\ngate:\n  step: review\n  action: ask-user\n' "$count"
       exit 0
     fi
@@ -54,7 +54,10 @@ case "$2" in
       printf 'branch_sync:\n  state: diverged\n  safety: blocked_diverged\n'
       exit 1
     fi
-    printf 'branch_sync:\n  state: custody_returned\n  local:\n    head: %s\n' "$RECOVERY_HEAD" ;;
+    printf 'branch_sync:\n  state: custody_returned\n  local:\n    head: %s\n' "$RECOVERY_HEAD"
+    if [ "$MODE" = orphan ]; then
+      printf '  pipeline:\n    custody_return_note: orphaned run run-1; missing pipeline head %s; custody released to local head %s; pipeline unpublished fixes are lost with the missing object\n' "$MISSING_HEAD" "$RECOVERY_HEAD"
+    fi ;;
   *) exit 2 ;;
 esac
 SH
@@ -114,6 +117,19 @@ expect_code 1 "$(wc -l < "$TMP/count" | tr -d ' ')" 'no submission after refused
 assert_grep 'blocked_diverged' "$TMP/output" 'exact refusal evidence is retained'
 assert_grep 'drill_state=diverged' "$SQUAD_BASE/state/probe.status" 'event names the actual refused state'
 pass 'unreturned custody reports the actual refusal without a new run'
+
+reset_case orphan
+export CUSTODY=pipeline_owned MISSING_HEAD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+if git cat-file -e "$MISSING_HEAD" 2>/dev/null; then fail 'orphan fixture object exists'; fi
+BEFORE_HEAD=$(authoritative_head)
+drive run --intent intent
+expect_code 0 "$RC" 'orphan release proceeds to the next gate'
+expect_code 2 "$(wc -l < "$TMP/count" | tr -d ' ')" 'orphan release starts exactly one rerun'
+assert_grep 'axi sync --recover' "$TMP/calls" 'only the supported release path is used'
+assert_grep "recovery audit: orphaned run run-1; missing pipeline head $MISSING_HEAD; custody released to local head $RECOVERY_HEAD; pipeline unpublished fixes are lost" "$TMP/output" 'release audit stays visible'
+[ "$(authoritative_head)" = "$BEFORE_HEAD" ] || fail 'orphan release moved the branch'
+[ ! -e "$SQUAD_BASE/state/probe.status" ] || fail 'orphan release emitted a blocker'
+pass 'orphan custody returned by Drill proceeds without hiding the loss audit'
 
 reset_case active
 export CUSTODY=pipeline_owned NEXT=continue_active_run

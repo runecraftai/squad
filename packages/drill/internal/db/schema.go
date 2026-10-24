@@ -214,4 +214,6 @@ var migrationStatements = []string{
 	`ALTER TABLE agent_invocations ADD COLUMN workload_files INTEGER`,
 	`ALTER TABLE agent_invocations ADD COLUMN workload_lines INTEGER`,
 	`ALTER TABLE agent_invocations ADD COLUMN finding_count INTEGER`,
+	// Audit and custody stamp are written atomically for an orphaned run.
+	`ALTER TABLE runs ADD COLUMN custody_return_note TEXT`,
 }

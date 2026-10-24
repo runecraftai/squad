@@ -433,6 +433,9 @@ func branchSyncField(state branchsync.State) toON.Field {
 		{Key: "pushed_at", Value: state.Pipeline.PushedAt},
 		{Key: "push_generation", Value: state.Pipeline.PushGeneration},
 	}
+	if state.Pipeline.CustodyReturnNote != "" {
+		pipeline = append(pipeline, toON.Field{Key: "custody_return_note", Value: state.Pipeline.CustodyReturnNote})
+	}
 	target := toON.NewObject(
 		toON.Field{Key: "kind", Value: state.Target.Kind},
 		toON.Field{Key: "remote", Value: state.Target.Remote},

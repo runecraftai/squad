@@ -90,14 +90,15 @@ type LocalState struct {
 }
 
 type PipelineState struct {
-	RunID          string
-	Status         string
-	Phase          string
-	SubmittedHead  string
-	CurrentHead    string
-	PushedHead     string
-	PushedAt       int64
-	PushGeneration int64
+	RunID             string
+	Status            string
+	Phase             string
+	SubmittedHead     string
+	CurrentHead       string
+	PushedHead        string
+	PushedAt          int64
+	PushGeneration    int64
+	CustodyReturnNote string
 }
 
 type TargetState struct {
@@ -468,7 +469,8 @@ func (s *Service) Apply(ctx context.Context) State {
 //	work
 //	diverged   any       refuse (anchor named, manual   custody at local head;
 //	                     reconcile / rerun offered)     gate reset to it (CAS)
-//	P missing  any       refuse                         refuse
+//	P missing  clean     return custody with loss audit same
+//	P missing  dirty     refuse                         refuse
 //
 // The containment row exists because a cancelled validation routinely leaves P
 // as a REBASE of the local branch onto a newer base: the same logical commits
@@ -528,6 +530,19 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 	}
 	if !terminalRunStatus(run.Status) {
 		return blockedPlan(state, StatePipelineOwned, "blocked_recover_run_active", "the run that owns this branch is still active; drive it to completion or abort it first; no files or refs were changed")
+	}
+	// An absent local anchor is normal before the first recovery. It is never
+	// sufficient evidence of loss: the object must be absent from BOTH the
+	// invoking repository and the validated gate. Existing objects, even
+	// unreachable ones, continue through the original divergence checks.
+	if run.LastPushedSHA == nil && strings.TrimSpace(s.GateDir) != "" {
+		localMissing, localErr := git.ObjectMissing(ctx, s.workDir(), run.HeadSHA)
+		if localErr == nil && localMissing && git.ValidateBareRepository(ctx, s.GateDir) == nil {
+			gateMissing, gateErr := git.ObjectMissing(ctx, s.GateDir, run.HeadSHA)
+			if gateErr == nil && gateMissing {
+				return s.recoverOrphanedRun(ctx, run, state)
+			}
+		}
 	}
 	if run.TerminalHeadVerifiedAt == nil {
 		branch := state.Local.Branch
@@ -633,6 +648,30 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 		blocked.NextAction = &NextAction{Code: "inspect_and_reconcile_manually", Command: "git log --oneline --left-right HEAD..." + anchorRef}
 		return blocked
 	}
+}
+
+// recoverOrphanedRun releases only a terminal, never-pushed record whose
+// object is gone in both repositories. It never moves any ref or worktree.
+func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state State) State {
+	fresh, selected, _ := s.inspect(ctx)
+	if selected == nil || selected.ID != run.ID || selected.HeadSHA != run.HeadSHA ||
+		fresh.State != StatePipelineOwned || fresh.Local.Branch != state.Local.Branch ||
+		fresh.Local.Head != state.Local.Head || !fresh.Local.Clean {
+		return blockedPlan(fresh, fresh.State, "blocked_recover_assumptions_changed", "the orphaned run or local worktree changed or is dirty; custody was not returned")
+	}
+	// Recheck absence immediately before recording the release. Inspection
+	// errors, invalid identities, and a newly available object all refuse.
+	localMissing, localErr := git.ObjectMissing(ctx, s.workDir(), run.HeadSHA)
+	gateMissing, gateErr := git.ObjectMissing(ctx, s.GateDir, run.HeadSHA)
+	if localErr != nil || gateErr != nil || !localMissing || !gateMissing {
+		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_assumptions_changed", "the recorded pipeline object is no longer proven missing; custody was not returned")
+	}
+	if err := s.DB.ReleaseOrphanedRun(run.ID, run.HeadSHA, fresh.Local.Head); err != nil {
+		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_stamp_failed", "the orphaned run release and loss audit could not be recorded; custody was not returned")
+	}
+	result, _, _ := s.inspect(ctx)
+	result.Recovered = true
+	return result
 }
 
 // recoverKeepLocal performs the explicit keep-local custody return: the
@@ -992,6 +1031,7 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 	state.Pipeline = PipelineState{
 		RunID: run.ID, Status: string(run.Status), SubmittedHead: ptr(run.SubmittedHeadSHA), CurrentHead: run.HeadSHA,
 		PushedHead: ptr(run.LastPushedSHA), PushedAt: value(run.LastPushedAt), PushGeneration: value(run.PushGeneration),
+		CustodyReturnNote: ptr(run.CustodyReturnNote),
 	}
 	state.PRState = normalizePRState(run.PRState)
 	state.Target = TargetState{Kind: ptr(run.PushTargetKind), URL: displayTarget(s.Repo.PushURL()), Ref: ptr(run.PushRef)}

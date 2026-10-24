@@ -79,9 +79,31 @@ func runInDirWithEnv(ctx context.Context, dir string, extraEnv []string, args ..
 	return strings.TrimSpace(string(out)), err
 }
 
+// ObjectMissing distinguishes an absent object from a failed Git inspection.
+// Batch mode reports missing objects on stdout with a successful exit code.
+func ObjectMissing(ctx context.Context, dir, sha string) (bool, error) {
+	if (len(sha) != 40 && len(sha) != 64) || strings.Trim(sha, "0123456789abcdef") != "" || IsZeroSHA(sha) {
+		return false, fmt.Errorf("invalid object identity")
+	}
+	args := []string{"cat-file", "--batch-check"}
+	if isBareGitDir(dir) {
+		args = append([]string{"--git-dir=" + dir}, args...)
+	}
+	out, err := runInDirWithEnvRawInput(ctx, dir, []string{"GIT_NO_LAZY_FETCH=1"}, sha+"\n", args...)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == sha+" missing", nil
+}
+
 func runInDirWithEnvRaw(ctx context.Context, dir string, extraEnv []string, args ...string) ([]byte, error) {
+	return runInDirWithEnvRawInput(ctx, dir, extraEnv, "", args...)
+}
+
+func runInDirWithEnvRawInput(ctx context.Context, dir string, extraEnv []string, input string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(input)
 	cmd.Env = append(NonInteractiveEnv(dir), extraEnv...)
 	winproc.Harden(cmd)
 	out, err := cmd.Output()

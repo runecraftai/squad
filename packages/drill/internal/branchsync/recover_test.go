@@ -155,6 +155,113 @@ func newRecoverFixture(t *testing.T, status types.RunStatus) *recoverFixture {
 	}
 }
 
+func TestRecoverOrphanedHeadReturnsCustodyWithoutMovingBranches(t *testing.T) {
+	t.Parallel()
+	f := newRecoverFixture(t, types.RunFailed)
+	missing := strings.Repeat("a", 40)
+	if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	if objectExists(f.ctx, f.local, missing) || objectExists(f.ctx, f.gate, missing) {
+		t.Fatal("orphan fixture unexpectedly has the recorded object")
+	}
+	localRefs := mustRun(t, f.local, "show-ref")
+	gateRefs := mustRun(t, f.gate, "show-ref")
+	state := f.service.Recover(f.ctx, false)
+	if !state.Recovered || state.State != StateCustodyReturned || state.Changed {
+		t.Fatalf("orphan recovery = %#v", state)
+	}
+	if mustRun(t, f.local, "show-ref") != localRefs || mustRun(t, f.gate, "show-ref") != gateRefs {
+		t.Fatal("orphan release moved a ref")
+	}
+	if !f.custodyReturned() {
+		t.Fatal("orphan release did not persist custody")
+	}
+	persisted, err := f.db.GetRun(f.run.ID)
+	if err != nil || persisted.CustodyReturnNote == nil {
+		t.Fatalf("missing durable release audit: %#v, %v", persisted, err)
+	}
+	note := *persisted.CustodyReturnNote
+	for _, want := range []string{f.run.ID, missing, f.submitted, "orphaned", "unpublished fixes are lost"} {
+		if !strings.Contains(note, want) || !strings.Contains(state.Pipeline.CustodyReturnNote, want) {
+			t.Fatalf("audit missing %q: %s", want, note)
+		}
+	}
+	again := f.service.Recover(f.ctx, false)
+	persisted, err = f.db.GetRun(f.run.ID)
+	if err != nil || !again.Recovered || *persisted.CustodyReturnNote != note {
+		t.Fatal("idempotent recovery changed the original audit")
+	}
+	fresh, err := f.db.InsertRun(f.repo.ID, f.run.Branch, f.submitted, f.base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.service.InspectCached(f.ctx); got.Pipeline.RunID != fresh.ID {
+		t.Fatalf("fresh run still blocked by orphan: %#v", got)
+	}
+}
+
+func TestRecoverMissingAnchorNeverReleasesExistingDivergentHead(t *testing.T) {
+	t.Parallel()
+	for _, location := range []string{"gate only", "local and gate"} {
+		t.Run(location, func(t *testing.T) {
+			f := newRecoverFixture(t, types.RunFailed)
+			if location == "local and gate" {
+				mustRun(t, f.local, "fetch", f.gate, "refs/heads/feature/recover")
+			}
+			// Move the gate to the submitted head, leaving the recorded
+			// pipeline object present but unreachable. No recovery ref exists.
+			mustRun(t, f.gate, "update-ref", "refs/heads/feature/recover", f.submitted)
+			before := mustRun(t, f.local, "show-ref")
+			state := f.service.Recover(f.ctx, false)
+			if state.Recovered || state.Safety != "blocked_recover_gate_diverged" || f.custodyReturned() {
+				t.Fatalf("existing head bypassed divergence: %#v", state)
+			}
+			if mustRun(t, f.local, "show-ref") != before {
+				t.Fatal("refusal moved a local ref")
+			}
+		})
+	}
+}
+
+func TestRecoverOrphanRefusals(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"active", "dirty", "missing gate", "invalid head", "published"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newRecoverFixture(t, types.RunFailed)
+			missing := strings.Repeat("a", 40)
+			if kind == "invalid head" {
+				missing = "not-an-object"
+			}
+			if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "active":
+				if err := f.db.UpdateRunStatus(f.run.ID, types.RunRunning); err != nil {
+					t.Fatal(err)
+				}
+			case "dirty":
+				mustWrite(t, filepath.Join(f.local, "uncommitted.txt"), "keep me\n")
+			case "missing gate":
+				f.service.GateDir = filepath.Join(t.TempDir(), "absent")
+			case "published":
+				if err := f.db.UpdateRunPushBinding(f.run.ID, db.PushBinding{HeadSHA: f.submitted, TargetKind: "upstream", TargetFingerprint: TargetFingerprint(f.remote), Ref: "refs/heads/feature/recover"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := mustRun(t, f.local, "show-ref")
+			got := f.service.Recover(f.ctx, false)
+			if got.Recovered || f.custodyReturned() {
+				t.Fatalf("unsafe orphan release for %s: %#v", kind, got)
+			}
+			if mustRun(t, f.local, "show-ref") != before {
+				t.Fatal("refusal moved a ref")
+			}
+		})
+	}
+}
+
 func (f *recoverFixture) anchorRef() string { return "refs/drill/recover/" + f.run.ID }
 
 func (f *recoverFixture) custodyReturned() bool {
