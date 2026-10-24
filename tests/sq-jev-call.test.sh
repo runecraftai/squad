@@ -93,7 +93,7 @@ with tempfile.TemporaryDirectory() as td:
         assert json.loads(missing.stdout) == {"status": "missing_key"}
         dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
         payload = json.loads(dry.stdout)
-        assert payload == {"type":"choice", "criteria":{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"},
+        assert payload == {"type":"choice",
                            "instructions":"Recommend the best-fitting lane for this task. Task projection: "
                            + json.dumps({"task_type":"feature","title":"title","description":
                            "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "

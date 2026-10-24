@@ -142,7 +142,6 @@ def main():
     }
     payload = {
         "type": "choice",
-        "criteria": {str(name): str(description) for name, description in lanes.items()},
         "instructions": "Recommend the best-fitting lane for this task. Task projection: "
         + json.dumps(projection, ensure_ascii=True, separators=(",", ":")),
     }
