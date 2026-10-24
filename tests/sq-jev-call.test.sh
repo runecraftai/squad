@@ -220,7 +220,7 @@ with tempfile.TemporaryDirectory() as td:
         state["reply"] = OK_REPLY
         assert "runtime-test-key" not in result.stdout + result.stderr + (data / "task/dispatch.jsonl").read_text()
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
-        boundary = module.redact("x" * 230 + " sk-abcd1234567890")
+        boundary = module.redact("word " * 46 + " sk-abcd1234567890")
         assert len(boundary) == 240 and "sk-" not in boundary
         assert module.redact("eyJabc.def.") == "[REDACTED]"
         assert module.redact("-----BEGIN PGP PRIVATE KEY BLOCK-----\nabc") == "[REDACTED]"
@@ -240,6 +240,13 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("Refactor task-management-service for risk-assessment ask-user") == "Refactor task-management-service for risk-assessment ask-user"
         assert module.redact("sk-abcd1234567890 and task-sk-abcd1234567890") == "[REDACTED] and task-[REDACTED]"
         assert module.redact("XeyJX.abc.def end") == "X[REDACTED] end"
+        assert module.redact("key sk_live_abcdefgh12 end") == "key [REDACTED] end"
+        assert module.redact("password: hunter2 end") == "[REDACTED] end"
+        assert module.redact("Token = abc def") == "[REDACTED] def"
+        assert module.redact("api_key:\"a b\" end") == "[REDACTED] end"
+        assert module.redact("opaque abcdefghijklmnopqrstuvwxyz0123456789 end") == "opaque [REDACTED] end"
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        assert module.redact("commit " + sha) == "commit " + sha
         assert module.redact("a, b", [""]) == "a, b"
         assert module.redact("try o3 then grok-4, gpt4 and llama3.1.") == "try [REDACTED] then [REDACTED], [REDACTED] and [REDACTED]."
         assert module.redact("pipeline claude-sonnet-5 o3-mini") == "pipeline [REDACTED] [REDACTED]"

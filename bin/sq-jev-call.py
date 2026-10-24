@@ -28,7 +28,7 @@ def redact(value, names=()):
         value = value.replace(home, "~")
     value = value.replace("$HOME", "~")
     patterns = [
-        (r"(?i)(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}", "[REDACTED]"),
+        (r"(?i)(?<![A-Za-z0-9])(?:sk|pk)[-_][A-Za-z0-9_-]{8,}", "[REDACTED]"),
         (r"(?<![A-Za-z0-9])(?:gh[pousr]_|glpat-)[A-Za-z0-9_-]{8,}", "[REDACTED]"),
         (r"github_pat_[A-Za-z0-9_]{8,}", "[REDACTED]"),
         (r"xox[abprs]-[A-Za-z0-9-]{8,}", "[REDACTED]"),
@@ -39,6 +39,10 @@ def redact(value, names=()):
         (r"-----BEGIN [^-]*KEY(?: BLOCK)?-----.*?(?:-----END [^-]*KEY(?: BLOCK)?-----|\Z)", "[REDACTED]"),
         (r"([A-Za-z][A-Za-z0-9+.-]{0,31}://)\S*@", r"\1[REDACTED]@"),
         (r"(?im)\b[A-Z][A-Z0-9_]{1,}=(\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
+        (r"(?i)\b(?:token|secret|passwd|password|api[_-]?key|credential)s?\s*[=:]\s*"
+         r"(?:\"(?:\\.|[^\"\\])*\"?|'(?:\\.|[^'\\])*'?|\S+)", "[REDACTED]"),
+        (r"(?<![A-Za-z0-9_+/])(?!(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})(?![A-Za-z0-9_+/]))[A-Za-z0-9_+/]{32,}",
+         "[REDACTED]"),
     ]
     for pattern, replacement in patterns:
         value = re.sub(pattern, replacement, value, flags=re.DOTALL if "BEGIN" in pattern else 0)
