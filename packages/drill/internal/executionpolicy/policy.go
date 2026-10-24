@@ -151,13 +151,13 @@ func (p *Policy) baseArgs(home string) []string {
 	for _, root := range toolDirs.roots {
 		args = append(args, "--ro-bind", root, root)
 	}
-	args = append(args, "--bind", p.workDir, p.workDir, "--bind", p.gitDir, "/run/drill-execution/git")
+	args = append(args, "--bind", p.workDir, p.workDir, "--bind", p.gitDir, "/run/drill-execution/git",
+		"--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config")
 	if p.gitLinkIsDir {
 		args = append(args, "--bind", p.gitDir, p.gitLink,
 			"--ro-bind", filepath.Join(p.gitDir, "config"), filepath.Join(p.gitLink, "config"))
 	} else {
-		args = append(args, "--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config",
-			"--ro-bind", p.gitFile, p.gitLink)
+		args = append(args, "--ro-bind", p.gitFile, p.gitLink)
 	}
 	args = append(args, "--bind", home, "/run/drill-execution/home",
 		"--setenv", "HOME", "/run/drill-execution/home", "--setenv", "TMPDIR", "/tmp",
