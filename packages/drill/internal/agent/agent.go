@@ -304,37 +304,37 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	// whole payload.
 	bareFindingsPayload := isJSONArrayValue([]byte(text)) && isFindingsObjectSchema(validationSchema)
 
-	candidates := fencedJSONCandidates(text)
-	var parsed []json.RawMessage
+	var fencedPayloads, barePayloads []json.RawMessage
 	var candidateErr error
-	for _, candidate := range candidates {
-		fenced, err := parseStructuredCandidate([]byte(candidate), validationSchema)
-		if err == nil {
-			parsed = append(parsed, fenced)
+	for _, candidate := range jsonPayloadCandidates(text, isFindingsObjectSchema(validationSchema)) {
+		if !candidate.fenced && isEmptyJSONArray(candidate.text) {
 			continue
 		}
-		if candidateErr == nil {
-			candidateErr = err
+		payload, err := parseStructuredCandidate([]byte(candidate.text), validationSchema)
+		switch {
+		case err != nil:
+			bareArray := !candidate.fenced && isJSONArrayValue([]byte(candidate.text))
+			if candidateErr == nil && (candidate.fenced || !isJSONSyntaxError(err)) && (!bareArray || isObjectArray(candidate.text)) {
+				candidateErr = err
+			}
+		case candidate.fenced:
+			fencedPayloads = append(fencedPayloads, payload)
+		default:
+			barePayloads = append(barePayloads, payload)
 		}
 	}
-	switch len(parsed) {
-	case 0:
-	case 1:
-		return parsed[0], nil
-	default:
-		// Multiple fences parsed as valid JSON. Pick the last one
-		// deterministically: real review output places its findings
-		// payload last after any illustrative examples, so the final
-		// valid fence is the one the agent meant. This fixes the
-		// "multiple JSON code fences found in output" false failure
-		// when review agents wrap explanation text in code fences.
-		return parsed[len(parsed)-1], nil
+	if len(fencedPayloads) > 0 {
+		return fencedPayloads[len(fencedPayloads)-1], nil
 	}
-
-	if bare, err := lastBareJSONObject(text, validationSchema); err == nil && bare != nil {
-		return bare, nil
-	} else if candidateErr == nil && err != nil && !isJSONSyntaxError(err) {
-		candidateErr = err
+	distinct := distinctPayloads(barePayloads)
+	switch {
+	case len(distinct) == 0:
+	case len(distinct) == 1:
+		return distinct[0], nil
+	case isFindingsObjectSchema(validationSchema):
+		return nil, fmt.Errorf("ambiguous structured output: found %d valid findings payloads; emit exactly one findings JSON object and remove the others", len(distinct))
+	default:
+		return barePayloads[len(barePayloads)-1], nil
 	}
 
 	if candidateErr != nil {
@@ -463,31 +463,110 @@ func textValidationSchema(schema json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(value)
 }
 
-// fencedJSONCandidates extracts JSON bodies from ```json ... ``` fences.
+// jsonCandidate is one JSON payload span found in agent output. fenced marks
+// bodies taken from ```json fences, whose syntax errors are reported to the
+// caller; bare spans found in prose only surface schema-level failures.
+type jsonCandidate struct {
+	text   string
+	fenced bool
+}
+
+// jsonPayloadCandidates lists the JSON payloads embedded in text in textual
+// order: ```json fence bodies and brace-balanced object spans in prose, plus
+// bracket-balanced array spans when arrays is set (only the findings-object
+// schema accepts bare arrays as payloads). Closed non-JSON fences are skipped
+// whole, an unclosed non-JSON fence body is rescanned for prose payloads, and
+// closed ```json bodies are never rescanned for prose payloads.
+//
 // Fence markers may appear anywhere in the text, including glued to the end
 // of a preceding line (e.g. "...behavior.```json"), which is a shape real
 // codex/GPT-5 output regularly produces. An unclosed ```json opener is not
 // discarded: the remaining text (its body to EOF) is yielded as a candidate,
 // because models occasionally omit the closing fence when the payload is the
-// last thing they emit (real pi fix-agent output shape). The candidate still
+// last thing they emit (real pi fix-agent output shape). Each candidate still
 // undergoes strict parse + schema validation downstream.
-func fencedJSONCandidates(text string) []string {
-	var candidates []string
-	rest := text
-	for {
-		start := indexJSONFenceOpen(rest)
-		if start < 0 {
-			return candidates
+func jsonPayloadCandidates(text string, arrays bool) []jsonCandidate {
+	var candidates []jsonCandidate
+	for i := 0; i < len(text); i++ {
+		if strings.HasPrefix(text[i:], "```") {
+			if !isFenceOpener(text, i) {
+				continue
+			}
+			contentStart, info := fenceContentStart(text, i)
+			if !strings.EqualFold(strings.TrimSpace(info), "json") {
+				next := skipFenceBlock(text[contentStart:])
+				if next < 0 {
+					i = contentStart - 1
+					continue
+				}
+				i = contentStart + next - 1
+				continue
+			}
+			body := text[contentStart:]
+			end, next := indexJSONFenceClose(body)
+			if end < 0 {
+				candidates = append(candidates, jsonCandidate{text: body, fenced: true})
+				if json.Valid([]byte(body)) {
+					break
+				}
+				i = contentStart - 1
+				continue
+			}
+			candidates = append(candidates, jsonCandidate{text: body[:end], fenced: true})
+			i = contentStart + next - 1
+			continue
 		}
-		body := rest[start:]
-		end, next := indexJSONFenceClose(body)
-		if end < 0 {
-			candidates = append(candidates, body)
-			return candidates
+
+		switch text[i] {
+		case '{':
+			if end, ok := scanBalancedObject(text, i); ok && json.Valid([]byte(text[i:end])) {
+				candidates = append(candidates, jsonCandidate{text: text[i:end]})
+				i = end - 1
+			}
+		case '[':
+			if !arrays {
+				continue
+			}
+			if end, ok := scanBalancedArray(text, i); ok {
+				glued := (i > 0 && isIdentifierByte(text[i-1])) || (end < len(text) && isIdentifierByte(text[end]))
+				if glued {
+					continue
+				}
+				candidates = append(candidates, jsonCandidate{text: text[i:end]})
+			}
 		}
-		candidates = append(candidates, body[:end])
-		rest = body[next:]
 	}
+	return candidates
+}
+
+func isObjectArray(text string) bool {
+	var items []json.RawMessage
+	if json.Unmarshal([]byte(text), &items) != nil || len(items) == 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(string(items[0])), "{")
+}
+
+func isEmptyJSONArray(text string) bool {
+	var items []json.RawMessage
+	return json.Unmarshal([]byte(text), &items) == nil && items != nil && len(items) == 0
+}
+
+func distinctPayloads(payloads []json.RawMessage) []json.RawMessage {
+	seen := make(map[string]bool, len(payloads))
+	var distinct []json.RawMessage
+	for _, payload := range payloads {
+		if seen[string(payload)] {
+			continue
+		}
+		seen[string(payload)] = true
+		distinct = append(distinct, payload)
+	}
+	return distinct
+}
+
+func isIdentifierByte(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 // isFenceOpener reports whether a ``` run at byte i begins a real fence
@@ -522,36 +601,6 @@ func isFenceOpener(text string, i int) bool {
 		return false
 	}
 	return !strings.Contains(info, "`")
-}
-
-// indexJSONFenceOpen returns the byte offset of the content immediately
-// following an opening ```json fence (the char after the info line's
-// newline), or -1 if no opener exists.
-func indexJSONFenceOpen(text string) int {
-	for searchStart := 0; searchStart < len(text); {
-		i := strings.Index(text[searchStart:], "```")
-		if i < 0 {
-			return -1
-		}
-		i += searchStart
-		if !isFenceOpener(text, i) {
-			// Inline-code mention of a fence in prose, not a real fence
-			// block: skip just the backticks and keep searching so a real
-			// ```json fence later in the text is still found.
-			searchStart = i + 3
-			continue
-		}
-		contentStart, info := fenceContentStart(text, i)
-		if strings.EqualFold(strings.TrimSpace(info), "json") {
-			return contentStart
-		}
-		next := skipFenceBlock(text[contentStart:])
-		if next < 0 {
-			return -1
-		}
-		searchStart = contentStart + next
-	}
-	return -1
 }
 
 func fenceContentStart(text string, fenceStart int) (int, string) {
@@ -618,64 +667,44 @@ func indexJSONFenceClose(text string) (int, int) {
 	return -1, -1
 }
 
-// lastBareJSONObject scans text for balanced {...} substrings that parse
-// as JSON and returns the last one found. This handles models that emit
-// reasoning prose followed by a raw JSON answer, with no code fence.
-func lastBareJSONObject(text string, schema json.RawMessage) (json.RawMessage, error) {
-	var last json.RawMessage
-	var validationErr error
-	var syntaxErr error
-	for i := 0; i < len(text); i++ {
-		if strings.HasPrefix(text[i:], "```") {
-			if !isFenceOpener(text, i) {
-				// Inline-code mention of a fence in prose, not a real fence
-				// block: ignore the backticks and keep scanning so a JSON
-				// object after them is still recoverable.
+// scanBalancedArray is the bracket counterpart to scanBalancedObject. It
+// respects JSON string literals so brackets inside strings do not affect the
+// depth count.
+func scanBalancedArray(text string, start int) (int, bool) {
+	depth := 0
+	inString := false
+	escape := false
+	for i := start; i < len(text); i++ {
+		c := text[i]
+		if inString {
+			if escape {
+				escape = false
 				continue
 			}
-			contentStart, _ := fenceContentStart(text, i)
-			next := skipFenceBlock(text[contentStart:])
-			if next < 0 {
-				// Unclosed fence: the opener's body runs to EOF. Do not abort
-				// the whole scan - a JSON object after the opener (e.g. the
-				// payload of an unterminated ```json fence) must still be
-				// recoverable by the balanced-brace scan below. Skip just the
-				// opener and keep scanning from the body start.
-				i = contentStart - 1
-				continue
+			switch c {
+			case '\\':
+				escape = true
+			case '"':
+				inString = false
 			}
-			i = contentStart + next - 1
 			continue
 		}
-		if text[i] != '{' {
-			continue
+		if c == '`' && strings.HasPrefix(text[i:], "```") && isFenceOpener(text, i) {
+			return 0, false
 		}
-		end, ok := scanBalancedObject(text, i)
-		if !ok {
-			continue
-		}
-		candidate := text[i:end]
-		obj, err := parseStructuredCandidate([]byte(candidate), schema)
-		if err == nil {
-			last = obj
-			validationErr = nil
-			syntaxErr = nil
-		} else if isJSONSyntaxError(err) {
-			if syntaxErr == nil {
-				syntaxErr = err
+		switch c {
+		case '"':
+			inString = true
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return i + 1, true
 			}
-		} else if validationErr == nil {
-			validationErr = err
 		}
-		i = end - 1
 	}
-	if last != nil {
-		return last, nil
-	}
-	if validationErr != nil {
-		return nil, validationErr
-	}
-	return nil, syntaxErr
+	return 0, false
 }
 
 // isJSONSyntaxError reports whether err is a JSON syntax error (the candidate
@@ -708,6 +737,9 @@ func scanBalancedObject(text string, start int) (int, bool) {
 				inString = false
 			}
 			continue
+		}
+		if c == '`' && strings.HasPrefix(text[i:], "```") && isFenceOpener(text, i) {
+			return 0, false
 		}
 		switch c {
 		case '"':
