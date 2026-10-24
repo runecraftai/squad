@@ -23,13 +23,14 @@
 # Lane = the decision profile name recorded at intake; "(no-profile)" when the
 # decision recorded only a reason, or the task has no log.
 # Outcome = done or landed (success) or failed, from the log's outcome rows,
-# else the last done/failed line of state/<id>.status. A released outcome (teardown)
+# else a logged task is skipped; a task without a log takes the last done/failed line
+# of state/<id>.status. A released outcome (teardown)
 # counts toward its lane and profile dispatch totals, never as a success or failure;
 # success rate is done over done plus failed, as in the lane table.
 # Fallback = a log's failure_class of provider or quota, even on a released
 # task (guard and other are misses). Without one, the last done or failed status line
-# decides; a blocked or paused line counts only when no done or failed line exists. Teardown removes the status
-# file, so a torn-down task without a failure_class is "unknown".
+# decides; a blocked or paused line counts only when no done or failed line exists.
+# Teardown removes the status file, so a torn-down task without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
 # Credential guard: a harness, model, effort, lane, or recommendation that looks
@@ -241,7 +242,7 @@ fi
 record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <fallback> <recommended> [profile]
   local harness model effort lane recommended profile
   harness=$(redact_shape "$2"); model=$(redact_shape "$3"); effort=$(redact_shape "$4")
-  lane=$(redact_shape "$7"); recommended=$(redact_shape "$9")
+  lane=$(redact_shape "$7"); recommended="$9"
   profile="${10:-$harness/$model/$effort}"
   if [ -n "$FILTER_PROFILE" ]; then
     case "$profile" in
@@ -315,7 +316,7 @@ for name in names:
             for line in handle:
                 try:
                     row = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError):
                     continue
                 if not isinstance(row, dict):
                     continue
@@ -394,7 +395,7 @@ collect_logged_tasks() {
 
     recommended="-"
     if [ -n "$rec_h" ]; then
-      recommended="$rec_h/$rec_m/$rec_e"
+      recommended="$(redact_shape "$rec_h")/$(redact_shape "$rec_m")/$(redact_shape "$rec_e")"
     fi
     record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "${duration:-0}" \
       "$lane" "$fallback" "$recommended" "$profile"
