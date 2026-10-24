@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for bin/sq-dispatch-tune.sh - dispatch profile analysis.
 #
-# Verifies: metric extraction, recommendation generation, JSON output,
+# Verifies: metric extraction, JSON output,
 # empty data handling, profile filtering, and argument validation.
 set -u
 
@@ -57,14 +57,14 @@ METAEOF
   done
 }
 
-# Create a fixture with a specific profile distribution for recommendation testing.
+# Create a fixture with a specific profile distribution.
 setup_recommendation_fixtures() {
   local state_dir="$1"
   mkdir -p "$state_dir"
 
   local i task_id
 
-  # Profile A: 10 tasks, 10 success = 100% success rate (should recommend increase)
+  # Profile A: 10 tasks, 10 success = 100% success rate (all succeeded)
   for i in $(seq 1 10); do
     task_id="profile-a-$i"
     cat > "$state_dir/$task_id.meta" <<METAEOF
@@ -77,7 +77,7 @@ METAEOF
     echo "done: completed" > "$state_dir/$task_id.status"
   done
 
-  # Profile B: 10 tasks, 2 success = 20% success rate (should recommend reduce)
+  # Profile B: 10 tasks, 2 success = 20% success rate (mostly failed)
   for i in $(seq 1 10); do
     task_id="profile-b-$i"
     cat > "$state_dir/$task_id.meta" <<METAEOF
@@ -94,7 +94,7 @@ METAEOF
     fi
   done
 
-  # Profile C: 5 tasks, 5 failures = 100% failure rate (should recommend avoid)
+  # Profile C: 5 tasks, 5 failures = 100% failure rate (all failed)
   for i in $(seq 1 5); do
     task_id="profile-c-$i"
     cat > "$state_dir/$task_id.meta" <<METAEOF
@@ -217,33 +217,8 @@ else
 fi
 
 echo ""
-echo "=== Recommendation Generation ==="
-
-# Test 11: High success rate profile gets "increase" recommendation.
 REC_STATE="$TMP_ROOT/rec-state"
 setup_recommendation_fixtures "$REC_STATE"
-
-output=$(SQUAD_STATE_OVERRIDE="$REC_STATE" "$TUNE" 2>&1)
-
-if echo "$output" | grep -q 'Increase usage of claude/sonnet/default'; then
-  pass "recommends increasing high-success profile"
-else
-  fail "missing increase recommendation: $output"
-fi
-
-# Test 12: Low success rate profile gets "reduce" recommendation.
-if echo "$output" | grep -q 'Reduce usage of'; then
-  pass "recommends reducing low-success profile"
-else
-  fail "missing reduce recommendation: $output"
-fi
-
-# Test 13: High failure count gets "avoid" recommendation.
-if echo "$output" | grep -q 'Avoid codex/default/low'; then
-  pass "recommends avoiding high-failure profile"
-else
-  fail "missing avoid recommendation: $output"
-fi
 
 echo ""
 echo "=== JSON Output ==="
@@ -263,29 +238,11 @@ else
   fail "JSON missing profiles array: $output"
 fi
 
-if echo "$output" | grep -q '"recommendations":\['; then
-  pass "JSON contains recommendations array"
+# Ranking and recommendations are follow-up work: no recommendations key.
+if echo "$output" | grep -q '"recommendations"'; then
+  fail "JSON still carries recommendations: $output"
 else
-  fail "JSON missing recommendations array: $output"
-fi
-
-# Test 15: JSON recommendations have correct actions.
-if echo "$output" | grep -q '"action":"increase"'; then
-  pass "JSON has increase recommendation"
-else
-  fail "JSON missing increase recommendation: $output"
-fi
-
-if echo "$output" | grep -q '"action":"reduce"'; then
-  pass "JSON has reduce recommendation"
-else
-  fail "JSON missing reduce recommendation: $output"
-fi
-
-if echo "$output" | grep -q '"action":"avoid"'; then
-  pass "JSON has avoid recommendation"
-else
-  fail "JSON missing avoid recommendation: $output"
+  pass "JSON carries no recommendations"
 fi
 
 echo ""
@@ -308,9 +265,11 @@ else
 fi
 
 if echo "$output" | grep -q '## Recommendations'; then
-  pass "markdown has recommendations section"
+  fail "markdown still has a recommendations section: $output"
+elif echo "$output" | grep -q 'Ranking and recommendations are follow-up work.'; then
+  pass "markdown notes that ranking is follow-up work"
 else
-  fail "markdown missing recommendations section: $output"
+  fail "markdown missing the follow-up note: $output"
 fi
 
 echo ""
@@ -858,7 +817,7 @@ SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$SECRET_DATA" "$LOG_WRI
 if [ -e "$SECRET_DATA/sha-a/dispatch.jsonl" ] && [ ! -e "$SECRET_DATA/hex-a/dispatch.jsonl" ]; then
   pass "a commit SHA in a decision reason is stored; a 41 character hex run is refused"
 else
-  fail "SHA reason guard wrong: sha-a=$(ls "$SECRET_DATA" 2>/dev/null | tr '\n' ' ')"
+  fail "SHA reason guard wrong: sha-a=$(find "$SECRET_DATA" -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null)"
 fi
 
 # A torn-down done task with no failure class is clean: a fallback miss, never unknown.

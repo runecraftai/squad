@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sq-dispatch-tune.sh — Analyze operator performance and recommend dispatch profile adjustments.
+# sq-dispatch-tune.sh — Report dispatch volume, chosen profiles, success and fallback rates from dispatch logs.
 #
 # Reads completed-task evidence log-first. data/<id>/dispatch.jsonl, the private
 # dispatch log written by sq-dispatch-log.sh, supplies the lane, the recommended
@@ -65,7 +65,7 @@ usage() {
   cat <<'EOF'
 Usage: sq-dispatch-tune.sh [OPTIONS]
 
-Analyze operator performance metrics and recommend dispatch profile adjustments.
+Report operator dispatch metrics per profile and, on request, per lane. Ranking and recommendations are follow-up work.
 
 Options:
   --json              Output in machine-readable JSON (default: markdown)
@@ -517,7 +517,7 @@ if [ "$TASKS_COUNT" -eq 0 ]; then
     if [ "$FALLBACK_RATE" -eq 1 ]; then
       extras+=',"fallback":{"hits":0,"observed":0,"unknown":0,"rate":null}'
     fi
-    echo '{"period_days":'"$PERIOD_DAYS"',"profiles":[],"recommendations":[],"tasks":0'"$extras"'}'
+    echo '{"period_days":'"$PERIOD_DAYS"',"profiles":[],"tasks":0'"$extras"'}'
   else
     echo "# Dispatch Profile Analysis"
     echo ""
@@ -593,40 +593,10 @@ fallback_totals() { # [lane]
     END { printf "%d %d %d\n", hits + 0, observed + 0, unknown + 0 }' "$TASKS_FILE"
 }
 
-# Best, worst and fastest profiles from the metrics file. The no-profile bucket is
-# never selected: it appears only as its own count.
-select_profiles() { # <metrics file>
-  best_rate=0; best_profile=""; worst_rate=100; worst_profile=""
-  fastest_dur=999999; fastest_profile=""; fastest_rate=0
-  local profile total success failure rate avg_dur rate_int avg_int
-  while IFS=$'\t' read -r profile total success failure rate avg_dur; do
-    [ "$profile" = "$NO_PROFILE_LABEL" ] && continue
-    # Released-only profiles have no rate.
-    [ $((success + failure)) -ge 1 ] || continue
-    rate_int="${rate%.*}"
-    avg_int="${avg_dur%.*}"
-    if [ "$rate_int" -gt "${best_rate%.*}" ] 2>/dev/null || [ "$best_rate" = "0" ]; then
-      best_rate="$rate"; best_profile="$profile"
-    fi
-    if [ "$rate_int" -lt "${worst_rate%.*}" ] 2>/dev/null || [ "$worst_rate" = "100" ]; then
-      worst_rate="$rate"; worst_profile="$profile"
-    fi
-    if [ "$avg_int" -lt "$fastest_dur" ] 2>/dev/null; then
-      fastest_dur="$avg_int"; fastest_profile="$profile"; fastest_rate="$rate"
-    fi
-  done < "$1"
-}
-
-# Avoid candidates as profile, failures, decided: at least 3 of each, no-profile excluded.
-avoid_rows() { # <metrics file>
-  awk -F'\t' -v no_profile="$NO_PROFILE_LABEL" '
-    $1 != no_profile && $4 >= 3 && $3 + $4 >= 3 { printf "%s\t%d\t%d\n", $1, $4, $3 + $4 }' "$1"
-}
-
 # Generate markdown output.
 emit_markdown() {
   local metrics_file="$1"
-  local profile total success failure rate avg_dur
+  local profile total success failure avg_dur
   echo "# Dispatch Profile Analysis"
   echo ""
   echo "**Period:** last ${PERIOD_DAYS} days"
@@ -641,14 +611,13 @@ emit_markdown() {
   echo "| Profile | Tasks | Success Rate | Avg Duration |"
   echo "|---------|------:|-------------:|-------------:|"
 
-  while IFS=$'\t' read -r profile total success failure rate avg_dur; do
+  while IFS=$'\t' read -r profile total success failure _rate avg_dur; do
     printf '| %s | %s | %s | %s |' \
       "$(md_cell "$profile")" "$total" "$(pct_text "$success" $((success + failure)))" "$(fmt_duration "${avg_dur%.*}")"
     echo ""
   done < "$metrics_file"
 
   echo ""
-  select_profiles "$metrics_file"
 
   if [ "$BY_LANE" -eq 1 ]; then
     emit_lanes_markdown
@@ -658,44 +627,7 @@ emit_markdown() {
     emit_fallback_markdown
   fi
 
-  # Recommendations.
-  echo "## Recommendations"
-  echo ""
-
-  local has_recommendations=0
-
-  # Overperforming profiles: high success rate, fast completion.
-  if [ -n "$best_profile" ] && [ "${best_rate%.*}" -ge 80 ] 2>/dev/null; then
-    echo "- **Increase usage of ${best_profile}:** ${best_rate}% success rate"
-    has_recommendations=1
-  fi
-
-  if [ -n "$fastest_profile" ] && [ "$fastest_dur" -lt 999999 ] 2>/dev/null; then
-    # Only recommend if not already the best by success rate and has acceptable success rate.
-    if [ "$fastest_profile" != "$best_profile" ] && [ "${fastest_rate%.*}" -ge 50 ] 2>/dev/null; then
-      echo "- **Increase usage of ${fastest_profile}:** fastest avg completion ($(fmt_duration "$fastest_dur"))"
-      has_recommendations=1
-    fi
-  fi
-
-  # Underperforming profiles: low success rate.
-  if [ -n "$worst_profile" ] && [ "${worst_rate%.*}" -lt 50 ] 2>/dev/null; then
-    echo "- **Reduce usage of ${worst_profile}:** ${worst_rate}% success rate"
-    has_recommendations=1
-  fi
-
-  # Consistently failing model/harness combos.
-  while IFS=$'\t' read -r profile failure decided; do
-    local fail_pct
-    fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
-    echo "- **Avoid ${profile}:** ${fail_pct}% failure rate (${failure}/${decided} tasks failed)"
-    has_recommendations=1
-  done < <(avoid_rows "$metrics_file")
-
-  if [ "$has_recommendations" -eq 0 ]; then
-    echo "- No strong recommendations. All profiles performing within normal range."
-  fi
-
+  echo "Ranking and recommendations are follow-up work."
   echo ""
 
   # Verbose: per-task detail.
@@ -811,7 +743,7 @@ emit_json() {
   # Build profile JSON array.
   local profiles_json="["
   local first=1
-  while IFS=$'\t' read -r profile total success failure rate avg_dur; do
+  while IFS=$'\t' read -r profile total success failure _rate avg_dur; do
     [ "$first" -eq 0 ] && profiles_json+=","
     first=0
     local escaped
@@ -820,50 +752,6 @@ emit_json() {
       "$escaped" "$total" "$success" "$failure" "$(pct_json "$success" $((success + failure)))" "$avg_dur")
   done < "$metrics_file"
   profiles_json+="]"
-
-  # Build recommendations array.
-  local recs_json="["
-  local first_rec=1
-  select_profiles "$metrics_file"
-
-  local bp ep wp
-  bp=$(json_escape "$best_profile")
-  ep=$(json_escape "$fastest_profile")
-  wp=$(json_escape "$worst_profile")
-
-  if [ -n "$best_profile" ] && [ "${best_rate%.*}" -ge 80 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+=","
-    first_rec=0
-    recs_json+=$(printf '{"action":"increase","profile":"%s","reason":"%.1f%% success rate"}' \
-      "$bp" "$best_rate")
-  fi
-
-  if [ -n "$fastest_profile" ] && [ "$fastest_dur" -lt 999999 ] 2>/dev/null && \
-     [ "$fastest_profile" != "$best_profile" ] && [ "${fastest_rate%.*}" -ge 50 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+=","
-    first_rec=0
-    recs_json+=$(printf '{"action":"increase","profile":"%s","reason":"fastest avg completion (%.0fs)"}' \
-      "$ep" "$fastest_dur")
-  fi
-
-  if [ -n "$worst_profile" ] && [ "${worst_rate%.*}" -lt 50 ] 2>/dev/null; then
-    [ "$first_rec" -eq 0 ] && recs_json+=","
-    first_rec=0
-    recs_json+=$(printf '{"action":"reduce","profile":"%s","reason":"%.1f%% success rate"}' \
-      "$wp" "$worst_rate")
-  fi
-
-  while IFS=$'\t' read -r profile failure decided; do
-    local fail_pct ep2
-    fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
-    ep2=$(json_escape "$profile")
-    [ "$first_rec" -eq 0 ] && recs_json+=","
-    first_rec=0
-    recs_json+=$(printf '{"action":"avoid","profile":"%s","reason":"%d%% failure rate (%d/%d tasks)"}' \
-      "$ep2" "$fail_pct" "$failure" "$decided")
-  done < <(avoid_rows "$metrics_file")
-
-  recs_json+="]"
 
   # Optional sections, present only when their flag was given.
   local extras=""
@@ -875,8 +763,8 @@ emit_json() {
   fi
 
   # Emit complete JSON.
-  printf '{"period_days":%d,"tasks":%d,"profiles":%s,"recommendations":%s%s}\n' \
-    "$PERIOD_DAYS" "$TASKS_COUNT" "$profiles_json" "$recs_json" "$extras"
+  printf '{"period_days":%d,"tasks":%d,"profiles":%s%s}\n' \
+    "$PERIOD_DAYS" "$TASKS_COUNT" "$profiles_json" "$extras"
 }
 
 # ── main ──────────────────────────────────────────────────────────────────
