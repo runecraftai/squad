@@ -531,8 +531,8 @@ test_housekeeping_persistent_stale_escalates() {
 # as one wake, handle_wake records the daemon's stale marker from that wake, and
 # housekeeping's persistence recheck must act on it. The still-busy pane must
 # escalate once frozen, but progress or an active drill run-step must not.
-afk_busy_daemon_case() {  # <case: frozen|progress|run-step>
-  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen
+afk_busy_daemon_case() {  # <case: frozen|progress|run-step|episode>
+  local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen episode
   dir=$(make_supercase "afk-busy-e2e-$case_name")
   state="$dir/state"; fakebin="$dir/fakebin"; win="test:sq-afk-busy"; pane="$dir/pane.txt"; out="$dir/sentry.out"
   make_fake_crew_state "$fakebin" >/dev/null
@@ -562,6 +562,37 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step>
   [ -e "$state/.subsuper-stale-$key" ] || fail "$case_name: daemon did not record a stale marker for the busy handoff"
 
   echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  if [ "$case_name" = episode ]; then
+    # A second actual sentry handoff must replace the first static episode's
+    # age, even when housekeeping has not yet noticed the intervening progress.
+    printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    wait_for_exit "$sentry_pid" 100 || fail "new static episode was not handed off: $(cat "$out")"
+    reason=$(grep -m1 "busy expired without activity" "$out") || fail "second handoff lost busy-expiry reason"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "new hash inherited the first handoff's expired clock"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "second static episode escalated before its full window"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    [ "$(cat "$state/.subsuper-stale-$key")" = "$episode" ] || fail "replaying a handoff reset the same episode's clock"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  fi
   case "$case_name" in
     progress) printf 'Working... (13k tokens)\n12k tokens USD 0.42' > "$pane" ;;
     run-step) export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · tests running' ;;
@@ -572,7 +603,7 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step>
   unset SQUAD_FAKE_CREW_STATE
 
   case "$case_name" in
-    frozen)
+    frozen|episode)
       grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
         || fail "frozen afk busy pane was absorbed by the daemon instead of escalating"
       grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 \
@@ -593,10 +624,10 @@ afk_busy_daemon_case() {  # <case: frozen|progress|run-step>
 
 test_afk_busy_handoff_escalates_through_daemon_recheck() {
   local case_name
-  for case_name in frozen progress run-step; do
+  for case_name in frozen progress run-step episode; do
     afk_busy_daemon_case "$case_name"
   done
-  pass "afk busy handoff escalates a frozen pane once, releases on progress, and defers during an active run-step"
+  pass "afk busy handoff escalates frozen output, restarts each changed-output episode, and defers active steps"
 }
 
 # Non-afk wedge escalation end to end: the real sentry emits the expired-busy
@@ -737,18 +768,13 @@ test_housekeeping_herdr_idle_busy_record_clears_stale() {
       [ "$2" = "default:w1:p4" ] || fail "expected herdr busy target, got $2"
       printf 'idle'
     }
-    fm_backend_capture_rendered() {
-      [ "$1" = herdr ] || fail "expected herdr rendered backend, got $1"
-      [ "$2" = "default:w1:p4" ] || fail "expected herdr rendered target, got $2"
-      printf 'quiet\n'
-    }
     fm_backend_capture herdr default:w1:p4 40 >/dev/null
     [ "$(fm_backend_busy_state herdr default:w1:p4)" = idle ] || fail "herdr busy stub did not report idle"
     SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
   ) || fail "herdr idle busy-footer housekeeping failed"
-  [ ! -e "$state/.subsuper-stale-$key" ] || fail "idle-native busy-record herdr stale marker was not cleared"
+  [ -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport lost its pending marker"
   [ ! -s "$state/.subsuper-escalations" ] || fail "idle-native busy-record herdr stale was escalated"
-  pass "herdr idle busy-footer stale clears through capture corroboration"
+  pass "herdr busy-record stale does not alarm without verified complete viewport evidence"
 }
 
 test_housekeeping_herdr_resumed_stale_cleared() {
@@ -765,11 +791,6 @@ test_housekeeping_herdr_resumed_stale_cleared() {
       [ "$2" = "default:w1:p3" ] || fail "expected herdr window target, got $2"
       printf 'unchanged pane\n'
     }
-    fm_backend_capture_rendered() {
-      [ "$1" = herdr ] || fail "expected herdr rendered backend, got $1"
-      [ "$2" = "default:w1:p3" ] || fail "expected herdr rendered target, got $2"
-      printf 'unchanged pane\n'
-    }
     fm_backend_busy_state() {
       [ "$1" = herdr ] || fail "expected herdr busy backend, got $1"
       [ "$2" = "default:w1:p3" ] || fail "expected herdr busy target, got $2"
@@ -779,9 +800,9 @@ test_housekeeping_herdr_resumed_stale_cleared() {
     [ "$(fm_backend_busy_state herdr default:w1:p3)" = busy ] || fail "herdr busy stub did not report busy"
     SQUAD_STATE_OVERRIDE="$state" SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
   ) || fail "herdr resumed stale housekeeping failed"
-  [ ! -e "$state/.subsuper-stale-$key" ] || fail "busy herdr stale marker was not cleared"
+  [ -e "$state/.subsuper-stale-$key" ] || fail "unverified Herdr viewport lost its pending busy marker"
   [ ! -s "$state/.subsuper-escalations" ] || fail "busy herdr stale was escalated"
-  pass "resumed herdr stale clears through backend-aware busy state"
+  pass "busy herdr stale cannot expire without verified complete viewport evidence"
 }
 
 test_housekeeping_orca_persistent_stale_resolves_terminal() {
