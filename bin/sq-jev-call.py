@@ -197,8 +197,9 @@ def main():
         "instructions": "Recommend the best-fitting lane for this task. Task projection: "
         + json.dumps(projection, ensure_ascii=True, separators=(",", ":")),
     }
+    body = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
     if args.dry_run:
-        print(json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
+        print(body)
         return 0
     if not lanes:
         return finish(args, {"status": "unavailable", "reason": "no_lanes"})
@@ -206,10 +207,9 @@ def main():
         return finish(args, {"status": "unavailable", "reason": "file_count_unmeasured"})
     parsed_url = urllib.parse.urlparse(args.url)
     if args.url != API_URL and parsed_url.hostname not in ("127.0.0.1", "localhost", "::1"):
-        print(json.dumps({"status": "error"}))
-        return 0
+        return finish(args, {"status": "unavailable", "reason": "endpoint_refused"})
     request = urllib.request.Request(
-        args.url, data=json.dumps(payload).encode(),
+        args.url, data=body.encode(),
         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
         method="POST",
     )
