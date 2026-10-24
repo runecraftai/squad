@@ -659,8 +659,13 @@ func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state Sta
 	fresh, selected, _ := s.inspect(ctx)
 	if selected == nil || selected.ID != run.ID || selected.HeadSHA != run.HeadSHA ||
 		fresh.State != StatePipelineOwned || fresh.Local.Branch != state.Local.Branch ||
-		fresh.Local.Head != state.Local.Head || !fresh.Local.Clean {
-		return blockedPlan(fresh, fresh.State, "blocked_recover_assumptions_changed", "the orphaned run or local worktree changed or is dirty; custody was not returned")
+		fresh.Local.Head != state.Local.Head {
+		return blockedPlan(fresh, fresh.State, "blocked_recover_assumptions_changed", "the orphaned run or local worktree changed while custody was being returned; custody was not returned")
+	}
+	if !fresh.Local.Clean {
+		blocked := blockedPlan(fresh, StatePipelineOwned, "blocked_recover_dirty", fmt.Sprintf("the invoking worktree is not clean (%s); commit or stash first and re-run the recovery; no files or refs were changed", fresh.Local.Reason))
+		blocked.NextAction = &NextAction{Code: "inspect_worktree", Command: "git status"}
+		return blocked
 	}
 	// Recheck absence immediately before recording the release. Inspection
 	// errors, invalid identities, and a newly available object all refuse.

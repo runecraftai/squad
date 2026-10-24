@@ -237,7 +237,7 @@ func TestRecoverMissingAnchorNeverReleasesExistingDivergentHead(t *testing.T) {
 
 func TestRecoverOrphanRefusals(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []string{"active", "dirty", "missing gate", "invalid head", "published"} {
+	for _, kind := range []string{"active", "missing gate", "invalid head", "published"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newRecoverFixture(t, types.RunFailed)
 			missing := strings.Repeat("a", 40)
@@ -252,8 +252,6 @@ func TestRecoverOrphanRefusals(t *testing.T) {
 				if err := f.db.UpdateRunStatus(f.run.ID, types.RunRunning); err != nil {
 					t.Fatal(err)
 				}
-			case "dirty":
-				mustWrite(t, filepath.Join(f.local, "uncommitted.txt"), "keep me\n")
 			case "missing gate":
 				f.service.GateDir = filepath.Join(t.TempDir(), "absent")
 			case "published":
@@ -270,6 +268,51 @@ func TestRecoverOrphanRefusals(t *testing.T) {
 				t.Fatal("refusal moved a ref")
 			}
 		})
+	}
+}
+
+// TestRecoverOrphanDirtyWorktreeRefusesWithInspectAction pins the refusal an
+// operator with uncommitted work sees: the orphan release still refuses, but
+// names the dirtiness and offers the same inspect_worktree exit as every other
+// dirty recovery refusal instead of a generic assumptions-changed block. The
+// uncommitted work survives and the release succeeds once the tree is clean.
+func TestRecoverOrphanDirtyWorktreeRefusesWithInspectAction(t *testing.T) {
+	t.Parallel()
+
+	f := newRecoverFixture(t, types.RunFailed)
+	missing := strings.Repeat("a", 40)
+	if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(f.local, "uncommitted.txt"), "keep me\n")
+	before := mustRun(t, f.local, "show-ref")
+
+	got := f.service.Recover(f.ctx, false)
+	if got.Recovered || got.Changed || f.custodyReturned() {
+		t.Fatalf("dirty orphan release was not refused: %#v", got)
+	}
+	if got.Safety != "blocked_recover_dirty" || got.State != StatePipelineOwned {
+		t.Fatalf("dirty orphan refusal = %s/%s", got.State, got.Safety)
+	}
+	if got.NextAction == nil || got.NextAction.Code != "inspect_worktree" || got.NextAction.Command != "git status" {
+		t.Fatalf("dirty orphan next action = %#v", got.NextAction)
+	}
+	if !strings.Contains(got.Error, "not clean") || !strings.Contains(got.Error, "commit or stash") {
+		t.Fatalf("dirty orphan refusal does not name the exit: %q", got.Error)
+	}
+	if mustRun(t, f.local, "show-ref") != before {
+		t.Fatal("dirty orphan refusal moved a ref")
+	}
+	if got := readOptional(t, filepath.Join(f.local, "uncommitted.txt")); got != "keep me\n" {
+		t.Fatalf("dirty orphan refusal touched uncommitted work: %q", got)
+	}
+
+	if err := os.Remove(filepath.Join(f.local, "uncommitted.txt")); err != nil {
+		t.Fatal(err)
+	}
+	clean := f.service.Recover(f.ctx, false)
+	if !clean.Recovered || clean.State != StateCustodyReturned || !f.custodyReturned() {
+		t.Fatalf("clean orphan release after the refusal = %#v", clean)
 	}
 }
 
