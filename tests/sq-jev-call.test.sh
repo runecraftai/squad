@@ -150,7 +150,7 @@ with tempfile.TemporaryDirectory() as td:
         leak_rows = [json.loads(line) for line in (leak_data / "task/dispatch.jsonl").read_text().splitlines()]
         assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1}
         state["reply"] = OK_REPLY
-        assert "runtime-test-key" not in str(argv)
+        assert "runtime-test-key" not in result.stdout + result.stderr + (data / "task/dispatch.jsonl").read_text()
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
         boundary = module.redact("x" * 230 + " sk-abcd1234567890")
         assert len(boundary) == 240 and "sk-" not in boundary
