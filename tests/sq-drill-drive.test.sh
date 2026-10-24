@@ -56,7 +56,7 @@ case "$2" in
     fi
     printf 'branch_sync:\n  state: custody_returned\n  local:\n    head: %s\n' "$RECOVERY_HEAD"
     if [ "$MODE" = orphan ]; then
-      printf '  pipeline:\n    custody_return_note: orphaned run run-1; missing pipeline head %s; custody released to local head %s; pipeline unpublished fixes are lost with the missing object\n' "$MISSING_HEAD" "$RECOVERY_HEAD"
+      printf '  pipeline:\n    custody_return_note: "orphaned run run-1: missing pipeline head %s; custody released to local head %s; pipeline unpublished fixes are lost with the missing object"\n' "$MISSING_HEAD" "$RECOVERY_HEAD"
     fi ;;
   *) exit 2 ;;
 esac
@@ -126,7 +126,7 @@ drive run --intent intent
 expect_code 0 "$RC" 'orphan release proceeds to the next gate'
 expect_code 2 "$(wc -l < "$TMP/count" | tr -d ' ')" 'orphan release starts exactly one rerun'
 assert_grep 'axi sync --recover' "$TMP/calls" 'only the supported release path is used'
-assert_grep "recovery audit: orphaned run run-1; missing pipeline head $MISSING_HEAD; custody released to local head $RECOVERY_HEAD; pipeline unpublished fixes are lost" "$TMP/output" 'release audit stays visible'
+assert_grep "recovery audit: orphaned run run-1: missing pipeline head $MISSING_HEAD; custody released to local head $RECOVERY_HEAD; pipeline unpublished fixes are lost with the missing object" "$TMP/output" 'release audit stays visible'
 [ "$(authoritative_head)" = "$BEFORE_HEAD" ] || fail 'orphan release moved the branch'
 [ ! -e "$SQUAD_BASE/state/probe.status" ] || fail 'orphan release emitted a blocker'
 pass 'orphan custody returned by Drill proceeds without hiding the loss audit'

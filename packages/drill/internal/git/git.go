@@ -96,6 +96,17 @@ func ObjectMissing(ctx context.Context, dir, sha string) (bool, error) {
 	return strings.TrimSpace(string(out)) == sha+" missing", nil
 }
 
+// IsAncestor reports whether ancestor is reachable from descendant (an equal
+// commit counts). Empty or unresolvable identities are not ancestors, so a
+// caller never treats missing evidence as a proven descent.
+func IsAncestor(ctx context.Context, dir, ancestor, descendant string) bool {
+	if ancestor == "" || descendant == "" {
+		return false
+	}
+	_, err := Run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
+}
+
 func runInDirWithEnvRaw(ctx context.Context, dir string, extraEnv []string, args ...string) ([]byte, error) {
 	return runInDirWithEnvRawInput(ctx, dir, extraEnv, "", args...)
 }

@@ -35,6 +35,11 @@ var canonicalPreserveGateFixPhrases = []string{
 	"fix-round limit",
 }
 
+// canonicalBranchSyncPhrases are the load-bearing claims the published
+// branch-sync guidance must carry on every surface an agent reads. This list is
+// a doc-sync guard for that published text, not proof that a user or agent
+// receives it: the emitted wording is exercised by
+// TestBranchSyncGuidanceForOrphanedHeadReportsLoss and the recovery output tests.
 var canonicalBranchSyncPhrases = []string{
 	"branch_sync",
 	"drill axi sync",
@@ -48,7 +53,6 @@ var canonicalBranchSyncPhrases = []string{
 	"drill axi sync --recover",
 	"preserved_head_missing",
 	"unpublished fixes are lost",
-	"preserved head",
 	// Cancellation releases a run that never changed the submitted head
 	// (v1.44.2 dogfood catch): every surface must name the released state and
 	// that it needs no recovery.
@@ -172,7 +176,7 @@ func TestBranchSyncGuidanceForOrphanedHeadReportsLoss(t *testing.T) {
 		t.Fatal("orphaned-head ownership refusal must exit nonzero")
 	}
 	got := out.String()
-	for _, want := range []string{"recover_custody", "preserved_head_missing", "unpublished fixes are lost"} {
+	for _, want := range []string{"recover_custody", "preserved_head_missing", "unpublished fixes are lost", "the recorded head was lost", "drill axi sync --recover"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("orphaned-head refusal missing %q:\n%s", want, got)
 		}

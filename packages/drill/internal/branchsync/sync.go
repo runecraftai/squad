@@ -1492,11 +1492,7 @@ func objectExists(ctx context.Context, dir, sha string) bool {
 }
 
 func isAncestor(ctx context.Context, dir, ancestor, descendant string) bool {
-	if ancestor == "" || descendant == "" {
-		return false
-	}
-	_, err := git.Run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
-	return err == nil
+	return git.IsAncestor(ctx, dir, ancestor, descendant)
 }
 
 func samePath(a, b string) bool {

@@ -87,7 +87,7 @@ func (m *RunManager) validateOrphanStart(ctx context.Context, p *ipc.OrphanStart
 	// The released head stays the immutable audit anchor. A later local head is
 	// admitted only when the submitted commit proves it descends from that
 	// anchor, so a rewritten or unrelated head still refuses.
-	if audited := *prior.CustodyReturnHead; p.HeadSHA != audited && !commitIsAncestor(ctx, gateDir, audited, p.HeadSHA) {
+	if audited := *prior.CustodyReturnHead; p.HeadSHA != audited && !git.IsAncestor(ctx, gateDir, audited, p.HeadSHA) {
 		return refuse("the requested commit does not descend from the audited released local head")
 	}
 	return repo, prior, nil
@@ -141,12 +141,4 @@ func (m *RunManager) clearStaleOrphanSubmission(ctx context.Context, repo *db.Re
 		return fmt.Errorf("orphan_start_refused: the stale private submission could not be cleared; no branch push attempted: %w", err)
 	}
 	return nil
-}
-
-func commitIsAncestor(ctx context.Context, dir, ancestor, descendant string) bool {
-	if ancestor == "" || descendant == "" {
-		return false
-	}
-	_, err := git.Run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
-	return err == nil
 }
