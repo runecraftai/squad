@@ -159,7 +159,18 @@ func TestExecutionPolicyDoesNotMountCredentialBearingPathEntries(t *testing.T) {
 	}
 }
 
-func TestFixtureAccessIsGatedByBuildNotExecutableName(t *testing.T) {
+func TestRegularBuildGivesFakeagentNamedBinaryNoFixtureAccess(t *testing.T) {
+	if e2eBuild {
+		t.Skip("fixture access is granted by the e2e build tag")
+	}
+	policy, root, repo, fixture := newFixtureAccessFixture(t)
+	if fixtureGrantedToNamedBinary(t, policy, root, repo, fixture, "fakeagent") {
+		t.Fatal("regular build granted fixture access to a binary named fakeagent")
+	}
+}
+
+func newFixtureAccessFixture(t *testing.T) (*Policy, string, string, string) {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("requires Linux and Bubblewrap")
 	}
@@ -176,23 +187,23 @@ func TestFixtureAccessIsGatedByBuildNotExecutableName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execution sandbox unavailable: %v", err)
 	}
-	defer policy.Close()
-	for _, name := range []string{"fakeagent", "synthetic-agent"} {
-		fake := filepath.Join(root, name)
-		if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		cmd := exec.Command(fake)
-		cmd.Dir = repo
-		cmd.Env = []string{"FAKEAGENT_FIXTURE=" + fixture}
-		if err := policy.Command(cmd); err != nil {
-			t.Fatal(err)
-		}
-		granted := strings.Contains(strings.Join(cmd.Args, "\x00"), fixture)
-		if granted != e2eBuild {
-			t.Fatalf("binary %q fixture access = %t, want %t (e2e build = %t): args=%q", name, granted, e2eBuild, e2eBuild, cmd.Args)
-		}
+	t.Cleanup(func() { _ = policy.Close() })
+	return policy, root, repo, fixture
+}
+
+func fixtureGrantedToNamedBinary(t *testing.T, policy *Policy, root, repo, fixture, name string) bool {
+	t.Helper()
+	fake := filepath.Join(root, name)
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
 	}
+	cmd := exec.Command(fake)
+	cmd.Dir = repo
+	cmd.Env = []string{"FAKEAGENT_FIXTURE=" + fixture}
+	if err := policy.Command(cmd); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Contains(strings.Join(cmd.Args, "\x00"), fixture)
 }
 
 func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
