@@ -122,6 +122,7 @@ Testes reais compartilham o app rodando do comandante em vez de criar uma sessã
 - O caminho de cleanup de único-workspace deixa um workspace padrão novo e não consegue fechar a janela.
 - Lookup por rótulo e recovery estão atualmente limitados à janela cmux atual, então uma tarefa movida para uma janela não-atual é um ponto cego conhecido de recovery.
 - IDs de workspace não sobrevivem a relançamento do app e nunca são autoridade de recovery.
+- Expiração de busy não pode ser avaliada: não há leitura completa de viewport verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
 
 ## Pontos de entrada de regressão
 

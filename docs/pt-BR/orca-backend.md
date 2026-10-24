@@ -78,6 +78,7 @@ Ele nunca faz raw-delete de um worktree do Orca.
 - Escape não é suportado.
 - O Orca expõe nenhum marcador estável de versão de CLI ou protocolo, então a prontidão é o gate de compatibilidade em vez de um piso de versão.
 - Apenas os campos verificados de resultado de terminal-handle e worktree são aceitos; formatos especulativos de resposta são rejeitados.
+- Expiração de busy não pode ser avaliada: a leitura completa da viewport não foi verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
 
 ## Pontos de entrada de regressão
 

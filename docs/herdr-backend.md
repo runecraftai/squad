@@ -313,6 +313,7 @@ Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never 
 - OpenCode 1.18.4 can accept Enter while busy without clearing the composer.
   The tmux backend has a busy-queue fallback, but Herdr still reports this case as submit pending and needs a separate adapter fix.
 - Only tmux, Herdr, and TUIOS can host the away-mode supervisor terminal.
+- Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 
 ## Regression entry points
 

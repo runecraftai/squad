@@ -315,6 +315,7 @@ Testes usam wrappers finos de compatibilidade em `tests/herdr-test-safety.sh` e 
 - OpenCode 1.18.4 pode aceitar Enter enquanto ocupado sem limpar o composer.
   O backend tmux tem fallback de busy-queue, mas o Herdr ainda reporta este caso como submit pending e precisa de fix separado no adaptador.
 - Apenas tmux, Herdr e TUIOS podem hospedar o terminal do supervisor do modo ausente.
+- Expiração de busy não pode ser avaliada: a leitura completa da viewport não foi verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
 
 ## Pontos de entrada de regressão
 
