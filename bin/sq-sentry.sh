@@ -1336,6 +1336,15 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
       rm -f "$ssf" "$ewf"
+      # Progress breaks the handed-off episode. Drop its handoff tag and the
+      # daemon's episode marker so a return to the same hash starts a fresh
+      # full static window instead of resurrecting the first handoff's clock.
+      case "$(cat "$sf" 2>/dev/null || true)" in
+        busy:*|busy-afk:*) rm -f "$sf" ;;
+      esac
+      if afk_present; then
+        rm -f "$sf" "$STATE/.subsuper-stale-$(printf '%s' "$task" | tr ':/.' '___')"
+      fi
       task=$(window_to_task "$w" "$STATE")
       if ! afk_present && status_is_paused_or_commander_held "$(last_status_state_line "$STATE/$task.status")"; then
         if [ "$busy_now" -ne 0 ]; then

@@ -582,6 +582,41 @@ afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition
   [ ! -s "$state/.subsuper-escalations" ] || fail "$case_name: busy handoff reached the commander before the complete static window"
 
   echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  if [ "$case_name" = repeat-hash ]; then
+    # Brief progress breaks the first episode; returning to the same frozen hash
+    # must issue a fresh handoff whose daemon clock is not the first episode's.
+    printf 'Reading files...\n13k tokens USD 0.44' > "$pane"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    sleep 3
+    kill "$sentry_pid" 2>/dev/null || true
+    wait "$sentry_pid" 2>/dev/null || true
+    printf 'Working...\n12k tokens USD 0.42' > "$pane"
+    : > "$out"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
+      SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
+    sentry_pid=$!
+    wait_for_exit "$sentry_pid" 100 || fail "repeated frozen hash was not handed off again: $(cat "$out")"
+    reason=$(grep -m1 "stale: $win" "$out") || fail "repeated frozen hash emitted no stale handoff"
+    (
+      kill() { :; }
+      fm_backend_send_text_submit() { :; }
+      LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+    )
+    episode=$(cat "$state/.subsuper-stale-$key")
+    [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "repeated hash inherited the first episode's expired clock"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
+      SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
+      SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] || fail "repeated frozen hash escalated before its full window"
+    echo $(( $(date +%s) - 500 )) > "$state/.subsuper-stale-$key"
+  fi
   if [ "$case_name" = episode ] || [ "$case_name" = idle-episode ] || [ "$case_name" = busy-idle ]; then
     # A new busy/idle static episode replaces the first episode's clock even
     # when housekeeping has not noticed progress or the busy claim clearing.
@@ -667,7 +702,7 @@ SH
   unset SQUAD_FAKE_CREW_STATE
 
   case "$case_name" in
-    frozen|episode|mode-transition|capture-retry|idle-episode|busy-idle)
+    frozen|episode|mode-transition|capture-retry|idle-episode|busy-idle|repeat-hash)
       if [ "$case_name" != idle-episode ] && [ "$case_name" != busy-idle ]; then
         grep -F "busy expired without activity" "$state/.subsuper-escalations" >/dev/null 2>&1 \
           || fail "$case_name: frozen busy pane was absorbed instead of escalating"
@@ -690,7 +725,7 @@ SH
 
 test_afk_busy_handoff_escalates_through_daemon_recheck() {
   local case_name
-  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step; do
+  for case_name in frozen progress run-step episode mode-transition capture-retry idle-episode busy-idle idle-run-step repeat-hash; do
     afk_busy_daemon_case "$case_name"
   done
   pass "away-mode episodes survive capture gaps and mode changes, restart busy/idle clocks, and defer active steps"
