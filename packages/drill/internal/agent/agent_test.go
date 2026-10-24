@@ -1340,6 +1340,7 @@ func TestFinalizeTextResult_RecoversFindingsPayloadsFromProse(t *testing.T) {
 		{name: "prose then fenced object", text: "Here are my findings:\n```json\n" + object + "\n```"},
 		{name: "prose then unclosed fenced object", text: "Here are my findings:\n```json\n" + object},
 		{name: "prose braces are not payloads", text: "The note {\"note\":\"x\"} and {is just prose} before the findings: " + object + " and {this is prose too}."},
+		{name: "prose braces wrapping a payload", text: "Wrapped {" + object + "} in prose."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

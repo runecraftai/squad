@@ -313,7 +313,8 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 		payload, err := parseStructuredCandidate([]byte(candidate.text), validationSchema)
 		switch {
 		case err != nil:
-			if candidateErr == nil && (candidate.fenced || !isJSONSyntaxError(err)) {
+			bareArray := !candidate.fenced && isJSONArrayValue([]byte(candidate.text))
+			if candidateErr == nil && (candidate.fenced || !isJSONSyntaxError(err)) && (!bareArray || isObjectArray(candidate.text)) {
 				candidateErr = err
 			}
 		case candidate.fenced:
@@ -473,8 +474,9 @@ type jsonCandidate struct {
 // jsonPayloadCandidates lists the JSON payloads embedded in text in textual
 // order: ```json fence bodies and brace-balanced object spans in prose, plus
 // bracket-balanced array spans when arrays is set (only the findings-object
-// schema accepts bare arrays as payloads). Non-JSON fences are skipped whole
-// and closed ```json bodies are never rescanned for prose payloads.
+// schema accepts bare arrays as payloads). Closed non-JSON fences are skipped
+// whole, an unclosed non-JSON fence body is rescanned for prose payloads, and
+// closed ```json bodies are never rescanned for prose payloads.
 //
 // Fence markers may appear anywhere in the text, including glued to the end
 // of a preceding line (e.g. "...behavior.```json"), which is a shape real
@@ -535,6 +537,14 @@ func jsonPayloadCandidates(text string, arrays bool) []jsonCandidate {
 		}
 	}
 	return candidates
+}
+
+func isObjectArray(text string) bool {
+	var items []json.RawMessage
+	if json.Unmarshal([]byte(text), &items) != nil || len(items) == 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(string(items[0])), "{")
 }
 
 func isEmptyJSONArray(text string) bool {
