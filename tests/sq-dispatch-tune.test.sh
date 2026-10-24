@@ -352,15 +352,15 @@ fi
 echo ""
 echo "=== Missing Metadata Handling ==="
 
-# Test 21: Tasks without meta files get "unknown" profile.
+# Test 21: Tasks without meta files get the fixed no-profile label, never unknown.
 NOMETA_STATE="$TMP_ROOT/nometa-state"
 mkdir -p "$NOMETA_STATE"
 echo "done: completed" > "$NOMETA_STATE/orphan-task.status"
 
 output=$(SQUAD_STATE_OVERRIDE="$NOMETA_STATE" "$TUNE" --json 2>&1)
 
-if echo "$output" | grep -q 'unknown/unknown/unknown'; then
-  pass "tasks without meta get unknown profile"
+if echo "$output" | grep -q '"profile":"no-profile/no-profile/no-profile","tasks":1' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
+  pass "tasks without meta get the no-profile label"
 else
   fail "missing meta handling: $output"
 fi
@@ -666,10 +666,38 @@ fi
 write_log "$TMP_ROOT/no-profile-data" nop-a \
   '{"timestamp":"2026-10-20T10:30:00+00:00","id":"nop-a","event":"outcome","source":"status-notify","result":"done"}'
 output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-profile-data" "$TUNE" --json 2>&1)
-if echo "$output" | grep -q '"profile":"(no-profile)","tasks":1' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
-  pass "a log with no profile source reads as (no-profile)"
+if echo "$output" | grep -q '"profile":"no-profile/no-profile/no-profile","tasks":1' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
+  pass "a log with no profile source reads as no-profile/no-profile/no-profile"
 else
   fail "no-profile log read wrong: $output"
+fi
+
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-profile-data" "$TUNE" --verbose 2>&1)
+if echo "$output" | grep -q '| no-profile/no-profile/no-profile |' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
+  pass "--verbose shows the no-profile label for an outcome-only log"
+else
+  fail "--verbose no-profile detail wrong: $output"
+fi
+
+output=$(SQUAD_STATE_OVERRIDE="$TORN_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" --verbose 2>&1)
+if echo "$output" | grep -q '| claude/opus/xhigh |' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
+  pass "--verbose shows the logged profile for a torn-down task"
+else
+  fail "--verbose logged detail wrong: $output"
+fi
+
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-profile-data" "$TUNE" --json --by-lane 2>&1)
+if echo "$output" | grep -q '"lane":"(no-profile)","dispatches":1,"success_rate":100.0,"off_recommendation":0,"chosen":\[\]'; then
+  pass "an outcome-only log stays out of its lane's chosen models"
+else
+  fail "no-profile lane chosen should be empty: $output"
+fi
+
+output=$(SQUAD_STATE_OVERRIDE="$TORN_STATE" SQUAD_DATA_OVERRIDE="$LOG_DATA" "$TUNE" 2>&1)
+if echo "$output" | grep -q 'Success rate is done / (done + failed); released counts as a dispatch, never as a success or failure.'; then
+  pass "markdown report states the success-rate rule"
+else
+  fail "markdown report missing success-rate rule: $output"
 fi
 
 # A decision-only log (no spawn row, no meta) reports its recommended profile, never unknown.
