@@ -25,7 +25,7 @@ def redact(value):
         value = value.replace(home, "~")
     value = value.replace("$HOME", "~")
     patterns = [
-        (r"(?i)sk-[A-Za-z0-9_-]{8,}", "[REDACTED]"),
+        (r"(?i)(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}", "[REDACTED]"),
         (r"ghp_[A-Za-z0-9]{8,}", "[REDACTED]"),
         (r"AKIA[A-Z0-9]{16}[A-Za-z0-9]*", "[REDACTED]"),
         (r"eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "[REDACTED]"),
