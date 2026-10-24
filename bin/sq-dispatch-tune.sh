@@ -27,9 +27,10 @@
 # of state/<id>.status. A released outcome (teardown)
 # counts toward its lane and profile dispatch totals, never as a success or failure;
 # success rate is done over done plus failed, as in the lane table.
-# Fallback = a log's failure_class of provider or quota, even on a released
-# task (guard and other are misses). Without one, the last done or failed status line
-# decides; a blocked or paused line counts only when no done or failed line exists.
+# Fallback = a logged task's failure_class of provider or quota, even on a released
+# task (guard and other are misses); the log is authoritative and its status file is never read.
+# A task without a log takes its fallback from the last done or failed status line; a blocked
+# or paused line counts only when no done or failed line exists.
 # Teardown removes the status file, so a torn-down task without a failure_class is "unknown".
 # Duration = log span from first to last event, else file birth-to-modification
 # time on state/<id>.status (approximate).
@@ -71,14 +72,14 @@ Options:
   --period <days>     Limit analysis window (default: 30)
   --profile <name>    Analyze a specific profile (harness, or harness/model)
   --by-lane           Group by decision lane: dispatches, chosen models, off-recommendation count
-  --fallback-rate     Report the share of tasks whose status hit a provider or quota failure
+  --fallback-rate     Report the share of observed tasks that hit a provider or quota failure
   --verbose           Include per-task detail in output
   -h, --help          Show this help
 
-Profiles are harness+model+effort, read from data/<id>/dispatch.jsonl (spawn row first,
-then state/<id>.meta, then the decision's recommended profile) or, for tasks without
-a log, from state/<id>.meta.
-Outcomes come from the log's outcome rows or the state/<id>.status final line (done/failed).
+Profiles are harness+model+effort, read from the spawn row of data/<id>/dispatch.jsonl. A log
+without a spawn row is the no-profile bucket, even when state/<id>.meta exists; a task without
+a log takes its profile from state/<id>.meta.
+Outcomes come from the log's outcome rows, or for a task without a log the state/<id>.status final line (done/failed).
 
 Examples:
   sq-dispatch-tune.sh                            # all profiles, last 30 days
@@ -742,7 +743,7 @@ emit_fallback_markdown() {
   read -r hits observed unknown < <(fallback_totals)
   echo "## Fallback Rate"
   echo ""
-  echo "A fallback is a provider or quota failure, from the log's failure_class or else the last done or failed status line (blocked or paused when neither exists)."
+  echo "A fallback is a provider or quota failure: a logged task reads its log's failure_class only, and a task without a log reads its last done or failed status line (blocked or paused when neither exists)."
   echo "A logged done task without a failure_class is clean; a released or failed one without a failure_class is unknown."
   echo ""
   echo "- **Observed:** ${observed} of $((observed + unknown)) tasks (failure class or status file present)"
