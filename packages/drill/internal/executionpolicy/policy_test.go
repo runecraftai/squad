@@ -167,7 +167,7 @@ func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {
 	if err := os.WriteFile(marker, []byte("previous launch token"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	probe := exec.Command("/bin/sh", "-c", "cat "+marker+"; echo prev=$?; echo own > /run/drill-execution/home/own-launch-marker; cat /run/drill-execution/home/own-launch-marker")
+	probe := exec.Command("/bin/sh", "-c", "cat /run/drill-execution/home/previous-launch-secret; echo prev=$?; echo own > /run/drill-execution/home/own-launch-marker; cat /run/drill-execution/home/own-launch-marker")
 	probe.Dir = repo
 	if err := policy.Command(probe); err != nil {
 		t.Fatal(err)
