@@ -624,6 +624,20 @@ else
   fail "failed quota class lost to released row: $output"
 fi
 
+# A done row followed by a failed provider row reads as failed with its class.
+write_log "$TMP_ROOT/done-then-failed-data" dtf-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"dtf-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"dtf-lane","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2026-10-20T10:00:05+00:00","id":"dtf-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
+  '{"timestamp":"2026-10-20T10:10:00+00:00","id":"dtf-a","event":"outcome","source":"status-notify","result":"done"}' \
+  '{"timestamp":"2026-10-20T10:30:00+00:00","id":"dtf-a","event":"outcome","source":"status-notify","result":"failed","failure_class":"provider"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/done-then-failed-data" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"profile":"claude/sonnet/default","tasks":1,"success":0,"failure":1' &&
+   echo "$output" | grep -q '"fallback":{"hits":1,"observed":1,"unknown":0,"rate":100.0}'; then
+  pass "a done row followed by a failed provider row reads as failed/provider"
+else
+  fail "done-then-failed read wrong: $output"
+fi
+
 # A log with a decision row but no spawn row is the no-profile bucket: its recommendation is not an off-recommendation.
 write_log "$TMP_ROOT/no-spawn-data" nsp-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"nsp-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"nsp-lane","quota_summary":{"status":"unknown"}}' \
@@ -854,6 +868,30 @@ if echo "$output" | grep -q '"profile":"claude/sonnet/default","tasks":1,"succes
   pass "a logged task without an outcome is a pending dispatch, not completed from its status file"
 else
   fail "logged task without outcome read from status: $output"
+fi
+
+# The status-only path uses the last terminal line: a later policy line replaces an earlier provider line.
+STATUS_LAST_STATE="$TMP_ROOT/status-last-state"
+mkdir -p "$STATUS_LAST_STATE"
+printf 'failed: provider overloaded\nblocked: policy refused\n' > "$STATUS_LAST_STATE/slast-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$STATUS_LAST_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-dispatch-log" "$TUNE" --json --fallback-rate 2>&1)
+if echo "$output" | grep -q '"fallback":{"hits":0,"observed":1,"unknown":0,"rate":0.0}'; then
+  pass "a status whose last terminal line is a guard refusal is a miss, not an earlier provider failure"
+else
+  fail "status-only last terminal line not used: $output"
+fi
+
+# A log reader failure aborts the report: non-zero exit, a stderr message, and no partial report on stdout.
+FAKE_PY_BIN="$TMP_ROOT/fake-python-bin"
+mkdir -p "$FAKE_PY_BIN"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKE_PY_BIN/python3"
+chmod +x "$FAKE_PY_BIN/python3"
+output=$(PATH="$FAKE_PY_BIN:$PATH" SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/released-data" "$TUNE" --json 2>"$TMP_ROOT/reader-err")
+code=$?
+if [ "$code" -ne 0 ] && [ -z "$output" ] && grep -q "dispatch log reader failed" "$TMP_ROOT/reader-err"; then
+  pass "a log reader failure exits non-zero with a stderr message and prints no report"
+else
+  fail "log reader failure produced code=$code output=$output stderr=$(cat "$TMP_ROOT/reader-err")"
 fi
 
 # A status-only task with a provider-class failure line is a fallback hit, as the writer classifies it.

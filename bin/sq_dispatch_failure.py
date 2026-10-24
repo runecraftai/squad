@@ -21,21 +21,15 @@ def line_failure_class(text):
 def status_failure_class(path, kinds=("failed", "blocked", "paused")):
     if os.path.islink(path) or not os.path.isfile(path):
         return None
-    outcome = None
-    stall = None
+    last = None
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 match = TERMINAL_LINE.match(line.rstrip("\n"))
-                if not match:
-                    continue
-                if match.group(1) in ("done", "failed"):
-                    outcome = match
-                else:
-                    stall = match
+                if match:
+                    last = match
     except OSError:
         return None
-    last = outcome or stall
     if last is None or last.group(1) not in kinds:
         return None
     return line_failure_class(last.group(2))

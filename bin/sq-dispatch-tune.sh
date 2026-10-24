@@ -37,7 +37,7 @@
 # Credential guard: a harness, model, effort, lane, or recommendation that looks
 # like a credential or token prints as "redacted", never verbatim.
 #
-# Exit codes: 0 success, 2 usage error.
+# Exit codes: 0 success, 1 dispatch log reader failure (no report), 2 usage error.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -241,10 +241,6 @@ RESOLVED_FILE=""
 LANE_ROWS=()
 trap 'rm -f "$TASKS_FILE" "$LOG_FILE" "$METRICS_FILE" "$LANES_FILE" "$STATUS_BUCKETS_FILE" "$RESOLVED_FILE"' EXIT
 TASKS_COUNT=0
-LOG_READER=0
-if command -v python3 >/dev/null 2>&1; then
-  LOG_READER=1
-fi
 
 # Append one task record after the --profile filter.
 record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <fallback> <recommended> [profile]
@@ -270,7 +266,6 @@ record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <f
 # report uses leave the reader: never brief text, reasons, or quota payloads.
 # Rows are unit-separator delimited so empty fields survive `read`.
 collect_log_rows() {
-  [ "$LOG_READER" -eq 1 ] || return 0
   if ! python3 - "$SCRIPT_DIR" "$DATA" "$CUTOFF" > "$LOG_FILE" 2>/dev/null <<'PY'
 import datetime
 import json
@@ -317,9 +312,8 @@ for name in names:
     readable = not os.path.islink(folder) and not os.path.islink(path) and os.path.isfile(path)
     decision = None
     spawn = None
-    results = set()
-    failed_class = ""
-    released_class = ""
+    verdict = None
+    torn_down = None
     stamps = []
     try:
         in_window = int(os.lstat(path).st_mtime) >= cutoff
@@ -343,37 +337,34 @@ for name in names:
                         decision = row
                     elif event == "spawn":
                         spawn = row
-                    elif event == "outcome" and isinstance(row.get("result"), str):
-                        results.add(row["result"])
+                    elif event == "outcome" and row.get("result") in ("done", "landed", "failed", "released"):
                         bucket = row["failure_class"] if row.get("failure_class") in FAILURE_CLASSES else ""
-                        if row["result"] == "failed":
-                            failed_class = bucket
-                        elif row["result"] == "released":
-                            released_class = bucket
+                        if row["result"] == "released":
+                            torn_down = bucket
+                        else:
+                            verdict = (row["result"], bucket)
         except OSError:
             decision = None
             spawn = None
-            results = set()
+            verdict = None
+            torn_down = None
     profile = decision.get("profile") if isinstance(decision, dict) else None
     lane = text(profile) if isinstance(profile, str) and profile else "(no-profile)"
-    failure = ""
-    if results & {"done", "landed"}:
-        outcome = "done"
-    elif "failed" in results:
-        outcome = "failed"
-        failure = failed_class
-    elif "released" in results:
-        outcome = "released"
-        failure = released_class
+    if verdict is not None:
+        result, bucket = verdict
+    elif torn_down is not None:
+        result, bucket = "released", torn_down
     else:
-        outcome = "none"
+        result, bucket = "none", ""
+    outcome = "done" if result in ("done", "landed") else result if result in ("failed", "released") else "none"
+    failure = bucket if outcome in ("failed", "released") else ""
     span = int(max(stamps) - min(stamps)) if len(stamps) > 1 else 0
     columns = [name, lane, *triple(decision), *triple(spawn), outcome, failure, str(span), "1" if in_window else "0"]
     sys.stdout.write("\x1f".join(columns) + "\n")
 PY
   then
-    LOG_READER=0
-    : > "$LOG_FILE"
+    echo "error: dispatch log reader failed (python3 missing or unreadable reader); no report written" >&2
+    exit 1
   fi
 }
 
@@ -475,13 +466,12 @@ collect_tasks() {
 
 # Classify each status file with the writer's last-terminal-line rule in one python3
 # pass, then join the buckets onto the rows marked pending. Rows print hit, miss, or
-# unknown only, never the status text; unknown when python3 is missing.
+# unknown only, never the status text; unknown when the status reader fails.
 resolve_status_fallbacks() {
   [ "$TASKS_COUNT" -gt 0 ] || return 0
   STATUS_BUCKETS_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-status.XXXXXX")
   RESOLVED_FILE=$(mktemp "${TMPDIR:-/tmp}/sq-dispatch-resolved.XXXXXX")
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" "$LOG_FILE" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
+  python3 - "$SCRIPT_DIR" "$STATE" "$CUTOFF" "$LOG_FILE" > "$STATUS_BUCKETS_FILE" 2>/dev/null <<'PY' || true
 import os
 import sys
 sys.path.insert(0, sys.argv[1])
@@ -505,7 +495,6 @@ for name in names:
         continue
     print(f"{task_id}\t{status_failure_class(path) or 'none'}")
 PY
-  fi
   if awk -F'\t' -v OFS='\t' -v buckets="$STATUS_BUCKETS_FILE" '
     FILENAME == buckets { bucket[$1] = $2; next }
     $9 == "pending" {
