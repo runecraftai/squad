@@ -453,7 +453,10 @@ collect_status_tasks() {
       duration=$(( mtime - birth ))
     fi
 
-    fallback=$(status_fallback "$status_file")
+    fallback=unknown
+    if [ ! -L "$status_file" ]; then
+      fallback=$(status_fallback "$status_file")
+    fi
     record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "$duration" \
       "(no-profile)" "$fallback" "-"
   done
