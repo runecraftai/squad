@@ -150,6 +150,10 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("TOKEN='a b' end") == "[REDACTED] end"
         assert module.redact('TOKEN="abc def') == "[REDACTED]"
         assert module.redact(r'TOKEN="a\"b c" end') == "[REDACTED] end"
+        assert module.redact("postgres://user:pass@db.invalid/app") == "postgres://[REDACTED]@db.invalid/app"
+        assert module.redact("redis://:secret@cache.invalid:6379") == "redis://[REDACTED]@cache.invalid:6379"
+        assert module.redact("ssh://deploy:pw@host.invalid") == "ssh://[REDACTED]@host.invalid"
+        assert module.redact("ftp://anon:pw@files.invalid") == "ftp://[REDACTED]@files.invalid"
     finally:
         server.shutdown()
         target.shutdown()
