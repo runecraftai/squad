@@ -651,6 +651,27 @@ else
   fail "released quota fallback mis-counted: $output"
 fi
 
+# A released-only task counts toward its profile totals, but its profile has no success rate.
+write_log "$TMP_ROOT/released-profile-data" relp-a \
+  '{"timestamp":"2026-10-20T10:00:00+00:00","id":"relp-a","event":"spawn","harness":"claude","model":"sonnet","effort":"default"}' \
+  '{"timestamp":"2026-10-20T10:30:00+00:00","id":"relp-a","event":"outcome","source":"teardown","result":"released"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/released-profile-data" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q '"profile":"claude/sonnet/default","tasks":1,"success":0,"failure":0,"success_rate":null'; then
+  pass "a released-only profile counts its dispatch with a null success rate"
+else
+  fail "released-only profile mis-counted: $output"
+fi
+
+# An outcome-only log with no spawn, meta, or decision row reads as (no-profile), never unknown.
+write_log "$TMP_ROOT/no-profile-data" nop-a \
+  '{"timestamp":"2026-10-20T10:30:00+00:00","id":"nop-a","event":"outcome","source":"status-notify","result":"done"}'
+output=$(SQUAD_STATE_OVERRIDE="$WRITE_STATE" SQUAD_DATA_OVERRIDE="$TMP_ROOT/no-profile-data" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q '"profile":"(no-profile)","tasks":1' && ! echo "$output" | grep -q 'unknown/unknown/unknown'; then
+  pass "a log with no profile source reads as (no-profile)"
+else
+  fail "no-profile log read wrong: $output"
+fi
+
 # A decision-only log (no spawn row, no meta) reports its recommended profile, never unknown.
 write_log "$TMP_ROOT/decision-only-data" deconly-a \
   '{"timestamp":"2026-10-20T10:00:00+00:00","id":"deconly-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"deconly-lane","quota_summary":{"status":"unknown"}}' \

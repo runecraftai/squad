@@ -18,13 +18,14 @@
 #
 # Profile = harness + model + effort. The dispatched profile is the log's spawn
 # row; a log without one uses state/<id>.meta, then the decision's recommended
-# profile. A task without a log uses state/<id>.meta.
+# profile. A task without a log uses state/<id>.meta. With none of these, the
+# profile is "(no-profile)".
 # Lane = the decision profile name recorded at intake; "(no-profile)" when the
 # decision recorded only a reason, or the task has no log.
 # Outcome = done or landed (success) or failed, from the log's outcome rows,
-# else the last done/failed line of state/<id>.status. A log whose only outcome
-# is released (teardown) counts toward its lane and dispatch totals, not toward
-# profile success rates.
+# else the last done/failed line of state/<id>.status. A released outcome (teardown)
+# counts toward its lane and profile dispatch totals, never as a success or failure;
+# success rate is done over done plus failed, as in the lane table.
 # Fallback = a log's failure_class of provider or quota, even on a released
 # task (guard and other are misses). Without one, the last done, failed, blocked,
 # or paused status line, classified as the writer does. Teardown removes the status
@@ -236,11 +237,11 @@ if command -v python3 >/dev/null 2>&1; then
 fi
 
 # Append one task record after the --profile filter.
-record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <fallback> <recommended>
+record_task() { # <id> <harness> <model> <effort> <outcome> <duration> <lane> <fallback> <recommended> [profile]
   local harness model effort lane recommended profile
   harness=$(redact_shape "$2"); model=$(redact_shape "$3"); effort=$(redact_shape "$4")
   lane=$(redact_shape "$7"); recommended=$(redact_shape "$9")
-  profile="$harness/$model/$effort"
+  profile="${10:-$harness/$model/$effort}"
   if [ -n "$FILTER_PROFILE" ]; then
     case "$profile" in
       *"$FILTER_PROFILE"*) ;; # match
@@ -353,7 +354,7 @@ PY
 # Tasks with a dispatch log: the log decides lane, profile, and recommendation.
 collect_logged_tasks() {
   local task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window
-  local outcome harness model effort recommended meta_file fallback
+  local outcome harness model effort recommended meta_file fallback profile
 
   while IFS=$'\x1f' read -r task_id lane rec_h rec_m rec_e spawn_h spawn_m spawn_e log_outcome log_class duration in_window; do
     [ "$in_window" = "1" ] || continue
@@ -384,6 +385,10 @@ collect_logged_tasks() {
         harness="$rec_h"; model="$rec_m"; effort="$rec_e"
       fi
     fi
+    profile=""
+    if [ -z "$harness$model$effort" ]; then
+      profile="(no-profile)"
+    fi
     harness=${harness:-unknown}; model=${model:-unknown}; effort=${effort:-unknown}
 
     recommended="-"
@@ -391,7 +396,7 @@ collect_logged_tasks() {
       recommended="$rec_h/$rec_m/$rec_e"
     fi
     record_task "$task_id" "$harness" "$model" "$effort" "$outcome" "${duration:-0}" \
-      "$lane" "$fallback" "$recommended"
+      "$lane" "$fallback" "$recommended" "$profile"
   done < "$LOG_FILE"
 }
 
@@ -529,7 +534,6 @@ compute_metrics() {
     outcome = $5
     duration = $6 + 0
 
-    if (outcome == "released") next
     total[profile]++
     if (outcome == "done") success[profile]++
     else if (outcome == "failed") failure[profile]++
@@ -541,9 +545,9 @@ compute_metrics() {
       s = p in success ? success[p] : 0
       f = p in failure ? failure[p] : 0
       t = total[p]
-      rate = (t > 0) ? (s / t) * 100 : 0
+      rate = (s + f > 0) ? sprintf("%.1f", (s / (s + f)) * 100) : "-"
       avg = (t > 0) ? sum_duration[p] / t : 0
-      printf "%s\t%d\t%d\t%d\t%.1f\t%.0f\n", p, t, s, f, rate, avg
+      printf "%s\t%d\t%d\t%d\t%s\t%.0f\n", p, t, s, f, rate, avg
     }
   }' "$TASKS_FILE"
 }
@@ -557,7 +561,7 @@ compute_lanes() {
     total[lane]++
     if ($5 == "done") success[lane]++
     else if ($5 == "failed") failure[lane]++
-    if ($10 != "-" && $7 != "unknown/unknown/unknown" && $10 != $7) off[lane]++
+    if ($10 != "-" && $10 != $7) off[lane]++
     if ($9 == "hit") hit[lane]++
     if ($9 == "hit" || $9 == "miss") observed[lane]++
     chosen[lane SUBSEP $7]++
@@ -603,12 +607,12 @@ emit_markdown() {
   echo "|---------|------:|-------------:|-------------:|"
 
   while IFS=$'\t' read -r profile total success failure rate avg_dur; do
-    printf '| %s | %s | %.1f%% | %s |' \
-      "$profile" "$total" "$rate" "$(fmt_duration "${avg_dur%.*}")"
+    printf '| %s | %s | %s | %s |' \
+      "$profile" "$total" "$(pct_text "$success" $((success + failure)))" "$(fmt_duration "${avg_dur%.*}")"
     echo ""
 
-    # Track best/worst for recommendations.
-    if [ "$total" -ge 1 ]; then
+    # Track best/worst for recommendations; released-only profiles have no rate.
+    if [ $((success + failure)) -ge 1 ]; then
       rate_int="${rate%.*}"
       if [ "$rate_int" -gt "${best_rate%.*}" ] 2>/dev/null || [ "$best_rate" = "0" ]; then
         best_rate="$rate"
@@ -665,10 +669,11 @@ emit_markdown() {
 
   # Consistently failing model/harness combos.
   while IFS=$'\t' read -r profile total success failure rate avg_dur; do
-    if [ "$failure" -ge 3 ] 2>/dev/null && [ "$total" -ge 3 ] 2>/dev/null; then
+    local decided=$((success + failure))
+    if [ "$failure" -ge 3 ] 2>/dev/null && [ "$decided" -ge 3 ] 2>/dev/null; then
       local fail_pct
-      fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $total) * 100 }")
-      echo "- **Avoid ${profile}:** ${fail_pct}% failure rate (${failure}/${total} tasks failed)"
+      fail_pct=$(awk "BEGIN { printf \"%.0f\", ($failure / $decided) * 100 }")
+      echo "- **Avoid ${profile}:** ${fail_pct}% failure rate (${failure}/${decided} tasks failed)"
       has_recommendations=1
     fi
   done < "$metrics_file"
@@ -796,7 +801,7 @@ emit_json() {
     local escaped
     escaped=$(json_escape "$profile")
     profiles_json+=$(printf '{"profile":"%s","tasks":%s,"success":%s,"failure":%s,"success_rate":%s,"avg_duration_sec":%.0f}' \
-      "$escaped" "$total" "$success" "$failure" "$rate" "$avg_dur")
+      "$escaped" "$total" "$success" "$failure" "$(pct_json "$success" $((success + failure)))" "$avg_dur")
   done < "$metrics_file"
   profiles_json+="]"
 
