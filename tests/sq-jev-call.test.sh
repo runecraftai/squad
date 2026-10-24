@@ -172,6 +172,10 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("redis://:secret@cache.invalid:6379") == "redis://[REDACTED]@cache.invalid:6379"
         assert module.redact("ssh://deploy:pw@host.invalid") == "ssh://[REDACTED]@host.invalid"
         assert module.redact("ftp://anon:pw@files.invalid") == "ftp://[REDACTED]@files.invalid"
+        assert module.redact("TOKEN_ghp_abcdefgh12 end") == "TOKEN_[REDACTED] end"
+        assert module.redact("xAKIA1234567890ABCDEFx end") == "x[REDACTED] end"
+        assert module.redact("idx9sk-abcd1234567890 end") == "idx9[REDACTED] end"
+        assert module.redact("XeyJX.abc.def end") == "X[REDACTED] end"
     finally:
         server.shutdown()
         target.shutdown()
