@@ -1330,7 +1330,7 @@ func TestFinalizeTextResult_BareFindingsArrayParsesAsObjectForm(t *testing.T) {
 
 func TestFinalizeTextResult_RecoversFindingsPayloadsFromProse(t *testing.T) {
 	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
-	array := `[]`
+	array := `[{"severity":"info","description":"one finding","action":"no-op","review_scope":"source"}]`
 	tests := []struct {
 		name string
 		text string
@@ -1449,6 +1449,12 @@ func TestFinalizeTextResult_CodeBracketsInProseAreNotPayloads(t *testing.T) {
 			t.Fatal("prose code brackets with no payload must not normalize to zero findings")
 		}
 	})
+	t.Run("standalone empty brackets in prose fail loudly", func(t *testing.T) {
+		_, err := finalizeTextResult("pi", "Checked the [] path, no issues.", reviewFindingsSchemaShape, TokenUsage{})
+		if err == nil {
+			t.Fatal("empty brackets in prose must not normalize to zero findings")
+		}
+	})
 	t.Run("code bracket does not make a fenced payload ambiguous", func(t *testing.T) {
 		text := "Checked the []byte path.\n```json\n" + object + "\n```"
 		result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
@@ -1466,14 +1472,40 @@ func TestFinalizeTextResult_CodeBracketsInProseAreNotPayloads(t *testing.T) {
 }
 
 func TestFinalizeTextResult_RefusesAmbiguousFindingsPayloads(t *testing.T) {
-	payload := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
-	text := "First result: " + payload + " Second result: " + payload
+	first := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	second := `{"findings":[],"risk_level":"low","risk_rationale":"different","risk_scope":"source-or-external"}`
+	text := "First result: " + first + " Second result: " + second
 	_, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
 	if err == nil {
 		t.Fatal("expected ambiguous findings payloads to be refused")
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "ambiguous") {
 		t.Fatalf("error = %v, want actionable ambiguity message", err)
+	}
+}
+
+func TestFinalizeTextResult_IdenticalBarePayloadsAreNotAmbiguous(t *testing.T) {
+	payload := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	result, err := finalizeTextResult("pi", "First: "+payload+" Again: "+payload, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("identical payloads are one payload, got: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
+	}
+}
+
+func TestFinalizeTextResult_LastValidFencedPayloadWinsOverProseDuplicates(t *testing.T) {
+	object := `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"source-or-external"}`
+	text := "Draft: " + object + " Two candidates:\n```json\n" + object + "\n```\n```json\n" + object + "\n```"
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("fenced payload must keep fence precedence, got: %v", err)
+	}
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(result.Output, &got); err != nil {
+		t.Fatalf("normalized output is not an object: %v (%s)", err, result.Output)
 	}
 }
 

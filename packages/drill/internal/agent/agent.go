@@ -304,27 +304,36 @@ func parseStructuredTextOutput(text string, schema json.RawMessage) (json.RawMes
 	// whole payload.
 	bareFindingsPayload := isJSONArrayValue([]byte(text)) && isFindingsObjectSchema(validationSchema)
 
-	var parsed []json.RawMessage
+	var fencedPayloads, barePayloads []json.RawMessage
 	var candidateErr error
 	for _, candidate := range jsonPayloadCandidates(text, isFindingsObjectSchema(validationSchema)) {
+		if !candidate.fenced && isEmptyJSONArray(candidate.text) {
+			continue
+		}
 		payload, err := parseStructuredCandidate([]byte(candidate.text), validationSchema)
-		if err == nil {
-			parsed = append(parsed, payload)
-		} else if candidateErr == nil && (candidate.fenced || !isJSONSyntaxError(err)) {
-			candidateErr = err
+		switch {
+		case err != nil:
+			if candidateErr == nil && (candidate.fenced || !isJSONSyntaxError(err)) {
+				candidateErr = err
+			}
+		case candidate.fenced:
+			fencedPayloads = append(fencedPayloads, payload)
+		default:
+			barePayloads = append(barePayloads, payload)
 		}
 	}
-	if len(parsed) > 1 && isFindingsObjectSchema(validationSchema) {
-		return nil, fmt.Errorf("ambiguous structured output: found %d valid findings payloads; emit exactly one findings JSON object and remove the others", len(parsed))
+	if len(fencedPayloads) > 0 {
+		return fencedPayloads[len(fencedPayloads)-1], nil
 	}
-	switch len(parsed) {
-	case 0:
-	case 1:
-		return parsed[0], nil
+	distinct := distinctPayloads(barePayloads)
+	switch {
+	case len(distinct) == 0:
+	case len(distinct) == 1:
+		return distinct[0], nil
+	case isFindingsObjectSchema(validationSchema):
+		return nil, fmt.Errorf("ambiguous structured output: found %d valid findings payloads; emit exactly one findings JSON object and remove the others", len(distinct))
 	default:
-		// For non-findings schemas, retain the established convention that
-		// the last valid fenced or balanced candidate is the intended result.
-		return parsed[len(parsed)-1], nil
+		return barePayloads[len(barePayloads)-1], nil
 	}
 
 	if candidateErr != nil {
@@ -526,6 +535,24 @@ func jsonPayloadCandidates(text string, arrays bool) []jsonCandidate {
 		}
 	}
 	return candidates
+}
+
+func isEmptyJSONArray(text string) bool {
+	var items []json.RawMessage
+	return json.Unmarshal([]byte(text), &items) == nil && items != nil && len(items) == 0
+}
+
+func distinctPayloads(payloads []json.RawMessage) []json.RawMessage {
+	seen := make(map[string]bool, len(payloads))
+	var distinct []json.RawMessage
+	for _, payload := range payloads {
+		if seen[string(payload)] {
+			continue
+		}
+		seen[string(payload)] = true
+		distinct = append(distinct, payload)
+	}
+	return distinct
 }
 
 func isIdentifierByte(c byte) bool {
