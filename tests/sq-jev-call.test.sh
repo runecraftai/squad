@@ -143,6 +143,7 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
         boundary = module.redact("x" * 230 + " sk-abcd1234567890")
         assert len(boundary) == 240 and "sk-" not in boundary
+        assert module.redact("eyJabc.def.") == "[REDACTED]"
         assert module.redact("-----BEGIN PGP PRIVATE KEY BLOCK-----\nabc") == "[REDACTED]"
         assert module.redact("-----BEGIN RSA PRIVATE KEY-----\nMIIabc") == "[REDACTED]"
         assert module.redact('TOKEN="a b" end') == "[REDACTED] end"
