@@ -85,6 +85,10 @@ SQUAD_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
 # one owner.
 # shellcheck disable=SC2034 # Read by the sentry and daemon (sq-sentry.sh, sq-supervise-daemon.sh), not this lib.
 SQUAD_PAUSE_RESURFACE_SECS_DEFAULT=3600
+# Rendered-pane lines hashed while a pane claims busy. Sentry and daemon both
+# read this so a busy claim expires on the identical whole-pane hash they share.
+# shellcheck disable=SC2034 # Read by the sentry and daemon (sq-sentry.sh, sq-supervise-daemon.sh), not this lib.
+BUSY_PANE_CAPTURE_LINES=${SQUAD_BUSY_PANE_CAPTURE_LINES:-1000}
 # Closing a decision, wait, or blocker with `resolved:` on a deliberately idle
 # task makes that line last, so the wedge detector can re-read the task as a
 # possible wedge on its short cadence; send a fresh `paused:` line naming the

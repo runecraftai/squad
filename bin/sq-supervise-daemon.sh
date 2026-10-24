@@ -667,6 +667,32 @@ stale_window_is_busy() {  # <window> <state>
   [ "${verdict%% *}" = busy ]
 }
 
+window_run_step_active() {  # <window> <state>
+  [ "$(operator_absorb_verdict "$(window_to_task "$1" "$2")")" = "working run-step" ]
+}
+
+# A busy verdict on a stale marker is not proof of life once the sentry has handed
+# off the same rendered pane as static. Escalate it like an idle stale pane while
+# the whole pane still matches the sentry's handed-off hash; any progress drops the
+# episode, and an active drill run-step restarts the clock instead of alarming.
+busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
+  local win=$1 state=$2 task=$3 marker=$4 age=$5 backend key rendered handed
+  backend=$(task_window_backend "$win" "$state")
+  rendered=$(fm_backend_capture "$backend" "$win" "$BUSY_PANE_CAPTURE_LINES" "sq-$task" 2>/dev/null) || return 0
+  key=$(_stale_key "$win")
+  handed=$(cat "$state/.stale-$key" 2>/dev/null || true)
+  if [ "$(_hash_text "$rendered")" != "$handed" ]; then
+    rm -f "$marker"
+    return 0
+  fi
+  if window_run_step_active "$win" "$state"; then
+    _now > "$marker"
+    return 0
+  fi
+  escalate_add "$state" "stale persisted ${age}s (busy expired without activity, possible wedge): $win"
+  stale_marker_remove "$win" "$state"
+}
+
 escalate_add() {  # <state> <distilled-item>
   local state=$1 item=$2 buf
   buf="$state/.subsuper-escalations"
@@ -1126,7 +1152,7 @@ housekeeping() {  # <state>
     [ "$age" -ge "${SQUAD_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}" ] || continue
     stale_window_is_busy "$win" "$state"
     case "$?" in
-      0) rm -f "$marker" ;;
+      0) busy_stale_recheck "$win" "$state" "$task" "$marker" "$age" ;;
       2) rm -f "$marker" ;;
       *) escalate_add "$state" "stale persisted ${age}s (possible wedge): $win"
          stale_marker_remove "$win" "$state" ;;
