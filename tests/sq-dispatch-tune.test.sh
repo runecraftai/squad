@@ -488,6 +488,27 @@ else
   pass "log-first: a disagreeing meta file does not override the spawn row"
 fi
 
+# A stale log outside the window must still win over a fresh status file, so the meta fallback never reports it.
+STALE_DATA="$TMP_ROOT/stale-data"
+STALE_STATE="$TMP_ROOT/stale-state"
+mkdir -p "$STALE_STATE"
+write_log "$STALE_DATA" stale-a \
+  '{"timestamp":"2020-01-01T10:00:00+00:00","id":"stale-a","event":"decision","harness":"claude","model":"sonnet","effort":"default","profile":"closed-scope","quota_summary":{"status":"unknown"}}' \
+  '{"timestamp":"2020-01-01T10:20:05+00:00","id":"stale-a","event":"outcome","source":"status-notify","result":"done"}'
+touch -d '2020-01-01' "$STALE_DATA/stale-a/dispatch.jsonl"
+cat > "$STALE_STATE/stale-a.meta" <<'METAEOF'
+harness=pi
+model=gpt-5
+effort=high
+METAEOF
+echo "done: PR https://example.invalid/pull/3 checks green" > "$STALE_STATE/stale-a.status"
+output=$(SQUAD_STATE_OVERRIDE="$STALE_STATE" SQUAD_DATA_OVERRIDE="$STALE_DATA" "$TUNE" --json 2>&1)
+if echo "$output" | grep -q 'pi/gpt-5/high\|no-profile'; then
+  fail "stale log fell back to the status-only path: $output"
+else
+  pass "a stale dispatch log keeps precedence over a fresh status file"
+fi
+
 echo ""
 echo "=== Dispatch Log Fallback (meta) ==="
 
