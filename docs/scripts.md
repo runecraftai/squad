@@ -97,7 +97,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-factory-collect.py` | Python implementation of factory collection: read the configured sources, apply the verifiability test, queue candidates, and write the human digest |
 | `sq-factory-collect-toon.mjs` | Decode `sq-gh`'s TOON output into JSON for the factory collector, using the vendored `@toon-format/toon` decoder |
 | `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata including evidence receipt summaries and observation pack aggregates; sq-cost, .meta, .exec, and status remain owners of truth |
-| `sq-dispatch-tune.sh`  | Analyze operator performance per dispatch profile and recommend harness/model/effort adjustments |
+| `sq-dispatch-tune.sh`  | Report dispatch counts, chosen models, and success and fallback rates per profile and lane from dispatch logs |
 | `sq-policy-lab.sh`     | Private non-promoting comparison laboratory for validating, running, and reporting policy candidate experiments |
 | `sq-drill-run-lib.sh`       | Shared drill run attribution and current-run lifecycle                        |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |

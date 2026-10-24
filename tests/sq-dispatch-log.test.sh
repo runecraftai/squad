@@ -277,6 +277,33 @@ PY
 assert_no_grep PRIVATE_SECRET_SENTINEL "$dir/intake.err" 'warning leaked rejected quota payload'
 pass 'a rejected decision never blocks spawn and never echoes its payload'
 
+dir=$(make_case intake-secret-reason)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-reason 'api_key=PRIVATE_REASON_SENTINEL' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'credential-shaped reason blocked spawn'
+[ -f "$dir/state/task.meta" ] || fail 'spawn with credential-shaped reason did not publish task meta'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+raw = open(sys.argv[1]).read()
+rows = [json.loads(line) for line in raw.splitlines()]
+assert [row['event'] for row in rows] == ['spawn'], rows
+assert 'PRIVATE_REASON_SENTINEL' not in raw
+PY
+assert_no_grep PRIVATE_REASON_SENTINEL "$dir/intake.err" 'warning leaked credential-shaped reason'
+pass 'a credential-shaped decision reason is refused and never stored'
+
+dir=$(make_case intake-benign-reason)
+run_case "$dir" sq-spawn.sh task "$dir/project" --harness claude --model haiku \
+  --effort low --mode local-only --yolo off --decision-reason 'task-dispatch-tune scope' \
+  > "$dir/intake.out" 2> "$dir/intake.err" || fail 'benign reason blocked spawn'
+python3 - "$dir/data/task/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]).read().splitlines()]
+assert [row['event'] for row in rows] == ['decision', 'spawn'], rows
+assert rows[0]['reason'] == 'task-dispatch-tune scope', rows[0]
+PY
+pass 'a benign reason containing a hyphenated task name is stored'
+
 # Every operator spawn records its intake decision without a caller reason: the
 # reason comes from the harness source, and the quota snapshot passes through.
 dir=$(make_case intake-derived)
@@ -381,3 +408,28 @@ refuse 'operator and recon spawns' task "$dir/project" --xo --quota-summary '{}'
 refuse 'pass only one of' task "$dir/project" --mode local-only --yolo off \
   --decision-profile a --decision-reason b
 pass 'batch, XO, and doubled decision flags are refused before any spawn'
+
+# Derived failure classes follow the reader's rule: the last done or failed line decides, and blocked or paused
+# lines supply a class only when no done or failed line exists.
+dir="$TMP_ROOT/derived-class"
+mkdir -p "$dir/state"
+derived_case() { # <id> <status text> <result> <expected class or none>
+  local id=$1 text=$2 result=$3 expect=$4
+  printf '%b' "$text" > "$dir/state/$id.status"
+  SQUAD_STATE_OVERRIDE="$dir/state" SQUAD_DATA_OVERRIDE="$dir/data" \
+    "$ROOT/bin/sq-dispatch-log.sh" "$id" outcome --source status-notify --result "$result" >/dev/null 2>&1
+  python3 - "$dir/data/$id/dispatch.jsonl" "$expect" <<'PY'
+import json, sys
+row = [json.loads(line) for line in open(sys.argv[1])][-1]
+want = None if sys.argv[2] == 'none' else sys.argv[2]
+assert row.get('failure_class') == want, row
+PY
+}
+derived_case failed-blocked 'failed: provider overloaded\nblocked: waiting\n' failed provider
+derived_case failed-last-done 'failed: provider overloaded\ndone: PR ok\n' failed none
+derived_case released-after-failed 'failed: guard refusal\nblocked: quota exhausted\n' released none
+derived_case released-after-done 'done: PR ok\nblocked: quota exhausted\n' released none
+derived_case released-blocked-only 'blocked: quota exhausted\n' released quota
+derived_case released-paused-only 'paused: policy hold\n' released guard
+derived_case landed-clean 'done: PR ok\n' landed none
+pass 'derived failure classes take the last done or failed line, and blocked or paused lines only when none exists'
