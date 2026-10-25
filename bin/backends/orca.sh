@@ -12,6 +12,13 @@
 # shellcheck source=bin/sq-composer-lib.sh
 . "$(dirname -- "${BASH_SOURCE[0]}")/../sq-composer-lib.sh"
 
+# Shared normalized-transition shape and status->action policy table
+# (bin/sq-transition-lib.sh). Orca's poll producer normalizes its own vocabulary
+# into that shape, so the adapter loads the library itself instead of relying on
+# whichever consumer happened to source it first.
+# shellcheck source=bin/sq-transition-lib.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/../sq-transition-lib.sh"
+
 fm_backend_orca_tool_check() {
   command -v orca >/dev/null 2>&1 || { echo "error: backend=orca selected but the 'orca' CLI is not installed" >&2; return 1; }
 }

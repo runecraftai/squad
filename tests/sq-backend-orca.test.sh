@@ -96,13 +96,13 @@ orca_wait_response() {  # <response-file> <json agentWait value>
 
 orca_poll_transition() {  # <state> <session> <terminal>
   PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" "$3" "$4"' \
+    bash -c '. "$1/bin/backends/orca.sh"; fm_backend_orca_poll_transition "$2" "$3" "$4"' \
     _ "$ROOT" "$1" "$2" "$3"
 }
 
 orca_commit_transition() {  # <state> <session> <record>
   PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_commit_transition "$2" "$3" "$4"' \
+    bash -c '. "$1/bin/backends/orca.sh"; fm_backend_orca_commit_transition "$2" "$3" "$4"' \
     _ "$ROOT" "$1" "$2" "$3"
 }
 
