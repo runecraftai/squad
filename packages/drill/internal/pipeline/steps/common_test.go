@@ -964,7 +964,7 @@ func TestReviewFindingsSchema_ValidJSON(t *testing.T) {
 	if !ok {
 		t.Fatal("expected 'required' array in schema")
 	}
-	want := map[string]bool{"findings": false, "risk_level": false, "risk_rationale": false, "risk_scope": false}
+	want := map[string]bool{"findings": false, "risk_level": false, "risk_rationale": false}
 	for _, r := range required {
 		s, _ := r.(string)
 		want[s] = true
@@ -972,6 +972,49 @@ func TestReviewFindingsSchema_ValidJSON(t *testing.T) {
 	for field, found := range want {
 		if !found {
 			t.Errorf("missing required field %q in schema", field)
+		}
+	}
+	properties := parsed["properties"].(map[string]interface{})
+	if _, ok := properties["risk_scope"]; !ok {
+		t.Fatal("review schema missing risk_scope property")
+	}
+	for _, field := range required {
+		if field == "risk_scope" {
+			t.Fatal("risk_scope must be optional so the review step can surface unknown risk")
+		}
+	}
+}
+
+func TestReviewConsolidationSchema_ValidAndOptionalRiskScope(t *testing.T) {
+	t.Parallel()
+	if !json.Valid([]byte(reviewConsolidationSchema)) {
+		t.Fatalf("reviewConsolidationSchema is not valid JSON: %s", reviewConsolidationSchema)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(reviewConsolidationSchema), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	required, ok := parsed["required"].([]interface{})
+	if !ok {
+		t.Fatal("expected 'required' array in consolidation schema")
+	}
+	want := map[string]bool{"findings": false, "inspected_files": false, "risk_level": false, "risk_rationale": false}
+	for _, r := range required {
+		s, _ := r.(string)
+		want[s] = true
+	}
+	for field, found := range want {
+		if !found {
+			t.Errorf("missing required field %q in consolidation schema", field)
+		}
+	}
+	properties := parsed["properties"].(map[string]interface{})
+	if _, ok := properties["risk_scope"]; !ok {
+		t.Fatal("consolidation schema missing risk_scope property")
+	}
+	for _, field := range required {
+		if field == "risk_scope" {
+			t.Fatal("risk_scope must be optional so consolidation can surface unknown risk")
 		}
 	}
 }

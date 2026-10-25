@@ -235,6 +235,29 @@ func TestStripDeferredPipelineOwnedDeliveryFindings_PreservesHolisticSourceRisk(
 	}
 }
 
+func TestStripDeferredPipelineOwnedDeliveryFindings_PreservesUnknownRisk(t *testing.T) {
+	t.Parallel()
+	in := markUnknownReviewRisk(Findings{
+		Items: []Finding{{
+			Severity:    "error",
+			Action:      types.ActionAskUser,
+			Description: "the PR for this run is not open yet",
+			ReviewScope: types.FindingReviewScopePipelineOwnedDelivery,
+		}},
+		Summary: "unknown risk with a deferred claim",
+	})
+	out, dropped := stripDeferredPipelineOwnedDeliveryFindings(in)
+	if dropped != 1 {
+		t.Fatalf("dropped = %d, want 1", dropped)
+	}
+	if len(out.Items) != 0 {
+		t.Fatalf("expected empty items, got %+v", out.Items)
+	}
+	if out.RiskLevel != types.FindingsRiskLevelUnknown || out.RiskScope != types.FindingsRiskScopeUnknown || out.RiskRationale != unknownRiskRationale {
+		t.Errorf("deferred filtering rewrote unknown risk to %q/%q/%q, want the explicit unknown assessment retained", out.RiskLevel, out.RiskRationale, out.RiskScope)
+	}
+}
+
 func TestPipelineDeliveryPhaseClause_Content(t *testing.T) {
 	t.Parallel()
 	got := pipelineDeliveryPhaseClause()

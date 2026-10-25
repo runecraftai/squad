@@ -418,6 +418,39 @@ func TestSpecializedReviewOnlyConsolidatedFindingsReachGate(t *testing.T) {
 	}
 }
 
+func TestSpecializedReviewPreservesUnknownRiskAfterDeferredStrip(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch opts.Purpose {
+		case "review":
+			return &agent.Result{Output: json.RawMessage(`{"summary":"mono says clean","findings":[]}`)}, nil
+		case "review-consolidator":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[{"severity":"error","description":"the PR for this run is not open yet","action":"ask-user","review_scope":"pipeline-owned-delivery"}],"inspected_files":["feature.txt"],"risk_level":"low","risk_rationale":"bounded"}`)}, nil
+		default:
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
+		}
+	}}
+	sctx := newTestContextWithDBRecords(t, a, dir, base, head, config.Commands{})
+	sctx.Config.Review.Topology.Topology = config.ReviewTopologySpecialized
+	sctx.Config.Review.Topology.Enforcement = config.ReviewEnforcementBlocking
+	sctx.Config.Review.Topology.MaxParallel = 6
+	sctx.Config.Review.Topology.Timeout = time.Second
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings, err := types.ParseFindingsJSON(outcome.Findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings.Items) != 0 {
+		t.Fatalf("deferred delivery finding should be stripped, got %#v", findings.Items)
+	}
+	if findings.RiskLevel != types.FindingsRiskLevelUnknown || findings.RiskScope != types.FindingsRiskScopeUnknown || findings.RiskRationale != unknownRiskRationale {
+		t.Fatalf("risk fields = %q/%q/%q, want the explicit unknown assessment retained", findings.RiskLevel, findings.RiskRationale, findings.RiskScope)
+	}
+}
+
 func TestReviewStep_ExplicitSpecialistRetryIsSingleFreshBatch(t *testing.T) {
 	dir, base, head := setupGitRepo(t)
 	var lensCalls, failed atomic.Int32

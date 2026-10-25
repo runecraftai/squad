@@ -371,6 +371,10 @@ Risk assessment (after listing all findings):
 		sctx.Log(fmt.Sprintf("dropped %d deferred pipeline-owned delivery finding(s) (owned by later push/PR/CI steps)", n))
 		findings = stripped
 	}
+	if findings.RiskScope == "" {
+		sctx.Log("review risk assessment unknown: reviewer omitted risk_scope")
+	}
+	findings = markUnknownReviewRisk(findings)
 
 	needsApproval := hasBlockingFindings(findings.Items)
 	findingsJSON, _ := json.Marshal(findings)
