@@ -74,6 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/runecraftai/squad/main/packages/dri
 ```
 
 Windows, Go install, and build-from-source instructions are in the [installation guide](https://github.com/runecraftai/squad/tree/main/packages/drill/docs/src/content/docs/start-here/installation.md).
+Gate execution, `drill review`, and the setup wizard's agent suggestions need Linux with Bubblewrap (`bwrap`); the installation guide owns the full prerequisites.
 
 ## Quick Start
 

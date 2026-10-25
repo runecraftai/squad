@@ -31,11 +31,12 @@ func (s *TestStep) Execute(sctx *pipeline.StepContext) (*pipeline.StepOutcome, e
 	// broad regression and remains mandatory before a PR is ready. A forensic
 	// audit measured ~82 minutes of local complete-suite walks on one repair
 	// path when prompts only said "run the tests" / "relevant". This is a
-	// prompt contract, not an enforced sandbox - the agent has free shell
-	// access - so the pinned regression tests guard the wording, not the
-	// runtime. Process-group reaping on clean exit (#357) remains the lifecycle
-	// safety net when agents do spawn test workers; it is not a reason to force
-	// a deterministic full-suite commands.test override.
+	// prompt contract, not an enforced rule - the execution sandbox confines
+	// where the agent runs, not which commands it chooses - so the pinned
+	// regression tests guard the wording, not the runtime. Process-group
+	// reaping on clean exit (#357) remains the lifecycle safety net when agents
+	// do spawn test workers; it is not a reason to force a deterministic
+	// full-suite commands.test override.
 	var newTestsFromFix []string
 	var fixSummary string
 	if sctx.Fixing {

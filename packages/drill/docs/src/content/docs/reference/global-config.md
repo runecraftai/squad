@@ -185,8 +185,8 @@ Smart defaults:
 - For `claude`, supplying `--permission-mode` (or `--dangerously-skip-permissions`) suppresses the default `--dangerously-skip-permissions`.
 - For `codex`, supplying `--ask-for-approval`, `--sandbox`, or `--dangerously-bypass-approvals-and-sandbox` suppresses the default `--dangerously-bypass-approvals-and-sandbox`.
 
-Permission and sandbox flags affect the underlying agent, but they do not disable drill's pipeline prompt steering.
-Pipeline agents are still told to keep intentional writes inside the worktree and avoid mutating system state outside it.
+Permission and sandbox flags affect the underlying agent only: they never relax the repository execution sandbox that already wraps every agent process, and they do not disable drill's pipeline prompt steering either.
+[Daemon & Worktrees](/drill/concepts/daemon/) owns that sandbox.
 
 Example:
 

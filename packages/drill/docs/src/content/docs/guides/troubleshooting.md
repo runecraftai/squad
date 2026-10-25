@@ -144,15 +144,17 @@ Symptom: runs fail and the step log shows agents (for example `claude --print`) 
 
 A managed daemon started by launchd or systemd inherits only a minimal environment, so it does not see the `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` / `ALL_PROXY` variables from your shell. `drill` bakes any proxy variables that are set when you install or refresh the service into the generated service definition. If you set up the proxy after installing, re-run the installer or `drill daemon restart` (with the proxy variables exported) so they get baked in, then confirm them in `~/.config/systemd/user/drill-daemon-*.service` on Linux or `~/Library/LaunchAgents/com.squad.drill.daemon.*.plist` on macOS. Once baked in, the values survive later restarts and binary upgrades even from a shell that does not export them, so you only need the variables exported the first time. Windows Task Scheduler inherits your logon environment and needs no forwarding.
 
-## macOS App Management prompts during agent runs
+The repository execution sandbox does not forward proxy variables, so a host that requires an outbound proxy for agent traffic cannot reach provider APIs from inside it.
+[Repo Config](/drill/reference/repo-config/#repository-command-environment) owns the environment a sandboxed process actually receives.
 
-Pipeline prompts steer agents to keep intentional writes inside the disposable worktree and avoid mutating system locations such as `/Applications`, Homebrew-managed packages, or global tool configuration.
-This reduces macOS App Management prompts from agent-invoked commands, but it is not an OS sandbox.
+## A run fails with `drill-repository-execution-v1`
 
-If you still see prompts, check the step log for commands that intentionally write outside the worktree and move that setup into your normal development environment or an explicit repo-local command.
-Requested test evidence may still be written under the managed temporary `drill-evidence` directory. On GitHub, it is published to the push-target repository's orphan evidence branch when `test.evidence.store_in_repo` is enabled; the [Global Config Reference](/drill/reference/global-config/#testevidence) lists the cases that leave it local instead.
-Normal tool temp or cache writes can still happen outside the worktree.
-Testing prompts ask agents to remove transient working-tree artifacts they created, such as downloaded models, caches, build outputs, large binaries, or generated data directories, before completion.
+Symptom: the run fails before its first step with `unsupported operating system` or `Bubblewrap is required but unavailable`.
+
+Repository commands and agent processes run inside a mandatory execution sandbox that needs Linux with Bubblewrap (`bwrap`) installed.
+Install the distribution's `bubblewrap` package, confirm `bwrap --version` works in the daemon's environment, then run the gate again.
+A host that cannot provide the sandbox runs no repository command and no agent process, so no setting enables a degraded mode.
+[Daemon & Worktrees](/drill/concepts/daemon/) owns what the sandbox mounts and keeps out of its mount namespace.
 
 ## A pipeline step failed
 

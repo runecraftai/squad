@@ -47,6 +47,7 @@ make install
 ## Prerequisites
 
 - **git** - required
+- **Linux with Bubblewrap (`bwrap`)** - required for execution: every gate run, `drill review`, and the setup wizard's agent suggestions build the repository execution sandbox, and Drill refuses to start a repository command or agent process on another operating system or when `bubblewrap` is missing; see [Daemon & Worktrees](/drill/concepts/daemon/).
 - **One supported agent runner** - `claude`, `codex`, `acli` (Rovo Dev), `opencode`, `pi`, or `copilot`, or a configured Cursor/ACP runner such as `agent: cursor`; see [Global Config](/drill/reference/global-config/) for ACP requirements
 - **Optional, for PRs and CI:**
   - `gh` CLI (GitHub)
