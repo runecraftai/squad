@@ -5,9 +5,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
 	"github.com/runecraftai/squad/packages/drill/internal/telemetry"
 )
+
+// wrapBoxBody reflows only the lines that exceed the box's inner content
+// width, so long status and confirmation sentences stay fully visible in a
+// real terminal while short, deliberately aligned lines keep their layout.
+func wrapBoxBody(content string, width int) string {
+	lines := strings.Split(content, "\n")
+	wrapped := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if lipgloss.Width(line) <= width {
+			wrapped = append(wrapped, line)
+			continue
+		}
+		wrapped = append(wrapped, wrapText(line, width)...)
+	}
+	return strings.Join(wrapped, "\n")
+}
 
 func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int) string {
 	if state == nil {
@@ -75,7 +92,7 @@ func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int
 	if width < 40 {
 		width = 80
 	}
-	return renderBoxWithFooter("Local branch", message, width, footer)
+	return renderBoxWithFooter("Local branch", wrapBoxBody(message, width-4), width, footer)
 }
 
 func trackTUISyncAttempt(mode string, state branchsync.State, result string, started time.Time) {
@@ -127,7 +144,7 @@ func renderRecoverConfirmation(state branchsync.State, width int) string {
 		fmt.Fprintf(&b, "Local HEAD:     %s\n", state.Local.Head)
 		fmt.Fprintf(&b, "Recorded HEAD:  %s (missing)\n\n", state.Pipeline.CurrentHead)
 		b.WriteString("Recovery only records custody at your current head: no branch, ref, or worktree moves. Start a fresh run when ready.")
-		return renderBoxWithFooter("Confirm custody recovery", b.String(), width, "u/enter recover  ·  esc cancel")
+		return renderBoxWithFooter("Confirm custody recovery", wrapBoxBody(b.String(), width-4), width, "u/enter recover  ·  esc cancel")
 	}
 	fmt.Fprintf(&b, "The run ended %s with unpublished pipeline commits in the local gate.\n", state.Pipeline.Status)
 	fmt.Fprintf(&b, "Recovery returns custody by fast-forwarding a clean behind worktree, or\n")
@@ -137,7 +154,7 @@ func renderRecoverConfirmation(state branchsync.State, width int) string {
 	fmt.Fprintf(&b, "Local HEAD:     %s\n", state.Local.Head)
 	fmt.Fprintf(&b, "Preserved HEAD: %s\n\n", state.Pipeline.CurrentHead)
 	b.WriteString("Dirty worktrees and divergence that cannot be proven contained refuse without changes; `drill sync --recover --keep-local` keeps the current head instead. `drill rerun` resumes validation.")
-	return renderBoxWithFooter("Confirm custody recovery", b.String(), width, "u/enter recover  ·  esc cancel")
+	return renderBoxWithFooter("Confirm custody recovery", wrapBoxBody(b.String(), width-4), width, "u/enter recover  ·  esc cancel")
 }
 
 func renderSyncConfirmation(state branchsync.State, width int) string {
@@ -161,5 +178,5 @@ func renderSyncConfirmation(state branchsync.State, width int) string {
 	} else {
 		b.WriteString("No reset, stash, merge commit, rebase, force push, branch switch, or remote update can occur.")
 	}
-	return renderBoxWithFooter("Confirm local branch sync", b.String(), width, "u/enter apply  ·  esc cancel")
+	return renderBoxWithFooter("Confirm local branch sync", wrapBoxBody(b.String(), width-4), width, "u/enter apply  ·  esc cancel")
 }

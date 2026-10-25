@@ -53,10 +53,13 @@ func TestBranchSyncActionRefreshesBeforeConfirmationAndAppliesThroughSharedPath(
 		t.Fatalf("fresh confirmation state = %#v, refresh=%d apply=%d", m.branchSync, refreshCalls, applyCalls)
 	}
 	plain := stripANSI(m.View())
-	for _, want := range []string{strings.Repeat("a", 40), strings.Repeat("b", 40), "refs/heads/feature", "strict fast-forward", "u/enter apply"} {
-		if !strings.Contains(plain, want) {
+	for _, want := range []string{strings.Repeat("a", 40), strings.Repeat("b", 40), "refs/heads/feature", "strict fast-forward"} {
+		if !strings.Contains(visibleBoxText(plain), want) {
 			t.Errorf("confirmation missing %q:\n%s", want, plain)
 		}
+	}
+	if !strings.Contains(plain, "u/enter apply") {
+		t.Errorf("confirmation missing %q:\n%s", "u/enter apply", plain)
 	}
 
 	nextModel, cmd = m.handleKey(keyMsg("enter"))
@@ -74,22 +77,22 @@ func TestBranchSyncActionRefreshesBeforeConfirmationAndAppliesThroughSharedPath(
 func TestLocalBranchStatusIsCompactAndOnlyOffersEligibleAction(t *testing.T) {
 	state := branchsync.State{State: branchsync.StateBehind, Safety: "refresh_required"}
 	view := stripANSI(renderLocalBranchStatus(&state, false, 80))
-	if !strings.Contains(view, "Safe fast-forward available after refresh") || !strings.Contains(view, "u sync branch") {
+	if !strings.Contains(visibleBoxText(view), "Safe fast-forward available after refresh") || !strings.Contains(view, "u sync branch") {
 		t.Fatalf("behind view:\n%s", view)
 	}
 	state.State = branchsync.StateDiverged
 	view = stripANSI(renderLocalBranchStatus(&state, false, 80))
-	if !strings.Contains(view, "diverged") || strings.Contains(view, "u sync branch") {
+	if !strings.Contains(visibleBoxText(view), "diverged") || strings.Contains(view, "u sync branch") {
 		t.Fatalf("diverged view:\n%s", view)
 	}
 	state.NextAction = &branchsync.NextAction{Code: "sync", Command: "drill axi sync"}
 	view = stripANSI(renderLocalBranchStatus(&state, false, 80))
-	if !strings.Contains(view, "equivalent work") || !strings.Contains(view, "u sync branch") {
+	if !strings.Contains(visibleBoxText(view), "equivalent work") || !strings.Contains(view, "u sync branch") {
 		t.Fatalf("equivalent candidate view:\n%s", view)
 	}
 	state.Safety = branchsync.SafetySafeEquivalentAdvance
 	view = stripANSI(renderLocalBranchStatus(&state, false, 80))
-	if !strings.Contains(view, "represented in the live pipeline head") || strings.Contains(view, "No automatic reconciliation") {
+	if !strings.Contains(visibleBoxText(view), "represented in the live pipeline head") || strings.Contains(visibleBoxText(view), "No automatic reconciliation") {
 		t.Fatalf("equivalent live view:\n%s", view)
 	}
 }
@@ -124,10 +127,13 @@ func TestBranchSyncActionRefreshesEquivalentDivergedBeforeConfirmation(t *testin
 		t.Fatalf("fresh equivalent confirmation state = %#v, refresh=%d", m.branchSync, refreshCalls)
 	}
 	plain := stripANSI(m.View())
-	for _, want := range []string{"equivalent live pipeline head", "anchored before the branch moves", "u/enter apply"} {
-		if !strings.Contains(plain, want) {
+	for _, want := range []string{"equivalent live pipeline head", "anchored before the branch moves"} {
+		if !strings.Contains(visibleBoxText(plain), want) {
 			t.Errorf("confirmation missing %q:\n%s", want, plain)
 		}
+	}
+	if !strings.Contains(plain, "u/enter apply") {
+		t.Errorf("confirmation missing %q:\n%s", "u/enter apply", plain)
 	}
 }
 
@@ -243,7 +249,7 @@ func TestActivePipelineOwnedStateOffersNoRecoveryAction(t *testing.T) {
 		return branchsync.State{}
 	}
 	view := stripANSI(renderLocalBranchStatus(m.branchSync, false, 80))
-	if strings.Contains(view, "recover") || !strings.Contains(view, "Do not make follow-up commits") {
+	if strings.Contains(view, "recover") || !strings.Contains(visibleBoxText(view), "Do not make follow-up commits") {
 		t.Fatalf("active pipeline_owned view:\n%s", view)
 	}
 	nextModel, cmd := m.handleKey(keyMsg("u"))
@@ -271,13 +277,14 @@ func TestOrphanedRecoverySurfacesReportLostPipelineFixes(t *testing.T) {
 	}
 
 	confirmation := stripANSI(renderRecoverConfirmation(state, 100))
+	confirmationText := visibleBoxText(confirmation)
 	for _, want := range []string{missing, "lost", "no branch, ref, or worktree moves", "Recorded HEAD"} {
-		if !strings.Contains(confirmation, want) {
+		if !strings.Contains(confirmationText, want) {
 			t.Errorf("orphan confirmation missing %q:\n%s", want, confirmation)
 		}
 	}
 	for _, unwanted := range []string{"Preserved HEAD", "fast-forwarding"} {
-		if strings.Contains(confirmation, unwanted) {
+		if strings.Contains(confirmationText, unwanted) {
 			t.Errorf("orphan confirmation still promises %q:\n%s", unwanted, confirmation)
 		}
 	}
@@ -289,5 +296,82 @@ func TestOrphanedRecoverySurfacesReportLostPipelineFixes(t *testing.T) {
 	returned := stripANSI(renderLocalBranchStatus(&state, false, 80))
 	if !strings.Contains(returned, "lost") || !strings.Contains(returned, "Custody returned") {
 		t.Fatalf("released orphan status hid the loss:\n%s", returned)
+	}
+}
+
+// TestOrphanedRecoveryAuditIsVisibleAtOrdinaryTerminalWidths pins that the
+// missing-fixes audit and the no-movement guarantee survive actual terminal
+// rendering: at common terminal sizes the box never emits a line wider than
+// the terminal, so the loss phrase and the guarantee cannot be clipped away.
+func TestOrphanedRecoveryAuditIsVisibleAtOrdinaryTerminalWidths(t *testing.T) {
+	missing := strings.Repeat("c", 40)
+	state := branchsync.State{
+		State: branchsync.StatePipelineOwned, Relation: branchsync.RelationUnknown, Safety: "blocked_pipeline_owned_recoverable",
+		Local:    branchsync.LocalState{Branch: "feature", Head: strings.Repeat("a", 40), Clean: true},
+		Pipeline: branchsync.PipelineState{RunID: "run-1", Status: "cancelled", Phase: "pre_push", CurrentHead: missing, PreservedHeadMissing: true},
+	}
+	for _, width := range []int{80, 100, 120} {
+		status := stripANSI(renderLocalBranchStatus(&state, false, width))
+		assertRenderedLinesFit(t, status, width)
+		statusText := visibleBoxText(status)
+		for _, want := range []string{
+			"recorded pipeline head is missing",
+			"unpublished fixes are lost with it",
+			"recover custody",
+		} {
+			if !strings.Contains(statusText, want) {
+				t.Errorf("width %d status hides %q:\n%s", width, want, status)
+			}
+		}
+		if strings.Contains(statusText, "preserved in the local gate") {
+			t.Errorf("width %d status still claims preservation:\n%s", width, status)
+		}
+
+		confirmation := stripANSI(renderRecoverConfirmation(state, width))
+		assertRenderedLinesFit(t, confirmation, width)
+		confirmationText := visibleBoxText(confirmation)
+		for _, want := range []string{
+			missing,
+			"recorded pipeline head was lost",
+			"unpublished fixes are lost with that object",
+			"no branch, ref, or worktree moves",
+		} {
+			if !strings.Contains(confirmationText, want) {
+				t.Errorf("width %d confirmation hides %q:\n%s", width, want, confirmation)
+			}
+		}
+	}
+
+	state.State = branchsync.StateCustodyReturned
+	state.Safety = "custody_returned"
+	state.Pipeline.PreservedHeadMissing = false
+	state.Pipeline.CustodyReturnNote = "orphaned run run-1: missing pipeline head " + missing
+	for _, width := range []int{80, 100, 120} {
+		returned := stripANSI(renderLocalBranchStatus(&state, false, width))
+		assertRenderedLinesFit(t, returned, width)
+		text := visibleBoxText(returned)
+		for _, want := range []string{"Custody returned", "unpublished fixes were lost with the missing recorded head"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("width %d released-orphan status hides %q:\n%s", width, want, returned)
+			}
+		}
+	}
+}
+
+// TestSyncConfirmationNoMovementGuaranteeIsVisible pins that the sync
+// confirmation's promise of no resets or force updates fits ordinary widths.
+func TestSyncConfirmationNoMovementGuaranteeIsVisible(t *testing.T) {
+	state := branchsync.State{
+		State: branchsync.StateBehind, Safety: branchsync.SafetySafeFastForward,
+		Local:    branchsync.LocalState{Branch: "feature", Head: strings.Repeat("a", 40), Clean: true},
+		Pipeline: branchsync.PipelineState{RunID: "run-1", PushedHead: strings.Repeat("b", 40)},
+		Target:   branchsync.TargetState{Kind: "fork", Remote: "fork", Ref: "refs/heads/feature"},
+	}
+	for _, width := range []int{80, 100, 120} {
+		confirmation := stripANSI(renderSyncConfirmation(state, width))
+		assertRenderedLinesFit(t, confirmation, width)
+		if text := visibleBoxText(confirmation); !strings.Contains(text, "No reset, stash, merge commit, rebase, force push, branch switch, or remote update can occur.") {
+			t.Errorf("width %d sync confirmation hides the no-movement guarantee:\n%s", width, confirmation)
+		}
 	}
 }
