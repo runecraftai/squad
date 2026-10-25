@@ -22,7 +22,7 @@ fm_supervisor_native_endpoint() {  # <backend> <target>
     echo 'error: Orca supervisor needs orca and jq on PATH' >&2; return 1
   fi
   status=$(orca status --json) || {
-    echo 'error: `orca status --json` failed; start the selected local Orca host, confirm it answers that command, and retry' >&2; return 1
+    echo 'error: orca status --json failed; start the selected local Orca host, confirm it answers that command, and retry' >&2; return 1
   }
   printf '%s' "$status" | jq -e '.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready" and (.result.runtime.runtimeId | type == "string" and length > 0)' >/dev/null || {
     echo 'error: Orca supervisor requires a reachable ready runtime with runtimeId; start the selected local Orca host first' >&2; return 1;
