@@ -3664,7 +3664,7 @@ SH
 # evidence to the daemon as a routine stale reason (the daemon persists/escalates
 # it), and one dirty episode hands off exactly once even when the footer churns.
 test_away_dirty_work_hands_off_evidence_once() {
-  local dir state fakebin out capture_file window key wt pid
+  local dir state fakebin out capture_file window key wt pid deferred_before
   pause_worktree_case away-dirty-handoff
   printf 'unfinished\n' > "$wt/untracked"
   date '+%s' > "$state/.afk"
@@ -3678,11 +3678,14 @@ test_away_dirty_work_hands_off_evidence_once() {
 
   : > "$out"
   printf 'idle external wait with a changed footer' > "$capture_file"
+  deferred_before=$(grep -c 'deferred plain handoff' "$state/.sentry-triage.log" 2>/dev/null || true)
   start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
   wait_live "$pid" 30 || { reap "$pid"; fail "away dirty episode re-escalated after a footer change: $(cat "$out")"; }
   reap "$pid"
   grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
     && fail "away dirty episode re-escalated after a footer change: $(cat "$out")"
+  [ "$(( $(grep -c 'deferred plain handoff' "$state/.sentry-triage.log" 2>/dev/null || true) - ${deferred_before:-0} ))" = 1 ] \
+    || fail "away mode repeated the deferred-handoff log on every poll: $(cat "$state/.sentry-triage.log")"
   [ "$(grep -c 'operator idle with uncommitted work' "$state/.stand-to-queue")" = 1 ] \
     || fail "away dirty work escalated twice for one episode"
   pass "away idle dirty work hands off its evidence exactly once per episode"

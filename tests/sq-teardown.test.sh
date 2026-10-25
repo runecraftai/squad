@@ -1538,6 +1538,7 @@ test_teardown_retires_watcher_markers() {
   : > "$case_dir/state/.dirty-since-$key"
   : > "$case_dir/state/.dirty-unreadable-$key"
   : > "$case_dir/state/.pause-episode-$key"
+  : > "$case_dir/state/.deferred-log-$key"
   : > "$case_dir/state/.sig-hash-$key"
   : > "$case_dir/state/.sig-since-$key"
   : > "$case_dir/state/.sig-reported-$key"
@@ -1572,6 +1573,8 @@ test_teardown_retires_watcher_markers() {
     || fail "watcher-markers: teardown left cannot-evaluate dirty tracking behind"
   [ ! -e "$case_dir/state/.pause-episode-$key" ] \
     || fail "watcher-markers: teardown left pause episode tracking behind"
+  [ ! -e "$case_dir/state/.deferred-log-$key" ] \
+    || fail "watcher-markers: teardown left pause-era deferral logging state behind"
   [ ! -e "$case_dir/state/.sig-hash-$key" ] \
     || fail "watcher-markers: teardown left pane-signature hash tracking behind"
   [ ! -e "$case_dir/state/.sig-since-$key" ] \

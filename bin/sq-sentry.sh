@@ -283,7 +283,7 @@ recorded_windows() {
 # is a backend target mangled by tr ':/.' '___' - the same transform
 # sq-teardown.sh and the away-mode daemon apply. Longest family first: ".stale-"
 # is a prefix of ".stale-since-" and ".paused-" of its two cadence markers.
-SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
+SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .deferred-log- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
 
 # drop_window_markers: reset every piece of per-window bookkeeping this sentry
 # keeps for <window> - the pane hash/count, the stale suppressor and its wedge
@@ -300,6 +300,7 @@ drop_window_markers() {  # <window>
     "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" \
     "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key" \
     "$STATE/.dirty-since-$key" "$STATE/.dirty-unreadable-$key" "$STATE/.pause-episode-$key" \
+    "$STATE/.deferred-log-$key" \
     "$STATE/.sig-hash-$key" "$STATE/.sig-since-$key" "$STATE/.sig-reported-$key" "$STATE/.sig-unreadable-$key"
 }
 
@@ -322,7 +323,7 @@ drop_orphan_window_markers() {
     [ -n "$w" ] || continue
     live="$live$(printf '%s' "$w" | tr ':/.' '___') "
   done < <(recorded_windows)
-  for f in "$STATE"/.wedge-escalations-* "$STATE"/.paused-resurfaced-* \
+  for f in "$STATE"/.wedge-escalations-* "$STATE"/.deferred-log-* "$STATE"/.paused-resurfaced-* \
            "$STATE"/.paused-rechecked-* "$STATE"/.pause-episode-* "$STATE"/.dirty-since-* \
            "$STATE"/.dirty-unreadable-* "$STATE"/.sig-reported-* "$STATE"/.sig-since-* "$STATE"/.sig-hash-* "$STATE"/.sig-unreadable-* \
            "$STATE"/.stale-* "$STATE"/.paused-* "$STATE"/.count-* "$STATE"/.hash-*; do
@@ -486,15 +487,19 @@ pause_age_check() {  # <window> <task> <key> <busy: 0=yes>
   age=$(( $(date +%s) - since ))
   [ "$age" -ge "$PAUSE_MAX_SECS" ] || return 1
   [ "$busy" -eq 0 ] && return 1
-  window_run_step_active "$win" && return 1
-  operator_is_finished "$task" && return 0
-  if [ "$reported" != 1 ]; then
-    reason="stale: $win (declared pause aged out after ${age}s; confirm or clear the declared pause)"
-    fm_wake_append stale "$win" "$reason" || exit 1
-    printf '%s %s 1\n' "$episode" "$since" > "$marker"
-    wake "$reason"
+  [ "$reported" = 1 ] && return 0
+  if window_run_step_active "$win"; then
+    printf '%s %s 0\n' "$episode" "$(date +%s)" > "$marker"
+    return 1
   fi
-  return 0
+  if operator_is_finished "$task"; then
+    printf '%s %s 0\n' "$episode" "$(date +%s)" > "$marker"
+    return 0
+  fi
+  reason="stale: $win (declared pause aged out after ${age}s; confirm or clear the declared pause)"
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf '%s %s 1\n' "$episode" "$since" > "$marker"
+  wake "$reason"
 }
 
 # Explicit cannot-evaluate for the pane-signature rule: an unreadable complete
@@ -544,11 +549,11 @@ pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rende
   case "$since" in ''|*[!0-9]*) date +%s > "$sincefile"; return ;; esac
   age=$(( $(date +%s) - since ))
   [ "$age" -ge "$STALE_ESCALATE_SECS" ] || return 0
+  [ "$(cat "$reportedfile" 2>/dev/null || true)" = "$name" ] && return 0
   if window_run_step_active "$win" || operator_is_finished "$task"; then
     date +%s > "$sincefile"
     return
   fi
-  [ "$(cat "$reportedfile" 2>/dev/null || true)" = "$name" ] && return 0
   composer=$(fm_backend_composer_state "$backend" "$win" 2>/dev/null || printf unknown)
   note=
   if [ "$busy" -ne 0 ]; then
@@ -563,17 +568,39 @@ pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rende
   wake "$reason"
 }
 
-# 0 when an independent pause-era rule is still accumulating readable evidence
-# for <key>, so away mode must let that rule hand off the named evidence instead
-# of pre-empting it with a plain window identity. The dirty-worktree clock and a
-# live pane-signature episode are the two rules that need time; the pause-age
-# rule escalates before this check runs. A cannot-evaluate marker means the rule
-# is not accumulating evidence, so it must not suppress the plain handoff.
-pause_era_evidence_tracking() {  # <key>
-  if [ -e "$STATE/.dirty-since-$1" ] && [ ! -e "$STATE/.dirty-unreadable-$1" ]; then
+# The pause-era evidence identity for <key>: a dirty-worktree episode or a live
+# pane-signature episode that is still accumulating readable evidence, so away
+# mode must let that rule hand off the named evidence instead of pre-empting it
+# with a plain window identity. Empty when no rule owns the handoff; a
+# cannot-evaluate marker means the rule is not accumulating evidence, so it must
+# not suppress the plain handoff.
+pause_era_evidence_state() {  # <key>
+  local key=$1 evidence
+  if [ -e "$STATE/.dirty-since-$key" ] && [ ! -e "$STATE/.dirty-unreadable-$key" ]; then
+    evidence=$(cat "$STATE/.dirty-since-$key" 2>/dev/null || true)
+    printf 'dirty:%s' "$evidence"
     return 0
   fi
-  [ -e "$STATE/.sig-hash-$1" ] && [ ! -e "$STATE/.sig-unreadable-$1" ]
+  [ -e "$STATE/.sig-hash-$key" ] && [ ! -e "$STATE/.sig-unreadable-$key" ] || return 1
+  evidence=$(cat "$STATE/.sig-hash-$key" 2>/dev/null || true)
+  printf 'sig:%s' "$evidence"
+}
+
+pause_era_evidence_tracking() {  # <key>
+  [ -n "$(pause_era_evidence_state "$1")" ]
+}
+
+# Name the pause-era ownership deferral once per distinct evidence state: away
+# mode keeps polling for the whole episode, so an unconditional line here would
+# rotate the bounded triage log. A new dirty clock or signature hash re-arms the
+# note without changing the ownership verdict.
+pause_era_deferral_note() {  # <window> <key> <plain|busy>
+  local win=$1 key=$2 kind=$3 marker="$STATE/.deferred-log-$2" token
+  token=$(pause_era_evidence_state "$key") || return 1
+  [ -n "$token" ] || return 1
+  [ "$(cat "$marker" 2>/dev/null || true)" = "$token" ] && return 0
+  printf '%s' "$token" > "$marker"
+  triage_log "deferred $kind handoff (a pause-era rule owns the named evidence): $win"
 }
 
 # Absorb a stale pane under a declared external-wait pause (paused:) or a
@@ -1417,7 +1444,7 @@ EOF
         elif afk_present; then
           # Daemon owns triage: one-shot per distinct stale hash, as before.
           if pause_era_evidence_tracking "$key"; then
-            triage_log "deferred plain handoff (a pause-era rule owns the named evidence): $w"
+            pause_era_deferral_note "$w" "$key" plain
           elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             fm_wake_append stale "$w" "stale: $w" || exit 1
             printf '%s' "$h" > "$sf"
@@ -1517,7 +1544,7 @@ EOF
           # Normal busy tracking is not an actual daemon handoff. This early
           # internal event starts the daemon's one full static window.
           if pause_era_evidence_tracking "$key"; then
-            triage_log "deferred busy handoff (a pause-era rule owns the named evidence): $w"
+            pause_era_deferral_note "$w" "$key" busy
           elif [ "$(cat "$sf" 2>/dev/null || true)" != "busy-afk:$h" ]; then
             if window_run_step_active "$w"; then
               date +%s > "$ssf"
