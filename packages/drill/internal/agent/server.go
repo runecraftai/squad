@@ -233,14 +233,15 @@ func (p *serverPool) stopAll() {
 	}
 }
 
-// syncRunResult imports the private Git result a confined run produced into
-// the linked execution copy, so the pipeline observes the agent's commits.
-func syncRunResult(policy ProcessExecutionPolicy) error {
+// syncConfinedGit aligns the private Git of a confined run with the linked
+// execution copy. It runs before a launch so the run starts from the host
+// head, and after it so the host observes the agent's commits.
+func syncConfinedGit(policy ProcessExecutionPolicy) error {
 	if policy == nil {
 		return nil
 	}
 	if err := policy.Sync(); err != nil {
-		return fmt.Errorf("import confined agent result: %w", err)
+		return fmt.Errorf("synchronize confined agent Git: %w", err)
 	}
 	return nil
 }

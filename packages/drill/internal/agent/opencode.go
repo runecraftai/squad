@@ -44,10 +44,13 @@ func (a *opencodeAgent) recoverTransientRetry(policy ProcessExecutionPolicy, lab
 
 func (a *opencodeAgent) runOnce(ctx context.Context, opts RunOpts) (result *Result, runErr error) {
 	defer func() {
-		if syncErr := syncRunResult(opts.ExecutionPolicy); syncErr != nil && runErr == nil {
+		if syncErr := syncConfinedGit(opts.ExecutionPolicy); syncErr != nil && runErr == nil {
 			result, runErr = nil, syncErr
 		}
 	}()
+	if err := syncConfinedGit(opts.ExecutionPolicy); err != nil {
+		return nil, err
+	}
 
 	// Start server on first invocation (synchronized)
 	baseURL, err := a.ensureServer(ctx, opts.CWD, opts.ExecutionPolicy)
