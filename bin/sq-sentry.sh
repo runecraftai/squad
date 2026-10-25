@@ -7,8 +7,20 @@
 # actively-running drill step, or a backend busy signal), and surfaced
 # otherwise, so an operator that finishes (or stops and waits) without a current
 # working signal is never silently swallowed. A declared external-wait pause is
-# the separate idle absorb case and re-surfaces only on its long bounded cadence,
+# the separate idle absorb case, bounded by SQUAD_PAUSE_MAX_SECS (default 3600).
+# Idle uncommitted work independently escalates after SQUAD_STALE_ESCALATE_SECS,
+# even under a declared pause. Both checks defer to active drill run-steps;
+# busy panes and terminal tasks do not enter the dirty-worktree clock.
+# A pause ages out once per declaration, asking Squad to confirm or clear it,
+# rather than repeating on every poll. Before that it uses the long cadence,
 # although its initial no-verb status signal still surfaces in normal mode.
+# A third independent rule reads the complete rendered pane: a byte-identical
+# viewport that keeps showing a stuck signature (compaction banner, cancelled or
+# interrupted turn, error dialog) escalates naming what the pane showed and the
+# hash it was taken from, regardless of status, declared pause, or a busy claim;
+# an unreadable viewport is logged as cannot-evaluate and never counts as
+# progress or as a stall. All three rules name their evidence in the wake reason,
+# so the away-mode daemon can escalate that same evidence instead of absorbing it.
 # While state/.afk exists, the daemon owns triage and this sentry queues and exits
 # on every wake. Printed reason lines:
 #   signal: <file>...      status/turn-end signals, surfaced when a listed status
@@ -38,7 +50,14 @@
 #                          names "busy expired without activity" on escalation.
 #                          Changing output resets that timer and counter.
 #                          A declared paused:/commander-held last status line
-#                          still outranks busy and keeps the bounded pause cadence.
+#                          still outranks busy and keeps the bounded pause cadence,
+#                          except for the three named pause-era reasons below.
+#                          Three independent rules append their own evidence to
+#                          the same reason: "operator idle with uncommitted work"
+#                          past SQUAD_STALE_ESCALATE_SECS, "declared pause aged
+#                          out" once past SQUAD_PAUSE_MAX_SECS per declaration, and
+#                          "pane signature: <name>" for a byte-identical complete
+#                          viewport that keeps showing a stuck signature.
 #   stale: <window> (<backend>: agent blocked - ...)
 #                          a backend's native transition record (bin/sq-transition-lib.sh)
 #                          reports the SAME window as `blocked` (a person is
@@ -169,6 +188,7 @@ STALE_ESCALATE_SECS=${SQUAD_STALE_ESCALATE_SECS:-240}  # idle secs before a prov
 # These cases re-surface once for a recheck every PAUSE_RESURFACE_SECS - far
 # longer than the wedge threshold, but finite so a forgotten hold cannot rot invisibly.
 PAUSE_RESURFACE_SECS=${SQUAD_PAUSE_RESURFACE_SECS:-$SQUAD_PAUSE_RESURFACE_SECS_DEFAULT}
+PAUSE_MAX_SECS=${SQUAD_PAUSE_MAX_SECS:-3600}  # one age-out escalation per declared pause
 # Consecutive event-path failures (fm_backend_wait_transition returning 2 -
 # connect/subscribe failure) before the push fast-path is disabled for the rest
 # of this sentry process and the loop reverts to pure polling (report section
@@ -270,11 +290,12 @@ recorded_windows() {
 # is a backend target mangled by tr ':/.' '___' - the same transform
 # sq-teardown.sh and the away-mode daemon apply. Longest family first: ".stale-"
 # is a prefix of ".stale-since-" and ".paused-" of its two cadence markers.
-SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .paused-resurfaced- .paused-rechecked- .stale-since- .stale- .paused- .count- .hash-"
+SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .deferred-log- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-deferred-log- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
 
 # drop_window_markers: reset every piece of per-window bookkeeping this sentry
 # keeps for <window> - the pane hash/count, the stale suppressor and its wedge
-# timer, the consecutive-escalation counter, and the pause cadence markers.
+# timer, the consecutive-escalation counter, the pause cadence markers, and the
+# independent pause-era clocks (dirty worktree, pause episode, pane signature).
 # This is the reset the wedge-timer contract requires wherever a target's
 # pane/hash state must restart from a genuinely fresh classification, applied
 # here to the one case that has no pane to re-classify: the task record itself
@@ -285,7 +306,11 @@ drop_window_markers() {  # <window>
   key=$(printf '%s' "$win" | tr ':/.' '___')
   rm -f "$STATE/.hash-$key" "$STATE/.count-$key" "$STATE/.stale-$key" \
     "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" \
-    "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key"
+    "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key" \
+    "$STATE/.dirty-since-$key" "$STATE/.dirty-unreadable-$key" "$STATE/.pause-episode-$key" \
+    "$STATE/.deferred-log-$key" \
+    "$STATE/.sig-hash-$key" "$STATE/.sig-since-$key" "$STATE/.sig-reported-$key" "$STATE/.sig-unreadable-$key" \
+    "$STATE/.sig-deferred-log-$key"
 }
 
 # drop_orphan_window_markers: re-derive which keys still belong to a live task
@@ -307,9 +332,11 @@ drop_orphan_window_markers() {
     [ -n "$w" ] || continue
     live="$live$(printf '%s' "$w" | tr ':/.' '___') "
   done < <(recorded_windows)
-  for f in "$STATE"/.wedge-escalations-* "$STATE"/.paused-resurfaced-* \
-           "$STATE"/.paused-rechecked-* "$STATE"/.stale-* \
-           "$STATE"/.paused-* "$STATE"/.count-* "$STATE"/.hash-*; do
+  for f in "$STATE"/.wedge-escalations-* "$STATE"/.deferred-log-* "$STATE"/.paused-resurfaced-* \
+           "$STATE"/.paused-rechecked-* "$STATE"/.pause-episode-* "$STATE"/.dirty-since-* \
+           "$STATE"/.dirty-unreadable-* "$STATE"/.sig-deferred-log-* "$STATE"/.sig-reported-* \
+           "$STATE"/.sig-since-* "$STATE"/.sig-hash-* "$STATE"/.sig-unreadable-* \
+           "$STATE"/.stale-* "$STATE"/.paused-* "$STATE"/.count-* "$STATE"/.hash-*; do
     [ -e "$f" ] || continue
     base=${f##*/}
     key=
@@ -406,6 +433,202 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
   esac
 }
 
+# Independent of pane hashes and pause suppression: an idle dirty worktree is
+# unfinished work, even if a footer keeps changing. Never write the Git index.
+# Reset on busy/clean/terminal; a failed read is cannot-evaluate and keeps the
+# clock; report once per continuous idle-dirty episode.
+dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
+  local win=$1 task=$2 marker="$STATE/.dirty-since-$3" unreadable="$STATE/.dirty-unreadable-$3" busy=$4 last=$5 wt dirt since age reason
+  if [ "$busy" -eq 0 ] || status_is_terminal_verb "$last"; then
+    rm -f "$marker" "$unreadable"
+    return
+  fi
+  wt=$(awk '/^worktree=/ {sub(/^worktree=/, ""); print; exit}' "$STATE/$task.meta") || true
+  if [ -z "$wt" ] || [ ! -d "$wt" ]; then
+    rm -f "$marker" "$unreadable"
+    return
+  fi
+  if ! dirt=$(git --no-optional-locks -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null); then
+    if [ ! -e "$unreadable" ]; then
+      : > "$unreadable"
+      triage_log "cannot evaluate worktree status (git status failed): $win"
+    fi
+    return
+  fi
+  rm -f "$unreadable"
+  if [ -z "$dirt" ]; then
+    rm -f "$marker"
+    return
+  fi
+  since=$(cat "$marker" 2>/dev/null || true)
+  case "$since" in
+    reported) return ;;
+    ''|*[!0-9]*) date +%s > "$marker"; return ;;
+  esac
+  age=$(( $(date +%s) - since ))
+  [ "$age" -ge "$STALE_ESCALATE_SECS" ] || return 0
+  if window_run_step_active "$win" || operator_is_finished "$task"; then
+    date +%s > "$marker"
+    return
+  fi
+  reason="stale: $win (operator idle with uncommitted work for ${age}s; inspect the unfinished work)"
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf 'reported\n' > "$marker"
+  wake "$reason"
+}
+
+# Keep pause identity and age separate from hash/cadence markers. Return 0
+# for expired pauses, so only the ordinary pause cadence suppresses repeats;
+# independent pane-signature and terminal evaluation must still run.
+# Initial age uses the status mtime (the log has no event timestamps); later
+# unrelated appends cannot move the clock. Active runs and busy panes defer.
+pause_age_check() {  # <window> <task> <key> <busy: 0=yes>
+  local win=$1 task=$2 marker="$STATE/.pause-episode-$3" busy=$4 episode saved since reported age reason valid=1
+  episode=$(status_pause_episode "$STATE/$task.status")
+  if [ -z "$episode" ]; then rm -f "$marker"; return 1; fi
+  saved='' since='' reported=''
+  read -r saved since reported 2>/dev/null < "$marker" || true
+  case "$since" in ''|*[!0-9]*) valid=0 ;; esac
+  if [ "$saved" != "$episode" ] || [ "$valid" -eq 0 ]; then
+    since=$(stat_mtime "$STATE/$task.status") || true
+    case "$since" in ''|*[!0-9]*) since=$(date +%s) ;; esac
+    reported=0
+    printf '%s %s 0\n' "$episode" "$since" > "$marker"
+  fi
+  age=$(( $(date +%s) - since ))
+  [ "$age" -ge "$PAUSE_MAX_SECS" ] || return 1
+  [ "$busy" -eq 0 ] && return 1
+  [ "$reported" = 1 ] && return 0
+  if window_run_step_active "$win"; then
+    printf '%s %s 0\n' "$episode" "$(date +%s)" > "$marker"
+    return 1
+  fi
+  if operator_is_finished "$task"; then
+    printf '%s %s 0\n' "$episode" "$(date +%s)" > "$marker"
+    return 0
+  fi
+  reason="stale: $win (declared pause aged out after ${age}s; confirm or clear the declared pause)"
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf '%s %s 1\n' "$episode" "$since" > "$marker"
+  wake "$reason"
+}
+
+# Explicit cannot-evaluate for the pane-signature rule: an unreadable complete
+# viewport is neither progress nor a stall, so it never advances, resets, or
+# invents an episode. Logged once per episode per window so a backend without a
+# complete-viewport read names the limitation without flooding the triage log.
+pane_signature_cannot_evaluate() {  # <window> <key> <limitation>
+  local win=$1 key=$2 why=$3 marker="$STATE/.sig-unreadable-$2"
+  [ -e "$marker" ] && return 0
+  : > "$marker"
+  triage_log "cannot evaluate pane signature (${why}): $win"
+}
+
+# Name a composer deferral once per distinct stuck signature: the signature name
+# and the unchanged-pane hash identify the episode, so a new signature or a
+# changed byte re-arms the note. Away mode polls for the whole episode, so an
+# unconditional line here would rotate the bounded triage log.
+pane_signature_deferral_note() {  # <window> <key> <name> <hash>
+  local win=$1 marker="$STATE/.sig-deferred-log-$2" token="$3:$4"
+  [ "$(cat "$marker" 2>/dev/null || true)" = "$token" ] && return 0
+  printf '%s' "$token" > "$marker"
+  triage_log "deferred pane signature ($3, idle pane holds input in its composer): $win"
+}
+
+# Third independent objective rule, sharing no timer with the dirty-worktree or
+# pause-age rules: the task's complete rendered pane is its actual endpoint, so a
+# byte-identical pane that keeps showing a stuck signature (bin/sq-classify-lib.sh's
+# pane_signature_classify: a compaction banner, a cancelled/interrupted turn, or an
+# error dialog) is stalled evidence regardless of the latest status line, of a
+# declared pause, and of a harness busy claim. The escalation names the observed
+# signature text and the hash of the complete rendered output it was taken from.
+# A changed byte restarts the clock, an active drill run-step defers it, and
+# unreadable output is cannot-evaluate (never progress, never a verdict).
+pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rendered>
+  local win=$1 task=$2 key=$3 backend=$4 busy=$5 rendered=$6
+  local hashfile="$STATE/.sig-hash-$3" sincefile="$STATE/.sig-since-$3"
+  local reportedfile="$STATE/.sig-reported-$3" deferralfile="$STATE/.sig-deferred-log-$3"
+  local sig name observed h since age composer note reason
+  rm -f "$STATE/.sig-unreadable-$3"
+  if status_is_terminal_verb "$(last_status_state_line "$STATE/$task.status")"; then
+    rm -f "$hashfile" "$sincefile" "$reportedfile" "$deferralfile"
+    return
+  fi
+  sig=$(printf '%s\n' "$rendered" | pane_signature_classify) || sig=
+  if [ -z "$sig" ]; then
+    rm -f "$hashfile" "$sincefile" "$reportedfile" "$deferralfile"
+    return
+  fi
+  name=${sig%%|*}
+  observed=${sig#*|}
+  h=$(printf '%s' "$rendered" | hash_pane)
+  if [ "$(cat "$hashfile" 2>/dev/null || true)" != "$h" ]; then
+    printf '%s' "$h" > "$hashfile"
+    date +%s > "$sincefile"
+    rm -f "$reportedfile" "$deferralfile"
+    return
+  fi
+  since=$(cat "$sincefile" 2>/dev/null || true)
+  case "$since" in ''|*[!0-9]*) date +%s > "$sincefile"; return ;; esac
+  age=$(( $(date +%s) - since ))
+  [ "$age" -ge "$STALE_ESCALATE_SECS" ] || return 0
+  [ "$(cat "$reportedfile" 2>/dev/null || true)" = "$name" ] && return 0
+  if window_run_step_active "$win" || operator_is_finished "$task"; then
+    date +%s > "$sincefile"
+    return
+  fi
+  composer=$(fm_backend_composer_state "$backend" "$win" 2>/dev/null || printf unknown)
+  note=
+  if [ "$busy" -ne 0 ]; then
+    case "$composer" in
+      empty) note=', idle empty composer' ;;
+      pending|pending-unproven)
+        date +%s > "$sincefile"
+        pane_signature_deferral_note "$win" "$key" "$name" "$h"
+        return 0 ;;
+    esac
+  fi
+  reason="stale: $win (pane signature: ${name} \"${observed}\"${note}, complete rendered output unchanged for ${age}s at hash ${h:0:12}; inspect the stuck pane)"
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf '%s' "$name" > "$reportedfile"
+  wake "$reason"
+}
+
+# The pause-era evidence identity for <key>: a dirty-worktree episode or a live
+# pane-signature episode that is still accumulating readable evidence, so away
+# mode must let that rule hand off the named evidence instead of pre-empting it
+# with a plain window identity. Empty when no rule owns the handoff; a
+# cannot-evaluate marker means the rule is not accumulating evidence, so it must
+# not suppress the plain handoff.
+pause_era_evidence_state() {  # <key>
+  local key=$1 evidence
+  if [ -e "$STATE/.dirty-since-$key" ] && [ ! -e "$STATE/.dirty-unreadable-$key" ]; then
+    evidence=$(cat "$STATE/.dirty-since-$key" 2>/dev/null || true)
+    printf 'dirty:%s' "$evidence"
+    return 0
+  fi
+  [ -e "$STATE/.sig-hash-$key" ] && [ ! -e "$STATE/.sig-unreadable-$key" ] || return 1
+  evidence=$(cat "$STATE/.sig-hash-$key" 2>/dev/null || true)
+  printf 'sig:%s' "$evidence"
+}
+
+pause_era_evidence_tracking() {  # <key>
+  [ -n "$(pause_era_evidence_state "$1")" ]
+}
+
+# Name the pause-era ownership deferral once per distinct evidence state: away
+# mode keeps polling for the whole episode, so an unconditional line here would
+# rotate the bounded triage log. A new dirty clock or signature hash re-arms the
+# note without changing the ownership verdict.
+pause_era_deferral_note() {  # <window> <key> <plain|busy>
+  local win=$1 key=$2 kind=$3 marker="$STATE/.deferred-log-$2" token
+  token=$(pause_era_evidence_state "$key") || return 1
+  [ -n "$token" ] || return 1
+  [ "$(cat "$marker" 2>/dev/null || true)" = "$token" ] && return 0
+  printf '%s' "$token" > "$marker"
+  triage_log "deferred $kind handoff (a pause-era rule owns the named evidence): $win"
+}
+
 # Absorb a stale pane under a declared external-wait pause (paused:) or a
 # dead-agent commander-held transfer, and re-surface it once every
 # PAUSE_RESURFACE_SECS for a recheck so it cannot rot invisibly. Called on any
@@ -422,8 +645,9 @@ handle_paused_stale() {  # <window> <task> <hash>
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
   rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  [ "${pause_cadence_suppressed:-0}" -eq 0 ] || return 0
   statusf="$STATE/$task.status"
-  mtime=$(stat_mtime "$statusf")
+  mtime=$(stat_mtime "$statusf") || true
   case "$mtime" in ''|*[!0-9]*) mtime=$(date +%s) ;; esac
   age=$(( $(date +%s) - mtime ))
   rf="$STATE/.paused-resurfaced-$key"
@@ -521,6 +745,10 @@ surface_nonterminal_stale() {  # <window> <hash>
   key=$(printf '%s' "$win" | tr ':/.' '___')
   task=$(window_to_task "$win" "$STATE")
   last=$(last_status_state_line "$STATE/$task.status")
+  if status_is_paused "$last" && [ "${pause_cadence_suppressed:-0}" -eq 1 ]; then
+    handle_paused_stale "$win" "$task" "$h"
+    return
+  fi
   if status_is_paused_or_commander_held "$last" || [ "$(operator_absorb_class "$task")" = paused ]; then
     # A live declared pause or decision-parked run is intentionally surfaced once so Squad can confirm
     # the external wait, but changing pane footer text must not turn that
@@ -1180,6 +1408,18 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    if [ "$kind" != xo ]; then
+      dirty_worktree_check "$w" "$task" "$key" "$busy_now" "$last"
+    fi
+    # Age-out suppresses the pause cadence only, never this window's other rules.
+    pause_cadence_suppressed=0
+    if status_is_paused "$last"; then
+      if pause_age_check "$w" "$task" "$key" "$busy_now"; then
+        pause_cadence_suppressed=1
+      fi
+    else
+      rm -f "$STATE/.pause-episode-$key"
+    fi
     busy_expirable=0
     episode_busy=0
     case "$(cat "$sf" 2>/dev/null || true)" in
@@ -1216,6 +1456,16 @@ EOF
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
       echo "$n" > "$cf"
+      if [ "$n" -ge 2 ]; then
+        if [ "$rendered_ok" -eq 0 ]; then
+          rendered=$(fm_backend_capture_rendered "$backend" "$w" "$(window_label "$w")" 2>/dev/null) && rendered_ok=1
+        fi
+        if [ "$rendered_ok" -eq 1 ]; then
+          pane_signature_check "$w" "$task" "$key" "$backend" "$busy_now" "$rendered"
+        else
+          pane_signature_cannot_evaluate "$w" "$key" "no complete rendered viewport from backend $backend"
+        fi
+      fi
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
         # Squad. Detection itself is unchanged from above.
@@ -1226,7 +1476,9 @@ EOF
           esac
         elif afk_present; then
           # Daemon owns triage: one-shot per distinct stale hash, as before.
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+          if pause_era_evidence_tracking "$key"; then
+            pause_era_deferral_note "$w" "$key" plain
+          elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             fm_wake_append stale "$w" "stale: $w" || exit 1
             printf '%s' "$h" > "$sf"
             date +%s > "$ssf"
@@ -1324,7 +1576,9 @@ EOF
         elif [ "$busy_expirable" -eq 1 ] && [ "$n" -ge 2 ] && afk_present; then
           # Normal busy tracking is not an actual daemon handoff. This early
           # internal event starts the daemon's one full static window.
-          if [ "$(cat "$sf" 2>/dev/null || true)" != "busy-afk:$h" ]; then
+          if pause_era_evidence_tracking "$key"; then
+            pause_era_deferral_note "$w" "$key" busy
+          elif [ "$(cat "$sf" 2>/dev/null || true)" != "busy-afk:$h" ]; then
             if window_run_step_active "$w"; then
               date +%s > "$ssf"
               triage_log "absorbed busy (active run-step, handoff deferred): $w"

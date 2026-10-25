@@ -69,9 +69,10 @@ SQUAD_CLASSIFY_COMMANDER_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR r
 # to declare it is intentionally idling on a KNOWN external dependency - an
 # upstream release, a vendor rate-limit reset, a scheduled window. Unlike
 # `blocked:` (stuck, Squad must help) an idle `paused:` pane is EXPECTED, so
-# the stale path absorbs it instead of escalating a possible wedge. It is
-# deliberately NOT in the commander-relevant set above: a pause is a "stop
-# wedge-nagging this idle pane" signal, not work to keep surfacing. This constant
+# the stale path normally absorbs it instead of escalating a possible wedge.
+# The sentry's independent dirty-worktree and pause-age limits are owned by
+# bin/sq-sentry.sh; the verb alone is not proof that unfinished work is safe.
+# It is deliberately NOT in the commander-relevant set above. This constant
 # is the ONE definition of the verb; both the sentry and the daemon read it here
 # (status_is_paused) rather than hardcoding the literal, so the vocabulary cannot
 # drift between the two consumers. SQUAD_CLASSIFY_PAUSED_VERB overrides it.
@@ -118,6 +119,80 @@ last_status_state_line() {  # <status-file>
     effective=$line
   done < "$f"
   printf '%s' "$effective"
+}
+
+# Identity of the effective declared pause in an append-only status stream.
+# A fresh declaration (even identical text) renews it; resolved events do not.
+# The ordinal survives restarts without making unrelated appends renew the wait.
+status_pause_episode() {  # <status-file> -> record ordinal, or empty
+  local f=$1 line episode='' n=0
+  [ -f "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    [ -n "${line//[[:space:]]/}" ] || continue
+    [ "$(status_line_verb "$line")" = resolved ] && continue
+    episode=
+    status_is_paused "$line" && episode=$n
+  done < "$f"
+  printf '%s' "$episode"
+}
+
+# --- stuck-pane text signatures --------------------------------------------
+#
+# The sentry's third independent objective stall rule reads the task's complete
+# rendered pane, not its status line or a harness busy claim. What a pane SHOWS is
+# the evidence; these constants are the objective text signatures it names, never a
+# verdict inferred from the harness or agent name:
+#   compaction-banner   a context-compaction banner that never clears
+#   cancelled-continue  an interrupted/cancelled turn or a prompt awaiting y/n
+#   error-dialog        a provider/transport error plus an active retry affordance
+#                       in the bottom ten viewport lines, never scrollback prose
+# SQUAD_PANE_SIGNATURE_RE adds one operator-supplied POSIX ERE as an
+# `operator-pattern` signature without editing the built-ins; the per-class
+# variables exist so a base can replace a noisy built-in set.
+SQUAD_PANE_SIGNATURE_CANCELLED_RE_DEFAULT='press esc to cancel|request (was )?cancell?ed|cancell?ed by user|request interrupted|interrupted by user|continue\? *\(y/n\)|\[y/n\]'
+SQUAD_PANE_SIGNATURE_COMPACTION_RE_DEFAULT='compacting (the )?(conversation|context)|compaction in progress|auto-?compacting'
+SQUAD_PANE_SIGNATURE_ERROR_RE_DEFAULT='api error|connection (error|failed)|overloaded(_error)?|rate limit(ed|ing)?|insufficient (quota|credits)|credit balance|something went wrong|unexpected error|maximum context length|context length exceeded'
+
+# First matching line for <re>, with runs of whitespace collapsed and the result
+# bounded, so a reason can quote what the pane actually showed.
+_pane_signature_line() {  # <text> <re>
+  local text=$1 re=$2 line
+  [ -n "$re" ] || return 0
+  line=$(printf '%s\n' "$text" | grep -Ei -m1 -- "$re" 2>/dev/null) || return 0
+  line=$(printf '%s' "$line" | tr -s '[:space:]' ' ')
+  printf '%s' "${line:0:120}"
+}
+
+# Classify a complete rendered pane (stdin) as "<signature>|<observed line>", or
+# print nothing when no signature is present. Pure: reads stdin, writes stdout,
+# touches no state. A signature is objective pane text, never a harness guess and
+# never a substitute for a readable pane (an unreadable capture must be reported
+# as cannot-evaluate by the caller, not fabricated here).
+pane_signature_classify() {
+  local text region name re found
+  text=$(cat)
+  [ -n "${text//[[:space:]]/}" ] || return 0
+  for name in cancelled-continue compaction-banner error-dialog operator-pattern; do
+    region=$text
+    case "$name" in
+      cancelled-continue) re=${SQUAD_PANE_SIGNATURE_CANCELLED_RE:-$SQUAD_PANE_SIGNATURE_CANCELLED_RE_DEFAULT} ;;
+      compaction-banner) re=${SQUAD_PANE_SIGNATURE_COMPACTION_RE:-$SQUAD_PANE_SIGNATURE_COMPACTION_RE_DEFAULT} ;;
+      error-dialog)
+        region=$(printf '%s\n' "$text" | tail -n 10)
+        # An error word alone is prose, not proof that a dialog is awaiting input.
+        printf '%s\n' "$region" | grep -qiE '^[[:space:]>]*((\[[^]]+\][[:space:]]*)?(retry|try again)([[:space:][:punct:]]|$)|press[[:space:]]+.+[[:space:]]+to[[:space:]]+(retry|try again))' || continue
+        re=${SQUAD_PANE_SIGNATURE_ERROR_RE:-$SQUAD_PANE_SIGNATURE_ERROR_RE_DEFAULT}
+        re="^[[:space:][:punct:]]*(error:[[:space:]]*)?($re)"
+        ;;
+      operator-pattern) re=${SQUAD_PANE_SIGNATURE_RE:-} ;;
+    esac
+    found=$(_pane_signature_line "$region" "$re")
+    [ -n "$found" ] || continue
+    printf '%s|%s' "$name" "$found"
+    return 0
+  done
+  return 0
 }
 
 # 0 if the given (last) status line's leading verb is a real terminal commander verb

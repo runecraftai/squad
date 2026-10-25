@@ -3371,6 +3371,628 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   pass "AFK changed paused panes hand off plain stale identities for daemon-owned pause triage"
 }
 
+# The dirty clock is independent of both pane hashes and the pause cadence.
+# Use real Git dirt, not a canned cleanliness verdict.
+pause_watch_cwd=''
+start_pause_watch() {  # <extra env assignments...>
+  ( cd "${pause_watch_cwd:-.}" && exec env \
+      PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+      SQUAD_FAKE_TMUX_CURRENT_COMMAND=zsh SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_FAKE_CREW_STATE='state: paused · source: status-log · external wait' \
+      SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+      "$@" "$WATCH" ) >> "$out" &
+  pid=$!
+}
+
+pause_worktree_case() {
+  dir=$(make_case "$1"); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-held"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  wt="$dir/work tree"
+  git init -q "$wt"
+  printf 'window=%s\nkind=strike\nworktree=%s\n' "$window" "$wt" > "$state/held.meta"
+  printf 'paused: waiting for upstream\n' > "$state/held.status"
+  printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+  printf 'idle external wait' > "$capture_file"
+  printf '%s' "$(hash_text 'idle external wait')" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+}
+
+test_idle_dirty_pause_escalates() {
+  local dir state fakebin out capture_file window key wt pid i
+  pause_worktree_case dirty-pause
+  for i in 1 2 3 4 5 6; do printf 'base\n' > "$wt/tracked-$i"; done
+  git -C "$wt" add .
+  git -C "$wt" -c user.name=Test -c user.email=test@example.invalid commit -qm base
+  for i in 1 2 3 4 5 6; do printf 'unfinished\n' >> "$wt/tracked-$i"; done
+  i=1
+  while [ "$i" -le 43 ]; do printf 'unfinished\n' > "$wt/untracked-$i"; i=$((i + 1)); done
+  [ "$(git -C "$wt" status --porcelain | wc -l | tr -d ' ')" = 49 ] || fail "measured dirty fixture is not 6 modified + 43 untracked files"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=2
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "idle dirty declared pause never escalated"; }
+  grep -F 'idle with uncommitted work' "$out" >/dev/null || fail "dirty pause lost its explicit reason: $(cat "$out")"
+  grep -F 'idle with uncommitted work' "$state/.stand-to-queue" >/dev/null || fail "dirty stall was not durably queued"
+  pass "idle uncommitted work escalates despite a fresh declared pause"
+}
+
+test_clean_fresh_pause_suppresses() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case clean-pause
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 35 || { reap "$pid"; fail "clean fresh pause escalated: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "clean pause printed a wake"
+  pass "a clean fresh declared pause still suppresses stale alarms"
+}
+
+test_pause_ages_out_once_per_episode() {
+  local dir state fakebin out capture_file window key wt pid round
+  pause_worktree_case pause-age
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=2
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "declared pause never aged out"; }
+  grep -F 'declared pause aged out' "$out" >/dev/null || fail "pause age-out lost its explicit reason"
+  grep -F 'confirm or clear' "$out" >/dev/null || fail "pause age-out did not request confirmation"
+  # Restart and change the pane. Neither can renew an expired pause.
+  printf 'idle external wait with a changed footer' > "$capture_file"
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=2 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_live "$pid" 35 || { reap "$pid"; fail "expired pause escalated again: $(cat "$out")"; }
+  reap "$pid"
+  [ "$(grep -c 'declared pause aged out' "$state/.stand-to-queue")" = 1 ] || fail "pause age-out was not one-shot"
+  # An unrelated resolution does not renew the pause episode.
+  printf 'resolved [key=other]: unrelated decision\n' >> "$state/held.status"
+  printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=2 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_live "$pid" 25 || { reap "$pid"; fail "unrelated resolution renewed the pause"; }
+  reap "$pid"
+  # A fresh declaration, even with identical text, permits exactly one new alarm.
+  for round in renewed cleared; do
+    [ "$round" != cleared ] || printf 'working: resumed\n' >> "$state/held.status"
+    printf 'paused: waiting for upstream\n' >> "$state/held.status"
+    printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+    start_pause_watch env SQUAD_PAUSE_MAX_SECS=2
+    wait_for_exit "$pid" 80 || { reap "$pid"; fail "$round pause never aged out"; }
+  done
+  [ "$(grep -c 'declared pause aged out' "$state/.stand-to-queue")" = 3 ] || fail "renewed/cleared pauses did not re-arm ageing"
+  pass "pause ageing escalates once across restarts and footer changes, re-arming only on renewal or clearance"
+}
+
+test_dirty_pause_protections() {
+  local dir state fakebin out capture_file window key wt pid mode
+  for mode in busy run-step terminal clean; do
+    pause_worktree_case "dirty-protected-$mode"
+    printf 'unfinished\n' > "$wt/untracked"
+    printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.dirty-since-$key"
+    case "$mode" in
+      busy)
+        printf 'harness=pi\n' >> "$state/held.meta"
+        record_pi_busy "$state" held
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=0
+        ;;
+      run-step)
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=0 \
+          SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating'
+        ;;
+      terminal)
+        printf 'done: finished\n' > "$state/held.status"
+        printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_FAKE_CREW_STATE='state: done · source: run-step · passed'
+        ;;
+      clean)
+        rm "$wt/untracked"
+        start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+        ;;
+    esac
+    wait_live "$pid" 25 || { reap "$pid"; fail "$mode did not defer dirty/pause escalation: $(cat "$out")"; }
+    reap "$pid"
+    [ ! -s "$out" ] || fail "$mode emitted an alarm"
+    if [ "$mode" = run-step ]; then
+      [ "$(cat "$state/.dirty-since-$key")" -gt "$(( $(date +%s) - 500 ))" ] || fail "active run did not defer the dirty timer"
+    else
+      [ ! -e "$state/.dirty-since-$key" ] || fail "$mode did not reset the dirty timer"
+    fi
+  done
+  pass "busy, active run-step, terminal, and cleaned worktrees preserve their protections"
+}
+
+test_dirty_staged_pause_survives_footer_change() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case dirty-staged-footer
+  printf 'staged unfinished work\n' > "$wt/staged"
+  git -C "$wt" add .
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=240
+  wait_numeric_file "$state/.dirty-since-$key" 40 || { reap "$pid"; fail "staged work did not start the dirty clock"; }
+  reap "$pid"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.dirty-since-$key"
+  printf 'idle external wait with a changed footer\n' > "$capture_file"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=240
+  wait_for_exit "$pid" 40 || { reap "$pid"; fail "footer change or restart hid staged unfinished work"; }
+  grep -F 'idle with uncommitted work' "$out" >/dev/null || fail "staged work lost the dirty reason"
+  pass "staged unfinished work keeps its idle clock across a restart and changing footer"
+}
+
+test_pause_episode_classifier() {
+  local dir state
+  dir=$(make_case pause-episode-classifier); state="$dir/state"
+  printf 'paused: upstream\nresolved: unrelated\n' > "$state/a.status"
+  [ "$(status_pause_episode "$state/a.status")" = 1 ] || fail "resolution renewed pause identity"
+  printf 'paused: upstream\n' >> "$state/a.status"
+  [ "$(status_pause_episode "$state/a.status")" = 3 ] || fail "identical pause did not renew identity"
+  printf 'working: resumed\n' >> "$state/a.status"
+  [ -z "$(status_pause_episode "$state/a.status")" ] || fail "working did not clear pause identity"
+  pass "pause identity renews on declarations, not resolutions, and clears on resumed work"
+}
+
+# The dirty clock must measure the task's recorded worktree. `git -C ""` does not
+# fail: it silently adopts the sentry's own CWD, so an unrecorded worktree would
+# read (and alarm on) an unrelated checkout.
+test_dirty_check_requires_recorded_worktree() {
+  local dir state fakebin out capture_file window key wt pid dirty mode
+  for mode in missing empty; do
+    pause_worktree_case "dirty-no-worktree-$mode"
+    case "$mode" in
+      missing) printf 'window=%s\nkind=strike\n' "$window" > "$state/held.meta" ;;
+      empty)   printf 'window=%s\nkind=strike\nworktree=\n' "$window" > "$state/held.meta" ;;
+    esac
+    dirty="$dir/unrelated-checkout"
+    git init -q "$dirty"
+    printf 'unrelated uncommitted work\n' > "$dirty/stray"
+    printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.dirty-since-$key"
+    pause_watch_cwd="$dirty"
+    start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+    wait_live "$pid" 30 || { reap "$pid"; pause_watch_cwd=''; fail "$mode worktree alarmed on the sentry CWD: $(cat "$out")"; }
+    reap "$pid"
+    pause_watch_cwd=''
+    [ ! -s "$out" ] || fail "$mode worktree emitted a wake from an unrelated checkout"
+    [ ! -e "$state/.dirty-since-$key" ] || fail "$mode worktree kept a dirty clock for an unrecorded tree"
+  done
+  pass "a missing or empty recorded worktree never reads the sentry's own checkout"
+}
+
+# A failed Git read is cannot-evaluate: it must not be reported as a clean tree,
+# and it must not discard or monopolize an idle-dirty clock already measuring
+# known work: away mode still gets its plain handoff.
+test_failed_dirty_read_is_cannot_evaluate() {
+  local dir state fakebin out capture_file window key wt pid old real_git polls
+  pause_worktree_case dirty-read-failure
+  printf 'unfinished\n' > "$wt/untracked"
+  old=$(( $(date +%s) - 500 ))
+  printf '%s\n' "$old" > "$state/.dirty-since-$key"
+  real_git=$(command -v git)
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$arg" = status ]; then
+    printf 'fatal: simulated git status failure\n' >&2
+    exit 1
+  fi
+done
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  polls=0
+  while [ "$polls" -lt 60 ]; do
+    case "$(cat "$state/.count-$key" 2>/dev/null || true)" in
+      ''|*[!0-9]*) ;;
+      *) [ "$(cat "$state/.count-$key")" -ge 3 ] && break ;;
+    esac
+    sleep 0.1
+    polls=$((polls + 1))
+  done
+  reap "$pid"
+  [ ! -s "$out" ] || fail "an unreadable worktree emitted a wake: $(cat "$out")"
+  [ "$(cat "$state/.dirty-since-$key" 2>/dev/null || true)" = "$old" ] \
+    || fail "a failed git read reset the idle-dirty clock instead of keeping it"
+  grep -F 'cannot evaluate worktree status' "$state/.sentry-triage.log" >/dev/null \
+    || fail "a failed git read was not reported as cannot-evaluate"
+  [ "$(grep -cF 'cannot evaluate worktree status' "$state/.sentry-triage.log")" = 1 ] \
+    || fail "a persistently unreadable worktree flooded the triage log: $(grep -F 'cannot evaluate worktree status' "$state/.sentry-triage.log")"
+  [ -e "$state/.dirty-unreadable-$key" ] || fail "a failed git read did not record cannot-evaluate"
+
+  date '+%s' > "$state/.afk"
+  : > "$out"
+  rm -f "$state/.stale-$key" "$state/.stale-since-$key" "$state/.hash-$key" "$state/.count-$key"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "an unreadable dirty clock suppressed the away-mode handoff: $(cat "$out")"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "away mode did not hand off the window identity"
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
+    && fail "away mode escalated dirty work without a readable worktree: $(cat "$out")"
+  grep -F 'deferred plain handoff' "$out" >/dev/null \
+    && fail "the unreadable dirty clock still claimed pause-era ownership: $(cat "$out")"
+  [ "$(cat "$state/.dirty-since-$key" 2>/dev/null || true)" = "$old" ] \
+    || fail "the away-mode handoff disturbed the preserved dirty clock"
+  [ "$(grep -cF 'cannot evaluate worktree status' "$state/.sentry-triage.log")" = 1 ] \
+    || fail "the away-mode poll repeated the cannot-evaluate worktree log"
+
+  rm -f "$fakebin/git"
+  : > "$out"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=240
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "a recovered worktree read did not resume the preserved dirty clock: $(cat "$out")"; }
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
+    || fail "a recovered worktree read lost the preserved dirty clock: $(cat "$out")"
+  [ "$(cat "$state/.dirty-since-$key")" = reported ] || fail "the recovered dirty episode did not close"
+  [ ! -e "$state/.dirty-unreadable-$key" ] || fail "a recovered worktree read left cannot-evaluate state behind"
+  pass "a failed worktree read is cannot-evaluate, yields the plain away handoff, and resumes its preserved clock"
+}
+
+# A pane that keeps reporting busy must not swallow the pause: once a pause has
+# aged out, a busy pane defers to the existing pause cadence instead of being
+# left with no supervision at all.
+test_aged_out_pause_keeps_busy_pane_supervised() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case aged-out-busy
+  set_mtime $(( $(date +%s) - 500 )) "$state/held.status"
+  printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+  printf 'harness=pi\n' >> "$state/held.meta"
+  record_pi_busy "$state" held
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=0 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "an aged-out pause on a busy pane lost its pause recheck"; }
+  grep -F 'rechecked on a long cadence' "$out" >/dev/null || fail "busy pane did not fall back to the pause cadence: $(cat "$out")"
+  grep -F 'declared pause aged out' "$out" >/dev/null && fail "a busy pane was reported as an aged-out stall"
+  pass "an aged-out pause on a busy pane defers to the pause cadence instead of going unsupervised"
+}
+
+# An unreadable status mtime must not be aged from epoch 0, which would report a
+# brand-new pause as aged out immediately with a nonsense age.
+test_unreadable_pause_mtime_does_not_age_out() {
+  local dir state fakebin out capture_file window key pid real_stat since
+  pause_worktree_case pause-mtime-unreadable
+  real_stat=$(command -v stat)
+  cat > "$fakebin/stat" <<SH
+#!/usr/bin/env bash
+real=\${REAL_STAT_FOR_TEST:?}
+case "\${1:-}:\${2:-}" in
+  -c:%Y|-f:%m)
+    for arg in "\$@"; do
+      [ "\$arg" = "\$STAT_MTIME_FAIL_FILE" ] && { echo 'stat: simulated failure' >&2; exit 1; }
+    done
+    ;;
+esac
+exec "\$real" "\$@"
+SH
+  chmod +x "$fakebin/stat"
+  start_pause_watch env REAL_STAT_FOR_TEST="$real_stat" STAT_MTIME_FAIL_FILE="$state/held.status"
+  wait_live "$pid" 60 || { reap "$pid"; fail "an unreadable status mtime instantly aged out a fresh pause: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "unreadable status mtime emitted a wake: $(cat "$out")"
+  since=$(awk '{ print $2 }' "$state/.pause-episode-$key" 2>/dev/null)
+  [ "${since:-0}" -ge "$(( $(date +%s) - 60 ))" ] || fail "pause age was anchored on an unreadable mtime: $since"
+  pass "a fresh pause with an unreadable status mtime is aged from now, not epoch 0"
+}
+
+# Away mode must not absorb the pause-era escalations. The sentry hands the named
+# evidence to the daemon as a routine stale reason (the daemon persists/escalates
+# it), and one dirty episode hands off exactly once even when the footer churns.
+test_away_dirty_work_hands_off_evidence_once() {
+  local dir state fakebin out capture_file window key wt pid deferred_before
+  pause_worktree_case away-dirty-handoff
+  printf 'unfinished\n' > "$wt/untracked"
+  date '+%s' > "$state/.afk"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "away idle dirty work never handed off: $(cat "$out")"; }
+  grep -F "routine: stale: $window (operator idle with uncommitted work" "$out" >/dev/null \
+    || fail "away dirty handoff was not a daemon-classifiable routine stale naming the dirt: $(cat "$out")"
+  [ "$(grep -c 'operator idle with uncommitted work' "$state/.stand-to-queue")" = 1 ] \
+    || fail "away dirty handoff was not queued exactly once"
+  [ "$(cat "$state/.dirty-since-$key")" = reported ] || fail "away dirty handoff did not mark its episode"
+
+  : > "$out"
+  printf 'idle external wait with a changed footer' > "$capture_file"
+  deferred_before=$(grep -c 'deferred plain handoff' "$state/.sentry-triage.log" 2>/dev/null || true)
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 30 || { reap "$pid"; fail "away dirty episode re-escalated after a footer change: $(cat "$out")"; }
+  reap "$pid"
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
+    && fail "away dirty episode re-escalated after a footer change: $(cat "$out")"
+  [ "$(( $(grep -c 'deferred plain handoff' "$state/.sentry-triage.log" 2>/dev/null || true) - ${deferred_before:-0} ))" = 1 ] \
+    || fail "away mode repeated the deferred-handoff log on every poll: $(cat "$state/.sentry-triage.log")"
+  [ "$(grep -c 'operator idle with uncommitted work' "$state/.stand-to-queue")" = 1 ] \
+    || fail "away dirty work escalated twice for one episode"
+  pass "away idle dirty work hands off its evidence exactly once per episode"
+}
+
+# A clean worktree with a fresh declared pause must stay quiet in away mode too:
+# the handoff the daemon receives carries no dirty or aged-pause evidence.
+test_away_clean_fresh_pause_stays_quiet() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case away-clean-pause
+  date '+%s' > "$state/.afk"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "away clean pause never reached the daemon's plain handoff: $(cat "$out")"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "away clean pause did not hand off the pane identity"
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null && fail "away clean pause raised a dirty-work escalation"
+  grep -F 'declared pause aged out' "$out" >/dev/null && fail "away fresh pause raised an age-out escalation"
+  [ "$(grep -c 'operator idle with uncommitted work\|declared pause aged out' "$state/.stand-to-queue" 2>/dev/null || true)" = 0 ] \
+    || fail "away clean pause queued a pause-era escalation"
+  [ ! -e "$state/.dirty-since-$key" ] || fail "away clean pause started a dirty clock"
+  pass "away mode keeps a clean fresh declared pause free of pause-era escalations"
+}
+
+# The complete rendered pane is the third rule's evidence. A byte-identical pane
+# that keeps showing a compaction banner escalates even under a declared pause and
+# names the banner text plus the rendered hash it was read from.
+test_static_compaction_signature_escalates() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case pane-signature-compaction
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "a stuck compaction banner never escalated: $(cat "$out")"; }
+  grep -F 'pane signature: compaction-banner' "$out" >/dev/null \
+    || fail "the stuck pane was not escalated as a pane signature: $(cat "$out")"
+  grep -F 'Compacting conversation' "$out" >/dev/null \
+    || fail "the escalation did not name the observed compaction banner"
+  grep -F 'declared pause aged out' "$out" >/dev/null && fail "a stuck pane was reported as an aged-out pause"
+  pass "a static compaction banner escalates as a named pane signature despite a declared pause"
+}
+
+# Away mode must escalate the pane signature itself, not pre-empt it with a plain
+# window identity: the daemon can only deliver the evidence the reason carries.
+test_away_static_compaction_hands_off_signature() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case away-pane-signature
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  date '+%s' > "$state/.afk"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "away stuck pane never handed off its signature: $(cat "$out")"; }
+  grep -F "routine: stale: $window (pane signature: compaction-banner" "$out" >/dev/null \
+    || fail "away mode pre-empted the signature evidence with a plain identity: $(cat "$out")"
+  [ "$(grep -c 'pane signature' "$state/.stand-to-queue")" = 1 ] \
+    || fail "away signature handoff was not queued exactly once"
+  pass "away mode hands off a stuck pane signature exactly once instead of a plain identity"
+}
+
+# Changing output is progress, not a signature: a churning pane never enters the
+# rule, and a pre-existing signature clock is restarted by any changed byte.
+test_changing_pane_signature_never_alarms() {
+  local dir state fakebin out capture_file window key wt pid before
+  pause_worktree_case pane-signature-churning
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ]; then
+  counter="$(dirname "$0")/captures"
+  n=$(cat "$counter" 2>/dev/null || printf '0')
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$counter"
+  printf 'Compacting conversation… elapsed-%s\n' "$n"
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 30 || { reap "$pid"; fail "a changing pane with a compaction banner alarmed: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "changing pane output raised a wake: $(cat "$out")"
+  [ ! -e "$state/.sig-reported-$key" ] || fail "changing output was reported as a stuck signature"
+
+  pause_worktree_case pane-signature-reset
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '%s' "$(hash_text 'an older, different viewport')" > "$state/.sig-hash-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.sig-since-$key"
+  before=$(date +%s)
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=30
+  wait_live "$pid" 30 || { reap "$pid"; fail "a changed viewport reused the prior signature clock: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a changed viewport escalated on the prior signature clock: $(cat "$out")"
+  [ "$(cat "$state/.sig-since-$key")" -ge "$before" ] || fail "a changed viewport did not restart the signature clock"
+  pass "changing pane output never alarms and restarts a sticky signature clock"
+}
+
+# A backend without a readable complete viewport must say cannot-evaluate: never
+# proof of progress, never a false all-clear, and never an invented stall verdict.
+test_unreadable_pane_signature_is_cannot_evaluate() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case pane-signature-unreadable
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ]; then
+  has_p=0; has_s=0
+  for arg in "$@"; do
+    [ "$arg" = -p ] && has_p=1
+    [ "$arg" = -S ] && has_s=1
+  done
+  [ "$has_p" = 1 ] && [ "$has_s" = 0 ] && exit 1
+fi
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 40 || { reap "$pid"; fail "an unreadable viewport was escalated as a stall: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "an unreadable viewport emitted a wake: $(cat "$out")"
+  [ "$(grep -c 'cannot evaluate pane signature' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || fail "the unreadable viewport did not log cannot-evaluate exactly once: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  [ ! -e "$state/.sig-hash-$key" ] || fail "an unreadable viewport advanced the signature clock"
+  [ ! -e "$state/.sig-reported-$key" ] || fail "an unreadable viewport produced a stall verdict"
+  pass "an unreadable pane is reported as cannot-evaluate instead of a verdict"
+}
+
+# Quoted error vocabulary in scrollback is not an active provider dialog.
+# The pause still expires normally, but must not become a 240-second error alarm.
+test_paused_scrollback_error_stays_quiet_until_age_out() {
+  local dir state fakebin out capture_file window key wt pid i
+  pause_worktree_case paused-scrollback-error
+  use_tail_aware_tmux "$fakebin"
+  {
+    printf 'Earlier notes discuss rate limit handling, not a live error.\n'
+    for i in {1..50}; do printf 'Completed log entry %s\n' "$i"; done
+    printf 'Waiting for the upstream release.\n> \n'
+  } > "$capture_file"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=240
+  wait_live "$pid" 50 || { reap "$pid"; fail "scrollback prose interrupted a fresh pause: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "scrollback prose emitted a wake: $(cat "$out")"
+  [ ! -s "$state/.stand-to-queue" ] || fail "scrollback prose queued an alarm"
+  printf '1 %s 0\n' "$(( $(date +%s) - 500 ))" > "$state/.pause-episode-$key"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=240
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "scrollback fixture never reached pause age-out"; }
+  grep -F 'declared pause aged out' "$out" >/dev/null || fail "scrollback pause did not age out normally: $(cat "$out")"
+  grep -F 'pane signature:' "$out" >/dev/null && fail "scrollback prose was escalated as a dialog"
+  pass "a paused wait ignores rate-limit prose in scrollback until its pause ages out"
+}
+
+# Expiring a pause suppresses only that pause's cadence, not independent evidence
+# from a real dialog which appears later in the task's rendered endpoint.
+test_error_dialog_after_pause_age_out_escalates() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case dialog-after-pause-age-out
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "fixture pause did not age out"; }
+  grep -F 'declared pause aged out' "$out" >/dev/null || fail "fixture did not record a pause age-out"
+  : > "$out"
+  printf 'API error: rate limit exceeded\n[r] Retry request  [q] Dismiss\n' > "$capture_file"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=1 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "an aged-out pause hid a later real dialog: $(cat "$out")"; }
+  grep -F 'pane signature: error-dialog' "$out" >/dev/null || fail "later dialog did not name its signature: $(cat "$out")"
+  grep -F 'API error: rate limit exceeded' "$out" >/dev/null || fail "later dialog omitted observed error text"
+  [ "$(grep -c 'declared pause aged out' "$state/.stand-to-queue")" = 1 ] || fail "dialog observation repeated the pause age-out"
+  pass "a real error dialog after pause age-out still escalates with its observed signature"
+}
+
+# The composer deferral is a standing state, not an event: an idle pane that
+# holds pending input keeps the same signature and hash while away mode keeps
+# polling, so the note must name it once per episode instead of rotating the
+# bounded triage log every poll.
+test_composer_deferral_logged_once_per_signature() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case composer-deferral-throttle
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.sig-hash-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.sig-since-$key"
+  printf '╭────────────╮\n│ draft msg  │\n╰────────────╯\n' > "$fakebin/composer.txt"
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=$(dirname "$0")
+case "${1:-}" in
+  list-windows)
+    if [ -n "${SQUAD_FAKE_TMUX_WINDOW:-}" ]; then printf '%s\n' "${SQUAD_FAKE_TMUX_WINDOW#*:}"; fi
+    exit 0 ;;
+  display-message)
+    case "$*" in
+      *'#{cursor_y}'*) printf '2\n'; exit 0 ;;
+      *pane_current_command*) printf '%s\n' "${SQUAD_FAKE_TMUX_CURRENT_COMMAND:-}"; exit 0 ;;
+    esac
+    exit 1 ;;
+  capture-pane)
+    for arg in "$@"; do
+      if [ "$arg" = -e ]; then cat "$dir/composer.txt"; exit 0; fi
+    done
+    cat "$SQUAD_FAKE_TMUX_CAPTURE"
+    exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 60 || { reap "$pid"; fail "a pane holding composer input escalated: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a pane holding composer input raised a wake: $(cat "$out")"
+  [ "$(grep -c 'deferred pane signature (compaction-banner' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || fail "the composer deferral logged once per poll instead of once per signature: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  pass "composer deferral logging is one line per signature episode"
+}
+
+# A deferral holds the signature clock. Both the run-step and the finished-crew
+# deferrals restart it, and so must an idle pane holding pending composer input:
+# otherwise, once the pane has been static past the escalation window, every poll
+# re-runs the crew-state reads (window_run_step_active plus operator_is_finished,
+# each of which can issue a bounded drill call) plus the composer read for the
+# whole episode.
+test_composer_deferral_holds_the_signature_clock() {
+  local dir state fakebin out capture_file window key wt pid reads
+  pause_worktree_case composer-deferral-clock
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.sig-hash-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.sig-since-$key"
+  printf '╭────────────╮\n│ draft msg  │\n╰────────────╯\n' > "$fakebin/composer.txt"
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=$(dirname "$0")
+case "${1:-}" in
+  list-windows)
+    if [ -n "${SQUAD_FAKE_TMUX_WINDOW:-}" ]; then printf '%s\n' "${SQUAD_FAKE_TMUX_WINDOW#*:}"; fi
+    exit 0 ;;
+  display-message)
+    case "$*" in
+      *'#{cursor_y}'*) printf '2\n'; exit 0 ;;
+      *pane_current_command*) printf '%s\n' "${SQUAD_FAKE_TMUX_CURRENT_COMMAND:-}"; exit 0 ;;
+    esac
+    exit 1 ;;
+  capture-pane)
+    for arg in "$@"; do
+      if [ "$arg" = -e ]; then cat "$dir/composer.txt"; exit 0; fi
+    done
+    cat "$SQUAD_FAKE_TMUX_CAPTURE"
+    exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  mv "$fakebin/sq-crew-state.sh" "$fakebin/sq-crew-state-real.sh"
+  cat > "$fakebin/sq-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf 'read\n' >> "$(dirname "$0")/crew-reads"
+exec "$(dirname "$0")/sq-crew-state-real.sh" "$@"
+SH
+  chmod +x "$fakebin/sq-crew-state.sh"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=30
+  wait_live "$pid" 200 || { reap "$pid"; fail "a pane holding composer input escalated: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a pane holding composer input raised a wake: $(cat "$out")"
+  reads=$(wc -l < "$fakebin/crew-reads" 2>/dev/null || printf '0')
+  [ "${reads:-0}" -le 8 ] \
+    || fail "the composer deferral re-read crew state on every poll (${reads} reads in ~200 polls): $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  pass "a deferred composer signature holds its clock instead of re-reading crew state every poll"
+}
+
+test_error_dialog_requires_bottom_affordance() {
+  local dialog sig
+  dialog=$(printf 'API error: rate limit exceeded\n[r] Retry request  [q] Dismiss\n')
+  sig=$(printf '%s\n' "$dialog" | pane_signature_classify)
+  case "$sig" in error-dialog\|*) ;; *) fail "active retry dialog was not classified: $sig" ;; esac
+  sig=$(printf 'API error: rate limit exceeded\nWaiting for upstream.\n' | pane_signature_classify)
+  [ -z "$sig" ] || fail "bare error words without dialog controls were classified: $sig"
+  sig=$(printf 'We documented rate limit handling.\n[r] Retry request\n' | pane_signature_classify)
+  [ -z "$sig" ] || fail "ordinary prose next to a retry control became an error dialog: $sig"
+  sig=$({ printf '%s\n' "$dialog"; printf '\n%.0s' {1..20}; printf 'Waiting for upstream.\n'; } | pane_signature_classify)
+  [ -z "$sig" ] || fail "old dialog above blank viewport space became a bottom-region dialog: $sig"
+  pass "built-in error dialogs require a message and active retry affordance in the bottom viewport region"
+}
+
+test_error_dialog_requires_bottom_affordance
+test_paused_scrollback_error_stays_quiet_until_age_out
+test_error_dialog_after_pause_age_out_escalates
+
+test_idle_dirty_pause_escalates
+test_dirty_staged_pause_survives_footer_change
+test_pause_episode_classifier
+test_dirty_check_requires_recorded_worktree
+test_failed_dirty_read_is_cannot_evaluate
+test_aged_out_pause_keeps_busy_pane_supervised
+test_unreadable_pause_mtime_does_not_age_out
+test_away_dirty_work_hands_off_evidence_once
+test_away_clean_fresh_pause_stays_quiet
+test_away_static_compaction_hands_off_signature
+test_static_compaction_signature_escalates
+test_changing_pane_signature_never_alarms
+test_unreadable_pane_signature_is_cannot_evaluate
+test_composer_deferral_logged_once_per_signature
+test_composer_deferral_holds_the_signature_clock
+test_dirty_pause_protections
+test_clean_fresh_pause_suppresses
+test_pause_ages_out_once_per_episode
 test_signal_reason_is_actionable_classifier
 test_stale_is_terminal_classifier
 test_scan_commander_relevant_statuses_classifier

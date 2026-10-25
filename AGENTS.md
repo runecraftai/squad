@@ -329,11 +329,12 @@ Session start is the only exception because its one-shot digest already drained 
 Treat any `OPEN DECISIONS` section from the drain as actionable reconciliation input even when no wake record was queued.
 A status line is a wake event, not current state; use `bin/sq-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 A declared `paused:` event means a bounded external wait expected to clear on its own, while `blocked:` means Squad action is needed.
+A pause cannot hide unfinished work: the sentry still escalates an idle dirty worktree, a declared pause past `SQUAD_PAUSE_MAX_SECS`, and a stuck pane signature as named `stale:` reasons, so treat those as evidence to inspect, never as an expected wait.
 
 Handle actionable wakes as follows:
 
 1. For `signal:`, read the listed event lines first, then reconcile current state only where action depends on it.
-2. For `stale:`, inspect the recorded endpoint and load `stuck-operator-recovery` for a stopped, looping, confused, or unresponsive worker; a deep-inspection reason also requires current-state and validation-log inspection.
+2. For `stale:`, inspect the recorded endpoint and load `stuck-operator-recovery` for a stopped, looping, confused, or unresponsive worker; a pause-era reason names the unfinished work or stuck signature to inspect, and a deep-inspection reason also requires current-state and validation-log inspection.
 3. For `check:`, act on the named poll result, including merges, Relay events, and process-to-event source results.
 4. For `heartbeat:`, review the whole unit from the structured unit view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged unit as progress.
 

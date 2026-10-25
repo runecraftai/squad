@@ -5,6 +5,9 @@ It is not an exhaustive repository log and does not represent a root package ver
 
 ## Unreleased
 
+- Stop a declared `paused:` from hiding unfinished or stuck work: the sentry now escalates an idle task whose recorded worktree stays dirty, a declared pause older than `SQUAD_PAUSE_MAX_SECS` (default 3600s, one escalation per declaration until it is renewed or cleared), and a byte-identical complete pane that keeps showing a stuck signature (compaction banner, cancelled or interrupted turn, error dialog), each naming its evidence in the `stale:` reason.
+  Busy panes with changing output, clean worktrees, active drill run-steps, and terminal statuses keep their existing behavior, and away mode delivers this evidence as an ordinary daemon escalation instead of absorbing it as a routine pause recheck.
+  `SQUAD_PANE_SIGNATURE_RE` adds one operator pattern and `SQUAD_PANE_SIGNATURE_{CANCELLED,COMPACTION,ERROR}_RE` replace the built-in signature sets; an unreadable complete viewport is logged as cannot-evaluate rather than read as progress or a stall.
 - Fix drill custody recovery deadlocking on a terminal run whose recorded pipeline head no longer exists: `drill axi sync --recover` proves the object is absent from both the invoking repository and the local gate, records the loss and the custody return atomically, and the human and TUI surfaces state plainly that the pipeline's unpublished fixes are lost with it instead of claiming they are preserved.
   A fresh `drill axi run` then starts from the audited released local head or a proven descendant through a private submission ref, and a stale submission left by a failed start never wedges a later start while a live run still refuses.
   A merged or closed pull request retires the branch, and every release and fresh-start path refuses a retired branch with a named error.

@@ -1535,6 +1535,15 @@ test_teardown_retires_watcher_markers() {
   : > "$case_dir/state/.stale-since-$key"
   : > "$case_dir/state/.wedge-escalations-$key"
   : > "$case_dir/state/.paused-$key"
+  : > "$case_dir/state/.dirty-since-$key"
+  : > "$case_dir/state/.dirty-unreadable-$key"
+  : > "$case_dir/state/.pause-episode-$key"
+  : > "$case_dir/state/.deferred-log-$key"
+  : > "$case_dir/state/.sig-hash-$key"
+  : > "$case_dir/state/.sig-since-$key"
+  : > "$case_dir/state/.sig-reported-$key"
+  : > "$case_dir/state/.sig-unreadable-$key"
+  : > "$case_dir/state/.sig-deferred-log-$key"
   : > "$case_dir/state/.seen-task-x1_status"
   : > "$case_dir/state/.seen-task-x1_turn-ended"
   : > "$case_dir/state/.subsuper-stale-task-x1"
@@ -1559,6 +1568,24 @@ test_teardown_retires_watcher_markers() {
     || fail "watcher-markers: teardown left .wedge-escalations-* behind"
   [ ! -e "$case_dir/state/.paused-$key" ] \
     || fail "watcher-markers: teardown left .paused-* behind"
+  [ ! -e "$case_dir/state/.dirty-since-$key" ] \
+    || fail "watcher-markers: teardown left dirty-worktree tracking behind"
+  [ ! -e "$case_dir/state/.dirty-unreadable-$key" ] \
+    || fail "watcher-markers: teardown left cannot-evaluate dirty tracking behind"
+  [ ! -e "$case_dir/state/.pause-episode-$key" ] \
+    || fail "watcher-markers: teardown left pause episode tracking behind"
+  [ ! -e "$case_dir/state/.deferred-log-$key" ] \
+    || fail "watcher-markers: teardown left pause-era deferral logging state behind"
+  [ ! -e "$case_dir/state/.sig-hash-$key" ] \
+    || fail "watcher-markers: teardown left pane-signature hash tracking behind"
+  [ ! -e "$case_dir/state/.sig-since-$key" ] \
+    || fail "watcher-markers: teardown left pane-signature clock behind"
+  [ ! -e "$case_dir/state/.sig-reported-$key" ] \
+    || fail "watcher-markers: teardown left pane-signature escalation marker behind"
+  [ ! -e "$case_dir/state/.sig-unreadable-$key" ] \
+    || fail "watcher-markers: teardown left pane-signature cannot-evaluate marker behind"
+  [ ! -e "$case_dir/state/.sig-deferred-log-$key" ] \
+    || fail "watcher-markers: teardown left pane-signature deferral logging state behind"
   [ ! -e "$case_dir/state/.seen-task-x1_status" ] \
     || fail "watcher-markers: teardown left .seen-*_status behind"
   [ ! -e "$case_dir/state/.seen-task-x1_turn-ended" ] \
