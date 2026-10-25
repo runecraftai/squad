@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.14](https://github.com/runecraftai/squad/compare/drill-v0.1.13...drill-v0.1.14) (2026-10-25)
+
+
+### Bug Fixes
+
+* **drill:** treat omitted review risk_scope as unknown risk ([#304](https://github.com/runecraftai/squad/issues/304)) ([304a91b](https://github.com/runecraftai/squad/commit/304a91b66c93b086f555986d60e6969be9d02340))
+* **sentry:** stop declared pauses from hiding dirty work and stuck panes ([#303](https://github.com/runecraftai/squad/issues/303)) ([47f157c](https://github.com/runecraftai/squad/commit/47f157c227491f32bd95cf57b9e64dfe7bd39aff))
+
 ## [0.1.13](https://github.com/runecraftai/squad/compare/drill-v0.1.12...drill-v0.1.13) (2026-10-25)
 
 
