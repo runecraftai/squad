@@ -3812,6 +3812,52 @@ SH
   pass "an unreadable pane is reported as cannot-evaluate instead of a verdict"
 }
 
+# The composer deferral is a standing state, not an event: an idle pane that
+# holds pending input keeps the same signature and hash while away mode keeps
+# polling, so the note must name it once per episode instead of rotating the
+# bounded triage log every poll.
+test_composer_deferral_logged_once_per_signature() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case composer-deferral-throttle
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.sig-hash-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.sig-since-$key"
+  printf '╭────────────╮\n│ draft msg  │\n╰────────────╯\n' > "$fakebin/composer.txt"
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=$(dirname "$0")
+case "${1:-}" in
+  list-windows)
+    if [ -n "${SQUAD_FAKE_TMUX_WINDOW:-}" ]; then printf '%s\n' "${SQUAD_FAKE_TMUX_WINDOW#*:}"; fi
+    exit 0 ;;
+  display-message)
+    case "$*" in
+      *'#{cursor_y}'*) printf '2\n'; exit 0 ;;
+      *pane_current_command*) printf '%s\n' "${SQUAD_FAKE_TMUX_CURRENT_COMMAND:-}"; exit 0 ;;
+    esac
+    exit 1 ;;
+  capture-pane)
+    for arg in "$@"; do
+      if [ "$arg" = -e ]; then cat "$dir/composer.txt"; exit 0; fi
+    done
+    cat "$SQUAD_FAKE_TMUX_CAPTURE"
+    exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 60 || { reap "$pid"; fail "a pane holding composer input escalated: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a pane holding composer input raised a wake: $(cat "$out")"
+  [ "$(grep -c 'deferred pane signature (compaction-banner' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || fail "the composer deferral logged once per poll instead of once per signature: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  pass "composer deferral logging is one line per signature episode"
+}
+
 test_idle_dirty_pause_escalates
 test_dirty_staged_pause_survives_footer_change
 test_pause_episode_classifier
@@ -3825,6 +3871,7 @@ test_away_static_compaction_hands_off_signature
 test_static_compaction_signature_escalates
 test_changing_pane_signature_never_alarms
 test_unreadable_pane_signature_is_cannot_evaluate
+test_composer_deferral_logged_once_per_signature
 test_dirty_pause_protections
 test_clean_fresh_pause_suppresses
 test_pause_ages_out_once_per_episode
