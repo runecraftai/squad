@@ -59,7 +59,7 @@ type reviewConsolidation struct {
 	RiskScope      string    `json:"risk_scope"`
 }
 
-const reviewConsolidationSchema = `{"type":"object","required":["findings","inspected_files","risk_level","risk_rationale","risk_scope"],"properties":{"findings":{"type":"array","items":{"type":"object","required":["severity","description","action","review_scope"],"properties":{"severity":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"review_scope":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"}}}},"inspected_files":{"type":"array","items":{"type":"string"}},"risk_level":{"type":"string","enum":["low","medium","high"]},"risk_rationale":{"type":"string"},"risk_scope":{"type":"string","enum":["source-or-external","pipeline-owned-delivery"]}}}`
+const reviewConsolidationSchema = `{"type":"object","required":["findings","inspected_files","risk_level","risk_rationale"],"properties":{"findings":{"type":"array","items":{"type":"object","required":["severity","description","action","review_scope"],"properties":{"severity":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"review_scope":{"type":"string"},"file":{"type":"string"},"line":{"type":"integer"}}}},"inspected_files":{"type":"array","items":{"type":"string"}},"risk_level":{"type":"string","enum":["low","medium","high"]},"risk_rationale":{"type":"string"},"risk_scope":{"type":"string","enum":["source-or-external","pipeline-owned-delivery"]}}}`
 
 // RunStandaloneReview captures a local immutable range and runs the same specialist and consolidation engine used by ReviewStep.
 // lensPolicy builds the mandatory policy for each isolated lens checkout; nil uses the package default.
@@ -124,6 +124,7 @@ func consolidateReviewCandidates(ctx context.Context, a agent.Agent, repoDir str
 		output = complement
 	}
 	findings := normalizeConsolidatedFindings(Findings{Items: output.Items, RiskLevel: output.RiskLevel, RiskRationale: output.RiskRationale, RiskScope: output.RiskScope})
+	findings = markUnknownReviewRisk(findings)
 	return validateConsolidatedAnchors(findings, snapshot, repoDir), nil
 }
 
@@ -224,6 +225,16 @@ func normalizeConsolidatedFindings(findings Findings) Findings {
 			item.ReviewScope = "source"
 		}
 	}
+	return findings
+}
+
+func markUnknownReviewRisk(findings Findings) Findings {
+	if findings.RiskScope != "" {
+		return findings
+	}
+	findings.RiskLevel = "unknown"
+	findings.RiskRationale = "risk assessment unavailable because risk_scope was omitted"
+	findings.RiskScope = "unknown"
 	return findings
 }
 

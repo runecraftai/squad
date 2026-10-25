@@ -373,10 +373,8 @@ Risk assessment (after listing all findings):
 	}
 	if findings.RiskScope == "" {
 		sctx.Log("review risk assessment unknown: reviewer omitted risk_scope")
-		findings.RiskLevel = "unknown"
-		findings.RiskRationale = "risk assessment unavailable because risk_scope was omitted"
-		findings.RiskScope = "unknown"
 	}
+	findings = markUnknownReviewRisk(findings)
 
 	needsApproval := hasBlockingFindings(findings.Items)
 	findingsJSON, _ := json.Marshal(findings)

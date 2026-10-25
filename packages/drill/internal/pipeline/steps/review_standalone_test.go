@@ -132,3 +132,22 @@ func TestStandaloneReviewPreservesRiskFieldsAcrossComplement(t *testing.T) {
 		t.Fatalf("risk_scope=%q, want pipeline-owned-delivery", findings.RiskScope)
 	}
 }
+
+func TestStandaloneReviewMarksMissingRiskScopeUnknown(t *testing.T) {
+	dir, base, head := setupGitRepo(t)
+	a := controlledReviewAgent{run: func(_ context.Context, opts agent.RunOpts) (*agent.Result, error) {
+		switch opts.Purpose {
+		case "review-consolidator":
+			return &agent.Result{Output: json.RawMessage(`{"findings":[],"inspected_files":["feature.txt"],"risk_level":"low","risk_rationale":"bounded"}`)}, nil
+		default:
+			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
+		}
+	}}
+	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil, fixtureExecutionPolicy{dir: dir}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings.RiskLevel != "unknown" || findings.RiskRationale != "risk assessment unavailable because risk_scope was omitted" || findings.RiskScope != "unknown" {
+		t.Fatalf("risk fields = %q/%q/%q, want explicit unknown values", findings.RiskLevel, findings.RiskRationale, findings.RiskScope)
+	}
+}

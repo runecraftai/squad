@@ -691,28 +691,6 @@ var reviewFindingsSchemaShape = json.RawMessage(`{
 // recover the fenced payload, feeding it through the schema-defaults
 // validator (PR #7 contract: a finding that omits action/review_scope is
 // completed from the schema; fields the agent provided stay strict).
-func TestFinalizeTextResult_WithSchemaAllowsMissingReviewRiskScope(t *testing.T) {
-	text := `{"findings":[{"severity":"warning","description":"possible defect"}],"risk_level":"low","risk_rationale":"bounded"}`
-	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
-	if err != nil {
-		t.Fatalf("missing risk_scope should not invalidate parsed output: %v", err)
-	}
-	var output map[string]any
-	if err := json.Unmarshal(result.Output, &output); err != nil {
-		t.Fatalf("unmarshal output: %v", err)
-	}
-	if _, present := output["risk_scope"]; present {
-		t.Errorf("parser fabricated risk_scope %v, want missing so the review step can mark risk unknown", output["risk_scope"])
-	}
-}
-
-func TestFinalizeTextResult_WithSchemaStillRejectsMalformedReviewOutput(t *testing.T) {
-	_, err := finalizeTextResult("pi", `{"findings":[`, reviewFindingsSchemaShape, TokenUsage{})
-	if err == nil {
-		t.Fatal("malformed review output should fail")
-	}
-}
-
 func TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLeadingProseAndInlineFenceMention(t *testing.T) {
 	text := "I've completed a full review pass. Let me summarize my verification before returning the structured result:\n\n" +
 		"1. **Root cause confirmed**: in the pre-fix code, `fencedJSONCandidates` returned an empty candidate list when a ` ```json ` opener had no closer, and `lastBareJSONObject` `break`-ed the entire scan at any unclosed fence opener.\n" +
@@ -752,6 +730,28 @@ func TestFinalizeTextResult_WithSchemaParsesReviewOutputWithLeadingProseAndInlin
 	}
 	if output.RiskLevel != "low" {
 		t.Errorf("expected risk_level=low, got %q", output.RiskLevel)
+	}
+}
+
+func TestFinalizeTextResult_WithSchemaAllowsMissingReviewRiskScope(t *testing.T) {
+	text := `{"findings":[{"severity":"warning","description":"possible defect"}],"risk_level":"low","risk_rationale":"bounded"}`
+	result, err := finalizeTextResult("pi", text, reviewFindingsSchemaShape, TokenUsage{})
+	if err != nil {
+		t.Fatalf("missing risk_scope should not invalidate parsed output: %v", err)
+	}
+	var output map[string]any
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if _, present := output["risk_scope"]; present {
+		t.Errorf("parser fabricated risk_scope %v, want missing so the review step can mark risk unknown", output["risk_scope"])
+	}
+}
+
+func TestFinalizeTextResult_WithSchemaStillRejectsMalformedReviewOutput(t *testing.T) {
+	_, err := finalizeTextResult("pi", `{"findings":[`, reviewFindingsSchemaShape, TokenUsage{})
+	if err == nil {
+		t.Fatal("malformed review output should fail")
 	}
 }
 
