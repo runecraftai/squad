@@ -50,7 +50,14 @@
 #                          names "busy expired without activity" on escalation.
 #                          Changing output resets that timer and counter.
 #                          A declared paused:/commander-held last status line
-#                          still outranks busy and keeps the bounded pause cadence.
+#                          still outranks busy and keeps the bounded pause cadence,
+#                          except for the three named pause-era reasons below.
+#                          Three independent rules append their own evidence to
+#                          the same reason: "operator idle with uncommitted work"
+#                          past SQUAD_STALE_ESCALATE_SECS, "declared pause aged
+#                          out" once past SQUAD_PAUSE_MAX_SECS per declaration, and
+#                          "pane signature: <name>" for a byte-identical complete
+#                          viewport that keeps showing a stuck signature.
 #   stale: <window> (<backend>: agent blocked - ...)
 #                          a backend's native transition record (bin/sq-transition-lib.sh)
 #                          reports the SAME window as `blocked` (a person is
@@ -287,7 +294,8 @@ SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .deferred-log- .paused-resurf
 
 # drop_window_markers: reset every piece of per-window bookkeeping this sentry
 # keeps for <window> - the pane hash/count, the stale suppressor and its wedge
-# timer, the consecutive-escalation counter, and the pause cadence markers.
+# timer, the consecutive-escalation counter, the pause cadence markers, and the
+# independent pause-era clocks (dirty worktree, pause episode, pane signature).
 # This is the reset the wedge-timer contract requires wherever a target's
 # pane/hash state must restart from a genuinely fresh classification, applied
 # here to the one case that has no pane to re-classify: the task record itself

@@ -10,9 +10,9 @@
 # wake prompt while the daemon still triages the original reason. This is
 # the token-efficient replacement for the prior always-inject daemon:
 # routine signal/stale/heartbeat wakes cost zero Squad context; only done/
-# needs-decision/blocked/failed/persistent-wedge/check-output events and a
-# declared-pause recheck reach the LLM, and even then as one pre-read digest per
-# batch window.
+# needs-decision/blocked/failed/persistent-wedge/check-output events, a
+# declared-pause recheck, and the sentry's named pause-era evidence reach the LLM,
+# and even then as one pre-read digest per batch window.
 #
 # PRESENCE-GATING (the /afk contract). The daemon is the away-mode engine: it
 # injects ONLY when the durable away-mode flag state/.afk is present. Invoking
@@ -47,7 +47,10 @@
 #     escalated only after it has been idle for STALE_ESCALATE_SECS
 #     (configurable), rechecked once. A wedged operator is therefore detected
 #     within STALE_ESCALATE_SECS + a tick, never lost. A declared pause instead
-#     gets its own longer PAUSE_RESURFACE_SECS recheck, never a wedge escalation.
+#     gets its own longer PAUSE_RESURFACE_SECS recheck rather than a wedge
+#     escalation, but a pause cannot hide unfinished work: the sentry's named
+#     pause-era evidence (idle dirty worktree, aged-out declared pause, stuck
+#     pane signature) escalates through the normal digest instead.
 #     Operators are autonomous, so a delayed stale response does not stall a
 #     healthy operator's own progress.
 #     Buffered escalation delivery also has a max-defer alarm: if a digest stays
