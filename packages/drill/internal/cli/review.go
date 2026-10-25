@@ -11,6 +11,7 @@ import (
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/paths"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline/steps"
@@ -23,6 +24,15 @@ var standaloneReviewAgentFactory = func(ctx context.Context, cfg *config.Config)
 		return nil, err
 	}
 	return agent.NewWithOptions(cfg.Agent, cfg.AgentPath(), cfg.AgentArgsFor(cfg.Agent), agent.Options{DisableProjectSettings: true, ACPRegistryOverrides: cfg.ACPRegistryOverrides})
+}
+
+type reviewExecutionPolicy interface {
+	agent.ProcessExecutionPolicy
+	Close() error
+}
+
+var newReviewExecutionPolicy = func(workDir string) (reviewExecutionPolicy, error) {
+	return executionpolicy.New(workDir)
 }
 
 type standaloneReviewResult struct {
@@ -90,8 +100,18 @@ func newReviewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			policy, err := newReviewExecutionPolicy(worktree)
+			if err != nil {
+				_ = ag.Close()
+				return err
+			}
+			defer policy.Close()
+			ag = agent.WithExecutionPolicy(ag, policy)
 			defer ag.Close()
-			findings, err := steps.RunStandaloneReview(cmd.Context(), ag, worktree, baseSHA, headSHA, intent, cfg.Review.Topology.MaxParallel, cfg.Review.Topology.Timeout, func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) })
+			lensPolicies := func(checkout string) (steps.ReviewLensExecutionPolicy, error) {
+				return newReviewExecutionPolicy(checkout)
+			}
+			findings, err := steps.RunStandaloneReview(cmd.Context(), ag, worktree, baseSHA, headSHA, intent, cfg.Review.Topology.MaxParallel, cfg.Review.Topology.Timeout, func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) }, policy, lensPolicies)
 			if err != nil {
 				return err
 			}

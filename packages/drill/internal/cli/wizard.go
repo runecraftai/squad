@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
 	"github.com/runecraftai/squad/packages/drill/internal/db"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/gate"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
@@ -31,6 +33,9 @@ var resolveWizardAgent = func(ctx context.Context, cfg *config.Config) error {
 type waitForRunFunc func(ctx context.Context, branch string) error
 
 var newWizardAgent = agent.NewWithOptions
+var newWizardExecutionPolicy = func(workDir string) (wizardExecutionPolicy, error) {
+	return executionpolicy.New(workDir)
+}
 var wizardRun = wizard.Run
 var wizardRunAuto = wizard.RunAuto
 var runWizardAutoVisible = func(ctx context.Context, p *paths.Paths, state *repoState, skipSteps []types.StepName, wait waitForRunFunc) (wizard.Result, error) {
@@ -40,15 +45,21 @@ var runWizardAuto = func(ctx context.Context, p *paths.Paths, state *repoState, 
 	return runWizardWithMode(ctx, p, state, skipSteps, true, false, wait)
 }
 
+type wizardExecutionPolicy interface {
+	agent.ProcessExecutionPolicy
+	Close() error
+}
+
 type wizardAgentSuggester struct {
 	cfg     *config.Config
 	workDir string
 	resolve func(context.Context, *config.Config) error
 	new     func(types.AgentName, string, []string, agent.Options) (agent.Agent, error)
 
-	once sync.Once
-	ag   agent.Agent
-	err  error
+	once   sync.Once
+	ag     agent.Agent
+	policy wizardExecutionPolicy
+	err    error
 
 	// cachedCommit holds a commit subject returned as a side-effect of the
 	// branch-name agent call, so the commit step can consume it without
@@ -73,14 +84,21 @@ func (s *wizardAgentSuggester) ensure(ctx context.Context) error {
 			s.err = fmt.Errorf("resolve agent: %w", err)
 			return
 		}
+		policy, err := newWizardExecutionPolicy(s.workDir)
+		if err != nil {
+			s.err = fmt.Errorf("create execution policy: %w", err)
+			return
+		}
 		ag, err := s.new(s.cfg.Agent, s.cfg.AgentPath(), s.cfg.AgentArgs(), agent.Options{
 			ACPRegistryOverrides: s.cfg.ACPRegistryOverrides,
 		})
 		if err != nil {
+			_ = policy.Close()
 			s.err = fmt.Errorf("create agent: %w", err)
 			return
 		}
-		s.ag = ag
+		s.policy = policy
+		s.ag = agent.WithExecutionPolicy(ag, policy)
 	})
 	return s.err
 }
@@ -125,7 +143,7 @@ func (s *wizardAgentSuggester) Close() error {
 	if s.ag == nil {
 		return nil
 	}
-	return s.ag.Close()
+	return errors.Join(s.ag.Close(), s.policy.Close())
 }
 
 // repoState captures the git state the wizard routing and the wizard itself

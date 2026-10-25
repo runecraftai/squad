@@ -89,8 +89,13 @@ When a push arrives via the post-receive hook:
 
 Event delivery is bounded, so a slow or wedged client can never stall a run. Under pressure the daemon may drop ordinary log output, but it never silently loses a state change: it coalesces those into a single gap signal, and the TUI and `axi` respond by re-reading authoritative run state. A live view can therefore skip log lines while it is behind, but it converges on the run's real state. After a dropped connection, the TUI retries with a bounded delay and reconciles when it reattaches; if the daemon remains unavailable, it surfaces the connection error instead of retrying forever.
 
-Pipeline agents are prompted to keep intentional writes inside that detached worktree and avoid changing system state outside it, such as Homebrew packages, apps under `/Applications`, or global tool configuration.
-That reduces surprising machine-level side effects and macOS App Management prompts, but it is prompt steering rather than a true sandbox.
+Every repository-configured command and every agent process for a run executes inside a mandatory repository execution sandbox.
+That sandbox is a Bubblewrap (`bwrap`) mount namespace where the writable paths are the run's execution copy, a task-private Git database, a task-private build cache, and a `HOME` created for the launch, while the daemon's tool directories are read-only and the gate repository, the daemon socket, and your home directory are absent.
+Confinement requires Linux with Bubblewrap installed: on another operating system, or when `bwrap` is unavailable, the run fails before its first step and no repository command or agent process starts.
+Provider credential files are copied into a home directory created for one launch, and every copy is removed when the run's execution policy closes.
+The one writable host path outside the execution copy is the run's evidence directory under the managed temporary `drill-evidence` root.
+The sandbox shares the host network namespace, so it confines filesystem and process access rather than network egress.
+Pipeline prompts still steer agents to keep intentional writes inside the execution copy, but that steering now reinforces the sandbox instead of replacing it.
 While executing steps, the daemon also owns child-process cleanup.
 Configured commands and one-shot agent subprocesses are terminated as a process tree on completion, failure, or cancellation so leaked test workers, build watchers, or dev servers cannot accumulate across runs.
 Each process is asked to exit first and only forcibly killed if it is still running a few seconds later.

@@ -309,11 +309,11 @@ Risk assessment (after listing all findings):
 			return nil, fmt.Errorf("official worktree boundary check before specialized review: %w", stateErr)
 		}
 		sctx.Log(fmt.Sprintf("specialized review topology=%s enforcement=%s snapshot_head=%s", sctx.Config.Review.Topology.Topology, sctx.Config.Review.Topology.Enforcement, reviewSnapshot.TargetHeadSHA))
-		specialistResults := runReviewSpecialists(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, sctx.Config.Review.Topology.MaxParallel, sctx.Config.Review.Topology.Timeout, sctx.Log)
+		specialistResults := runReviewSpecialists(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, sctx.Config.Review.Topology.MaxParallel, sctx.Config.Review.Topology.Timeout, sctx.Log, sctx.ExecutionPolicy)
 		specialistFailures := countSpecialistFailures(specialistResults)
 		if specialistFailures > 0 && sctx.RetrySpecializedReview && ctx.Err() == nil {
 			sctx.Log("specialized review explicit retry: discarding partial results and starting one fresh batch")
-			specialistResults = runReviewSpecialists(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, sctx.Config.Review.Topology.MaxParallel, sctx.Config.Review.Topology.Timeout, sctx.Log)
+			specialistResults = runReviewSpecialists(ctx, sctx.Agent, sctx.WorkDir, *reviewSnapshot, sctx.Config.Review.Topology.MaxParallel, sctx.Config.Review.Topology.Timeout, sctx.Log, sctx.ExecutionPolicy)
 			specialistFailures = countSpecialistFailures(specialistResults)
 		}
 		for _, specialist := range specialistResults {

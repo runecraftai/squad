@@ -10,9 +10,9 @@ import (
 // WorktreeSteering is prepended to every pipeline agent prompt. It keeps the
 // agent's writes inside the git worktree and steers it away from mutating
 // system state outside the workspace (installing/upgrading system packages,
-// modifying apps in /Applications, changing global config). Those out-of-tree
-// writes are what trigger macOS "App Management" / Privacy notifications and
-// risk surprising side effects on the user's machine.
+// modifying apps in /Applications, changing global config). The repository
+// execution sandbox now blocks those writes mechanically as well, so the
+// preamble carries the intent rather than being the only boundary.
 var WorktreeSteering = fmt.Sprintf(`Workspace boundary (important):
 - Confine source, project, user-data, and system file changes to the current working directory, which is a git worktree. Do not intentionally create, modify, move, or delete those files anywhere outside it.
 - Do not modify system state outside the worktree. In particular, do not install or upgrade system packages (for example brew install/upgrade, or other system package managers), do not modify applications under /Applications, and do not change global or user-level tool configuration.

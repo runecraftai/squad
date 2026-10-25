@@ -19,7 +19,7 @@ have not configured explicit commands, auto-fixing, and setup-wizard suggestions
 when you leave prompts blank.
 
 Pipeline agent prompts also include a workspace-boundary preamble.
-It tells agents to keep intentional source, project, user-data, and system file writes inside the disposable worktree, avoid mutating system state such as Homebrew packages, `/Applications`, or global tool config, and treat that boundary as prompt steering rather than true enforcement.
+It tells agents to keep intentional source, project, user-data, and system file writes inside the disposable worktree, avoid mutating system state such as Homebrew packages, `/Applications`, or global tool config, and treat that boundary as one the execution sandbox enforces (see [Daemon & Worktrees](/drill/concepts/daemon/)).
 The only intentional out-of-worktree write it allows is test evidence under the managed temporary `drill-evidence` directory when a testing prompt asks for it.
 Incidental temp or cache writes from normal development tools are still allowed.
 Testing prompts also ask agents to remove transient working-tree artifacts they created, such as downloaded models, caches, build outputs, large binaries, or generated data directories, before reporting completion.
@@ -211,7 +211,8 @@ All agents implement the same interface. Each invocation receives:
 
 - **Prompt** - the task description (review this diff, fix these findings, etc.), prefixed during pipeline runs with the workspace-boundary steering described above
 - **CWD** - the worktree directory
-- **Environment** - the daemon environment plus non-interactive Git overrides (`GIT_EDITOR=true`, `GIT_SEQUENCE_EDITOR=true`, and `GIT_TERMINAL_PROMPT=0`) so agent-invoked Git commands do not hang on editors or credential prompts
+- **Environment** - built by the execution policy, never inherited from the daemon: a launch-private `HOME`, a task-private build cache, `TMPDIR=/tmp`, the policy's tool `PATH`, `LANG`, `LC_ALL`, `TERM`, and `CI` when the daemon sets them, `GOFLAGS` and `GOTOOLCHAIN` when set, the provider API keys the daemon exports, `DRILL_GATE=1`, and the non-interactive Git overrides (`GIT_EDITOR=true`, `GIT_SEQUENCE_EDITOR=true`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`) so agent-invoked Git commands do not hang on editors or credential prompts
+  Provider credential files are copied into that launch-private `HOME` and removed when the run's execution policy closes, while provider base-URL variables are not forwarded; [Repo Config](/drill/reference/repo-config/#repository-command-environment) documents the environment configured commands receive.
 - **JSONSchema** - optional structured output schema for typed responses
 - **OnChunk** - callback for streaming text output to the TUI
 - **OnLifecycle** - callback for native subprocess start, exit, and retry activity that is recorded in step logs and AXI active-step status

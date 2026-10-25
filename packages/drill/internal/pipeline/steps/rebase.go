@@ -348,7 +348,15 @@ func tryRebase(ctx context.Context, sctx *pipeline.StepContext, targetRef string
 	return nil, nil
 }
 
+// rebaseResolveRounds bounds how many conflict rounds one rebase may hand to
+// the agent before the rebase is abandoned.
+const rebaseResolveRounds = 5
+
 // rebaseWithAgent performs a rebase and uses the agent to resolve any conflicts.
+// The rebase itself is always owned by the pipeline's Git: a confined agent
+// shares only the working files, so its `git add`/`git rebase --continue` would
+// land in a different index and never advance this rebase. The agent therefore
+// resolves conflict markers only, and the pipeline stages and continues.
 func rebaseWithAgent(ctx context.Context, sctx *pipeline.StepContext, targetRef string) error {
 	skip, err := shouldSkipRebase(ctx, sctx, targetRef)
 	if err != nil {
@@ -363,13 +371,43 @@ func rebaseWithAgent(ctx context.Context, sctx *pipeline.StepContext, targetRef 
 		return nil
 	}
 
-	if len(rebaseConflictFiles(ctx, sctx.WorkDir)) == 0 {
+	conflictFiles := rebaseConflictFiles(ctx, sctx.WorkDir)
+	if len(conflictFiles) == 0 {
 		_, _ = git.Run(ctx, sctx.WorkDir, "rebase", "--abort")
 		return fmt.Errorf("rebase onto %s failed (no conflicts detected)", targetRef)
 	}
-	sctx.Log("conflicts detected, asking agent to resolve...")
-	conflictFiles := rebaseConflictFiles(ctx, sctx.WorkDir)
 
+	for round := 0; round < rebaseResolveRounds; round++ {
+		sctx.Log("conflicts detected, asking agent to resolve...")
+		if err := resolveRebaseConflicts(ctx, sctx, targetRef, conflictFiles); err != nil {
+			_, _ = git.Run(ctx, sctx.WorkDir, "rebase", "--abort")
+			return err
+		}
+		if unresolved := unresolvedConflictFiles(sctx.WorkDir, conflictFiles); len(unresolved) > 0 {
+			conflictFiles = unresolved
+			continue
+		}
+		if !rebaseInProgress(ctx, sctx.WorkDir) {
+			return nil
+		}
+		remaining, err := continueRebase(ctx, sctx, conflictFiles)
+		if err != nil {
+			_, _ = git.Run(ctx, sctx.WorkDir, "rebase", "--abort")
+			return err
+		}
+		if len(remaining) == 0 {
+			return nil
+		}
+		conflictFiles = remaining
+	}
+
+	_, _ = git.Run(ctx, sctx.WorkDir, "rebase", "--abort")
+	return fmt.Errorf("rebase onto %s: conflicts survived %d agent resolution rounds", targetRef, rebaseResolveRounds)
+}
+
+// resolveRebaseConflicts asks the agent to remove conflict markers from the
+// conflicted files without running Git; the pipeline owns the rebase state.
+func resolveRebaseConflicts(ctx context.Context, sctx *pipeline.StepContext, targetRef string, conflictFiles []string) error {
 	prompt := fmt.Sprintf(
 		`Resolve git rebase conflicts. The rebase of the current branch onto %s has conflicts.
 
@@ -378,9 +416,7 @@ Current conflicted files:
 
 Instructions:
 - Find all conflicting files and resolve the conflict markers (<<<<<<< ======= >>>>>>>).
-- After resolving each file, stage it with: git add <file>
-- After all conflicts are resolved, run: git rebase --continue
-- If additional conflicts arise during rebase --continue, resolve those too.
+- Edit the files only. The pipeline runtime stages the resolved files and continues the rebase; do not run any git command.
 - Do not modify any files that don't have conflicts.
 - Preserve the intent of both the current branch changes and the upstream changes.
 - Return JSON with a single "summary" field describing what you resolved.
@@ -394,24 +430,58 @@ Instructions:
 	prompt += userIntentPromptSection(sctx)
 	prompt = testguidance.LateRepairPrompt(string(types.StepRebase), prompt)
 
-	_, err = sctx.Agent.Run(ctx, agent.RunOpts{
+	if _, err := sctx.Agent.Run(ctx, agent.RunOpts{
 		Prompt:     prompt,
 		CWD:        sctx.WorkDir,
 		JSONSchema: commitSummarySchema,
 		OnChunk:    sctx.LogChunk,
-	})
-	if err != nil {
-		_, _ = git.Run(ctx, sctx.WorkDir, "rebase", "--abort")
+	}); err != nil {
 		return fmt.Errorf("agent resolve conflicts: %w", err)
 	}
-
-	// Verify rebase completed (no rebase still in progress)
-	if rebaseInProgress(ctx, sctx.WorkDir) {
-		_, _ = git.Run(ctx, sctx.WorkDir, "rebase", "--abort")
-		return fmt.Errorf("agent did not complete the rebase")
-	}
-
 	return nil
+}
+
+// continueRebase stages the agent-resolved files and advances the rebase. It
+// returns the conflicted files of the next round, or nil when the rebase is done.
+func continueRebase(ctx context.Context, sctx *pipeline.StepContext, resolved []string) ([]string, error) {
+	if !rebaseInProgress(ctx, sctx.WorkDir) {
+		return nil, nil
+	}
+	if len(resolved) > 0 {
+		if _, err := git.Run(ctx, sctx.WorkDir, append([]string{"add", "-A", "--"}, resolved...)...); err != nil {
+			return nil, fmt.Errorf("stage resolved conflicts: %w", err)
+		}
+	}
+	if _, err := git.Run(ctx, sctx.WorkDir, "rebase", "--continue"); err != nil {
+		if remaining := rebaseConflictFiles(ctx, sctx.WorkDir); len(remaining) > 0 {
+			return remaining, nil
+		}
+		return nil, fmt.Errorf("continue rebase after conflict resolution: %w", err)
+	}
+	return nil, nil
+}
+
+// unresolvedConflictFiles returns the subset of paths that still carry conflict
+// markers after an agent round. A path the agent removed counts as resolved.
+func unresolvedConflictFiles(workDir string, files []string) []string {
+	var unresolved []string
+	for _, name := range files {
+		data, err := os.ReadFile(filepath.Join(workDir, name))
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			unresolved = append(unresolved, name)
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "<<<<<<<") || strings.HasPrefix(line, ">>>>>>>") {
+				unresolved = append(unresolved, name)
+				break
+			}
+		}
+	}
+	return unresolved
 }
 
 // shouldSkipRebase checks whether a rebase onto targetRef can be skipped.

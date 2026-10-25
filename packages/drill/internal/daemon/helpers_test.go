@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,12 +14,38 @@ import (
 	"time"
 
 	"github.com/runecraftai/squad/packages/drill/internal/db"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
 	"github.com/runecraftai/squad/packages/drill/internal/logstore"
 	"github.com/runecraftai/squad/packages/drill/internal/paths"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
 	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
+
+type fixtureRunExecutionPolicy struct{ workDir string }
+
+func (p fixtureRunExecutionPolicy) Command(*exec.Cmd) error { return nil }
+func (p fixtureRunExecutionPolicy) Sync() error             { return nil }
+func (p fixtureRunExecutionPolicy) Close() error            { return nil }
+func (p fixtureRunExecutionPolicy) OnClose(func()) error    { return nil }
+func (p fixtureRunExecutionPolicy) RunCommand(ctx context.Context, command string, env []string) ([]byte, int, error) {
+	name, args := "sh", []string{"-c", command}
+	if runtime.GOOS == "windows" {
+		name, args = "cmd.exe", []string{"/C", command}
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = p.workDir
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return out, 0, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return out, exitErr.ExitCode(), nil
+	}
+	return out, -1, err
+}
 
 func TestMain(m *testing.M) {
 	switch os.Getenv("DRILL_DAEMON_HELPER_PROCESS") {
@@ -73,6 +100,9 @@ func TestMain(m *testing.M) {
 	// the push call push_received via IPC directly.
 	if os.Getenv("DRILL_HOOK_HELPER") == "1" {
 		os.Exit(0)
+	}
+	newRunExecutionPolicy = func(workDir string) (executionpolicy.ExecutionPolicy, error) {
+		return fixtureRunExecutionPolicy{workDir: workDir}, nil
 	}
 	// Agent harnesses inject git config (e.g. safe.bareRepository=explicit)
 	// via GIT_CONFIG_COUNT/KEY_n/VALUE_n; tests that need it re-set it with

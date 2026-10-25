@@ -47,7 +47,15 @@ func (p *nativeAgentPipe) markDone() {
 	p.doneOnce.Do(p.done)
 }
 
-func startNativeAgentCommand(cmd *exec.Cmd) (*nativeAgentCommand, error) {
+func startNativeAgentCommand(cmd *exec.Cmd, policy interface {
+	Command(*exec.Cmd) error
+	Sync() error
+}) (*nativeAgentCommand, error) {
+	if policy != nil {
+		if err := policy.Command(cmd); err != nil {
+			return nil, err
+		}
+	}
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe: %w", err)
@@ -81,6 +89,11 @@ func startNativeAgentCommand(cmd *exec.Cmd) (*nativeAgentCommand, error) {
 	started.stderr = &nativeAgentPipe{file: stderrR, done: started.markPipeDone}
 	go func() {
 		err := cmd.Wait()
+		if policy != nil {
+			if syncErr := policy.Sync(); syncErr != nil && err == nil {
+				err = syncErr
+			}
+		}
 		started.terminate()
 		started.waitCh <- started.waitForPipes(err)
 	}()

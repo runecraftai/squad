@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -20,13 +21,24 @@ type Agent interface {
 	Close() error
 }
 
+// ProcessExecutionPolicy confines a native agent process and synchronizes its private Git result.
+// OnClose registers a stop hook that runs when the policy closes; it fails once the policy is closing.
+type ProcessExecutionPolicy interface {
+	Command(*exec.Cmd) error
+	Sync() error
+	OnClose(stop func()) error
+}
+
 // RunOpts configures a single agent invocation.
 type RunOpts struct {
-	Prompt      string
-	CWD         string
-	JSONSchema  json.RawMessage      // structured output schema (optional)
-	OnChunk     func(text string)    // streaming text callback (optional)
-	OnLifecycle func(LifecycleEvent) // native agent lifecycle callback (optional)
+	Prompt string
+	// ExecutionPolicy is mandatory for repository-executing gate agents. It is
+	// attached by the daemon and applied at the native process launch boundary.
+	ExecutionPolicy ProcessExecutionPolicy
+	CWD             string
+	JSONSchema      json.RawMessage      // structured output schema (optional)
+	OnChunk         func(text string)    // streaming text callback (optional)
+	OnLifecycle     func(LifecycleEvent) // native agent lifecycle callback (optional)
 	// Session, when non-nil, asks a session-capable adapter (see
 	// SessionResumer) to start or resume a durable native session. Adapters
 	// without session support ignore it and run cold; the caller detects the
@@ -80,6 +92,34 @@ type SessionRef struct {
 // SupportsSessionResume so wrapping never hides the capability.
 type SessionResumer interface {
 	SupportsSessionResume() bool
+}
+
+// WithExecutionPolicy decorates an agent so every native child launch carries
+// the daemon-owned repository execution policy.
+func WithExecutionPolicy(inner Agent, policy ProcessExecutionPolicy) Agent {
+	return &executionPolicyAgent{inner: inner, policy: policy}
+}
+
+type executionPolicyAgent struct {
+	inner  Agent
+	policy ProcessExecutionPolicy
+}
+
+func (a *executionPolicyAgent) Name() string { return a.inner.Name() }
+func (a *executionPolicyAgent) Run(ctx context.Context, opts RunOpts) (*Result, error) {
+	if opts.ExecutionPolicy == nil {
+		opts.ExecutionPolicy = a.policy
+	}
+	return a.inner.Run(ctx, opts)
+}
+func (a *executionPolicyAgent) Close() error                { return a.inner.Close() }
+func (a *executionPolicyAgent) SupportsSessionResume() bool { return SupportsSessionResume(a.inner) }
+func (a *executionPolicyAgent) SupportsSessionProvider(provider string) bool {
+	return SupportsSessionProvider(a.inner, provider)
+}
+func (a *executionPolicyAgent) ReportsAgentAttempts() bool { return ReportsAgentAttempts(a.inner) }
+func (a *executionPolicyAgent) NeutralizesGateInstructions() bool {
+	return NeutralizesGateInstructions(a.inner)
 }
 
 // SupportsSessionResume reports whether a (possibly wrapped) agent can start

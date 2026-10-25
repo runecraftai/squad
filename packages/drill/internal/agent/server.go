@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -56,6 +57,7 @@ type managedServer struct {
 	waitErr       error         // result of cmd.Wait; only read after exited is closed
 	healthTimeout time.Duration // health-check deadline; defaults to defaultHealthTimeout when zero
 	stopping      atomic.Bool
+	policy        ProcessExecutionPolicy
 }
 
 // getAvailablePort finds an ephemeral port by binding to :0 and releasing.
@@ -73,7 +75,7 @@ func getAvailablePort() (int, error) {
 // The process is not tied to ctx - it outlives individual Run calls and is stopped via shutdown().
 // ctx is only used for the health check timeout.
 // agentName tags the PID tracking file so crash-recovery can identify orphans.
-func startServerWithPort(ctx context.Context, agentName, bin string, args []string, cwd string, healthPath string, port int) (*managedServer, error) {
+func startServerWithPort(ctx context.Context, agentName, bin string, args []string, cwd string, healthPath string, port int, policy ProcessExecutionPolicy) (*managedServer, error) {
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = cwd
 	cmd.Stdin = nil
@@ -82,6 +84,11 @@ func startServerWithPort(ctx context.Context, agentName, bin string, args []stri
 	cmd.Stdout = out // server stdout goes to the configured sink for debugging
 	cmd.Stderr = out
 	configureManagedServerCmd(cmd)
+	if policy != nil {
+		if err := policy.Command(cmd); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := cmd.Start(); err != nil {
 		slog.Warn("managed agent server failed to start", "agent", agentName, "error", err)
@@ -100,7 +107,7 @@ func startServerWithPort(ctx context.Context, agentName, bin string, args []stri
 		StartedAt:      time.Now().UTC(),
 	})
 
-	srv := &managedServer{cmd: cmd, port: port, pidFile: pidFile, exited: make(chan struct{}), healthTimeout: defaultHealthTimeout}
+	srv := &managedServer{cmd: cmd, port: port, pidFile: pidFile, exited: make(chan struct{}), healthTimeout: defaultHealthTimeout, policy: policy}
 	go func() {
 		srv.waitErr = cmd.Wait()
 		if srv.stopping.Load() {
@@ -122,6 +129,121 @@ func startServerWithPort(ctx context.Context, agentName, bin string, args []stri
 	slog.Info("managed agent server ready", "agent", agentName, "pid", cmd.Process.Pid, "port", port)
 
 	return srv, nil
+}
+
+// serverPool keeps one managed server per execution policy. Review lenses run
+// concurrently under separate sandboxes, so a server is never handed to a
+// caller whose policy it was not launched under, and it stops with its policy.
+type serverPool struct {
+	mu       sync.Mutex
+	servers  map[ProcessExecutionPolicy]*managedServer
+	starting map[ProcessExecutionPolicy]*pendingServer
+}
+
+// pendingServer is a server whose start is in flight. Callers asking for the
+// same policy wait on done instead of launching a second server.
+type pendingServer struct {
+	done    chan struct{}
+	srv     *managedServer
+	err     error
+	stopped bool // set under pool.mu when the policy or pool closes mid-start
+}
+
+var errServerPoolStopped = errors.New("server pool stopped before server started")
+
+// ensure returns the server for policy, starting it with start if needed. The
+// pool lock is not held while start runs, so a slow health check only delays
+// callers for the same policy.
+func (p *serverPool) ensure(policy ProcessExecutionPolicy, start func() (*managedServer, error)) (*managedServer, error) {
+	p.mu.Lock()
+	if srv := p.servers[policy]; srv != nil {
+		p.mu.Unlock()
+		return srv, nil
+	}
+	if pending := p.starting[policy]; pending != nil {
+		p.mu.Unlock()
+		<-pending.done
+		return pending.srv, pending.err
+	}
+	pending := &pendingServer{done: make(chan struct{})}
+	if p.starting == nil {
+		p.starting = make(map[ProcessExecutionPolicy]*pendingServer)
+	}
+	p.starting[policy] = pending
+	p.mu.Unlock()
+
+	srv, err := launchPooledServer(p, policy, start)
+
+	p.mu.Lock()
+	delete(p.starting, policy)
+	stopped := pending.stopped
+	if err == nil && !stopped {
+		if p.servers == nil {
+			p.servers = make(map[ProcessExecutionPolicy]*managedServer)
+		}
+		p.servers[policy] = srv
+	}
+	p.mu.Unlock()
+	if err == nil && stopped {
+		srv.shutdown()
+		srv, err = nil, errServerPoolStopped
+	}
+	pending.srv, pending.err = srv, err
+	close(pending.done)
+	return srv, err
+}
+
+func launchPooledServer(p *serverPool, policy ProcessExecutionPolicy, start func() (*managedServer, error)) (*managedServer, error) {
+	srv, err := start()
+	if err != nil {
+		return nil, err
+	}
+	if policy != nil {
+		if err := policy.OnClose(func() { p.stop(policy) }); err != nil {
+			srv.shutdown()
+			return nil, err
+		}
+	}
+	return srv, nil
+}
+
+func (p *serverPool) stop(policy ProcessExecutionPolicy) {
+	p.mu.Lock()
+	srv := p.servers[policy]
+	delete(p.servers, policy)
+	if pending := p.starting[policy]; pending != nil {
+		pending.stopped = true
+	}
+	p.mu.Unlock()
+	if srv != nil {
+		srv.shutdown()
+	}
+}
+
+func (p *serverPool) stopAll() {
+	p.mu.Lock()
+	servers := p.servers
+	p.servers = nil
+	for _, pending := range p.starting {
+		pending.stopped = true
+	}
+	p.mu.Unlock()
+	for _, srv := range servers {
+		srv.shutdown()
+	}
+}
+
+// syncConfinedGit aligns the private Git of a confined run with the linked
+// execution copy. It runs before a launch so the run starts from the host
+// head, and after it so the host observes the agent's commits.
+func syncConfinedGit(policy ProcessExecutionPolicy) error {
+	if policy == nil {
+		return nil
+	}
+	if err := policy.Sync(); err != nil {
+		return fmt.Errorf("synchronize confined agent Git: %w", err)
+	}
+	return nil
 }
 
 // baseURL returns the server's base URL.
@@ -191,6 +313,13 @@ func serverExitedBeforeHealthyError(waitErr error) error {
 // exited - if SIGKILL fails to reap it, the file is left on disk so a
 // future daemon can finish the job.
 func (s *managedServer) shutdown() {
+	defer func() {
+		if s.policy != nil {
+			if err := s.policy.Sync(); err != nil {
+				slog.Error("failed to synchronize managed agent server Git result", "error", err)
+			}
+		}
+	}()
 	s.stopping.Store(true)
 	if s.cmd == nil || s.cmd.Process == nil {
 		removeServerPIDFile(s.pidFile)

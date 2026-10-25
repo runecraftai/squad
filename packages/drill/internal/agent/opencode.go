@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 )
 
 // opencodeAgent starts a persistent HTTP server via `opencode serve`
@@ -12,8 +11,7 @@ import (
 type opencodeAgent struct {
 	bin       string
 	extraArgs []string
-	mu        sync.Mutex
-	server    *managedServer
+	servers   serverPool
 }
 
 func (a *opencodeAgent) Name() string { return "opencode" }
@@ -30,27 +28,32 @@ func (a *opencodeAgent) SupportsSessionResume() bool { return true }
 func (a *opencodeAgent) ReportsAgentAttempts() bool { return true }
 
 func (a *opencodeAgent) Run(ctx context.Context, opts RunOpts) (*Result, error) {
-	return runWithRetry(ctx, "opencode", opts, claudeMaxRetries, classifyTransient, a.recoverTransientRetry, func() (*Result, error) {
+	return runWithRetry(ctx, "opencode", opts, claudeMaxRetries, classifyTransient, func(label string) {
+		a.recoverTransientRetry(opts.ExecutionPolicy, label)
+	}, func() (*Result, error) {
 		return a.runOnce(ctx, opts)
 	})
 }
 
-func (a *opencodeAgent) recoverTransientRetry(label string) {
+func (a *opencodeAgent) recoverTransientRetry(policy ProcessExecutionPolicy, label string) {
 	if label != "connection refused" {
 		return
 	}
-	a.mu.Lock()
-	srv := a.server
-	a.server = nil
-	a.mu.Unlock()
-	if srv != nil {
-		srv.shutdown()
-	}
+	a.servers.stop(policy)
 }
 
-func (a *opencodeAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, error) {
+func (a *opencodeAgent) runOnce(ctx context.Context, opts RunOpts) (result *Result, runErr error) {
+	defer func() {
+		if syncErr := syncConfinedGit(opts.ExecutionPolicy); syncErr != nil && runErr == nil {
+			result, runErr = nil, syncErr
+		}
+	}()
+	if err := syncConfinedGit(opts.ExecutionPolicy); err != nil {
+		return nil, err
+	}
+
 	// Start server on first invocation (synchronized)
-	baseURL, err := a.ensureServer(ctx, opts.CWD)
+	baseURL, err := a.ensureServer(ctx, opts.CWD, opts.ExecutionPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -234,11 +237,6 @@ func (a *opencodeAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, err
 }
 
 func (a *opencodeAgent) Close() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.server != nil {
-		a.server.shutdown()
-		a.server = nil
-	}
+	a.servers.stopAll()
 	return nil
 }

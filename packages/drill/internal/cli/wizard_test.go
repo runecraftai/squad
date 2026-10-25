@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -243,6 +244,15 @@ func (f *fakeSuggesterResponseAgent) callCount() int {
 	return len(f.calls)
 }
 
+type noopWizardPolicy struct {
+	workDir string
+}
+
+func (*noopWizardPolicy) Command(*exec.Cmd) error { return nil }
+func (*noopWizardPolicy) Sync() error             { return nil }
+func (*noopWizardPolicy) OnClose(func()) error    { return nil }
+func (*noopWizardPolicy) Close() error            { return nil }
+
 func newFakeSuggester(t *testing.T, ag *fakeSuggesterAgent) *wizardAgentSuggester {
 	t.Helper()
 	return newWizardAgentSuggester(
@@ -251,6 +261,32 @@ func newFakeSuggester(t *testing.T, ag *fakeSuggesterAgent) *wizardAgentSuggeste
 		func(context.Context, *config.Config) error { return nil },
 		func(types.AgentName, string, []string, agent.Options) (agent.Agent, error) { return ag, nil },
 	)
+}
+
+func TestWizardAgentSuggester_LaunchCarriesExecutionPolicyForWorkDir(t *testing.T) {
+	var created *noopWizardPolicy
+	restore := newWizardExecutionPolicy
+	newWizardExecutionPolicy = func(workDir string) (wizardExecutionPolicy, error) {
+		created = &noopWizardPolicy{workDir: workDir}
+		return created, nil
+	}
+	t.Cleanup(func() { newWizardExecutionPolicy = restore })
+	ag := &fakeSuggesterAgent{}
+	s := newFakeSuggester(t, ag)
+	defer s.Close()
+
+	if _, err := s.suggestBranch(context.Background()); err != nil {
+		t.Fatalf("suggestBranch failed: %v", err)
+	}
+	if created == nil || created.workDir != "/tmp/repo" {
+		t.Fatalf("execution policy created for %+v, want work dir /tmp/repo", created)
+	}
+	if len(ag.calls) != 1 {
+		t.Fatalf("agent calls = %d, want 1", len(ag.calls))
+	}
+	if ag.calls[0].ExecutionPolicy != created {
+		t.Fatalf("wizard launch execution policy = %v, want the policy for its work dir", ag.calls[0].ExecutionPolicy)
+	}
 }
 
 func TestWizardAgentSuggester_CachesCommitFromBranchCall(t *testing.T) {

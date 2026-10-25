@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -17,8 +16,7 @@ import (
 type rovodevAgent struct {
 	bin       string
 	extraArgs []string
-	mu        sync.Mutex
-	server    *managedServer
+	servers   serverPool
 }
 
 func (a *rovodevAgent) Name() string { return "rovodev" }
@@ -26,27 +24,32 @@ func (a *rovodevAgent) Name() string { return "rovodev" }
 func (a *rovodevAgent) ReportsAgentAttempts() bool { return true }
 
 func (a *rovodevAgent) Run(ctx context.Context, opts RunOpts) (*Result, error) {
-	return runWithRetry(ctx, "rovodev", opts, claudeMaxRetries, classifyTransient, a.recoverTransientRetry, func() (*Result, error) {
+	return runWithRetry(ctx, "rovodev", opts, claudeMaxRetries, classifyTransient, func(label string) {
+		a.recoverTransientRetry(opts.ExecutionPolicy, label)
+	}, func() (*Result, error) {
 		return a.runOnce(ctx, opts)
 	})
 }
 
-func (a *rovodevAgent) recoverTransientRetry(label string) {
+func (a *rovodevAgent) recoverTransientRetry(policy ProcessExecutionPolicy, label string) {
 	if label != "connection refused" {
 		return
 	}
-	a.mu.Lock()
-	srv := a.server
-	a.server = nil
-	a.mu.Unlock()
-	if srv != nil {
-		srv.shutdown()
-	}
+	a.servers.stop(policy)
 }
 
-func (a *rovodevAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, error) {
+func (a *rovodevAgent) runOnce(ctx context.Context, opts RunOpts) (result *Result, runErr error) {
+	defer func() {
+		if syncErr := syncConfinedGit(opts.ExecutionPolicy); syncErr != nil && runErr == nil {
+			result, runErr = nil, syncErr
+		}
+	}()
+	if err := syncConfinedGit(opts.ExecutionPolicy); err != nil {
+		return nil, err
+	}
+
 	// Start server on first invocation (synchronized)
-	baseURL, err := a.ensureServer(ctx, opts.CWD)
+	baseURL, err := a.ensureServer(ctx, opts.CWD, opts.ExecutionPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -83,22 +86,22 @@ func (a *rovodevAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, erro
 	return finalizeTextResult("rovodev", text, opts.JSONSchema, usage)
 }
 
-func (a *rovodevAgent) ensureServer(ctx context.Context, cwd string) (string, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.server != nil {
-		return a.server.baseURL(), nil
-	}
-	port, err := getAvailablePort()
+func (a *rovodevAgent) ensureServer(ctx context.Context, cwd string, policy ProcessExecutionPolicy) (string, error) {
+	srv, err := a.servers.ensure(policy, func() (*managedServer, error) {
+		port, err := getAvailablePort()
+		if err != nil {
+			return nil, fmt.Errorf("rovodev port: %w", err)
+		}
+		args := buildRovodevServeArgs(a.extraArgs, port)
+		srv, err := startServerWithPort(ctx, "rovodev", a.bin, args, cwd, "/healthcheck", port, policy)
+		if err != nil {
+			return nil, fmt.Errorf("rovodev server: %w", err)
+		}
+		return srv, nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("rovodev port: %w", err)
+		return "", err
 	}
-	args := buildRovodevServeArgs(a.extraArgs, port)
-	srv, err := startServerWithPort(ctx, "rovodev", a.bin, args, cwd, "/healthcheck", port)
-	if err != nil {
-		return "", fmt.Errorf("rovodev server: %w", err)
-	}
-	a.server = srv
 	return srv.baseURL(), nil
 }
 
@@ -113,12 +116,7 @@ func buildRovodevServeArgs(extraArgs []string, port int) []string {
 }
 
 func (a *rovodevAgent) Close() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.server != nil {
-		a.server.shutdown()
-		a.server = nil
-	}
+	a.servers.stopAll()
 	return nil
 }
 

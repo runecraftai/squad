@@ -25,6 +25,7 @@ Valid step names are `intent`, `rebase`, `review`, `test`, `document`, `lint`, `
 
 Review an existing local commit range with the specialized review engine without starting a delivery run.
 The command captures a disposable checkout at the requested head, runs the same snapshot, specialist lenses, and consolidator as the Review step, then removes the checkout.
+Every lens runs inside its own repository execution sandbox, so the command needs Linux with Bubblewrap just like a gate run; [Daemon & Worktrees](/drill/concepts/daemon/) owns that boundary.
 It never fixes findings, commits, pushes, opens a PR, monitors CI, publishes GitHub comments or reviews, merges, or records a delivery approval.
 
 ```sh

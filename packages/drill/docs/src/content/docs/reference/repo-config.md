@@ -6,7 +6,7 @@ description: All fields for .drill.yaml.
 Per-repo configuration lives in `.drill.yaml` at the root of your repository.
 
 :::caution[Security: gate-control fields are read from the default branch]
-`commands.*` execute arbitrary shell on the daemon host via `sh -c` / `cmd.exe /c`, and `agent` selects which process launches there (including ordered fallback lists, ACP aliases such as `cursor`, and `acp:` targets) with the maintainer's credentials.
+`commands.*` execute arbitrary shell inside the mandatory repository execution sandbox via `sh -c`, and `agent` selects which process launches there (including ordered fallback lists, ACP aliases such as `cursor`, and `acp:` targets) with the maintainer's credentials.
 To prevent a supply-chain attack where a contributor lands a hostile value on a gated branch, the daemon always reads **`commands` and `agent` from your default branch** (e.g. `origin/main`), never from the pushed SHA, and reads them at the exact commit a fresh fetch resolved (so a stale `origin/<default>` ref cannot serve a value the live default branch removed).
 The daemon also reads `document.instructions`, `review.path_instructions`, `review.topology`, `review.enforcement`, `review.max_parallel`, `review.timeout`, `disable_project_settings`, `no_ci`, `ci.rerun_transient`, and `test.evidence.branch` only from that trusted copy.
 If the default branch cannot be fetched and resolved to a readable commit, or its present `.drill.yaml` cannot be read and parsed, the run aborts before launching an agent.
@@ -127,7 +127,7 @@ Opt in to honoring the code-executing selection fields (`commands.{test,lint,for
 | Type | `bool` |
 | Default | `false` |
 
-This field is itself read **only from the trusted default-branch copy** of `.drill.yaml`, never from the pushed SHA, so a contributor cannot self-enable it by setting it on a feature branch. By default the daemon reads `commands` and `agent` from your default branch (e.g. `origin/main`) so a pushed SHA cannot inject shell or pick the launched agent on the daemon host. This opt-in covers those two fields only; `document.instructions`, `review.path_instructions`, and `disable_project_settings` stay trusted-only either way. Leave this `false` for any repo that accepts contributions. Set it to `true` only for a single-developer environment where you trust every branch you push (for example, a personal repo gated by your own daemon).
+This field is itself read **only from the trusted default-branch copy** of `.drill.yaml`, never from the pushed SHA, so a contributor cannot self-enable it by setting it on a feature branch. By default the daemon reads `commands` and `agent` from your default branch (e.g. `origin/main`) so a pushed SHA cannot inject shell or pick the launched agent inside the execution sandbox. This opt-in covers those two fields only; `document.instructions`, `review.path_instructions`, and `disable_project_settings` stay trusted-only either way. Leave this `false` for any repo that accepts contributions. Set it to `true` only for a single-developer environment where you trust every branch you push (for example, a personal repo gated by your own daemon).
 
 ### disable_project_settings
 
@@ -169,9 +169,16 @@ If checks still appear on a declared no-CI repository, their actual states are p
 This field is honored **only from the trusted default-branch copy** of `.drill.yaml`, regardless of `allow_repo_commands`.
 A feature branch cannot self-declare `no_ci: true` to bypass checks, and cannot clear a trusted declaration either.
 
+### Repository command environment
+
+Configured `commands.test`, `commands.lint`, and `commands.format` run inside the mandatory repository execution sandbox, so they do not inherit the daemon environment.
+The policy builds their environment instead: a `HOME` created for that launch and removed when the run's policy closes, `TMPDIR=/tmp`, `GOCACHE` and `GOMODCACHE` under a task-private cache, the managed tool `PATH`, `LANG`, `LC_ALL`, `TERM`, and `CI` copied from the daemon when set, and the non-interactive Git overrides (`GIT_EDITOR=true`, `GIT_SEQUENCE_EDITOR=true`, `GIT_TERMINAL_PROMPT=0`, `GIT_OPTIONAL_LOCKS=0`).
+A command that depended on any other inherited variable must declare or eliminate that dependency.
+A configured command gets no provider credential file and no provider key from the daemon environment; [Daemon & Worktrees](/drill/concepts/daemon/) owns what the sandbox mounts and what it keeps out of the mount namespace.
+
 ### commands.test
 
-Explicit **targeted** local test command. Run via the platform shell - `sh -c` on POSIX, `cmd.exe /c` on Windows.
+Explicit **targeted** local test command. Run inside the repository execution sandbox via `sh -c`.
 
 | | |
 | --- | --- |
@@ -188,7 +195,7 @@ When user intent is available, the agent may still run after a successful baseli
 
 ### commands.lint
 
-Explicit lint command. Run via the platform shell - `sh -c` on POSIX, `cmd.exe /c` on Windows.
+Explicit lint command. Run inside the repository execution sandbox via `sh -c`.
 
 | | |
 | --- | --- |
@@ -296,7 +303,7 @@ Review execution topology: `single` (one reviewer) or `specialized` (six special
 When `single`, the review step runs one agent invocation with the existing behavior and prompt.
 When `specialized`, whether selected by trusted configuration or the caller's per-run `--specialized-review` flag, the review step captures an immutable round-scoped snapshot (base SHA, target HEAD, complete diff, changed paths, intent, path instructions, scope, ignore patterns, and sanitized earlier-round history) and validates that HEAD and base have not changed before recording approval.
 The per-run flag defaults off, is never read from branch or repository content, and only opts into the shadow batch when trusted enforcement is `observe`; it cannot change gate authority.
-Six specialist lenses (security, requirements, tests-behavior, architecture, regression-hallucination, performance-resources) run in parallel, each in its own disposable cloned repository that never receives the official worktree path. Official worktree state (HEAD + porcelain status fingerprint) is verified before and after the batch; any mutation withholds approval. In both modes a session-free consolidator inspects current source, validates file/line anchors against the snapshot, rejects false evidence and generic advice, deduplicates by violated contract and scenario, and normalizes severity and action fields. `observe` mode logs lens failures without blocking, runs the consolidator to produce shadow findings (telemetry only; never authoritative for gating, fixes, or approval), and logs consolidation failures as warnings. `blocking` mode fails the review when any lens fails, then runs the same consolidator and makes its validated findings the only ones that may reach blocking, fixes, or human approval; consolidation failure in `blocking` withholds approval. Raw candidates never trigger correction. Each batch emits bounded operational telemetry: a batch ID, wall time, per-lens status with candidate counts, and consolidator status. This progress is visible in the TUI sidebar and through `axi status` as structured operational data; it never exposes agent prompts or outputs.
+Six specialist lenses (security, requirements, tests-behavior, architecture, regression-hallucination, performance-resources) run in parallel, each in its own disposable cloned repository that never receives the official worktree path and each inside its own execution sandbox policy, which is why a lens without a policy fails instead of running unconfined. Official worktree state (HEAD + porcelain status fingerprint) is verified before and after the batch; any mutation withholds approval. In both modes a session-free consolidator inspects current source, validates file/line anchors against the snapshot, rejects false evidence and generic advice, deduplicates by violated contract and scenario, and normalizes severity and action fields. `observe` mode logs lens failures without blocking, runs the consolidator to produce shadow findings (telemetry only; never authoritative for gating, fixes, or approval), and logs consolidation failures as warnings. `blocking` mode fails the review when any lens fails, then runs the same consolidator and makes its validated findings the only ones that may reach blocking, fixes, or human approval; consolidation failure in `blocking` withholds approval. Raw candidates never trigger correction. Each batch emits bounded operational telemetry: a batch ID, wall time, per-lens status with candidate counts, and consolidator status. This progress is visible in the TUI sidebar and through `axi status` as structured operational data; it never exposes agent prompts or outputs.
 
 ```yaml
 review:

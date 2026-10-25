@@ -16,6 +16,7 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
 	"github.com/runecraftai/squad/packages/drill/internal/db"
+	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/gate"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
 	"github.com/runecraftai/squad/packages/drill/internal/ipc"
@@ -34,6 +35,9 @@ type StepFactory func() []pipeline.Step
 var recoveredConfigFetchTimeout = 10 * time.Second
 
 var fetchRecoveredRemoteBranch = git.FetchRemoteBranch
+var newRunExecutionPolicy = func(workDir string) (executionpolicy.ExecutionPolicy, error) {
+	return executionpolicy.New(workDir)
+}
 
 // RunManager tracks active pipeline executors and manages run lifecycle.
 type RunManager struct {
@@ -312,7 +316,20 @@ func (m *RunManager) resumeRecoveredRun(plan recoveredRunPlan) {
 		return
 	}
 	runCtx, cancel := context.WithCancelCause(context.Background())
+	execution, err := newRunExecutionPolicy(plan.workDir)
+	if err != nil {
+		cancel(nil)
+		_ = m.db.UpdateRunErrorStatus(plan.run.ID, err.Error(), types.RunFailed)
+		_ = plan.agent.Close()
+		if removeErr := m.withWorktreeLock(plan.run.RepoID, func() error {
+			return git.WorktreeRemove(context.Background(), plan.gateDir, plan.workDir)
+		}); removeErr != nil {
+			slog.Warn("failed to remove recovered worktree after policy failure", "path", plan.workDir, "error", removeErr)
+		}
+		return
+	}
 	executor := pipeline.NewExecutor(m.db, m.paths, plan.cfg, plan.agent, plan.steps, m.broadcast)
+	executor.SetExecutionPolicy(execution)
 	done := make(chan struct{})
 	m.mu.Lock()
 	m.executors[plan.run.ID] = executor
@@ -336,6 +353,10 @@ func (m *RunManager) resumeRecoveredRun(plan recoveredRunPlan) {
 			}
 			cancel(nil)
 			_ = plan.agent.Close()
+			if err := execution.Sync(); err != nil {
+				slog.Error("failed to synchronize recovered run Git result", "run_id", plan.run.ID, "error", err)
+			}
+			_ = execution.Close()
 			m.closeSubscribers(plan.run.ID)
 			if err := m.withWorktreeLock(plan.run.RepoID, func() error {
 				return git.WorktreeRemove(context.Background(), plan.gateDir, plan.workDir)
@@ -999,7 +1020,16 @@ func (m *RunManager) startRunChecked(ctx context.Context, repo *db.Repo, branch,
 
 	// Create executor with event broadcast.
 	runCtx, cancel := context.WithCancelCause(context.Background())
+	execution, err := newRunExecutionPolicy(wtDir)
+	if err != nil {
+		cancel(nil)
+		_ = ag.Close()
+		m.db.UpdateRunError(run.ID, err.Error())
+		trackStartFailure("execution_policy")
+		return "", err
+	}
 	executor := pipeline.NewExecutor(m.db, m.paths, cfg, ag, execSteps, m.broadcast)
+	executor.SetExecutionPolicy(execution)
 	executor.SetSkippedSteps(skipSteps)
 
 	// Track executor.
@@ -1046,6 +1076,10 @@ func (m *RunManager) startRunChecked(ctx context.Context, repo *db.Repo, branch,
 			}
 			cancel(nil)
 			ag.Close()
+			if err := execution.Sync(); err != nil {
+				slog.Error("failed to synchronize run Git result", "run_id", run.ID, "error", err)
+			}
+			_ = execution.Close()
 			// Close subscriber channels for this run.
 			m.closeSubscribers(run.ID)
 			m.sweepRunWorktreeProcesses(wtDir)

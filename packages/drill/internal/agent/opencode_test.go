@@ -52,8 +52,8 @@ func TestOpencodeAgent_FullFlow(t *testing.T) {
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	var chunks []string
@@ -139,8 +139,8 @@ func TestOpencodeAgent_SessionResume(t *testing.T) {
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	result, err := a.Run(context.Background(), RunOpts{
@@ -194,8 +194,8 @@ func TestOpencodeAgent_SessionFreshKeepsSession(t *testing.T) {
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	result, err := a.Run(context.Background(), RunOpts{
@@ -247,8 +247,8 @@ func TestOpencodeAgent_BackfillsAssistantTextWhenStreamCannotClassifyOrphans(t *
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	var chunks []string
@@ -301,8 +301,8 @@ func TestOpencodeAgent_BackfillsAllAssistantResponseParts(t *testing.T) {
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	var chunks []string
@@ -347,8 +347,8 @@ func TestOpencodeAgent_BackfillsMissingResponseSuffixAfterStreaming(t *testing.T
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	var chunks []string
@@ -397,8 +397,8 @@ func TestOpencodeAgent_BackfillsMissingResponseSuffixAfterToolStep(t *testing.T)
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	var chunks []string
@@ -447,8 +447,8 @@ func TestOpencodeAgent_DoesNotSeparateBackfillWhenToolStepPrecedesFirstText(t *t
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	var chunks []string
@@ -496,8 +496,8 @@ func TestOpencodeAgent_NoSchema(t *testing.T) {
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	result, err := a.Run(context.Background(), RunOpts{
@@ -546,8 +546,8 @@ func TestOpencodeAgent_FinalAnswerPreferred(t *testing.T) {
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	result, err := a.Run(context.Background(), RunOpts{
@@ -603,8 +603,8 @@ func TestOpencodeAgent_StructuredOutputError(t *testing.T) {
 	defer server.Close()
 
 	a := &opencodeAgent{
-		bin:    "opencode",
-		server: &managedServer{port: mustParsePort(server.URL)},
+		bin:     "opencode",
+		servers: serverPoolWith(&managedServer{port: mustParsePort(server.URL)}),
 	}
 
 	result, err := a.Run(context.Background(), RunOpts{

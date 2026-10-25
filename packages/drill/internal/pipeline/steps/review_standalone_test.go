@@ -27,7 +27,7 @@ func TestStandaloneReviewUsesReviewStepEngine(t *testing.T) {
 		}
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
 	}}
-	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil)
+	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil, fixtureExecutionPolicy{dir: dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestStandaloneReviewPreservesRiskFieldsAcrossComplement(t *testing.T) {
 			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 		}
 	}}
-	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil)
+	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil, fixtureExecutionPolicy{dir: dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

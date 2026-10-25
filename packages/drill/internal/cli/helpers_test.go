@@ -73,6 +73,8 @@ func init() {
 }
 
 func TestMain(m *testing.M) {
+	newWizardExecutionPolicy = func(string) (wizardExecutionPolicy, error) { return &noopWizardPolicy{}, nil }
+	newReviewExecutionPolicy = func(string) (reviewExecutionPolicy, error) { return &noopWizardPolicy{}, nil }
 	base := os.TempDir()
 	if runtime.GOOS != "windows" {
 		base = "/tmp"
