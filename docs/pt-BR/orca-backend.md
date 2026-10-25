@@ -61,7 +61,7 @@ Quando a entrega nativa do Pi está indisponível, um steer enviado enquanto tal
 Esse veredito fica genuinamente não confirmado nos dois casos: dê peek no terminal antes de agir sobre ele, e nunca reenvie às cegas, porque o mesmo `unknown` também cobre texto estacionado no prompt de shell puro de um operador que já saiu.
 A sentinela não tem sinal nativo de ocupado/ocioso do Orca, então o ciclo de vida semântico de cada adaptador de harness fornece o estado do worker; um operador ocioso ou desconhecido sem nenhuma execução ativa é exposto pelo caminho existente da sentinela em vez de ser tratado como conclusão de tarefa.
 Prompts bloqueados usam a observação `agentWait` do terminal exato do Orca através da política compartilhada de transição normalizada, com deduplicação de prompt alterado e o caminho existente de resposta `sq-send` no alvo exato.
-Quando aquela observação está ausente ou ilegível, o Orca é tratado como desconhecido e a supervisão de fallback existente roda; ele nunca é adivinhado clear nem reexecutado como uma resposta nativa.
+Quando aquela observação está ausente ou ilegível, o Orca nunca é lido como clear: um terminal sem escalada cai na supervisão existente, enquanto um já escalado mantém seus marcadores e é deliberadamente mantido fora da supervisão ordinária até que uma leitura legível prove que a espera acabou. Ele nunca é adivinhado clear nem reexecutado como uma resposta nativa.
 Apenas o Grok mantém seu fallback isolado de cauda renderizada.
 
 A limpeza mantém todas as checagens compartilhadas de segurança do Squad.

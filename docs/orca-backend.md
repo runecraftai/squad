@@ -60,7 +60,7 @@ When native Pi delivery is unavailable, a steer sent while such an operator is m
 That verdict stays genuinely unconfirmed either way: peek the terminal before acting on it, and never resend blindly, because the same `unknown` also covers text parked at an exited operator's bare shell prompt.
 The sentry has no native Orca busy/idle signal, so each harness adapter's semantic lifecycle supplies worker state; an idle or unknown operator with no active run is surfaced by the existing sentry path rather than treated as task completion.
 Blocked prompts use Orca's exact-terminal `agentWait` observation through the shared normalized transition policy, with changed-prompt deduplication and the existing exact-target `sq-send` answer path.
-When that observation is absent or unreadable, Orca is treated as unknown and the existing fallback supervision runs; it is never guessed clear or replayed as a native answer.
+When that observation is absent or unreadable, Orca is never read as clear: an un-escalated terminal falls back to the existing supervision, while an already-escalated one keeps its markers and is deliberately held out of ordinary supervision until a readable read proves the wait gone. The wait is never guessed clear or replayed as a native answer.
 Grok alone retains its isolated rendered-tail fallback.
 
 Cleanup keeps all shared Squad safety checks.
