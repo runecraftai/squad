@@ -15,6 +15,7 @@ import (
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/executionpolicy"
 	"github.com/runecraftai/squad/packages/drill/internal/git"
+	"github.com/runecraftai/squad/packages/drill/internal/types"
 )
 
 var reviewLensInstructions = []struct{ name, prompt string }{
@@ -228,13 +229,15 @@ func normalizeConsolidatedFindings(findings Findings) Findings {
 	return findings
 }
 
+const unknownRiskRationale = "risk assessment unavailable because risk_scope was omitted"
+
 func markUnknownReviewRisk(findings Findings) Findings {
 	if findings.RiskScope != "" {
 		return findings
 	}
-	findings.RiskLevel = "unknown"
-	findings.RiskRationale = "risk assessment unavailable because risk_scope was omitted"
-	findings.RiskScope = "unknown"
+	findings.RiskLevel = types.FindingsRiskLevelUnknown
+	findings.RiskRationale = unknownRiskRationale
+	findings.RiskScope = types.FindingsRiskScopeUnknown
 	return findings
 }
 

@@ -28,7 +28,10 @@ const (
 const (
 	FindingsRiskScopeSourceOrExternal      = "source-or-external"
 	FindingsRiskScopePipelineOwnedDelivery = "pipeline-owned-delivery"
+	FindingsRiskScopeUnknown               = "unknown"
 )
+
+const FindingsRiskLevelUnknown = "unknown"
 
 // Finding category constants for the combined document+lint housekeeping
 // pass. An empty Category on a housekeeping finding is treated as

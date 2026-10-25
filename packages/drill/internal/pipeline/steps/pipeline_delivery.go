@@ -44,7 +44,7 @@ func stripDeferredPipelineOwnedDeliveryFindings(findings Findings) (Findings, in
 		out.RiskLevel = "low"
 		out.RiskRationale = "no delivery-independent review risk was reported"
 		out.RiskScope = types.FindingsRiskScopeSourceOrExternal
-	case types.FindingsRiskScopeSourceOrExternal:
+	case types.FindingsRiskScopeSourceOrExternal, types.FindingsRiskScopeUnknown:
 	default:
 		out.RiskRationale = "review risk retained after deferred delivery filtering"
 	}
