@@ -843,7 +843,6 @@ escalate_flush() {  # <state>
   if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
     if fm_supervisor_native_retire "$state" "${SQUAD_SUPERVISOR_TARGET:-}"; then
       log 'Orca native consumed acknowledgement retired its buffered escalation prefix'
-      if ! [ -s "$buf" ]; then rm -f "$state/.subsuper-inject-wedged"; return 0; fi
     elif [ -e "$(fm_supervisor_native_dir "$state" "${SQUAD_SUPERVISOR_TARGET:-}")/request.json" ]; then
       log "Orca native buffer retirement refused (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-unknown reason}); preserving the request and buffer"
     fi

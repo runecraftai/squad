@@ -255,6 +255,18 @@ try {
   assert.equal(readFileSync(`${state}/.subsuper-escalations`,'utf8'),'');
   check('a consumed acknowledgement clears the stale wedge marker with the retired prefix');
   r=cli('stop');assert.equal(r.status,0,r.stderr);
+  // The launcher's own confirmed retire (dead/absent daemon) is the same shared
+  // boundary, so a confirmed delivery must not leave undelivered evidence.
+  r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  writeFileSync(`${state}/.subsuper-inject-wedged`,'fm away-mode inject WEDGED: 4555s undelivered\n');
+  f=flush('signal: wedged while the daemon is dead');assert.notEqual(f.status,0);await tick();
+  assert.ok(existsSync(`${dir}/request.json`));assert.equal(JSON.parse(readFileSync(`${dir}/result.json`)).status,'handled');
+  assert.ok(existsSync(`${state}/.subsuper-inject-wedged`));
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
+  assert.equal(existsSync(`${dir}/request.json`),false);
+  assert.equal(existsSync(`${state}/.subsuper-inject-wedged`),false);
+  assert.equal(readFileSync(`${state}/.subsuper-escalations`,'utf8'),'');
+  check('a confirmed launcher retire clears the wedge marker left after the daemon died');
   // Without a terminal record the pending invariant can only be checked against
   // an exact primary handle; an unknown primary must refuse rather than report
   // a complete stop while the real request stays unresolved.

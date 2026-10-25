@@ -178,7 +178,7 @@ fm_supervisor_native_retire() {  # <state> <target>
   # On a crash before unlink, a mismatched prefix remains blocked, never replayed.
   rm -f "$dir/request.json" \
     || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='buffer retired but request.json could not be removed'; return 1; }
-  [ -s "$buf" ] || rm -f "$buf.since"
+  [ -s "$buf" ] || rm -f "$buf.since" "$state/.subsuper-inject-wedged"
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
