@@ -292,6 +292,11 @@ func branchOwnershipBlock(state branchsync.State) *branchsync.State {
 		return &state
 	case branchsync.StatePushInProgress:
 		return &state
+	case branchsync.StateMergedRemoteRetained, branchsync.StateMergedRemoteRemoved, branchsync.StateClosed:
+		if state.Error == "" {
+			state.Error = branchsync.RetiredBranchError(state.PRState)
+		}
+		return &state
 	default:
 		return nil
 	}

@@ -1557,11 +1557,27 @@ func retiredRunState(run *db.Run) (string, string, bool) {
 }
 
 func retiredRefusal(state State, run *db.Run) (State, bool) {
-	retiredState, _, retired := retiredRunState(run)
+	retiredState, _, refusal, retired := RetiredBranch(run)
 	if !retired {
 		return State{}, false
 	}
-	return blockedPlan(state, retiredState, "blocked_recover_retired", "the branch is retired: its pull request was "+normalizePRState(run.PRState)+"; no files or refs were changed and no fresh run was started"), true
+	return blockedPlan(state, retiredState, "blocked_recover_retired", refusal+"; no files or refs were changed"), true
+}
+
+// RetiredBranch reports the retired classification and named refusal for a run
+// whose pull request was merged or closed. Retirement is permanent: it
+// outranks every release and every fresh-start admission path.
+func RetiredBranch(run *db.Run) (state, safety, refusal string, retired bool) {
+	state, safety, retired = retiredRunState(run)
+	if !retired {
+		return "", "", "", false
+	}
+	return state, safety, RetiredBranchError(ptr(run.PRState)), true
+}
+
+// RetiredBranchError builds the named refusal shared by every fresh-start path.
+func RetiredBranchError(prState string) string {
+	return "the branch is retired: its pull request was " + normalizePRState(&prState) + "; no fresh run was started"
 }
 
 func normalizePRState(state *string) string {
