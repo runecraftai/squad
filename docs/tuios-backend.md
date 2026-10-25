@@ -120,7 +120,7 @@ The flow when a dialog blocks an operator:
    Send it with `bin/sq-send.sh <id> --respond <action> <prompt-id> [value]`.
    It re-reads the current prompt, requires the same `prompt_id`, verifies the action and selected option, then lets TUIOS enforce the answering pane's `respond` authority and atomically refuse a changed prompt.
    `approve_always` and risk-matched approvals are not inferred or automated; a TUIOS risk refusal confirms that nothing was answered.
-   The command invokes `respond` once; if its result is uncertain, inspect `peek-prompt` before any retry.
+   The command invokes `respond` once; if its result is uncertain, inspect `peek-prompt` before any retry. A confirmed answer whose window closed as it was typed is reported as a closed window, never as an uncertain outcome.
    The older `bin/sq-send.sh <id> --key <key>` path remains available for key-only prompts, but it does not bind the answer to a prompt id.
    Free text through ordinary `sq-send` remains refused while blocked because that would answer without the prompt-specific permission and identity checks.
 5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.

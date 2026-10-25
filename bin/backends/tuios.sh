@@ -468,7 +468,8 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
     }
   fi
   local -a args=(respond --json --session "$session" --window "$window" --prompt-id "$prompt_id" "$action")
-  [ -z "$value" ] || args+=("$value")
+  # A free-text answer may begin with `-`, which the CLI would parse as a flag.
+  [ -z "$value" ] || args+=(-- "$value")
   out=$("$(fm_backend_tuios_bin)" "${args[@]}" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" >&2
@@ -496,6 +497,11 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   if [ "$settled" = prompt ]; then
     printf '%s\n' "$out"
     echo 'error: the exact prompt was answered, but another prompt appeared; inspect it instead of retrying' >&2
+    return 1
+  fi
+  if [ "$settled" = gone ]; then
+    printf '%s\n' "$out"
+    echo 'error: the exact prompt was answered, but the operator window closed as it was typed; do not retry; inspect the task instead' >&2
     return 1
   fi
   [ "$settled" = state ] || {
@@ -1085,7 +1091,9 @@ fm_backend_tuios_wait_transition() {  # <session> <timeout> <state_dir> <window.
   local session=$1 timeout=$2 state=$3; shift 3
   local windows=("$@") w bin reader=() fifo_dir fifo reader_pid line event_window record hit rc=1 reader_rc=0
   [ "${#windows[@]}" -gt 0 ] || return 2
-  fm_backend_tuios_events_capable "$session" || return 2
+  if [ "${SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED:-0}" != 1 ]; then
+    fm_backend_tuios_events_capable "$session" || return 2
+  fi
   bin=$(fm_backend_tuios_bin)
   reader=(python3 "$SQUAD_BACKEND_TUIOS_ROOT/bin/backends/tuios-eventwait.py" "$bin" "$session" "$timeout")
   for w in "${windows[@]}"; do reader+=("${w#*:}"); done
