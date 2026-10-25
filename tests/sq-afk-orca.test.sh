@@ -10,6 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 const root = process.env.ROOT;
 const home = mkdtempSync(resolve(tmpdir(), 'sq-afk-orca-'));
@@ -87,6 +88,20 @@ try {
   check('native directory confinement refuses a symlink before creating or writing through it');
   await emit('session_start',{},context); await tick();
   const dir=nativeDir(); assert.ok(existsSync(`${dir}/ready.json`));
+  // The 1s heartbeat write must not invoke the blocking Orca CLI probe.
+  const statusProbes=()=>calls().filter(a=>a[0]==='status').length;
+  const probesBefore=statusProbes();await tick();await tick();await tick();assert.equal(statusProbes(),probesBefore);
+  check('the native heartbeat tick publishes readiness without spawning Orca probes');
+  // A symlinked SQUAD_BASE passes the launcher's `pwd -P` worktree gate, so the
+  // receiver must resolve the same physical path instead of dropping readiness.
+  await emit('session_shutdown');assert.equal(existsSync(`${dir}/ready.json`),false);
+  const link=`${home}-link`;symlinkSync(home,link);process.env.SQUAD_BASE=link;
+  await emit('session_start',{},context);await tick();
+  const readyViaLink=script(`. '${root}/bin/sq-supervisor-native.sh'; fm_supervisor_native_ready '${state}' term-primary`);
+  assert.equal(readyViaLink.status,0,readyViaLink.stderr);
+  process.env.SQUAD_BASE=home;unlinkSync(link);
+  await emit('session_shutdown');await emit('session_start',{},context);await tick();
+  check('a symlinked SQUAD_BASE still binds the physical worktree and publishes readiness');
   // A primary without its ownership lock is never a usable receiver.
   writeFileSync(`${state}/.lock`,'1');r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/not the primary/);writeFileSync(`${state}/.lock`,String(process.pid));
   r=cli('start');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,3);assert.equal(count('create'),1);
@@ -155,6 +170,29 @@ try {
   check('a same-handle primary rebind refuses naming recorded and current identities, not a primary switch');
   r=cli('stop');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);delete model.executeCommand;delete model.spawnedPid;save();
   check('public helpers start and stop the real daemon process inside a fake Orca terminal without inherited Pi environment');
+  // A delivered-but-not-yet-retired request must not strand stop when the live
+  // daemon still owns buffer retirement: its SIGTERM flush retires it.
+  await tick();r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  const consumedRecord=JSON.parse(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t').slice(2).join('\t'));
+  idle=true;draft='';consume=true;await tick();
+  f=flush('signal: consumed before the next batch retire');assert.notEqual(f.status,0);await tick();
+  assert.ok(existsSync(`${dir}/request.json`));assert.equal(JSON.parse(readFileSync(`${dir}/result.json`)).status,'handled');
+  const closesBefore=count('close');
+  // A wrapper shell keeps and reaps the exact daemon pid, so stop observes its
+  // death even while this test process is blocked inside spawnSync.
+  const fakeDaemon=spawn('bash',['-c','sleep 60 & echo $!; wait'],{stdio:['ignore','pipe','ignore']});tracked.push(fakeDaemon);
+  const fakeDaemonPid=Number((await once(fakeDaemon.stdout,'data'))[0].toString().trim());assert.ok(fakeDaemonPid>1);
+  const liveLock=`${state}/.supervise-daemon.lock`;mkdirSync(liveLock);
+  writeFileSync(`${liveLock}/pid`,String(fakeDaemonPid));
+  const daemonIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${fakeDaemonPid}'`);assert.equal(daemonIdentity.status,0);
+  writeFileSync(`${liveLock}/pid-identity`,daemonIdentity.stdout.trim());
+  writeFileSync(`${liveLock}/orca-owner`,consumedRecord.title);
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
+  let daemonAlive=false;try{process.kill(fakeDaemonPid,0);daemonAlive=true;}catch{daemonAlive=false;}assert.equal(daemonAlive,false);
+  assert.equal(existsSync(`${dir}/request.json`),false);assert.equal(existsSync(`${state}/.afk`),false);assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);
+  assert.equal(count('close'),closesBefore+1);reload();assert.equal(model.terms.length,2);
+  rmSync(liveLock,{recursive:true});tracked=tracked.filter(child=>child!==fakeDaemon);
+  check('stop retires an already-consumed request through the live daemon shutdown flush');
   await tick();model.lostCreate=true;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
   reload();model.unreadable=false;save();r=cli('reconcile');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
   check('lost create response persists intent, refuses duplicate create, and recovers exact title/identity only');

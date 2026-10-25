@@ -1,7 +1,7 @@
 // Pi receiver for the backend-neutral native away protocol.
 // Terminal bytes are never a message transport. Uncertain sends never replay.
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,9 @@ type Receiver = { pid: number; identity: string; session: string };
 type Request = { version: number; id: string; provider: string; endpoint: Endpoint; receiver: Receiver; message: string };
 const helper = resolve(dirname(fileURLToPath(import.meta.url)), "../../../bin/sq-supervisor-native.sh");
 const marker = "[SQUAD_NATIVE_AWAY:";
+const bind_timeout_ms = 5000;
+const revalidate_ms = 30000;
+const revalidate_timeout_ms = 2000;
 
 function read<T>(path: string): T | null {
   try {
@@ -36,9 +39,12 @@ function identity(): string | null {
     return ps.status === 0 ? ps.stdout.trim() || null : null;
   }
 }
-function command(...args: string[]): string | null {
-  const r = spawnSync("bash", [helper, ...args], { encoding: "utf8", timeout: 5000 });
+function command(timeout: number, ...args: string[]): string | null {
+  const r = spawnSync("bash", [helper, ...args], { encoding: "utf8", timeout });
   return r.status === 0 ? r.stdout.trim() || null : null;
+}
+function physical(path: string): string {
+  try { return realpathSync(path); } catch { return ""; }
 }
 function same(a: unknown, b: unknown): boolean { return JSON.stringify(a) === JSON.stringify(b); }
 
@@ -48,7 +54,7 @@ export function installNativeAway(pi: ExtensionAPI): void {
   let endpoint: Endpoint | null = null;
   let receiver: Receiver | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
-  let prompts = 0, sending = false;
+  let prompts = 0, sending = false, bound_ok = false, next_check = 0;
   // Capture the generation across await: a session replacement cannot write an
   // acknowledgement or queued verdict into a different receiver incarnation.
   let generation = 0;
@@ -70,8 +76,8 @@ export function installNativeAway(pi: ExtensionAPI): void {
       return true;
     } catch { return false; }
   };
-  const bound = (): boolean => {
-    const raw = endpoint && command("endpoint", endpoint.backend, endpoint.target);
+  const bound = (timeout: number): boolean => {
+    const raw = endpoint && command(timeout, "endpoint", endpoint.backend, endpoint.target);
     if (!raw) return false;
     try { return same(JSON.parse(raw), endpoint); } catch { return false; }
   };
@@ -80,9 +86,19 @@ export function installNativeAway(pi: ExtensionAPI): void {
   const pump = async (): Promise<void> => {
     try {
       if (!ctx || !endpoint || !receiver || !owner()) return;
-      if (!safeDir(true) || !bound()) return;
+      if (!safeDir(true)) return;
+      // Revalidation is the only part of the heartbeat that spawns processes.
+      // It runs on a slow cadence with a short timeout, and a failed probe keeps
+      // readiness unpublished until the next attempt, so a wedged Orca CLI can
+      // never stall the interactive event loop on every tick.
+      const now = Date.now();
+      if (now >= next_check) {
+        next_check = now + revalidate_ms;
+        bound_ok = bound(revalidate_timeout_ms);
+      }
+      if (!bound_ok) return;
       // Read actual native editor/modal state, not old terminal output.
-      atomic(`${dir}/ready.json`, { version: 1, provider: "pi", endpoint, ...receiver, idle: ctx.isIdle(), draft: !!ctx.ui.getEditorText().trim(), prompts, sending, heartbeat: Date.now() });
+      atomic(`${dir}/ready.json`, { version: 1, provider: "pi", endpoint, ...receiver, idle: ctx.isIdle(), draft: !!ctx.ui.getEditorText().trim(), prompts, sending, heartbeat: now });
       if (sending || !existsSync(`${state}/.afk`) || !ctx.isIdle() || ctx.ui.getEditorText().trim() || prompts > 0) return;
       const request = read<Request>(`${dir}/request.json`);
       if (!matches(request)) return;
@@ -109,7 +125,7 @@ export function installNativeAway(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, context) => {
     generation += 1;
     if (timer) clearInterval(timer);
-    timer = null; ctx = null; endpoint = null; receiver = null; dir = ""; prompts = 0; sending = false;
+    timer = null; ctx = null; endpoint = null; receiver = null; dir = ""; prompts = 0; sending = false; bound_ok = false; next_check = 0;
     // Deliberate selection only. The exact handle is supplied by the primary
     // launch, never inferred from an active tab or the daemon's own terminal.
     if (process.env.SQUAD_SUPERVISOR_BACKEND !== "orca" || !process.env.SQUAD_SUPERVISOR_TARGET || process.env.SQUAD_PI_HARNESS === "pi-signed") return;
@@ -117,16 +133,22 @@ export function installNativeAway(pi: ExtensionAPI): void {
     const home = process.env.SQUAD_BASE || process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE;
     if (!home) return;
     state = resolve(home, process.env.SQUAD_STATE_OVERRIDE || "state");
-    const raw = command("endpoint", "orca", process.env.SQUAD_SUPERVISOR_TARGET);
-    const path = command("dir", state, process.env.SQUAD_SUPERVISOR_TARGET);
+    const raw = command(bind_timeout_ms, "endpoint", "orca", process.env.SQUAD_SUPERVISOR_TARGET);
+    const path = command(bind_timeout_ms, "dir", state, process.env.SQUAD_SUPERVISOR_TARGET);
     const id = identity();
     if (!raw || !path || !id) return;
     try {
       endpoint = JSON.parse(raw) as Endpoint;
-      if (resolve(endpoint.path) !== resolve(home)) { endpoint = null; return; }
+      // The launcher compares the same worktree against `pwd -P`, so the
+      // receiver must use the physical path too or a symlinked SQUAD_BASE
+      // would pass one gate and fail the other.
+      const bound_path = physical(endpoint.path), home_path = physical(home);
+      if (!bound_path || bound_path !== home_path) { endpoint = null; return; }
     } catch { return; }
     dir = path;
     receiver = { pid: process.pid, identity: id, session: randomBytes(32).toString("hex") };
+    bound_ok = true;
+    next_check = Date.now() + revalidate_ms;
     ctx = context;
     void pump();
     timer = setInterval(() => void pump(), 1000);

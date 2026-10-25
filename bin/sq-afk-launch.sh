@@ -455,7 +455,7 @@ fm_afk_launch_reconcile() {
       primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
       fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
       if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-        fm_afk_launch_log 'Orca escalation is unresolved; preserving lifecycle during reconciliation'
+        fm_afk_launch_log "Orca escalation is unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); preserving lifecycle during reconciliation"
         return 1
       fi
     fi
@@ -466,7 +466,7 @@ fm_afk_launch_reconcile() {
   elif [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
     fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" || true
     if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}"; then
-      fm_afk_launch_log 'Orca native request remains unresolved even without a terminal record; preserving it'
+      fm_afk_launch_log "Orca native request remains unresolved even without a terminal record (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); preserving it"
       return 1
     fi
   fi
@@ -735,7 +735,7 @@ fm_afk_launch_stop() {
     fi
     fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" || true
     if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}"; then
-      fm_afk_launch_log 'Orca native request remains unresolved; stop is not complete'
+      fm_afk_launch_log "Orca native request remains unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); stop is not complete"
       return 1
     fi
   fi
@@ -758,14 +758,15 @@ fm_afk_launch_stop() {
     fi
     local primary
     primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
-    # The live daemon alone retires its buffer. Once dead, this serialized
-    # launcher can finish retirement without racing a shutdown flush.
+    # A live daemon alone retires its buffer during the SIGTERM flush, and the
+    # post-exit gate below re-checks the result. A consumed-but-not-yet-retired
+    # request is delivered, not unresolved, so it must not block that shutdown.
     if ! daemon_lock_held_by_live_daemon; then
       fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
-    fi
-    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-      fm_afk_launch_log 'Orca native request or buffer retirement remains unresolved; stop is not complete, preserving lifecycle for inspection'
-      return 1
+      if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+        fm_afk_launch_log "Orca native request or buffer retirement remains unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); stop is not complete, preserving lifecycle for inspection"
+        return 1
+      fi
     fi
   fi
   # (1) SIGTERM the daemon so its cleanup trap flushes buffered escalations
@@ -812,7 +813,7 @@ fm_afk_launch_stop() {
   if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
     fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
     if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-      fm_afk_launch_log 'Orca shutdown delivery or buffer retirement is unresolved; stop is not complete, preserving lifecycle for retry'
+      fm_afk_launch_log "Orca shutdown delivery or buffer retirement is unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); stop is not complete, preserving lifecycle for retry"
       return 1
     fi
   fi

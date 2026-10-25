@@ -631,20 +631,34 @@ mark_escalated_seen() {  # <kind> <arg> <state>
 # Resolved lazily and memoized: harness detection walks process ancestry, which
 # is too heavy to pay on every source of this library (the unit tests and the
 # launcher source it purely for its pure functions).
-fm_daemon_supervisor_target_ready() {  # <state> <backend> <target>
-  if [ "$2" = orca ]; then
-    fm_supervisor_native_ready "$1" "$3" >/dev/null
-  else
-    fm_backend_target_exists "$2" "$3"
-  fi
-}
-
 fm_daemon_primary_harness() {
   if [ -z "${SQUAD_DAEMON_PRIMARY_HARNESS:-}" ]; then
     SQUAD_DAEMON_PRIMARY_HARNESS=$("$SQUAD_DAEMON_DIR/sq-harness.sh" 2>/dev/null || printf 'unknown')
     [ -n "$SQUAD_DAEMON_PRIMARY_HARNESS" ] || SQUAD_DAEMON_PRIMARY_HARNESS=unknown
   fi
   printf '%s' "$SQUAD_DAEMON_PRIMARY_HARNESS"
+}
+
+# Native Orca readiness spawns several CLI processes and reads several durable
+# records. The daemon loop asks every second, so the verdict is memoized for a
+# short window instead of paying that cost on each iteration. A stale verdict is
+# harmless: the delivery path itself still refuses when the probe fails.
+fm_daemon_supervisor_target_ready() {  # <state> <backend> <target>
+  if [ "$2" = orca ]; then
+    local scope="$1/$3"
+    if [ "${FM_DAEMON_ORCA_PROBE_SCOPE:-}" = "$scope" ] \
+      && [ -n "${FM_DAEMON_ORCA_PROBE_AT:-}" ] \
+      && [ $(( SECONDS - FM_DAEMON_ORCA_PROBE_AT )) -lt 10 ]; then
+      return "${FM_DAEMON_ORCA_PROBE_RC:-1}"
+    fi
+    fm_supervisor_native_ready "$1" "$3" >/dev/null
+    local rc=$?
+    FM_DAEMON_ORCA_PROBE_SCOPE="$scope"
+    FM_DAEMON_ORCA_PROBE_AT=$SECONDS
+    FM_DAEMON_ORCA_PROBE_RC=$rc
+    return "$rc"
+  fi
+  fm_backend_target_exists "$2" "$3"
 }
 
 pane_is_busy() {  # <target> [backend]
@@ -827,7 +841,11 @@ escalate_flush() {  # <state>
   # the digest, so an acknowledged escalation is never sent a second time.
   fm_pi_handoff_retire "$state" || true
   if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
-    fm_supervisor_native_retire "$state" "${SQUAD_SUPERVISOR_TARGET:-}" || true
+    if fm_supervisor_native_retire "$state" "${SQUAD_SUPERVISOR_TARGET:-}"; then
+      log 'Orca native consumed acknowledgement retired its buffered escalation prefix'
+    elif [ -e "$(fm_supervisor_native_dir "$state" "${SQUAD_SUPERVISOR_TARGET:-}")/request.json" ]; then
+      log "Orca native buffer retirement refused (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-unknown reason}); preserving the request and buffer"
+    fi
   fi
   [ -s "$buf" ] || return 0
   n=$(wc -l < "$buf" 2>/dev/null || echo 0)
