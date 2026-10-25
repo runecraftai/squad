@@ -68,7 +68,7 @@ The adapter reads the daemon's own agent report and keeps its provenance instead
 
 ### Waking Squad on a blocked pane
 
-TUIOS has no event subscription to wait on (see "Limits and verification" below), so it produces Squad's backend-neutral normalized transition record (`bin/sq-transition-lib.sh`) on the sentry's ordinary per-window poll instead of through an event stream: `fm_backend_tuios_poll_transition` in `bin/backends/tuios.sh` is the level-reconcile producer, and `docs/architecture.md`'s "Capability matrix: the person-needed escalation" owns how this fits alongside Herdr's push path and the backends that cannot report the condition at all.
+TUIOS has no event subscription to wait on (see "Limits and verification" below), so it produces Squad's backend-neutral normalized transition record (`bin/sq-transition-lib.sh`) on the sentry's ordinary per-window poll instead of through an event stream: `fm_backend_tuios_poll_transition` in `bin/backends/tuios.sh` is the level-reconcile producer, and `docs/architecture.md`'s "Capability matrix: the person-needed escalation" owns how this fits alongside Herdr's push path, Orca's poll path, and the backends that cannot report the condition at all.
 
 On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any, instead of leaving the pane unanswered until a manual inspection.
 Latency is bounded by the supervision poll interval (`SQUAD_POLL`), since no event subscription is used.

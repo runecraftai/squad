@@ -3,7 +3,7 @@
 #
 # This library owns TWO contracts, deliberately backend-independent so every
 # session backend that can report agent state - a push-capable stream (herdr)
-# or a level-reconcile poll producer (TUIOS) - reuses them instead of
+# or a level-reconcile poll producer (TUIOS, Orca) - reuses them instead of
 # re-deriving a private, per-status escalation hack:
 #
 #   1. The NORMALIZED TRANSITION RECORD - the ONE shape every backend's push
@@ -12,11 +12,14 @@
 #          <pane_id>\t<workspace_id>\t<from_status>\t<to_status>\t<agent>
 #      Only `to_status` is authoritative for the policy below; the other fields
 #      are identity/telemetry and MAY be empty when a backend cannot supply
-#      them. `from_status` in particular is empty for backends whose event
-#      carries only the new status (herdr's `pane.agent_status_changed` does
-#      not report the previous status, and its stream is edge-triggered, so
-#      each `to_status` IS itself a fresh edge); it exists in the shape for
-#      backends that DO report the prior state and for future edge diagnostics.
+#      them. `pane_id` is whatever target the producer's own backend supervises,
+#      so bin/sq-backend.sh's fm_backend_transition_window owns mapping it back
+#      to a supervised window name. `from_status` in particular is empty for
+#      backends whose event carries only the new status (herdr's
+#      `pane.agent_status_changed` does not report the previous status, and its
+#      stream is edge-triggered, so each `to_status` IS itself a fresh edge); it
+#      exists in the shape for backends that DO report the prior state and for
+#      future edge diagnostics.
 #      Statuses use the shared agent-state vocabulary
 #      (idle|working|blocked|done|unknown), the same enum herdr's `agent get`
 #      and `pane.agent_status_changed` report.
@@ -29,10 +32,11 @@
 #
 # The split is what keeps the escalation general rather than a herdr blocked
 # hack: a backend contributes only a normalizer plus either a push stream
-# reader (herdr) or a level-reconcile poll read (TUIOS); the shape and the
-# policy are shared. See bin/backends/herdr.sh
-# (fm_backend_herdr_wait_transition) and bin/backends/tuios.sh
-# (fm_backend_tuios_poll_transition) for the two producers, and
+# reader (herdr) or a level-reconcile poll read (TUIOS, Orca); the shape and
+# the policy are shared. See bin/backends/herdr.sh
+# (fm_backend_herdr_wait_transition), bin/backends/tuios.sh
+# (fm_backend_tuios_poll_transition), and bin/backends/orca.sh
+# (fm_backend_orca_poll_transition) for the producers, and
 # bin/sq-push-transition-lib.sh (handle_push_transition) for the shared
 # consumer.
 
