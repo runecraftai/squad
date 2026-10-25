@@ -1212,6 +1212,19 @@ unset SQUAD_TUIOS_FAKE_EVENT SQUAD_TUIOS_FAKE_AGENTS_SEQ SQUAD_TUIOS_FAKE_AGENTS
 [ "$(cat "$EVENT_AGENTS_COUNT")" -ge 2 ] \
   || fail 'the event line must trigger its own authoritative re-read, not rely on the baseline reconcile'
 
+# The sentry memoizes capability and exports the hint around this exact call, so
+# the adapter must not spend a second catalogue round-trip on the same schema.
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"needs_input","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+probe_before=$(grep -c '^list-verbs --json' "$SQUAD_TUIOS_LOG" || true)
+OUT=$(SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED=1 fm_backend_tuios_wait_transition owned 2 "$TRANSITION_STATE" "$TWINDOW"); RC=$?
+probe_after=$(grep -c '^list-verbs --json' "$SQUAD_TUIOS_LOG" || true)
+unset SQUAD_TUIOS_FAKE_AGENTS
+[ "$RC" -eq 0 ] || fail "a confirmed-capability wait must still reconcile the blocked pane (rc=$RC, out=$OUT)"
+[ "$probe_after" -eq "$probe_before" ] \
+  || fail 'a sentry-confirmed capability hint must skip the repeated catalogue read'
+pass 'TUIOS backend: the sentry-confirmed capability hint skips the repeated catalogue read'
+
 # The reader is a bounded wait, not a one-shot: it keeps the stream open for the
 # whole budget so a non-actionable event cannot remove the poll-interval floor.
 tuios_bin=$(command -v tuios)
@@ -1289,8 +1302,12 @@ fi
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$respond_count" ] \
   || fail 'an invalid option or persistent approval must not invoke TUIOS respond'
 OUT=$(fm_backend_tuios_respond owned:w-opaque_7 choose p1 5) || fail 'a displayed option number should be accepted'
-assert_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 choose 5' \
+assert_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 choose -- 5' \
   'a choice must preserve the exact displayed option number and prompt id'
+OUT=$(fm_backend_tuios_respond owned:w-opaque_7 text p1 '-not-a-flag') \
+  || fail 'a free-text answer that begins with a dash must still be answerable'
+assert_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 text -- -not-a-flag' \
+  'a caller-supplied answer must be passed after -- so it is never parsed as a flag'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 SQUAD_TUIOS_FAKE_RESPOND_FAIL=1
 export SQUAD_TUIOS_FAKE_RESPOND_FAIL
@@ -1352,6 +1369,32 @@ unset SQUAD_TUIOS_FAKE_RESPOND_PROSE SQUAD_BACKEND_PANE_GRANT_TARGET
   || fail 'a prose caller refusal must invoke the provider exactly once'
 unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
 pass 'TUIOS backend: prompt id, displayed option numbers, safety refusals, and uncertain outcomes are explicit'
+
+# The answer's own settled outcome is not always the pane leaving the prompt: a
+# closed window is a confident end state, and only a timeout stays uncertain.
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+err="$TMP_ROOT/respond-gone.err"
+SQUAD_TUIOS_FAKE_SETTLED=gone
+export SQUAD_TUIOS_FAKE_SETTLED
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-gone.out" 2>"$err"; then
+  fail 'a closed window after the answer must not be reported as a settled prompt'
+fi
+assert_contains "$(cat "$err")" 'window closed' 'a closed operator window must be named as its own settled outcome'
+assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a closed window must not be misreported as uncertain'
+assert_contains "$(cat "$TMP_ROOT/respond-gone.out")" '"settled_by":"gone"' 'the confirmed answer must still be reported'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a closed window must invoke respond exactly once and must not be retried'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+SQUAD_TUIOS_FAKE_SETTLED=timeout
+export SQUAD_TUIOS_FAKE_SETTLED
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+  fail 'a timed-out wait must not be reported as a settled prompt'
+fi
+assert_contains "$(cat "$err")" 'outcome may be uncertain' 'a timed-out wait must keep the uncertain wording'
+unset SQUAD_TUIOS_FAKE_SETTLED
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a timed-out wait must invoke respond exactly once and must not be retried'
+pass 'TUIOS backend: a settled answer distinguishes the cleared prompt, a new prompt, a closed window, and a timeout'
 
 # Exercise the public send command from task metadata, not just the sourced
 # adapter: selectors must be tied to the recorded TUIOS session and window.
