@@ -259,6 +259,10 @@ func setupTestGitRepo(t *testing.T, p *paths.Paths, d *db.DB, repoID string) (*d
 		t.Fatal(err)
 	}
 	gitCmd(t, workDir, "init")
+	// Pin the local branch name: the gate below is seeded as refs/heads/main
+	// and tests resolve that same branch, but git's default branch name comes
+	// from init.defaultBranch and varies by environment.
+	gitCmd(t, workDir, "symbolic-ref", "HEAD", "refs/heads/main")
 	gitCmd(t, workDir, "config", "user.email", "test@test.com")
 	gitCmd(t, workDir, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(workDir, "test.txt"), []byte("hello"), 0o644); err != nil {
