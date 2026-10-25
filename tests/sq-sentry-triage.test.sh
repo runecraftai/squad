@@ -3593,12 +3593,167 @@ SH
   pass "a fresh pause with an unreadable status mtime is aged from now, not epoch 0"
 }
 
+# Away mode must not absorb the pause-era escalations. The sentry hands the named
+# evidence to the daemon as a routine stale reason (the daemon persists/escalates
+# it), and one dirty episode hands off exactly once even when the footer churns.
+test_away_dirty_work_hands_off_evidence_once() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case away-dirty-handoff
+  printf 'unfinished\n' > "$wt/untracked"
+  date '+%s' > "$state/.afk"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "away idle dirty work never handed off: $(cat "$out")"; }
+  grep -F "routine: stale: $window (operator idle with uncommitted work" "$out" >/dev/null \
+    || fail "away dirty handoff was not a daemon-classifiable routine stale naming the dirt: $(cat "$out")"
+  [ "$(grep -c 'operator idle with uncommitted work' "$state/.stand-to-queue")" = 1 ] \
+    || fail "away dirty handoff was not queued exactly once"
+  [ "$(cat "$state/.dirty-since-$key")" = reported ] || fail "away dirty handoff did not mark its episode"
+
+  : > "$out"
+  printf 'idle external wait with a changed footer' > "$capture_file"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 30 || { reap "$pid"; fail "away dirty episode re-escalated after a footer change: $(cat "$out")"; }
+  reap "$pid"
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
+    && fail "away dirty episode re-escalated after a footer change: $(cat "$out")"
+  [ "$(grep -c 'operator idle with uncommitted work' "$state/.stand-to-queue")" = 1 ] \
+    || fail "away dirty work escalated twice for one episode"
+  pass "away idle dirty work hands off its evidence exactly once per episode"
+}
+
+# A clean worktree with a fresh declared pause must stay quiet in away mode too:
+# the handoff the daemon receives carries no dirty or aged-pause evidence.
+test_away_clean_fresh_pause_stays_quiet() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case away-clean-pause
+  date '+%s' > "$state/.afk"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "away clean pause never reached the daemon's plain handoff: $(cat "$out")"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "away clean pause did not hand off the pane identity"
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null && fail "away clean pause raised a dirty-work escalation"
+  grep -F 'declared pause aged out' "$out" >/dev/null && fail "away fresh pause raised an age-out escalation"
+  [ "$(grep -c 'operator idle with uncommitted work\|declared pause aged out' "$state/.stand-to-queue" 2>/dev/null || true)" = 0 ] \
+    || fail "away clean pause queued a pause-era escalation"
+  [ ! -e "$state/.dirty-since-$key" ] || fail "away clean pause started a dirty clock"
+  pass "away mode keeps a clean fresh declared pause free of pause-era escalations"
+}
+
+# The complete rendered pane is the third rule's evidence. A byte-identical pane
+# that keeps showing a compaction banner escalates even under a declared pause and
+# names the banner text plus the rendered hash it was read from.
+test_static_compaction_signature_escalates() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case pane-signature-compaction
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "a stuck compaction banner never escalated: $(cat "$out")"; }
+  grep -F 'pane signature: compaction-banner' "$out" >/dev/null \
+    || fail "the stuck pane was not escalated as a pane signature: $(cat "$out")"
+  grep -F 'Compacting conversation' "$out" >/dev/null \
+    || fail "the escalation did not name the observed compaction banner"
+  grep -F 'declared pause aged out' "$out" >/dev/null && fail "a stuck pane was reported as an aged-out pause"
+  pass "a static compaction banner escalates as a named pane signature despite a declared pause"
+}
+
+# Away mode must escalate the pane signature itself, not pre-empt it with a plain
+# window identity: the daemon can only deliver the evidence the reason carries.
+test_away_static_compaction_hands_off_signature() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case away-pane-signature
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  date '+%s' > "$state/.afk"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "away stuck pane never handed off its signature: $(cat "$out")"; }
+  grep -F "routine: stale: $window (pane signature: compaction-banner" "$out" >/dev/null \
+    || fail "away mode pre-empted the signature evidence with a plain identity: $(cat "$out")"
+  [ "$(grep -c 'pane signature' "$state/.stand-to-queue")" = 1 ] \
+    || fail "away signature handoff was not queued exactly once"
+  pass "away mode hands off a stuck pane signature exactly once instead of a plain identity"
+}
+
+# Changing output is progress, not a signature: a churning pane never enters the
+# rule, and a pre-existing signature clock is restarted by any changed byte.
+test_changing_pane_signature_never_alarms() {
+  local dir state fakebin out capture_file window key wt pid before
+  pause_worktree_case pane-signature-churning
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ]; then
+  counter="$(dirname "$0")/captures"
+  n=$(cat "$counter" 2>/dev/null || printf '0')
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$counter"
+  printf 'Compacting conversation… elapsed-%s\n' "$n"
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 30 || { reap "$pid"; fail "a changing pane with a compaction banner alarmed: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "changing pane output raised a wake: $(cat "$out")"
+  [ ! -e "$state/.sig-reported-$key" ] || fail "changing output was reported as a stuck signature"
+
+  pause_worktree_case pane-signature-reset
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '%s' "$(hash_text 'an older, different viewport')" > "$state/.sig-hash-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.sig-since-$key"
+  before=$(date +%s)
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=30
+  wait_live "$pid" 30 || { reap "$pid"; fail "a changed viewport reused the prior signature clock: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a changed viewport escalated on the prior signature clock: $(cat "$out")"
+  [ "$(cat "$state/.sig-since-$key")" -ge "$before" ] || fail "a changed viewport did not restart the signature clock"
+  pass "changing pane output never alarms and restarts a sticky signature clock"
+}
+
+# A backend without a readable complete viewport must say cannot-evaluate: never
+# proof of progress, never a false all-clear, and never an invented stall verdict.
+test_unreadable_pane_signature_is_cannot_evaluate() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case pane-signature-unreadable
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = capture-pane ]; then
+  has_p=0; has_s=0
+  for arg in "$@"; do
+    [ "$arg" = -p ] && has_p=1
+    [ "$arg" = -S ] && has_s=1
+  done
+  [ "$has_p" = 1 ] && [ "$has_s" = 0 ] && exit 1
+fi
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+  chmod +x "$fakebin/tmux"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 40 || { reap "$pid"; fail "an unreadable viewport was escalated as a stall: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "an unreadable viewport emitted a wake: $(cat "$out")"
+  [ "$(grep -c 'cannot evaluate pane signature' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || fail "the unreadable viewport did not log cannot-evaluate exactly once: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  [ ! -e "$state/.sig-hash-$key" ] || fail "an unreadable viewport advanced the signature clock"
+  [ ! -e "$state/.sig-reported-$key" ] || fail "an unreadable viewport produced a stall verdict"
+  pass "an unreadable pane is reported as cannot-evaluate instead of a verdict"
+}
+
 test_idle_dirty_pause_escalates
 test_dirty_staged_pause_survives_footer_change
 test_pause_episode_classifier
 test_dirty_check_requires_recorded_worktree
 test_aged_out_pause_keeps_busy_pane_supervised
 test_unreadable_pause_mtime_does_not_age_out
+test_away_dirty_work_hands_off_evidence_once
+test_away_clean_fresh_pause_stays_quiet
+test_away_static_compaction_hands_off_signature
+test_static_compaction_signature_escalates
+test_changing_pane_signature_never_alarms
+test_unreadable_pane_signature_is_cannot_evaluate
 test_dirty_pause_protections
 test_clean_fresh_pause_suppresses
 test_pause_ages_out_once_per_episode

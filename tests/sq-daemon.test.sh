@@ -312,6 +312,47 @@ test_handle_wake_paused_signal_records_pause_marker() {
   pass "handle_wake records a declared pause from a routine signal for long-cadence rechecks"
 }
 
+# The sentry's three pause-era rules name their evidence in the stale reason. Away
+# mode must escalate that evidence through the digest rather than re-absorbing it
+# as a routine pause, while a plain paused stale (no such evidence) still
+# self-handles on the long pause cadence.
+test_away_pause_era_evidence_escalates() {
+  local state dir win reason key idx
+  local details=(
+    'operator idle with uncommitted work for 500s; inspect the unfinished work'
+    'declared pause aged out after 4000s; confirm or clear the declared pause'
+    'pane signature: compaction-banner "Compacting conversation", complete rendered output unchanged for 500s at hash 0123456789ab; inspect the stuck pane'
+  )
+  idx=0
+  for reason in "${details[@]}"; do
+    idx=$((idx + 1))
+    dir=$(make_supercase "away-pause-era-$idx")
+    state="$dir/state"
+    win="sess:sq-held-era-$idx"
+    printf 'window=%s\nkind=strike\n' "$win" > "$state/held-era-$idx.meta"
+    printf 'paused: awaiting the vendor rate-limit reset\n' > "$state/held-era-$idx.status"
+    key=$(printf '%s' "held-era-$idx" | tr ':/.' '___')
+    SQUAD_STATE_OVERRIDE="$state" handle_wake "routine: stale: $win ($reason)" "$state"
+    [ "$(wc -l < "$state/.subsuper-escalations" 2>/dev/null | tr -d ' ')" = 1 ] \
+      || fail "away mode did not escalate the pause-era evidence: $reason"
+    grep -F "$reason" "$state/.subsuper-escalations" >/dev/null \
+      || fail "away escalation lost the named evidence: $reason"
+    [ ! -e "$state/.subsuper-paused-$key" ] \
+      || fail "away mode absorbed pause-era evidence into a pause marker: $reason"
+  done
+  # Contrast: a plain paused stale still takes the long pause cadence.
+  dir=$(make_supercase away-plain-paused)
+  state="$dir/state"
+  win="sess:sq-held-plain"
+  printf 'window=%s\nkind=strike\n' "$win" > "$state/held-plain.meta"
+  printf 'paused: awaiting the vendor rate-limit reset\n' > "$state/held-plain.status"
+  key=$(printf '%s' 'held-plain' | tr ':/.' '___')
+  SQUAD_STATE_OVERRIDE="$state" handle_wake "routine: stale: $win" "$state"
+  [ ! -s "$state/.subsuper-escalations" ] || fail "a plain paused stale escalated in away mode"
+  [ -e "$state/.subsuper-paused-$key" ] || fail "a plain paused stale lost its pause marker"
+  pass "away mode escalates pause-era evidence by name and keeps plain paused stales absorbed"
+}
+
 test_handle_wake_terminal_signal_clears_pause_tracking() {
   local dir state key sentry_key win
   dir=$(make_supercase handle-terminal-signal)
@@ -3205,6 +3246,7 @@ test_stale_finished_state_self_handles
 test_stale_paused_classifies_pause
 test_handle_wake_paused_records_pause_marker
 test_handle_wake_paused_signal_records_pause_marker
+test_away_pause_era_evidence_escalates
 test_handle_wake_terminal_signal_clears_pause_tracking
 test_housekeeping_migrates_sentry_pause_marker
 test_housekeeping_migrates_sentry_unpaused_marker_to_clear

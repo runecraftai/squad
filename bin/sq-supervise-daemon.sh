@@ -1434,6 +1434,12 @@ handle_wake() {  # <reason> <state>
                   esac ;;
                 idle\ *s,\ possible\ wedge,\ escalation\ *)
                   decision="escalate|${reason#stale: }" ;;
+                operator\ idle\ with\ uncommitted\ work*|declared\ pause\ aged\ out*|pane\ signature:*)
+                  # Objective evidence the sentry already waited its own threshold
+                  # for. A declared paused: line, a stale status, and a harness
+                  # busy claim all lose to it, so away mode escalates the named
+                  # evidence instead of absorbing it into a pause marker.
+                  decision="escalate|${reason#stale: }" ;;
               esac ;;
     check:*)  decision=$(classify_check "$reason") ;;
     heartbeat|heartbeat:*) decision=$(classify_heartbeat) ;;
