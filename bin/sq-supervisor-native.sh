@@ -115,13 +115,13 @@ fm_supervisor_native_ready() {  # <state> <target> -> readiness JSON
 # daemon revalidation keeps calling fm_supervisor_native_ready directly.
 fm_supervisor_native_ready_once() {  # <state> <target> -> readiness JSON
   local key="$1|$2" ready
-  if [ "${FM_SUPERVISOR_NATIVE_ONCE_KEY:-}" = "$key" ]; then
-    printf '%s' "${FM_SUPERVISOR_NATIVE_ONCE_JSON:-}"
+  if [ "${SQUAD_SUPERVISOR_NATIVE_ONCE_KEY:-}" = "$key" ]; then
+    printf '%s' "${SQUAD_SUPERVISOR_NATIVE_ONCE_JSON:-}"
     return 0
   fi
   ready=$(fm_supervisor_native_ready "$1" "$2") || return 1
-  FM_SUPERVISOR_NATIVE_ONCE_KEY=$key
-  FM_SUPERVISOR_NATIVE_ONCE_JSON=$ready
+  SQUAD_SUPERVISOR_NATIVE_ONCE_KEY=$key
+  SQUAD_SUPERVISOR_NATIVE_ONCE_JSON=$ready
   printf '%s' "$ready"
 }
 
@@ -178,33 +178,33 @@ fm_supervisor_native_submit() {  # <state> <target> <message> <covered-lines>
 # shellcheck disable=SC2034 # Refusal reasons are read by sourcing callers that keep the request.
 fm_supervisor_native_retire() {  # <state> <target>
   local state=$1 target=$2 dir lines expected actual buf
-  FM_SUPERVISOR_NATIVE_RETIRE_REASON=""
+  SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON=""
   dir=$(fm_supervisor_native_safe_dir "$state" "$target") \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='owner-only handoff directory is missing or replaced'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='owner-only handoff directory is missing or replaced'; return 1; }
   fm_supervisor_native_ack "$dir" \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='no exact consumed acknowledgement for the current request'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='no exact consumed acknowledgement for the current request'; return 1; }
   jq -e --arg target "$target" '.version == 1 and .endpoint.backend == "orca" and .endpoint.target == $target' "$dir/request.json" >/dev/null \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON="request is not bound to endpoint $target"; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON="request is not bound to endpoint $target"; return 1; }
   lines=$(jq -er '.lines | select(type == "number" and floor == . and . > 0)' "$dir/request.json") \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='request has no valid covered line count'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='request has no valid covered line count'; return 1; }
   expected=$(jq -er '.prefix' "$dir/request.json") \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='request has no readable buffer prefix'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='request has no readable buffer prefix'; return 1; }
   buf="$state/.subsuper-escalations"
   if ! [ -f "$buf" ] || [ "$(wc -l < "$buf")" -lt "$lines" ]; then
-    FM_SUPERVISOR_NATIVE_RETIRE_REASON="escalation buffer no longer covers the acknowledged $lines line(s)"
+    SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON="escalation buffer no longer covers the acknowledged $lines line(s)"
     return 1
   fi
   actual=$(head -n "$lines" "$buf") \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='escalation buffer is unreadable'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='escalation buffer is unreadable'; return 1; }
   [ "$expected" = "$actual" ] \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='acknowledged prefix no longer matches the escalation buffer head'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='acknowledged prefix no longer matches the escalation buffer head'; return 1; }
   tail -n "+$((lines + 1))" "$buf" > "$buf.retire.$$" \
-    || { rm -f "$buf.retire.$$"; FM_SUPERVISOR_NATIVE_RETIRE_REASON='escalation buffer could not be rewritten'; return 1; }
+    || { rm -f "$buf.retire.$$"; SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='escalation buffer could not be rewritten'; return 1; }
   mv "$buf.retire.$$" "$buf" \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='retired buffer rewrite could not be committed'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='retired buffer rewrite could not be committed'; return 1; }
   # On a crash before unlink, a mismatched prefix remains blocked, never replayed.
   rm -f "$dir/request.json" \
-    || { FM_SUPERVISOR_NATIVE_RETIRE_REASON='buffer retired but request.json could not be removed'; return 1; }
+    || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='buffer retired but request.json could not be removed'; return 1; }
   [ -s "$buf" ] || rm -f "$buf.since" "$state/.subsuper-inject-wedged"
 }
 

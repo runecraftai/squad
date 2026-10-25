@@ -646,16 +646,16 @@ fm_daemon_primary_harness() {
 fm_daemon_supervisor_target_ready() {  # <state> <backend> <target>
   if [ "$2" = orca ]; then
     local scope="$1/$3"
-    if [ "${FM_DAEMON_ORCA_PROBE_SCOPE:-}" = "$scope" ] \
-      && [ -n "${FM_DAEMON_ORCA_PROBE_AT:-}" ] \
-      && [ $(( SECONDS - FM_DAEMON_ORCA_PROBE_AT )) -lt 10 ]; then
-      return "${FM_DAEMON_ORCA_PROBE_RC:-1}"
+    if [ "${SQUAD_DAEMON_ORCA_PROBE_SCOPE:-}" = "$scope" ] \
+      && [ -n "${SQUAD_DAEMON_ORCA_PROBE_AT:-}" ] \
+      && [ $(( SECONDS - SQUAD_DAEMON_ORCA_PROBE_AT )) -lt 10 ]; then
+      return "${SQUAD_DAEMON_ORCA_PROBE_RC:-1}"
     fi
     fm_supervisor_native_ready "$1" "$3" >/dev/null
     local rc=$?
-    FM_DAEMON_ORCA_PROBE_SCOPE="$scope"
-    FM_DAEMON_ORCA_PROBE_AT=$SECONDS
-    FM_DAEMON_ORCA_PROBE_RC=$rc
+    SQUAD_DAEMON_ORCA_PROBE_SCOPE="$scope"
+    SQUAD_DAEMON_ORCA_PROBE_AT=$SECONDS
+    SQUAD_DAEMON_ORCA_PROBE_RC=$rc
     return "$rc"
   fi
   fm_backend_target_exists "$2" "$3"
@@ -844,7 +844,7 @@ escalate_flush() {  # <state>
     if fm_supervisor_native_retire "$state" "${SQUAD_SUPERVISOR_TARGET:-}"; then
       log 'Orca native consumed acknowledgement retired its buffered escalation prefix'
     elif [ -e "$(fm_supervisor_native_dir "$state" "${SQUAD_SUPERVISOR_TARGET:-}")/request.json" ]; then
-      log "Orca native buffer retirement refused (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-unknown reason}); preserving the request and buffer"
+      log "Orca native buffer retirement refused (${SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON:-unknown reason}); preserving the request and buffer"
     fi
   fi
   [ -s "$buf" ] || return 0

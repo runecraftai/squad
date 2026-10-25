@@ -95,7 +95,7 @@ try {
   model.ready=false;save(); let r=cli('start'); assert.notEqual(r.status,0);assert.match(r.stderr,/reachable ready runtime/);assert.equal(count('create'),0);
   // A failing Orca CLI must name the failed command and its recovery instead of
   // exiting nonzero with only whatever the CLI happened to print.
-  model.ready=true;model.failStatus=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/orca status --json` failed/);assert.match(r.stderr,/start the selected local Orca host/);assert.equal(count('create'),0);
+  model.ready=true;model.failStatus=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/orca status --json failed/);assert.match(r.stderr,/start the selected local Orca host/);assert.equal(count('create'),0);
   model.failStatus=false;model.failShow=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/orca terminal show --terminal term-primary --json` failed/);assert.match(r.stderr,/verify that exact runtime-issued handle/);assert.equal(count('create'),0);
   model.failShow=false;save();
   check('a failing Orca CLI refuses with the failed command and its recovery');

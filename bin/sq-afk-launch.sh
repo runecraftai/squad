@@ -455,7 +455,7 @@ fm_afk_launch_native_settle() {  # <exact-primary> <preserve-message>
   local primary=$1 message=$2
   fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
   if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-    fm_afk_launch_log "$message (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement})"
+    fm_afk_launch_log "$message (${SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement})"
     return 1
   fi
   if fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
