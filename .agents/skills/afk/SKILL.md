@@ -220,18 +220,22 @@ the operational prefix lets Squad distinguish it from a real commander message.
 - **Dedupe across signal/stale/scan** - `classify_signal` and terminal `classify_stale` paths check the seen-status marker before escalating, so a commander-relevant status escalated by one path is not re-escalated by another in the same digest.
   The marker does not clear or suppress possible-wedge aging for a nonterminal progress line.
 - **Auto-discovered supervisor pane** - the daemon resolves its own BACKEND
-  (tmux vs herdr vs tuios) and TARGET independently, mirroring
-  `bin/sq-backend.sh`'s own runtime auto-detection. Backend: `SQUAD_SUPERVISOR_BACKEND`
+  (tmux vs herdr vs tuios, or explicitly selected native-only Orca) and TARGET
+  independently, mirroring `bin/sq-backend.sh`'s own runtime auto-detection.
+  Backend: `SQUAD_SUPERVISOR_BACKEND`
   override, then `$TMUX_PANE` set (tmux), then `$HERDR_ENV=1` with
   `$HERDR_PANE_ID` present (herdr), then `$TUIOS_ENV=1` with
   `$TUIOS_SESSION` and `$TUIOS_PANE_ID` present (tuios), then a tmux fallback.
   Target: `SQUAD_SUPERVISOR_TARGET` override (a tmux target, a herdr
-  `"<session>:<pane-id>"` target, or a tuios `"<session>:<window-id>"` target),
-  then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under
-  herdr, then `"${TUIOS_SESSION}:${TUIOS_PANE_ID}"` under tuios, then a
-  `Squad:0` fallback with a warning. Both resolution sources are logged at
-  startup so a wrong-but-resolving fallback is detectable. Other runtime
-  backends, including zellij and cmux, are not yet supported as
+  `"<session>:<pane-id>"` target, a tuios `"<session>:<window-id>"` target, or an
+  exact Orca terminal handle for explicit native-only Orca), then `$TMUX_PANE`,
+  then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then
+  `"${TUIOS_SESSION}:${TUIOS_PANE_ID}"` under tuios, then a `Squad:0` fallback
+  with a warning. Both resolution sources are logged at startup so a
+  wrong-but-resolving fallback is detectable. Orca is never auto-detected;
+  selecting it requires the explicit native-only setup in
+  [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision).
+  Other runtime backends, including zellij and cmux, are not yet supported as
   supervisor backends; the daemon refuses loudly at startup instead of
   misapplying tmux primitives to a pane that isn't one
   (docs/herdr-backend.md "Away-mode supervisor support").
