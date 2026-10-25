@@ -239,12 +239,6 @@ process.stdout.write(["waiting", identity, prompt].join("\t"));
 '
 }
 
-fm_backend_orca_agent_wait() {  # <terminal-id> -> waiting|clear|unknown
-  local snapshot
-  snapshot=$(fm_backend_orca_agent_read "$1")
-  printf '%s' "${snapshot%%$'\t'*}"
-}
-
 fm_backend_orca_json_text() {  # <json>
   printf '%s' "$1" | node -e '
 const fs = require("fs");

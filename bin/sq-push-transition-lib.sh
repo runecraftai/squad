@@ -128,11 +128,7 @@ handle_push_transition() {  # <backend> <session> <record>
   pane_id=$(fm_transition_pane_id "$record")
   to=$(fm_transition_to_status "$record")
   [ -n "$pane_id" ] || { sleep 1; return; }
-  if [ "$backend" = orca ]; then
-    window=$pane_id
-  else
-    window="$session:$pane_id"
-  fi
+  window=$(fm_backend_transition_window "$backend" "$session" "$pane_id")
   task=$(window_to_task "$window" "$STATE")
   if status_is_paused "$(last_status_line "$STATE/$task.status")"; then
     triage_log "absorbed push $to (declared pause, awaiting external): $window"

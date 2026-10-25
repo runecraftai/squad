@@ -372,6 +372,19 @@ fm_backend_target_of_meta() {  # <meta-file>
   [ -n "$window" ] && printf '%s' "$window"
 }
 
+# fm_backend_transition_window: the supervised window name a normalized
+# transition record's pane id maps to for <backend> (bin/sq-transition-lib.sh's
+# record is backend-neutral, so its pane field is only a session-scoped suffix
+# for backends whose target is "<session>:<pane>"). Owned here with the other
+# target-shape helpers so a new target shape never needs a backend-name branch
+# in the shared consumer.
+fm_backend_transition_window() {  # <backend> <session> <pane-id>
+  case "$1" in
+    orca) printf '%s' "$3" ;;
+    *) printf '%s:%s' "$2" "$3" ;;
+  esac
+}
+
 # fm_backend_validate_task_endpoint: validate a task cleanup record entirely
 # from its durable metadata before any runtime command or cleanup mutation.
 # The validation binds the exact task id, selected backend, target, project,
