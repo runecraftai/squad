@@ -722,8 +722,8 @@ SQUAD_PI_DELIVERY_TIMEOUT=5 # segundos que sq-send espera pela confirmação de 
 SQUAD_PI_HANDOFF_STALE_SECS=30 # segundos que um registro de handoff do Pi em TUIOS pode permanecer em submitting ou queued antes de contar como abandonado: limita a republicação de um envio abandonado (apenas quando a extensão viva relata nenhum envio em andamento), a republicação de um registro queued cujo processo escritor sumiu, e por quanto tempo o daemon adia o caminho digitado enquanto a extensão viva ainda tem uma solicitação não resolvida
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # segundos após entrega de solicitação marcada antes que um turno concluído sem um relatório pai correlacionado seja elegível para sua única retentativa de repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
-SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; apenas tmux/herdr/tuios, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID depois TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID antes de fallback tmux
-SQUAD_SUPERVISOR_TARGET=              # sobrescrever alvo de painel de supervisor opcional; alvo tmux, herdr <session>:<pane-id>, ou tuios <session>:<window-id>, caso contrário auto-detectado
+SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; tmux/herdr/tuios, ou orca explicit-only com o receptor Pi distribuído, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID depois TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID antes de fallback tmux
+SQUAD_SUPERVISOR_TARGET=              # sobrescrever alvo de painel de supervisor opcional; alvo tmux, herdr <session>:<pane-id>, tuios <session>:<window-id>, ou um handle exato de terminal Orca, caso contrário auto-detectado
 SQUAD_INJECT_SKIP=heartbeat           # prefixos |-forçam auto-tratamento ignorando classificação; vazio desativa
 SQUAD_ESCALATE_BATCH_SECS=90          # janela de buffer para resumos de escalação em lote; 0 = esvaziar imediatamente
 SQUAD_MAX_DEFER_SECS=300              # idade máxima de escalação em buffer antes de retentativa mais alarme wedge; 0 desativa

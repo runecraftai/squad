@@ -617,6 +617,8 @@ orca status --json | jq -c '{version:.result.runtime.appVersion,ready:(.result.r
 
 An existing shell endpoint's `terminal show --terminal <handle> --json` also supplied handle, incarnation, worktree/path, connected/writable and local-host fields, with `agentWait=null`.
 That identity schema is not proof of draft/modal safety or message consumption.
+Two read-only shapes the Orca launcher and its lost-create reconciliation depend on remain **unreceipted**: the worktree-filtered `orca terminal list --worktree id:<worktree> --json` response (including `result.truncated`, `result.hostScope.omittedHostIds`, and `result.terminals[].title/worktreeId/worktreePath`) and the `orca terminal create --worktree/--command` flags that `orca terminal create --help` would document.
+Neither was collected, so their worktree-filter and recovery semantics are unproven and no real create or cleanup path is claimed; an unexpected or unreadable inventory keeps the recorded creation intent uncertain instead of recovering an endpoint.
 No terminal input, creation, close, worktree operation, host restart, or configuration change was performed on the shared real Orca runtime.
 An independent user-data/profile boundary could not be established from the installed host's documented `serve` options, so the real-runtime lifecycle probe was not attempted.
 

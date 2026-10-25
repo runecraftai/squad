@@ -83,7 +83,8 @@ A missing, stale, foreign-process, foreign-endpoint, or replaced-incarnation rea
 A bare shell cannot publish native readiness.
 
 Use `bin/sq-afk-launch.sh start`, `status`, `stop`, and `reconcile` for the lifecycle.
-Orca creates an **unfocused terminal tab**, not a hidden terminal; it does not split or focus the primary, create a worktree, delete a worktree, or stop the runtime.
+The create call passes **no focus flag** and never splits the primary, creates or removes a worktree, or stops the runtime.
+Whether Orca focuses, keeps, or hides the new terminal tab is real host behaviour that remains **unverified**, so treat the daemon terminal as possibly visible or focused.
 The creation intent is recorded before the CLI call, and cleanup requires the exact terminal handle, runtime and terminal incarnation, worktree identity/path, and unique title.
 A live daemon process must additionally match the recorded launch token and operating-system process identity before it can be signalled.
 Uncertain creation remains recorded and blocks another creation; reconciliation may recover only the exact uniquely titled endpoint, never sweep other terminals.
@@ -95,7 +96,23 @@ Adding another harness requires its own equally proven native receiver, not a di
 Publication, queued messages, ambiguous sends, process death, receiver-session replacement, and reconnects are never treated as consumption or permission to replay.
 Only an exact consumption acknowledgement retires the covered buffer prefix; an unresolved request stays unresolved, including across restarts.
 This deliberately prioritizes avoiding duplicate effects over automatic recovery: stop reports failure and preserves lifecycle state while delivery or endpoint cleanup is uncertain.
-Inspect and reconcile that evidence before retrying; do not delete the request to force a resend.
+Inspect and reconcile that evidence before retrying; unresolved records are never deleted from a script or a flag to force a resend.
+
+### Permanent-uncertainty recovery (explicit human approval)
+
+Some records never resolve on their own.
+A request published before a primary restart keeps the dead receiver-session nonce, so the exact-match acknowledgement can never accept it, and `start`, `stop`, and `reconcile` keep refusing while it exists.
+A recorded-but-unresolvable creation with a unique title that matches zero or several terminals behaves the same way.
+That is the intended fail-closed state: Squad never abandons, deletes, or replays a possibly accepted operation, and no flag adds one.
+
+The only sanctioned recovery is the named, human-approved permanent-uncertainty recovery below, performed by an operator on one exact record.
+
+1. Name the record: `state/.afk-daemon-terminal` for a recorded creation (`pending` target plus the recorded unique title), or `bin/sq-supervisor-native.sh dir <state> <exact-primary-target>` for the request directory holding `request.json` and `result.json`.
+2. Read it and have the commander, as the base's session owner, confirm on the live host/primary whether that exact recorded terminal title exists or whether that exact message text was delivered and consumed.
+3. Only with explicit approval for that specific record: for a creation, close that one matching terminal through Orca, or remove just the pending creation record when nothing matches; for a native request, remove the `request.json` plus `result.json` pair and drop exactly the `lines` prefix recorded in that request from the head of `state/.subsuper-escalations`, so the never-delivered text cannot be republished.
+4. Record the approver, the exact target, and the removed record id in the away-mode report.
+
+Any doubt that the text or terminal was delivered or consumed leaves every file in place and the lifecycle reported as not complete; removal never authorizes a resend.
 
 Verification is split explicitly: Linux Orca **1.4.188** supplied the read-only runtime/terminal identity schema; interactive **Pi 1.1.0** supplied real editor/modal and native consumption proof on an isolated PTY with a **fake Orca identity CLI**.
 No combined real Orca + Pi supervisor/AFK lifecycle, macOS supervisor, Chat UI eligibility, or physical Android acceptance is claimed by those separate checks.
@@ -111,6 +128,7 @@ A disposable real-host probe therefore requires a proven independent Orca profil
 - Escape is unsupported.
 - Orca exposes no stable CLI version or protocol marker, so readiness is the compatibility gate rather than a version floor.
 - Only the verified terminal-handle and worktree result fields are accepted; speculative response shapes are rejected.
+- The worktree-filtered `orca terminal list` response (`truncated`, `hostScope`, `terminals[]`), the `orca terminal create --worktree/--command` flags, and every real create/cleanup path remain unproven: no read-only receipt for them is retained, so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 
 ## Regression entry points

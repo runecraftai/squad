@@ -84,7 +84,8 @@ Um registro de prontidão ausente, obsoleto, de processo estranho, de endpoint e
 Um shell puro não consegue publicar prontidão nativa.
 
 Use `bin/sq-afk-launch.sh start`, `status`, `stop` e `reconcile` para o ciclo de vida.
-O Orca cria uma **aba de terminal sem foco**, não um terminal oculto; ele não divide nem foca o primário, não cria worktree, não deleta worktree e não para o runtime.
+O Orca cria uma aba de terminal para o daemon; a chamada de criação passa **nenhuma flag de foco** e nunca divide o primário, cria ou remove worktree nem para o runtime.
+Se o Orca foca, mantém ou oculta a nova aba é comportamento real do host que permanece **não verificado**, então trate o terminal daemon como possivelmente visível ou focado.
 A intenção de criação é gravada antes da chamada da CLI, e a limpeza exige o handle exato do terminal, a encarnação do runtime e do terminal, a identidade/caminho do worktree e o título único.
 Um processo de daemon vivo precisa ainda corresponder ao token de lançamento gravado e à identidade de processo do sistema operacional antes de poder ser sinalizado.
 Criação incerta permanece gravada e bloqueia outra criação; a reconciliação pode recuperar somente o endpoint exato e unicamente titulado, nunca varrer outros terminais.
@@ -96,7 +97,23 @@ Adicionar outro harness exige seu próprio receptor nativo igualmente comprovado
 Publicação, mensagens enfileiradas, envios ambíguos, morte de processo, substituição de sessão do receptor e reconexões nunca são tratados como consumo nem como permissão de replay.
 Apenas um reconhecimento exato de consumo retira o prefixo de buffer coberto; uma requisição não resolvida permanece não resolvida, inclusive entre reinicializações.
 Isso prioriza deliberadamente evitar efeitos duplicados em vez de recuperação automática: o stop reporta falha e preserva o estado do ciclo de vida enquanto a entrega ou a limpeza do endpoint é incerta.
-Inspecione e reconcilie essa evidência antes de tentar de novo; não delete a requisição para forçar um reenvio.
+Inspecione e reconcilie essa evidência antes de tentar de novo; registros não resolvidos nunca são apagados por script ou flag para forçar um reenvio.
+
+### Recuperação de incerteza permanente (aprovação humana explícita)
+
+Alguns registros nunca se resolvem sozinhos.
+Uma requisição publicada antes de um restart do primário mantém o nonce da sessão receptora morta, então o reconhecimento de correspondência exata nunca pode aceitá-la, e `start`, `stop` e `reconcile` seguem recusando enquanto ela existir.
+Uma criação gravada e não resolvível, cujo título único corresponde a zero ou a vários terminais, se comporta da mesma forma.
+Esse é o estado fail-closed pretendido: o Squad nunca abandona, apaga ou reexecuta uma operação possivelmente aceita, e nenhuma flag adiciona isso.
+
+A única recuperação sancionada é a recuperação nomeada de incerteza permanente abaixo, com aprovação humana explícita, executada por um operador sobre um registro exato.
+
+1. Nomeie o registro: `state/.afk-daemon-terminal` para uma criação gravada (alvo `pending` mais o título único gravado), ou `bin/sq-supervisor-native.sh dir <state> <alvo-exato-do-primário>` para o diretório da requisição que contém `request.json` e `result.json`.
+2. Leia-o e peça ao comandante, como dono de sessão da base, para confirmar no host/primário vivo se aquele título exato de terminal existe ou se aquele texto exato de mensagem foi entregue e consumido.
+3. Somente com aprovação explícita para aquele registro específico: para uma criação, feche o único terminal correspondente pelo Orca, ou remova apenas o registro de criação pendente quando nada corresponder; para uma requisição nativa, remova o par `request.json` e `result.json` e remova exatamente o prefixo de `lines` registrado naquela requisição do início de `state/.subsuper-escalations`, para que o texto nunca entregue não seja republicado.
+4. Registre o aprovador, o alvo exato e o id do registro removido no relatório do modo ausente.
+
+Qualquer dúvida de que o texto ou o terminal tenha sido entregue ou consumido deixa todos os arquivos no lugar e o ciclo de vida reportado como não completo; a remoção nunca autoriza um reenvio.
 
 A verificação é dividida explicitamente: o Orca no Linux **1.4.188** forneceu o schema somente-leitura de identidade de runtime/terminal; o **Pi 1.1.0** interativo forneceu prova real de editor/modal e de consumo nativo em um PTY isolado com uma **CLI de identidade Orca falsa**.
 Nenhum ciclo de vida real combinado Orca + Pi supervisor/AFK, supervisor no macOS, elegibilidade de Chat UI ou aceitação física no Android é alegado por essas checagens separadas.
@@ -112,6 +129,7 @@ Uma sonda real descartável no host exige, portanto, um perfil/runtime Orca comp
 - Escape não é suportado.
 - O Orca expõe nenhum marcador estável de versão de CLI ou protocolo, então a prontidão é o gate de compatibilidade em vez de um piso de versão.
 - Apenas os campos verificados de resultado de terminal-handle e worktree são aceitos; formatos especulativos de resposta são rejeitados.
+- A resposta de `orca terminal list` filtrada por worktree (`truncated`, `hostScope`, `terminals[]`), as flags `orca terminal create --worktree/--command` e todo caminho real de criação/limpeza seguem não comprovados: nenhum recibo somente-leitura deles é retido, então qualquer formato inesperado é um resultado incerto que preserva o registro pendente em vez de recuperar.
 - Expiração de busy não pode ser avaliada: a leitura completa da viewport não foi verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
 
 ## Pontos de entrada de regressão

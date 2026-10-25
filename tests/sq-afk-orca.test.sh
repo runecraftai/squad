@@ -134,7 +134,7 @@ try {
   const record=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');assert.match(record,/^orca\tterm-daemon-1\t/);
   assert.equal(calls().find(a=>a[1]==='create').includes('--focus'),false);
   r=cli('status');assert.match(r.stdout,/active=1 terminal=alive daemon=dead/);assert.notEqual(r.status,0);
-  check('public start/status bind the exact primary and create one unfocused daemon terminal');
+  check('public start/status bind the exact primary and create one daemon terminal whose create call requests no focus flag');
   // The shell guard must apply the receiver's owner-only rule (any group/other
   // bit refuses), not a '-perm -077' all-bits test that accepts 0755.
   chmodSync(dir,0o755);let permissive=flush('signal: permissive receiver directory');assert.notEqual(permissive.status,0);assert.equal(existsSync(`${dir}/request.json`),false);chmodSync(dir,0o700);
@@ -219,7 +219,7 @@ try {
   assert.equal(count('close'),closesBefore+1);reload();assert.equal(model.terms.length,2);
   rmSync(liveLock,{recursive:true});tracked=tracked.filter(child=>child!==fakeDaemon);
   check('stop retires an already-consumed request through the live daemon shutdown flush');
-  await tick();model.lostCreate=true;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
+  await tick();model.lostCreate=true;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/create outcome remains uncertain/);assert.doesNotMatch(r.stderr,/integer expression expected/);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
   reload();model.unreadable=false;save();r=cli('reconcile');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
   check('lost create response persists intent, refuses duplicate create, and recovers exact title/identity only');
   // A redundant start while an escalation is in flight and the daemon is alive

@@ -39,8 +39,9 @@
 #                              return zero only when active state is healthy.
 #
 # Supported supervisor targets and non-visible daemon terminals: herdr, tmux,
-# TUIOS, and explicit native-only Orca. Orca creates an unfocused terminal tab,
-# not a hidden terminal, and never creates or removes a worktree.
+# TUIOS, and explicit native-only Orca. Orca's create call requests no focus flag
+# and never creates or removes a worktree; whether the host focuses or hides the
+# new terminal is unverified.
 # TUIOS uses an exact newly-created detached session and refuses all
 # cleanup unless its recorded identity still matches and it remains unattached.
 #

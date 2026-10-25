@@ -15,12 +15,20 @@ fm_afk_launch_orca_primary() {  # [exact-target]; never guesses an unresolved pr
 fm_afk_launch_orca_resolve() {  # pending creation -> exact identity, read-only
   local extra=$SQUAD_AFK_REC_EXTRA inventory terminal count endpoint
   if [ "$SQUAD_AFK_REC_TARGET" != pending ]; then return 0; fi
-  inventory=$(orca terminal list --worktree "id:$(printf '%s' "$extra" | jq -er '.parent.worktree')" --json) || return 1
-  terminal=$(printf '%s' "$inventory" | jq -ce --argjson rec "$extra" '
-    select(.ok == true and .result.truncated == false and ._meta.runtimeId == $rec.parent.runtime)
-    | [.result.terminals[] | select(.title == $rec.title and .worktreeId == $rec.parent.worktree and .worktreePath == $rec.parent.path)]') || return 1
-  count=$(printf '%s' "$terminal" | jq length)
-  [ "$count" -eq 1 ] || { fm_afk_launch_log 'Orca create outcome remains uncertain; preserving the pending intent (no create retry)'; return 1; }
+  terminal='[]'
+  count=0
+  if inventory=$(orca terminal list --worktree "id:$(printf '%s' "$extra" | jq -er '.parent.worktree')" --json); then
+    terminal=$(printf '%s' "$inventory" | jq -c --argjson rec "$extra" '
+      if (.ok == true and .result.truncated == false and ._meta.runtimeId == $rec.parent.runtime and (.result.terminals | type == "array"))
+      then [.result.terminals[] | select(.title == $rec.title and .worktreeId == $rec.parent.worktree and .worktreePath == $rec.parent.path)]
+      else [] end') || terminal='[]'
+    count=$(printf '%s' "$terminal" | jq -r 'length') || count=0
+  fi
+  case $count in ''|*[!0-9]*) count=0 ;; esac
+  [ "$count" -eq 1 ] || {
+    fm_afk_launch_log 'Orca create outcome remains uncertain; preserving the pending intent (no create retry)'
+    return 1
+  }
   terminal=$(printf '%s' "$terminal" | jq -er '.[0].handle') || return 1
   endpoint=$(fm_supervisor_native_endpoint orca "$terminal") || return 1
   printf '%s' "$extra" | jq -e --argjson endpoint "$endpoint" '.parent.runtime == $endpoint.runtime' >/dev/null || return 1
@@ -88,5 +96,5 @@ fm_afk_launch_create_orca() {  # <commander-target> <commander-backend>
     fm_afk_launch_orca_resolve || return 1
   fi
   fm_afk_launch_commit_terminal orca "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" 1 || return 1
-  fm_afk_launch_log 'daemon launched in an exact unfocused Orca terminal; no worktree or primary tab changed'
+  fm_afk_launch_log 'daemon launched in an exact Orca terminal; Squad requested no focus flag and created no worktree or primary split (real host focus behaviour is unverified)'
 }

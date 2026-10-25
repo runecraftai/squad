@@ -836,8 +836,8 @@ SQUAD_PI_DELIVERY_TIMEOUT=5 # seconds sq-send waits for native Pi delivery confi
 SQUAD_PI_HANDOFF_STALE_SECS=30 # seconds a TUIOS Pi-handoff record may stay submitting or queued before it counts as abandoned: bounds republishing an abandoned send (only when the live extension reports no in-flight send), republishing a queued record whose writer process is gone, and how long the daemon defers the typed fallback while the live extension still holds an unresolved request
 SQUAD_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery before a completed turn without a correlated parent report is eligible for its one recovery repost
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
-SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr/tuios only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID then TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID before tmux fallback, probing each detected candidate's target in that order and using the first that exists
-SQUAD_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target, herdr <session>:<pane-id>, or tuios <session>:<window-id>, otherwise auto-detected
+SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr/tuios, or explicit-only orca with the shipped Pi receiver, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID then TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID before tmux fallback, probing each detected candidate's target in that order and using the first that exists
+SQUAD_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target, herdr <session>:<pane-id>, tuios <session>:<window-id>, or an exact Orca terminal handle, otherwise auto-detected
 SQUAD_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
 SQUAD_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
 SQUAD_MAX_DEFER_SECS=300              # max buffered escalation age before retry plus wedge alarm; 0 disables

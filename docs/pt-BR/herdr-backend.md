@@ -276,8 +276,8 @@ Ainda existe um processo de sentinela; o event reader é um filho limitado daque
 
 ## Suporte do supervisor do modo ausente
 
-O daemon away suporta panes supervisor de tmux, Herdr e TUIOS.
-Ele recusa Zellij, Orca e cmux como backends de supervisor em vez de aplicar o transporte errado.
+O daemon away suporta panes supervisor de tmux, Herdr e TUIOS, além de um primário Orca explicit-only cujo receptor Pi publica prontidão nativa ([`orca-backend.md`](../orca-backend.md#away-mode-supervision)).
+Ele recusa Zellij e cmux como backends de supervisor em vez de aplicar o transporte errado.
 Para Herdr, existência do alvo, estado nativo, captura, estado do composer e submit verificado todos roteiam pelo dispatcher compartilhado do backend e o dono explícito de CLI da sessão nomeada.
 Um painel de supervisor TUIOS prefere o handoff nativo do Pi e só digita num composer lido como vazio; [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision) é dono desse contrato.
 O alerta pane-independente de max-defer é configurado em [`wedge-alarm.md`](wedge-alarm.md).
@@ -314,7 +314,7 @@ Testes usam wrappers finos de compatibilidade em `tests/herdr-test-safety.sh` e 
 - Vitalidade de XO no meio da sessão não é implementada.
 - OpenCode 1.18.4 pode aceitar Enter enquanto ocupado sem limpar o composer.
   O backend tmux tem fallback de busy-queue, mas o Herdr ainda reporta este caso como submit pending e precisa de fix separado no adaptador.
-- Apenas tmux, Herdr e TUIOS podem hospedar o terminal do supervisor do modo ausente.
+- Apenas tmux, Herdr, TUIOS e um primário Orca nativo explicit-only podem hospedar o terminal do supervisor do modo ausente.
 - Expiração de busy não pode ser avaliada: a leitura completa da viewport não foi verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
 
 ## Pontos de entrada de regressão
