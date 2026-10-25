@@ -436,7 +436,10 @@ dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
     rm -f "$marker"
     return
   fi
-  dirt=$(git --no-optional-locks -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null) || dirt=
+  if ! dirt=$(git --no-optional-locks -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null); then
+    triage_log "cannot evaluate worktree status (git status failed): $win"
+    return
+  fi
   if [ -z "$dirt" ]; then
     rm -f "$marker"
     return
