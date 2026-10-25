@@ -87,6 +87,31 @@ test_capture_reads_terminal_tail_json() {
   pass "fm_backend_orca_capture: parses result.terminal.tail and calls terminal read"
 }
 
+test_orca_native_blocked_transition_dedupes_and_rearms() {
+  local state out rc marker
+  orca_case native-blocked-transition
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/1.out"
+  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/2.out"
+  out=$(PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" term-123 term-123' _ "$ROOT" "$state")
+  [ "$(printf '%s' "$out" | cut -f1)" = term-123 ] || fail "blocked transition must bind the exact terminal, got '$out'"
+  [ "$(printf '%s' "$out" | cut -f4)" = blocked ] || fail "blocked transition must use the shared status contract, got '$out'"
+  marker=$(PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; fm_backend_orca_transition_marker "$2" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" term-123' _ "$ROOT" "$state")
+  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_commit_transition "$2" term-123 "$3"' _ "$ROOT" "$state" "$out"
+  [ -e "$marker" ] || fail "transition commit did not dedupe the exact terminal"
+  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/3.out"
+  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/4.out"
+  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" term-123 term-123' _ "$ROOT" "$state" >/dev/null
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "an unchanged prompt must dedupe, got rc=$rc"
+  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"A different prompt"}}}}' > "$RESP/5.out"
+  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"A different prompt"}}}}' > "$RESP/6.out"
+  out=$(PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" term-123 term-123' _ "$ROOT" "$state")
+  [ "$(printf '%s' "$out" | cut -f4)" = blocked ] || fail "a changed prompt must re-arm the blocked edge"
+  pass "Orca native agentWait poll uses exact terminal identity and dedupes unchanged prompts"
+}
+
 test_capture_rendered_reports_unverified_interface() {
   local out status
   orca_case capture-rendered-unverified
@@ -1381,6 +1406,7 @@ test_dispatcher_sources_orca_and_routes_primitives() {
 }
 
 test_capture_reads_terminal_tail_json
+test_orca_native_blocked_transition_dedupes_and_rearms
 test_capture_rendered_reports_unverified_interface
 test_capture_falls_back_to_text_fields
 test_capture_fails_on_orca_error_json

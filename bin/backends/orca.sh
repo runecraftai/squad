@@ -208,6 +208,41 @@ fm_backend_orca_capture_rendered() {  # <terminal-id>
   return 1
 }
 
+# Orca's terminal/worker observations can expose an exact agentWait record.
+# An absent field is unsupported or unobservable, never evidence of no prompt.
+fm_backend_orca_agent_wait() {  # <terminal-id> -> waiting|clear|unknown
+  local out
+  fm_backend_orca_tool_check || { printf 'unknown'; return 0; }
+  out=$(orca terminal show --terminal "$1" --json 2>/dev/null) || { printf 'unknown'; return 0; }
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.stdout.write("unknown"); process.exit(0); }
+if (data.ok === false) { process.stdout.write("unknown"); process.exit(0); }
+const r = data.result || {};
+const candidates = [r.observation?.agentWait, r.agentWait, r.terminal?.agentWait];
+const wait = candidates.find(v => v !== undefined);
+if (wait === undefined) { process.stdout.write("unknown"); process.exit(0); }
+process.stdout.write(wait === null || wait === false ? "clear" : "waiting");
+'
+}
+
+fm_backend_orca_agent_wait_json() {  # <terminal-id> -> compact exact wait record, if available
+  local out
+  out=$(orca terminal show --terminal "$1" --json 2>/dev/null) || return 1
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(1); }
+if (data.ok === false) process.exit(1);
+const r = data.result || {};
+const candidates = [r.observation?.agentWait, r.agentWait, r.terminal?.agentWait];
+const wait = candidates.find(v => v !== undefined);
+if (wait === undefined || wait === null || wait === false) process.exit(1);
+process.stdout.write(JSON.stringify(wait));
+'
+}
+
 fm_backend_orca_json_text() {  # <json>
   printf '%s' "$1" | node -e '
 const fs = require("fs");
@@ -298,6 +333,73 @@ fm_backend_orca_composer_state() {  # <terminal-id> -> empty|pending|unknown
   # genuine composer box - delegate to the shared owner with bordered=1. A bare
   # dead-shell prompt has no bordered row and already returned 'unknown' above.
   fm_composer_classify_content 1 "$stripped" "$SQUAD_BACKEND_ORCA_IDLE_RE"
+}
+
+# --- backend-neutral blocked-agent transition (level-reconcile poll) --------
+SQUAD_BACKEND_ORCA_ESCALATED_PREFIX=".orca-escalated-"
+SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX=".orca-prompt-"
+
+fm_backend_orca_hash() {
+  if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
+}
+
+fm_backend_orca_transition_marker() {  # <state-dir> <prefix> <terminal>
+  local key
+  key=$(printf '%s' "$3" | tr ':/.' '___')
+  printf '%s/%s%s' "$1" "$2" "$key"
+}
+
+fm_backend_orca_prompt_summary() {  # <terminal-id>
+  fm_backend_orca_agent_wait_json "$1" | node -e '
+const fs = require("fs");
+let wait;
+try { wait = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(1); }
+const text = wait.question || wait.prompt || wait.title || wait.message || "agent is waiting for human input";
+process.stdout.write(String(text).replace(/[\\t\\r\\n]+/g, " ").slice(0, 300));
+'
+}
+
+fm_backend_orca_poll_transition() {  # <state-dir> <session> <terminal>
+  local state=$1 terminal=$3 status action hash_marker esc_marker stored wait_hash record
+  [ -n "$terminal" ] || return 2
+  status=$(fm_backend_orca_agent_wait "$terminal")
+  action=$(case "$status" in waiting) printf actionable ;; clear) printf defer ;; *) printf fallback ;; esac)
+  esc_marker=$(fm_backend_orca_transition_marker "$state" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" "$terminal")
+  hash_marker=$(fm_backend_orca_transition_marker "$state" "$SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX" "$terminal")
+  if [ "$action" = fallback ]; then
+    [ -e "$esc_marker" ] && return 3
+    return 2
+  fi
+  if [ "$action" != actionable ]; then
+    rm -f "$esc_marker" "$hash_marker"
+    return 2
+  fi
+  if ! wait=$(fm_backend_orca_agent_wait_json "$terminal" 2>/dev/null); then
+    [ -e "$esc_marker" ] && return 3
+    return 2
+  fi
+  wait_hash=$(printf '%s' "$wait" | fm_backend_orca_hash)
+  stored=$(cat "$hash_marker" 2>/dev/null || true)
+  [ -z "$stored" ] || [ "$stored" = "$wait_hash" ] || rm -f "$esc_marker"
+  printf '%s' "$wait_hash" > "$hash_marker"
+  [ ! -e "$esc_marker" ] || return 1
+  record=$(fm_transition_record "$terminal" "" "" blocked "")
+  printf '%s' "$record"
+  return 0
+}
+
+fm_backend_orca_commit_transition() {  # <state-dir> <session> <record>
+  local terminal
+  terminal=$(fm_transition_pane_id "$3")
+  [ -n "$terminal" ] || return 1
+  : > "$(fm_backend_orca_transition_marker "$1" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" "$terminal")"
+}
+
+fm_backend_orca_clear_transition() {  # <state-dir> <window>
+  local terminal=$2
+  [ -n "$terminal" ] || return 0
+  rm -f "$(fm_backend_orca_transition_marker "$1" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" "$terminal")" \
+    "$(fm_backend_orca_transition_marker "$1" "$SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX" "$terminal")"
 }
 
 fm_backend_orca_send_key() {  # <terminal-id> <key>

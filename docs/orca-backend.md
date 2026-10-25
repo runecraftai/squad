@@ -58,7 +58,9 @@ A bare shell row is `unknown`, not an empty agent composer.
 Pi operators launched from a positional brief complete their turn and exit to the shell instead of idling at a composer, so on Linux they never render the bordered composer row the clearance classifier verifies against.
 When native Pi delivery is unavailable, a steer sent while such an operator is mid-turn is delivered and queued - verified live on v1.4.188, the terminal shows the queued message and the operator later acts on it - but verification still returns `unknown` and `sq-send.sh` exits reporting delivery unconfirmed.
 That verdict stays genuinely unconfirmed either way: peek the terminal before acting on it, and never resend blindly, because the same `unknown` also covers text parked at an exited operator's bare shell prompt.
-The sentry has no native Orca busy signal, so each harness adapter's semantic lifecycle supplies worker state.
+The sentry has no native Orca busy/idle signal, so each harness adapter's semantic lifecycle supplies worker state; an idle or unknown operator with no active run is surfaced by the existing sentry path rather than treated as task completion.
+Blocked prompts use Orca's exact-terminal `agentWait` observation through the shared normalized transition policy, with changed-prompt deduplication and the existing exact-target `sq-send` answer path.
+When that observation is absent or unreadable, Orca is treated as unknown and the existing fallback supervision runs; it is never guessed clear or replayed as a native answer.
 Grok alone retains its isolated rendered-tail fallback.
 
 Cleanup keeps all shared Squad safety checks.
@@ -136,6 +138,7 @@ A disposable real-host probe therefore requires a proven independent Orca profil
 - The worktree-filtered `orca terminal list` response (`truncated`, `hostScope`, `terminals[]`) and the installed `orca terminal create --help` flags were observed read-only on 2026-10-25 and that observation is retained in [`verification/runtime-backends.md`](verification/runtime-backends.md#orca).
   Filter semantics, real create/cleanup, focus behaviour and every real lifecycle path stay unproven, so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
+- Orca does not expose the event stream used by Herdr; blocked-prompt detection polls `agentWait` and degrades to the existing sentry fallback when that observation is not available.
 
 ## Regression entry points
 

@@ -1375,7 +1375,7 @@ EOF
       continue
     fi
     backend=$(window_backend "$w")
-    # A poll-capable-but-not-push-capable backend (TUIOS today) has no event
+    # A poll-capable-but-not-push-capable backend (TUIOS or Orca) has no event
     # stream to wait on, so it produces its normalized transition record
     # (bin/sq-transition-lib.sh) right here on the ordinary poll instead of
     # through the event-wait splice above. A fresh actionable (blocked) record
