@@ -309,6 +309,23 @@ try {
   writeFileSync(`${state}/.afk-daemon-terminal`,orphanRecord);
   idle=true;consume=true;await tick();f=flush();assert.equal(f.status,0,f.stderr);assert.equal(existsSync(`${dir}/request.json`),false);
   r=cli('stop');assert.equal(r.status,0,r.stderr);
+  // A reconcile that retires an already-consumed prefix and then fails must not
+  // roll that acknowledged text back into the escalation buffer on rollback.
+  r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  idle=true;draft='';consume=true;structured=true;await tick();
+  f=flush('signal: consumed before a failing reconcile');assert.notEqual(f.status,0);await tick();structured=false;
+  assert.ok(existsSync(`${dir}/request.json`));assert.equal(JSON.parse(readFileSync(`${dir}/result.json`)).status,'handled');
+  assert.match(readFileSync(`${state}/.subsuper-escalations`,'utf8'),/consumed before a failing reconcile/);
+  model.cancelClose=true;save();
+  r=cli('start-native',{SQUAD_SUPERVISOR_BACKEND:'tmux',SQUAD_SUPERVISOR_TARGET:''});
+  assert.notEqual(r.status,0);assert.match(r.stderr,/teardown is unconfirmed/);
+  assert.equal(existsSync(`${dir}/request.json`),false);
+  assert.doesNotMatch(readFileSync(`${state}/.subsuper-escalations`,'utf8'),/consumed before a failing reconcile/);
+  assert.ok(existsSync(`${state}/.afk`));
+  model.cancelClose=false;save();
+  r=cli('reconcile');assert.equal(r.status,0,r.stderr);reload();
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
+  check('a failed reconcile never rolls an already-consumed prefix back into the buffer');
   assert.equal(calls().some(a=>a[1]==='send'||a[0]==='worktree'||a.includes('--tab')),false);
   // A settle of the selected primary never accounts for a request published for
   // another Orca primary; reporting success there would let start/stop clear the

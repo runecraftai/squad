@@ -489,6 +489,19 @@ fm_afk_launch_reconcile() {  # [exact-primary]
   fi
 }
 
+fm_afk_launch_snapshot_artifacts() {  # <backup-dir>
+  local backup=$1 artifact
+  [ -d "$backup" ] || return 1
+  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
+    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || return 1
+  fi
+  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
+    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
+      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || return 1
+    fi
+  done
+}
+
 fm_afk_launch_restore_backup() {  # <backup> <had-afk>
   local backup=$1 had_afk=$2 artifact result=0
   rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk" \
@@ -593,7 +606,7 @@ fm_afk_launch_create_tmux() {  # <commander-target> <commander-backend>
 }
 
 fm_afk_launch_start() {
-  local commander_target commander_backend backup artifact had_afk=0 result
+  local commander_target commander_backend backup="" had_afk=0 result
   local pane_line pane_status=0 fallback_note
   if [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/sq-afk-return.sh check before re-entering away mode"
@@ -647,19 +660,19 @@ fm_afk_launch_start() {
     return 0
   fi
 
-  backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
-  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
-    had_afk=1
-    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
-  fi
-  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
-    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
-      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
-    fi
-  done
   if ! fm_afk_launch_reconcile "$commander_target"; then
     result=1
   else
+    # Snapshot only after reconciliation settles: a restore may undo the clear
+    # below, never re-cover a prefix reconciliation already retired.
+    backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") \
+      || { fm_afk_launch_log 'failed to create the away-mode rollback snapshot'; return 1; }
+    [ ! -e "$SQUAD_AFK_LAUNCH_STATE/.afk" ] || had_afk=1
+    if ! fm_afk_launch_snapshot_artifacts "$backup"; then
+      rm -rf "$backup" || true
+      fm_afk_launch_log 'failed to snapshot away-mode artifacts for rollback'
+      return 1
+    fi
     if fm_afk_clear_stale_artifacts "$SQUAD_AFK_LAUNCH_STATE"; then
       result=0
     else
@@ -687,15 +700,17 @@ fm_afk_launch_start() {
     esac
   fi
   if [ "$result" -ne 0 ]; then
-    fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
-  else
-    rm -rf "$backup" || result=1
+    if [ -n "$backup" ]; then
+      fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+    fi
+  elif [ -n "$backup" ] && ! rm -rf "$backup"; then
+    result=1
   fi
   return "$result"
 }
 
 fm_afk_launch_start_native() {
-  local backup artifact had_afk=0 result=0
+  local backup="" had_afk=0 result=0
   mkdir -p "$SQUAD_AFK_LAUNCH_STATE" || return 1
   if [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/sq-afk-return.sh check before re-entering away mode"
@@ -707,18 +722,17 @@ fm_afk_launch_start_native() {
     fm_afk_launch_log "daemon already running; refreshed away-mode flag"
     return 0
   fi
-  backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
-  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
-    had_afk=1
-    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
-  fi
-  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
-    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
-      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
+  if ! fm_afk_launch_reconcile; then
+    result=1
+  else
+    backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") \
+      || { fm_afk_launch_log 'failed to create the away-mode rollback snapshot'; return 1; }
+    [ ! -e "$SQUAD_AFK_LAUNCH_STATE/.afk" ] || had_afk=1
+    if ! fm_afk_launch_snapshot_artifacts "$backup"; then
+      rm -rf "$backup" || true
+      fm_afk_launch_log 'failed to snapshot away-mode artifacts for rollback'
+      return 1
     fi
-  done
-  fm_afk_launch_reconcile || result=1
-  if [ "$result" -eq 0 ]; then
     if ! fm_afk_clear_stale_artifacts "$SQUAD_AFK_LAUNCH_STATE"; then
       fm_afk_launch_log "failed to clear stale away-mode artifacts"
       result=1
@@ -730,9 +744,11 @@ fm_afk_launch_start_native() {
     fm_afk_launch_record_write none - native || result=1
   fi
   if [ "$result" -ne 0 ]; then
-    fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
-  else
-    rm -rf "$backup" || result=1
+    if [ -n "$backup" ]; then
+      fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+    fi
+  elif [ -n "$backup" ] && ! rm -rf "$backup"; then
+    result=1
   fi
   return "$result"
 }
