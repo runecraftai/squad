@@ -76,6 +76,9 @@ func newCLISyncFixture(t *testing.T) cliSyncFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Expose the registered, symlink-resolved root so direct database lookups
+	// match the stored working_path on every platform (macOS /var is a symlink).
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -393,6 +396,7 @@ func newCLIRecoverFixture(t *testing.T) cliRecoverFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -474,6 +478,7 @@ func newCLIUnmovedAbortFixture(t *testing.T) cliRecoverFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -682,6 +687,7 @@ func newCLIStaleUnpublishedFixtureWithOptions(t *testing.T, pushedDescendant boo
 	if err != nil {
 		t.Fatal(err)
 	}
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
