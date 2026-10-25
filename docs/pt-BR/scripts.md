@@ -89,10 +89,12 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-sentry.sh`            | Sentinela always-on segura contra duplicatas: absorve acordos benignos, enfileira e sai nos acionáveis |
 | `sq-afk-start.sh`        | Rodar o entrypoint comum sourceável do daemon de modo ausente em primeiro plano                      |
 | `sq-afk-launch.sh`       | Controlar entrada, saída, rollback do modo ausente e qualquer ciclo de vida de terminal do backend                 |
+| `sq-afk-orca-launch.sh`  | Ciclo de vida exato e sem foco do terminal daemon Orca para o launcher de modo ausente; nunca cria worktree, fecha aba ou troca o foco |
 | `sq-afk-tuios-launch.sh` | Ciclo de vida exato, sem anexo, de sessão daemon TUIOS dono do launcher de modo ausente        |
 | `sq-afk-pi-handoff.sh`   | Publicar uma solicitação durável de handoff nativa do Pi e observar seu reconhecimento de consumo |
 | `sq-afk-tuios-lab.sh`    | Verificação ao vivo TUIOS/Pi descartável, opt-in e protegida, para entrega em modo ausente              |
 | `sq-afk-return.sh`       | Controlar shutdown determinístico de retorno, evidência de catch-up e o gate de bloqueador acionável pelo Squad |
+| `sq-supervisor-native.sh` | Contrato de entrega nativa neutro de backend do supervisor: vínculo de endpoint, prontidão, submissão de requisição e aposentadoria por reconhecimento consumido |
 | `sq-supervisor-target-lib.sh` | Resolver e validar o alvo e backend compartilhados do supervisor para o daemon e launcher |
 | `sq-supervise-daemon.sh` | Sub-supervisor do modo ausente controlado por presença: auto-trata acordos rotineiros, protege a injeção pelo harness primário detectado, escala digests em lote, alerta sobre entrega falha |
 | `sq-crew-state.sh`       | Imprimir uma linha determinística de estado atual para um operador                                |

@@ -13,7 +13,7 @@ export ROOT
 python3 <<'PY'
 import os, pty, subprocess, tempfile, json, pathlib, time, select, signal, shutil
 root = pathlib.Path(os.environ['ROOT'])
-lab = pathlib.Path(tempfile.mkdtemp(prefix='orca-native-live-'))
+lab = pathlib.Path(tempfile.mkdtemp(prefix='orca-native-live-')).resolve()
 state = lab/'state'; state.mkdir(); fake = lab/'fake'; fake.mkdir()
 version = subprocess.check_output(['pi','--version'],text=True).strip()
 (fake/'orca').write_text('''#!/usr/bin/env python3

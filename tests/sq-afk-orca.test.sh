@@ -147,6 +147,12 @@ try {
   r=cli('start',{SQUAD_SUPERVISOR_TARGET:'term-foreign'});assert.notEqual(r.status,0);assert.match(r.stderr,/already bound to primary handle 'term-primary'/);assert.equal(count('create'),createdWhileAlive);assert.ok(existsSync(`${state}/.afk`));
   rmSync(foreignDir,{recursive:true,force:true});
   check('an already running daemon refuses another ready primary with an actionable refusal');
+  model.terms[0].incarnationId='inc-term-primary-rebound';save();
+  const reboundEndpoint=JSON.parse(script(`bash '${root}/bin/sq-supervisor-native.sh' endpoint orca term-primary`).stdout);
+  writeFileSync(`${dir}/ready.json`,JSON.stringify({...JSON.parse(readFileSync(`${dir}/ready.json`)),endpoint:reboundEndpoint,heartbeat:Date.now()}));
+  r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/changed identity since this daemon was launched \(recorded runtime=runtime-1 incarnation=inc-term-primary; current runtime=runtime-1 incarnation=inc-term-primary-rebound\)/);assert.equal(count('create'),createdWhileAlive);assert.ok(existsSync(`${state}/.afk`));
+  model.terms[0].incarnationId='inc-term-primary';save();await tick();
+  check('a same-handle primary rebind refuses naming recorded and current identities, not a primary switch');
   r=cli('stop');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);delete model.executeCommand;delete model.spawnedPid;save();
   check('public helpers start and stop the real daemon process inside a fake Orca terminal without inherited Pi environment');
   await tick();model.lostCreate=true;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);

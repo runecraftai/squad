@@ -608,10 +608,19 @@ fm_afk_launch_start() {
       fm_afk_launch_orca_resolve || return 1
       fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" || { fm_afk_launch_log 'the running Orca daemon terminal no longer matches its recorded identity; refusing to refresh away mode'; return 1; }
       fm_afk_launch_orca_daemon_owned || { fm_afk_launch_log 'the running Orca daemon process does not own its recorded terminal; refusing to refresh away mode'; return 1; }
-      local current bound
+      local current bound recorded live
       current=$(fm_supervisor_native_endpoint orca "$commander_target") || { fm_afk_launch_log "the selected Orca primary $commander_target no longer resolves to a ready readable endpoint; refusing to refresh away mode"; return 1; }
-      bound=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.parent.target // empty' 2>/dev/null) || bound=
-      printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --argjson current "$current" '.parent == $current' >/dev/null || { fm_afk_launch_log "a live Orca daemon is already bound to primary handle '${bound:-unknown}', not $commander_target; stop it before switching primary"; return 1; }
+      if ! printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --argjson current "$current" '.parent == $current' >/dev/null; then
+        bound=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.parent.target // empty' 2>/dev/null) || bound=
+        if [ "$bound" = "$commander_target" ]; then
+          recorded=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.parent | "runtime=\(.runtime // "unknown") incarnation=\(.incarnation // "unknown")"' 2>/dev/null) || recorded=
+          live=$(printf '%s' "$current" | jq -r '"runtime=\(.runtime // "unknown") incarnation=\(.incarnation // "unknown")"' 2>/dev/null) || live=
+          fm_afk_launch_log "the selected Orca primary $commander_target changed identity since this daemon was launched (recorded ${recorded:-unknown}; current ${live:-unknown}); stop away mode before restarting it against the reconnected primary"
+        else
+          fm_afk_launch_log "a live Orca daemon is already bound to primary handle '${bound:-unknown}', not $commander_target; stop it before switching primary"
+        fi
+        return 1
+      fi
     fi
     if ! fm_afk_launch_flag_write; then
       fm_afk_launch_log "failed to refresh away-mode flag"
