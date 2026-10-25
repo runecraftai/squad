@@ -378,6 +378,23 @@ fm_backend_tuios_grant_refusal() {  # <refusal-output>
   return 1
 }
 
+# fm_backend_tuios_respond_error_verdict: classify a refused respond call. The
+# installed CLI renders the documented stable codes as prose, so the
+# live-verified refusal sentences are matched alongside the code tokens;
+# anything unrecognized stays uncertain because a lost reply may follow an
+# answer that did land.
+fm_backend_tuios_respond_error_verdict() {  # <refusal-output>
+  case "$1" in
+    *prompt_changed*|*'respond pressed nothing'*|*'not the one prompt_id names'*|*'is asking something else now, so nothing was answered'*)
+      printf 'prompt_changed' ;;
+    *risk_unacknowledged*|*'matches a risk rule'*|*'may deny a risky call and never allow one'*)
+      printf 'risk_matched' ;;
+    *not_human*|*forbidden*|*'respond grant'*|*'is for the person at an attached client'*)
+      printf 'not_authorized' ;;
+    *) printf 'uncertain' ;;
+  esac
+}
+
 fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
   local target=$1 key=$2 expected=${3:-} out rc
   # Only a refusal sets this, and only to the pane whose grant is missing, so a
@@ -445,7 +462,7 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   }
   if [ "$action" = choose ]; then
     case "$value" in ''|*[!0-9]*|0) echo 'error: choose requires a positive option number; nothing was answered' >&2; return 1 ;; esac
-    printf '%s' "$prompt" | jq -e --argjson choice "$value" '($choice <= (.options // [] | length))' >/dev/null 2>&1 || {
+    fm_backend_tuios_prompt_option_numbers "$prompt" | grep -qx -- "$value" || {
       echo 'error: chosen option is not present in the current prompt; nothing was answered' >&2
       return 1
     }
@@ -455,10 +472,10 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   out=$("$(fm_backend_tuios_bin)" "${args[@]}" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" >&2
-    case "$out" in
-      *prompt_changed*) echo 'error: TUIOS confirmed nothing was answered because the prompt changed; read the new prompt before deciding again' >&2; return 1 ;;
-      *risk_unacknowledged*) echo 'error: TUIOS refused this risk-matched approval; nothing was answered and no risk acknowledgement was inferred' >&2; return 1 ;;
-      *not_human*|*'respond grant'*)
+    case "$(fm_backend_tuios_respond_error_verdict "$out")" in
+      prompt_changed) echo 'error: TUIOS confirmed nothing was answered because the prompt changed; read the new prompt before deciding again' >&2; return 1 ;;
+      risk_matched) echo 'error: TUIOS refused this risk-matched approval; nothing was answered and no risk acknowledgement was inferred' >&2; return 1 ;;
+      not_authorized)
         # shellcheck disable=SC2034 # Set for the sourcing caller to print the sanctioned grant remedy.
         SQUAD_BACKEND_PANE_GRANT_TARGET=$(fm_backend_tuios_caller_pane || true)
         echo 'error: TUIOS refused this caller; nothing was answered; use an authorized person or pane with the respond grant' >&2
@@ -808,6 +825,17 @@ fm_backend_tuios_prompt_json() {  # <target>
   printf '%s' "$out"
 }
 
+# fm_backend_tuios_prompt_option_numbers: the numbers a person presses for the
+# prompt's options. The daemon's peek-prompt carries each option's authoritative
+# on-screen number in `n`; a daemon that reports plain strings has only their
+# positions, which is the same numbering for that shape.
+fm_backend_tuios_prompt_option_numbers() {  # <prompt-json>
+  printf '%s' "$1" | jq -r '
+    (.options // []) | to_entries[]
+    | if (.value | type) == "object" and ((.value.n | type) == "number")
+      then .value.n else (.key + 1) end' 2>/dev/null
+}
+
 fm_backend_tuios_prompt_summary() {  # <target>
   local target=$1 prompt line kind reason options
   prompt=$(fm_backend_tuios_prompt_json "$target") || return 0
@@ -816,13 +844,18 @@ fm_backend_tuios_prompt_summary() {  # <target>
   if [ "$(printf '%s' "$prompt" | jq -r '.found')" = true ]; then
     line=$(printf '%s' "$prompt" | jq -r '(.message // "") | if . != "" then . else (.lines // [] | .[-1] // "") end')
     # Numbered options, when the daemon's prompt read carries any: each entry
-    # is either a plain string or an object (label/text/name), rendered as
-    # "1) <opt> 2) <opt> ...". Absent or empty stays "" so an older daemon
-    # with no options field changes nothing below.
+    # is either a plain string or an object (label/text/name) whose `n` is the
+    # number the person actually sees, rendered as "2) <opt> 5) <opt> ...".
+    # Absent or empty stays "" so an older daemon with no options field changes
+    # nothing below.
     options=$(printf '%s' "$prompt" | jq -r '
       (.options // []) as $o
       | if ($o | length) > 0 then
-          [$o | to_entries[] | "\(.key + 1)) " + (.value | if type == "string" then . else (.label // .text // .name // tostring) end)]
+          [$o | to_entries[]
+           | ((if (.value | type) == "object" and ((.value.n | type) == "number")
+               then .value.n else (.key + 1) end) | tostring)
+             + ") "
+             + (.value | if type == "string" then . else (.label // .text // .name // tostring) end)]
           | join(" ")
         else "" end' 2>/dev/null)
   else
