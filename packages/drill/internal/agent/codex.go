@@ -72,7 +72,12 @@ func (a *codexAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, error)
 			_ = os.Remove(schemaPath)
 			return nil, fmt.Errorf("codex schema normalize: %w", err)
 		}
-		validationSchema = schema
+		validationSchema, err = codexValidationSchema(opts.JSONSchema)
+		if err != nil {
+			_ = f.Close()
+			_ = os.Remove(schemaPath)
+			return nil, fmt.Errorf("codex validation schema normalize: %w", err)
+		}
 		if _, err := f.Write(schema); err != nil {
 			_ = f.Close()
 			_ = os.Remove(schemaPath)
@@ -388,6 +393,53 @@ func codexOutputSchema(schema json.RawMessage) ([]byte, error) {
 	}
 	addAdditionalPropertiesFalse(value)
 	return json.Marshal(value)
+}
+
+// codexOmittableOutputFields lists model-facing properties whose omission
+// codex output validation tolerates even though the generated schema requires
+// them. The generated schema still requires them (as nullable) so the provider
+// grammar stays closed; callers treat an omitted value as explicitly unknown.
+// Every other caller-optional property stays required at validation time.
+var codexOmittableOutputFields = map[string]bool{
+	"risk_scope": true,
+}
+
+func codexValidationSchema(schema json.RawMessage) ([]byte, error) {
+	var value any
+	if err := json.Unmarshal(schema, &value); err != nil {
+		return nil, err
+	}
+	addAdditionalPropertiesFalse(value)
+	allowOmittedOutputFields(value)
+	return json.Marshal(value)
+}
+
+func allowOmittedOutputFields(value any) {
+	schema, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	if properties, ok := schema["properties"].(map[string]any); ok {
+		if schema["type"] == "object" {
+			required := stringSlice(schema["required"])
+			kept := make([]any, 0, len(required))
+			for _, name := range required {
+				if codexOmittableOutputFields[name] {
+					continue
+				}
+				kept = append(kept, name)
+			}
+			if len(kept) != len(required) {
+				schema["required"] = kept
+			}
+		}
+		for _, property := range properties {
+			allowOmittedOutputFields(property)
+		}
+	}
+	if items, ok := schema["items"]; ok {
+		allowOmittedOutputFields(items)
+	}
 }
 
 func addAdditionalPropertiesFalse(value any) {

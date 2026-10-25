@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -290,6 +291,70 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens
 		t.Fatalf("unexpected output: %s", string(result.Output))
 	}
 }
+
+func TestCodexAgent_RunOmitsOptionalRiskScope(t *testing.T) {
+	result, err := runFakeCodexWithPayload(t, nil, `{"findings":[],"risk_level":"low","risk_rationale":"bounded"}`)
+	if err != nil {
+		t.Fatalf("missing risk_scope should not invalidate codex output: %v", err)
+	}
+	var output map[string]any
+	if err := json.Unmarshal(result.Output, &output); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if _, present := output["risk_scope"]; present {
+		t.Errorf("codex output fabricated risk_scope %v, want it omitted so the review step marks risk unknown", output["risk_scope"])
+	}
+}
+
+func TestCodexAgent_RunStillRejectsMissingRequiredReviewField(t *testing.T) {
+	_, err := runFakeCodexWithPayload(t, nil, `{"findings":[],"risk_level":"low"}`)
+	if err == nil {
+		t.Fatal("codex output missing risk_rationale should fail")
+	}
+	if !strings.Contains(err.Error(), `missing required field "risk_rationale"`) {
+		t.Fatalf("expected missing risk_rationale failure, got %v", err)
+	}
+}
+
+func TestCodexAgent_RunStillRejectsInvalidRiskScope(t *testing.T) {
+	_, err := runFakeCodexWithPayload(t, nil, `{"findings":[],"risk_level":"low","risk_rationale":"bounded","risk_scope":"guess"}`)
+	if err == nil {
+		t.Fatal("codex output with an out-of-enum risk_scope should fail")
+	}
+	if !strings.Contains(err.Error(), "risk_scope") {
+		t.Fatalf("expected risk_scope validation failure, got %v", err)
+	}
+}
+
+func runFakeCodexWithPayload(t *testing.T, schema json.RawMessage, payload string) (*Result, error) {
+	t.Helper()
+	dir := t.TempDir()
+	if len(schema) == 0 {
+		schema = codexReviewSchemaFixture
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	events := fmt.Sprintf("{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":%s}}\n{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}\n", encoded)
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), []byte(events), 0o644); err != nil {
+		t.Fatalf("write events fixture: %v", err)
+	}
+	bin := writeFakeCodex(t, dir, "#!/bin/sh\ndir=$(dirname \"$0\")\ncat \"$dir/events.jsonl\"\n", "@echo off\r\ntype \"%~dp0events.jsonl\"\r\n")
+	ca := &codexAgent{bin: bin}
+	return ca.Run(context.Background(), RunOpts{Prompt: "review", CWD: dir, JSONSchema: schema})
+}
+
+var codexReviewSchemaFixture = json.RawMessage(`{
+	"type": "object",
+	"properties": {
+		"findings": {"type": "array", "items": {"type": "object"}},
+		"risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
+		"risk_rationale": {"type": "string"},
+		"risk_scope": {"type": "string", "enum": ["source-or-external", "pipeline-owned-delivery"]}
+	},
+	"required": ["findings", "risk_level", "risk_rationale"]
+}`)
 
 func TestCodexOutputSchemaAddsAdditionalPropertiesFalse(t *testing.T) {
 	schema := json.RawMessage(`{
