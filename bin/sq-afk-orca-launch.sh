@@ -3,6 +3,15 @@
 # Never creates/removes a worktree, switches focus, stops a runtime, or closes a
 # tab. A pre-create intent survives ambiguous CLI returns; no blind create retry.
 
+fm_afk_launch_orca_primary() {  # [exact-target]; never guesses an unresolved primary
+  local primary=${1:-${SQUAD_SUPERVISOR_TARGET:-}}
+  if [ -z "$primary" ] || [ "$primary" = pending ]; then
+    fm_afk_launch_log 'Orca supervisor has no exact primary terminal handle; set SQUAD_SUPERVISOR_TARGET to the primary this away session supervises'
+    return 1
+  fi
+  printf '%s' "$primary"
+}
+
 fm_afk_launch_orca_resolve() {  # pending creation -> exact identity, read-only
   local extra=$SQUAD_AFK_REC_EXTRA inventory terminal count endpoint
   if [ "$SQUAD_AFK_REC_TARGET" != pending ]; then return 0; fi

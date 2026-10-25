@@ -222,6 +222,52 @@ try {
   await tick();model.lostCreate=true;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
   reload();model.unreadable=false;save();r=cli('reconcile');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
   check('lost create response persists intent, refuses duplicate create, and recovers exact title/identity only');
+  // A redundant start while an escalation is in flight and the daemon is alive
+  // must refresh the flag instead of claiming another away session is needed: a
+  // refresh creates no terminal and no delivery.
+  model.lostCreate=false;save();r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  const inflightRecord=JSON.parse(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t').slice(2).join('\t'));
+  const createsBeforeRefresh=count('create');
+  idle=false;f=flush('signal: in flight while the daemon is live');assert.notEqual(f.status,0);
+  assert.ok(existsSync(`${dir}/request.json`));
+  const refreshDaemon=spawn('bash',['-c','sleep 60 & echo $!; wait'],{stdio:['ignore','pipe','ignore']});tracked.push(refreshDaemon);
+  const refreshPid=Number((await once(refreshDaemon.stdout,'data'))[0].toString().trim());assert.ok(refreshPid>1);
+  const refreshLock=`${state}/.supervise-daemon.lock`;mkdirSync(refreshLock);
+  writeFileSync(`${refreshLock}/pid`,String(refreshPid));
+  const refreshIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${refreshPid}'`);assert.equal(refreshIdentity.status,0);
+  writeFileSync(`${refreshLock}/pid-identity`,refreshIdentity.stdout.trim());
+  writeFileSync(`${refreshLock}/orca-owner`,inflightRecord.title);
+  r=cli('start');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/refreshed away-mode flag/);
+  assert.equal(count('create'),createsBeforeRefresh);assert.ok(existsSync(`${state}/.afk`));
+  process.kill(refreshPid,'SIGTERM');await once(refreshDaemon,'exit');rmSync(refreshLock,{recursive:true});
+  tracked=tracked.filter(child=>child!==refreshDaemon);
+  idle=true;consume=true;await tick();f=flush();assert.equal(f.status,0,f.stderr);
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
+  check('a redundant start refreshes a live daemon even while a native request is in flight');
+  // A consumed acknowledgement retires its covered prefix; the durable wedge
+  // marker from an earlier alarm must not outlive the confirmed delivery.
+  r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  writeFileSync(`${state}/.subsuper-inject-wedged`,'fm away-mode inject WEDGED: 4555s undelivered\n');
+  f=flush('signal: wedged then consumed');assert.notEqual(f.status,0);await tick();
+  assert.ok(existsSync(`${state}/.subsuper-inject-wedged`));
+  f=flush();assert.equal(f.status,0,f.stderr);
+  assert.equal(existsSync(`${state}/.subsuper-inject-wedged`),false);
+  assert.equal(readFileSync(`${state}/.subsuper-escalations`,'utf8'),'');
+  check('a consumed acknowledgement clears the stale wedge marker with the retired prefix');
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
+  // Without a terminal record the pending invariant can only be checked against
+  // an exact primary handle; an unknown primary must refuse rather than report
+  // a complete stop while the real request stays unresolved.
+  r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  const orphanRecord=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
+  idle=false;f=flush('signal: unresolved without a terminal record');assert.notEqual(f.status,0);
+  assert.ok(existsSync(`${dir}/request.json`));rmSync(`${state}/.afk-daemon-terminal`);
+  r=cli('stop',{SQUAD_SUPERVISOR_TARGET:''});assert.notEqual(r.status,0);assert.match(r.stderr,/no exact primary terminal handle/);assert.ok(existsSync(`${state}/.afk`));
+  r=cli('reconcile',{SQUAD_SUPERVISOR_TARGET:''});assert.notEqual(r.status,0);assert.match(r.stderr,/no exact primary terminal handle/);assert.ok(existsSync(`${state}/.afk`));
+  check('Orca stop and reconcile without an exact primary handle refuse to report completion');
+  writeFileSync(`${state}/.afk-daemon-terminal`,orphanRecord);
+  idle=true;consume=true;await tick();f=flush();assert.equal(f.status,0,f.stderr);assert.equal(existsSync(`${dir}/request.json`),false);
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
   assert.equal(calls().some(a=>a[1]==='send'||a[0]==='worktree'||a.includes('--tab')),false);
   await emit('session_shutdown');
 } finally {
