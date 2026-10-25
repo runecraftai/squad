@@ -3548,6 +3548,37 @@ test_dirty_check_requires_recorded_worktree() {
   pass "a missing or empty recorded worktree never reads the sentry's own checkout"
 }
 
+# A failed Git read is cannot-evaluate: it must not be reported as a clean tree,
+# and it must not discard an idle-dirty clock already measuring known work.
+test_failed_dirty_read_is_cannot_evaluate() {
+  local dir state fakebin out capture_file window key wt pid old real_git
+  pause_worktree_case dirty-read-failure
+  printf 'unfinished\n' > "$wt/untracked"
+  old=$(( $(date +%s) - 500 ))
+  printf '%s\n' "$old" > "$state/.dirty-since-$key"
+  real_git=$(command -v git)
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$arg" = status ]; then
+    printf 'fatal: simulated git status failure\n' >&2
+    exit 1
+  fi
+done
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_live "$pid" 30 || { reap "$pid"; fail "an unreadable worktree was escalated as dirty: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "an unreadable worktree emitted a wake: $(cat "$out")"
+  [ "$(cat "$state/.dirty-since-$key" 2>/dev/null || true)" = "$old" ] \
+    || fail "a failed git read reset the idle-dirty clock instead of keeping it"
+  grep -F 'cannot evaluate worktree status' "$state/.sentry-triage.log" >/dev/null \
+    || fail "a failed git read was not reported as cannot-evaluate"
+  pass "a failed worktree read is cannot-evaluate and keeps the idle-dirty clock"
+}
+
 # A pane that keeps reporting busy must not swallow the pause: once a pause has
 # aged out, a busy pane defers to the existing pause cadence instead of being
 # left with no supervision at all.
@@ -3746,6 +3777,7 @@ test_idle_dirty_pause_escalates
 test_dirty_staged_pause_survives_footer_change
 test_pause_episode_classifier
 test_dirty_check_requires_recorded_worktree
+test_failed_dirty_read_is_cannot_evaluate
 test_aged_out_pause_keeps_busy_pane_supervised
 test_unreadable_pause_mtime_does_not_age_out
 test_away_dirty_work_hands_off_evidence_once
