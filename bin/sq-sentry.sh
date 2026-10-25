@@ -283,7 +283,7 @@ recorded_windows() {
 # is a backend target mangled by tr ':/.' '___' - the same transform
 # sq-teardown.sh and the away-mode daemon apply. Longest family first: ".stale-"
 # is a prefix of ".stale-since-" and ".paused-" of its two cadence markers.
-SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .deferred-log- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
+SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .deferred-log- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-deferred-log- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
 
 # drop_window_markers: reset every piece of per-window bookkeeping this sentry
 # keeps for <window> - the pane hash/count, the stale suppressor and its wedge
@@ -301,7 +301,8 @@ drop_window_markers() {  # <window>
     "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key" \
     "$STATE/.dirty-since-$key" "$STATE/.dirty-unreadable-$key" "$STATE/.pause-episode-$key" \
     "$STATE/.deferred-log-$key" \
-    "$STATE/.sig-hash-$key" "$STATE/.sig-since-$key" "$STATE/.sig-reported-$key" "$STATE/.sig-unreadable-$key"
+    "$STATE/.sig-hash-$key" "$STATE/.sig-since-$key" "$STATE/.sig-reported-$key" "$STATE/.sig-unreadable-$key" \
+    "$STATE/.sig-deferred-log-$key"
 }
 
 # drop_orphan_window_markers: re-derive which keys still belong to a live task
@@ -325,7 +326,8 @@ drop_orphan_window_markers() {
   done < <(recorded_windows)
   for f in "$STATE"/.wedge-escalations-* "$STATE"/.deferred-log-* "$STATE"/.paused-resurfaced-* \
            "$STATE"/.paused-rechecked-* "$STATE"/.pause-episode-* "$STATE"/.dirty-since-* \
-           "$STATE"/.dirty-unreadable-* "$STATE"/.sig-reported-* "$STATE"/.sig-since-* "$STATE"/.sig-hash-* "$STATE"/.sig-unreadable-* \
+           "$STATE"/.dirty-unreadable-* "$STATE"/.sig-deferred-log-* "$STATE"/.sig-reported-* \
+           "$STATE"/.sig-since-* "$STATE"/.sig-hash-* "$STATE"/.sig-unreadable-* \
            "$STATE"/.stale-* "$STATE"/.paused-* "$STATE"/.count-* "$STATE"/.hash-*; do
     [ -e "$f" ] || continue
     base=${f##*/}
@@ -514,6 +516,17 @@ pane_signature_cannot_evaluate() {  # <window> <key> <limitation>
   triage_log "cannot evaluate pane signature (${why}): $win"
 }
 
+# Name a composer deferral once per distinct stuck signature: the signature name
+# and the unchanged-pane hash identify the episode, so a new signature or a
+# changed byte re-arms the note. Away mode polls for the whole episode, so an
+# unconditional line here would rotate the bounded triage log.
+pane_signature_deferral_note() {  # <window> <key> <name> <hash>
+  local win=$1 marker="$STATE/.sig-deferred-log-$2" token="$3:$4"
+  [ "$(cat "$marker" 2>/dev/null || true)" = "$token" ] && return 0
+  printf '%s' "$token" > "$marker"
+  triage_log "deferred pane signature ($3, idle pane holds input in its composer): $win"
+}
+
 # Third independent objective rule, sharing no timer with the dirty-worktree or
 # pause-age rules: the task's complete rendered pane is its actual endpoint, so a
 # byte-identical pane that keeps showing a stuck signature (bin/sq-classify-lib.sh's
@@ -526,15 +539,16 @@ pane_signature_cannot_evaluate() {  # <window> <key> <limitation>
 pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rendered>
   local win=$1 task=$2 key=$3 backend=$4 busy=$5 rendered=$6
   local hashfile="$STATE/.sig-hash-$3" sincefile="$STATE/.sig-since-$3"
-  local reportedfile="$STATE/.sig-reported-$3" sig name observed h since age composer note reason
+  local reportedfile="$STATE/.sig-reported-$3" deferralfile="$STATE/.sig-deferred-log-$3"
+  local sig name observed h since age composer note reason
   rm -f "$STATE/.sig-unreadable-$3"
   if status_is_terminal_verb "$(last_status_state_line "$STATE/$task.status")"; then
-    rm -f "$hashfile" "$sincefile" "$reportedfile"
+    rm -f "$hashfile" "$sincefile" "$reportedfile" "$deferralfile"
     return
   fi
   sig=$(printf '%s\n' "$rendered" | pane_signature_classify) || sig=
   if [ -z "$sig" ]; then
-    rm -f "$hashfile" "$sincefile" "$reportedfile"
+    rm -f "$hashfile" "$sincefile" "$reportedfile" "$deferralfile"
     return
   fi
   name=${sig%%|*}
@@ -543,7 +557,7 @@ pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rende
   if [ "$(cat "$hashfile" 2>/dev/null || true)" != "$h" ]; then
     printf '%s' "$h" > "$hashfile"
     date +%s > "$sincefile"
-    rm -f "$reportedfile"
+    rm -f "$reportedfile" "$deferralfile"
     return
   fi
   since=$(cat "$sincefile" 2>/dev/null || true)
@@ -560,7 +574,7 @@ pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rende
   if [ "$busy" -ne 0 ]; then
     case "$composer" in
       empty) note=', idle empty composer' ;;
-      pending|pending-unproven) triage_log "deferred pane signature ($name, idle pane holds input in its composer): $win"; return 0 ;;
+      pending|pending-unproven) pane_signature_deferral_note "$win" "$key" "$name" "$h"; return 0 ;;
     esac
   fi
   reason="stale: $win (pane signature: ${name} \"${observed}\"${note}, complete rendered output unchanged for ${age}s at hash ${h:0:12}; inspect the stuck pane)"

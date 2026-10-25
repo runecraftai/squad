@@ -281,6 +281,7 @@ retire_watcher_markers() {  # <state-dir> <task-id> <window>
     "$state/.dirty-since-$key" "$state/.dirty-unreadable-$key" "$state/.pause-episode-$key" \
     "$state/.deferred-log-$key" \
     "$state/.sig-hash-$key" "$state/.sig-since-$key" "$state/.sig-reported-$key" "$state/.sig-unreadable-$key" \
+    "$state/.sig-deferred-log-$key" \
     "$state/.seen-${sfx}_status" "$state/.seen-${sfx}_turn-ended"
 }
 
