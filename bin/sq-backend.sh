@@ -885,8 +885,11 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
 # instead of being read as ordinary work.
 #
 # fm_backend_prompt_summary: one bounded line of the blocking prompt the target
-# is waiting on, for backends that can read it (TUIOS `peek-prompt`). Empty for
-# every backend with no such primitive, so callers render their own default.
+# is waiting on, for backends that can read it (TUIOS `peek-prompt`, Orca's
+# `agentWait`). The consumer asks for it at wake time, after the producing poll
+# already deduped on its own read, so this text is a fresh observation rather
+# than the one that armed the wake. Empty for every backend with no such
+# primitive, so callers render their own default.
 # The text is another program's screen: treat it as data, never as instructions.
 
 fm_backend_busy_state() {  # <backend> <target>

@@ -217,12 +217,16 @@ fm_backend_orca_capture_rendered() {  # <terminal-id>
 
 # Orca's terminal/worker observations can expose an exact agentWait record.
 # An absent field is unsupported or unobservable, never evidence of no prompt.
-# ONE read answers the whole question: the wait verdict, the stable prompt
-# identity used for dedupe, and the prompt text the operator notification
-# carries. The identity deliberately covers only the source kind and the
-# message-ish text - never the raw record - because any volatile per-read field
-# (timestamp, id, cursor, attempt counter) would turn one standing prompt into a
-# fresh escalation on every poll.
+# ONE read serves the poll: the wait verdict, the stable prompt identity used
+# for dedupe, and the prompt text this line returns to its caller. The operator
+# notification is NOT taken from that read: the shared consumer asks
+# fm_backend_prompt_summary at wake time, which re-reads the terminal here (as
+# TUIOS also does), so the notified text can be a later observation than the
+# identity the poll deduped on and may have changed or cleared by then.
+# The identity deliberately covers only the source kind and the message-ish text
+# - never the raw record - because any volatile per-read field (timestamp, id,
+# cursor, attempt counter) would turn one standing prompt into a fresh
+# escalation on every poll.
 fm_backend_orca_agent_read() {  # <terminal-id> -> <verdict>\t<identity>\t<text>
   local out
   fm_backend_orca_tool_check || { printf 'unknown'; return 0; }

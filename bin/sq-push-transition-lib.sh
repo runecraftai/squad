@@ -137,9 +137,11 @@ handle_push_transition() {  # <backend> <session> <record>
   fi
   # The normalized record carries no prompt text (bin/sq-transition-lib.sh's
   # shape is backend-neutral and most producers have none to offer); a backend
-  # that CAN read the blocking prompt (TUIOS) is asked for it here, at wake
-  # time, rather than widening the shared record for one producer. Empty for
-  # every other backend, so this changes nothing for herdr.
+  # that CAN read the blocking prompt (TUIOS, Orca) is asked for it here, at
+  # wake time, rather than widening the shared record for one producer. That is
+  # a second read of the target, so the text may be newer - or already gone -
+  # compared with the observation that armed the wake. Empty for every other
+  # backend, so this changes nothing for herdr.
   prompt=$(fm_backend_prompt_summary "$backend" "$window" 2>/dev/null || true)
   if [ -n "$prompt" ]; then
     reason="stale: $window ($backend: agent $to - $prompt - waiting on human, escalated immediately, not via wedge timer)"
