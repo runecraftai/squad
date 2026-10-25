@@ -1051,16 +1051,18 @@ fm_backend_agent_alive() {  # <backend> <target>
 # A backend with no event stream at all can still PRODUCE the same normalized
 # record on that poll loop instead of waiting on one: fm_backend_can_poll_transition
 # and fm_backend_poll_transition are the level-reconcile counterpart to the push
-# pair above, reusing the identical record shape and policy table (TUIOS polls
-# its agent inventory; Orca polls exact terminal metadata for its documented
-# agentWait observation). fm_backend_commit_transition and
+# pair above, reusing the identical record shape and policy table (TUIOS whose
+# daemon catalog advertises a verified subscribe verb produces them from native
+# events, while older supported daemons poll their agent inventory; Orca polls
+# exact terminal metadata for its documented agentWait observation).
+# fm_backend_commit_transition and
 # fm_backend_clear_transition serve BOTH families: a backend only needs to be
 # either push- or poll-capable to use them, never both.
 
 # fm_backend_has_push: 0 if <backend> exposes a native transition push stream.
 fm_backend_has_push() {  # <backend>
   case "$1" in
-    herdr) return 0 ;;
+    herdr|tuios) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1110,6 +1112,7 @@ fm_backend_events_capable() {  # <backend> <session>
   fm_backend_source "$backend" || return 1
   case "$backend" in
     herdr) fm_backend_herdr_events_capable "$@" ;;
+    tuios) fm_backend_tuios_events_capable "$@" ;;
     *) return 1 ;;
   esac
 }
@@ -1127,6 +1130,7 @@ fm_backend_wait_transition() {  # <backend> <session> <timeout_secs> <state_dir>
   fm_backend_source "$backend" || return 2
   case "$backend" in
     herdr) fm_backend_herdr_wait_transition "$@" ;;
+    tuios) fm_backend_tuios_wait_transition "$@" ;;
     *) return 2 ;;
   esac
 }

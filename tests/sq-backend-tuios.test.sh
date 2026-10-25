@@ -27,7 +27,8 @@ emit_verb_catalogue() {
  {"verb":"queue-prompt","params":[{"name":"session"},{"name":"window"},{"name":"text"},{"name":"from"}]},
  {"verb":"resume-agent","params":[{"name":"session"},{"name":"window"},{"name":"dry_run"}]},
  {"verb":"send-keys","params":[{"name":"session"},{"name":"window"},{"name":"keys"}]},
- {"verb":"send-text","params":[{"name":"session"},{"name":"window"},{"name":"text"}]}
+ {"verb":"send-text","params":[{"name":"session"},{"name":"window"},{"name":"text"}]},
+ {"verb":"subscribe","params":[{"name":"session"},{"name":"types"}],"returns":[{"name":"seq"},{"name":"boot_id"}]}
 ]}
 JSON
 }
@@ -46,6 +47,12 @@ case "${1:-}" in
           ($pair | split(":")) as $p
           | .verbs |= map(if .verb == $p[0] then .params |= map(select(.name != $p[1])) else . end)
         else . end'
+    ;;
+  subscribe)
+    printf '{"type":"subscribed","boot_id":"boot-a","seq":1}\n'
+    [ -z "${SQUAD_TUIOS_FAKE_EVENT:-}" ] || printf '{"type":"agent-state","window":"%s","state":"needs_input","seq":2,"boot_id":"boot-a"}\n' "${SQUAD_TUIOS_FAKE_EVENT}"
+    [ -z "${SQUAD_TUIOS_FAKE_EVENT:-}" ] || exit 0
+    sleep 5
     ;;
   list-attention)
     printf '{"boot_id":"%s","success":true,"items":[]}\n' "${SQUAD_TUIOS_FAKE_BOOT_ID:-boot-a}"
@@ -1141,6 +1148,23 @@ if [ -e "$ESC_MARKER" ] || [ -e "$HASH_MARKER" ]; then
 fi
 
 pass 'TUIOS backend: the level-reconcile transition producer detects a blocked prompt, dedupes per distinct prompt, rearms after unblocking, and clear_transition removes both markers'
+
+# Native event discovery is optional and based on the daemon's verb catalogue.
+fm_backend_source tuios
+fm_backend_tuios_events_capable owned || fail 'the catalog-listed subscribe verb should enable native TUIOS events'
+SQUAD_TUIOS_FAKE_VERBS_OMIT=subscribe
+export SQUAD_TUIOS_FAKE_VERBS_OMIT
+if fm_backend_tuios_events_capable owned; then fail 'a daemon without subscribe must retain the polling fallback'; fi
+unset SQUAD_TUIOS_FAKE_VERBS_OMIT
+SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"needs_input","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}')
+export SQUAD_TUIOS_FAKE_AGENTS
+SQUAD_TUIOS_FAKE_EVENT=w-opaque_7
+export SQUAD_TUIOS_FAKE_EVENT
+OUT=$(fm_backend_tuios_wait_transition owned 2 "$TRANSITION_STATE" "$TWINDOW"); RC=$?
+unset SQUAD_TUIOS_FAKE_EVENT SQUAD_TUIOS_FAKE_AGENTS
+[ "$RC" -eq 0 ] || fail "a native blocked event must trigger authoritative level reconciliation (rc=$RC, out=$OUT)"
+[ "$(fm_transition_to_status "$OUT")" = blocked ] || fail 'native event reconciliation must return the normalized blocked record'
+pass 'TUIOS backend: catalog-gated native event wake re-reads authoritative prompt state; unsupported daemons retain polling'
 
 # --- composer state ---------------------------------------------------------
 # The composer is read from the pane: a bordered box whose rows are all blank is
