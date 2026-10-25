@@ -3812,6 +3812,65 @@ SH
   pass "an unreadable pane is reported as cannot-evaluate instead of a verdict"
 }
 
+# Quoted error vocabulary in scrollback is not an active provider dialog.
+# The pause still expires normally, but must not become a 240-second error alarm.
+test_paused_scrollback_error_stays_quiet_until_age_out() {
+  local dir state fakebin out capture_file window key wt pid i
+  pause_worktree_case paused-scrollback-error
+  use_tail_aware_tmux "$fakebin"
+  {
+    printf 'Earlier notes discuss rate limit handling, not a live error.\n'
+    for i in {1..50}; do printf 'Completed log entry %s\n' "$i"; done
+    printf 'Waiting for the upstream release.\n> \n'
+  } > "$capture_file"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=240
+  wait_live "$pid" 50 || { reap "$pid"; fail "scrollback prose interrupted a fresh pause: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "scrollback prose emitted a wake: $(cat "$out")"
+  [ ! -s "$state/.stand-to-queue" ] || fail "scrollback prose queued an alarm"
+  printf '1 %s 0\n' "$(( $(date +%s) - 500 ))" > "$state/.pause-episode-$key"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=240
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "scrollback fixture never reached pause age-out"; }
+  grep -F 'declared pause aged out' "$out" >/dev/null || fail "scrollback pause did not age out normally: $(cat "$out")"
+  grep -F 'pane signature:' "$out" >/dev/null && fail "scrollback prose was escalated as a dialog"
+  pass "a paused wait ignores rate-limit prose in scrollback until its pause ages out"
+}
+
+# Expiring a pause suppresses only that pause's cadence, not independent evidence
+# from a real dialog which appears later in the task's rendered endpoint.
+test_error_dialog_after_pause_age_out_escalates() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case dialog-after-pause-age-out
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "fixture pause did not age out"; }
+  grep -F 'declared pause aged out' "$out" >/dev/null || fail "fixture did not record a pause age-out"
+  : > "$out"
+  printf 'API error: rate limit exceeded\n[r] Retry request  [q] Dismiss\n' > "$capture_file"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_PAUSE_MAX_SECS=1 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "an aged-out pause hid a later real dialog: $(cat "$out")"; }
+  grep -F 'pane signature: error-dialog' "$out" >/dev/null || fail "later dialog did not name its signature: $(cat "$out")"
+  grep -F 'API error: rate limit exceeded' "$out" >/dev/null || fail "later dialog omitted observed error text"
+  [ "$(grep -c 'declared pause aged out' "$state/.stand-to-queue")" = 1 ] || fail "dialog observation repeated the pause age-out"
+  pass "a real error dialog after pause age-out still escalates with its observed signature"
+}
+
+test_error_dialog_requires_bottom_affordance() {
+  local dialog sig
+  dialog=$(printf 'API error: rate limit exceeded\n[r] Retry request  [q] Dismiss\n')
+  sig=$(printf '%s\n' "$dialog" | pane_signature_classify)
+  case "$sig" in error-dialog\|*) ;; *) fail "active retry dialog was not classified: $sig" ;; esac
+  sig=$(printf 'API error: rate limit exceeded\nWaiting for upstream.\n' | pane_signature_classify)
+  [ -z "$sig" ] || fail "bare error words without dialog controls were classified: $sig"
+  sig=$(printf 'We documented rate limit handling.\n[r] Retry request\n' | pane_signature_classify)
+  [ -z "$sig" ] || fail "ordinary prose next to a retry control became an error dialog: $sig"
+  sig=$({ printf '%s\n' "$dialog"; printf '\n%.0s' {1..20}; printf 'Waiting for upstream.\n'; } | pane_signature_classify)
+  [ -z "$sig" ] || fail "old dialog above blank viewport space became a bottom-region dialog: $sig"
+  pass "built-in error dialogs require a message and active retry affordance in the bottom viewport region"
+}
+
+test_error_dialog_requires_bottom_affordance
+test_paused_scrollback_error_stays_quiet_until_age_out
+test_error_dialog_after_pause_age_out_escalates
 test_idle_dirty_pause_escalates
 test_dirty_staged_pause_survives_footer_change
 test_pause_episode_classifier

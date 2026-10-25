@@ -468,7 +468,8 @@ dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
 }
 
 # Keep pause identity and age separate from hash/cadence markers. Return 0
-# for expired pauses, so ordinary pause rechecks cannot repeat the escalation.
+# for expired pauses, so only the ordinary pause cadence suppresses repeats;
+# independent pane-signature and terminal evaluation must still run.
 # Initial age uses the status mtime (the log has no event timestamps); later
 # unrelated appends cannot move the clock. Active runs and busy panes defer.
 pause_age_check() {  # <window> <task> <key> <busy: 0=yes>
@@ -619,6 +620,7 @@ handle_paused_stale() {  # <window> <task> <hash>
   printf '%s' "$h" > "$STATE/.stale-$key"
   : > "$STATE/.paused-$key"
   rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
+  [ "${pause_cadence_suppressed:-0}" -eq 0 ] || return 0
   statusf="$STATE/$task.status"
   mtime=$(stat_mtime "$statusf") || true
   case "$mtime" in ''|*[!0-9]*) mtime=$(date +%s) ;; esac
@@ -718,6 +720,10 @@ surface_nonterminal_stale() {  # <window> <hash>
   key=$(printf '%s' "$win" | tr ':/.' '___')
   task=$(window_to_task "$win" "$STATE")
   last=$(last_status_state_line "$STATE/$task.status")
+  if status_is_paused "$last" && [ "${pause_cadence_suppressed:-0}" -eq 1 ]; then
+    handle_paused_stale "$win" "$task" "$h"
+    return
+  fi
   if status_is_paused_or_commander_held "$last" || [ "$(operator_absorb_class "$task")" = paused ]; then
     # A live declared pause or decision-parked run is intentionally surfaced once so Squad can confirm
     # the external wait, but changing pane footer text must not turn that
@@ -1380,9 +1386,11 @@ EOF
     if [ "$kind" != xo ]; then
       dirty_worktree_check "$w" "$task" "$key" "$busy_now" "$last"
     fi
+    # Age-out suppresses the pause cadence only, never this window's other rules.
+    pause_cadence_suppressed=0
     if status_is_paused "$last"; then
       if pause_age_check "$w" "$task" "$key" "$busy_now"; then
-        continue
+        pause_cadence_suppressed=1
       fi
     else
       rm -f "$STATE/.pause-episode-$key"

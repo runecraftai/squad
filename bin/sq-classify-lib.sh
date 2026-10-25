@@ -145,7 +145,8 @@ status_pause_episode() {  # <status-file> -> record ordinal, or empty
 # verdict inferred from the harness or agent name:
 #   compaction-banner   a context-compaction banner that never clears
 #   cancelled-continue  an interrupted/cancelled turn or a prompt awaiting y/n
-#   error-dialog        a provider/transport error dialog left on screen
+#   error-dialog        a provider/transport error plus an active retry affordance
+#                       in the bottom ten viewport lines, never scrollback prose
 # SQUAD_PANE_SIGNATURE_RE adds one operator-supplied POSIX ERE as an
 # `operator-pattern` signature without editing the built-ins; the per-class
 # variables exist so a base can replace a noisy built-in set.
@@ -169,17 +170,24 @@ _pane_signature_line() {  # <text> <re>
 # never a substitute for a readable pane (an unreadable capture must be reported
 # as cannot-evaluate by the caller, not fabricated here).
 pane_signature_classify() {
-  local text name re found
+  local text region name re found
   text=$(cat)
   [ -n "${text//[[:space:]]/}" ] || return 0
   for name in cancelled-continue compaction-banner error-dialog operator-pattern; do
+    region=$text
     case "$name" in
       cancelled-continue) re=${SQUAD_PANE_SIGNATURE_CANCELLED_RE:-$SQUAD_PANE_SIGNATURE_CANCELLED_RE_DEFAULT} ;;
       compaction-banner) re=${SQUAD_PANE_SIGNATURE_COMPACTION_RE:-$SQUAD_PANE_SIGNATURE_COMPACTION_RE_DEFAULT} ;;
-      error-dialog) re=${SQUAD_PANE_SIGNATURE_ERROR_RE:-$SQUAD_PANE_SIGNATURE_ERROR_RE_DEFAULT} ;;
+      error-dialog)
+        region=$(printf '%s\n' "$text" | tail -n 10)
+        # An error word alone is prose, not proof that a dialog is awaiting input.
+        printf '%s\n' "$region" | grep -qiE '^[[:space:]>]*((\[[^]]+\][[:space:]]*)?(retry|try again)([[:space:][:punct:]]|$)|press[[:space:]]+.+[[:space:]]+to[[:space:]]+(retry|try again))' || continue
+        re=${SQUAD_PANE_SIGNATURE_ERROR_RE:-$SQUAD_PANE_SIGNATURE_ERROR_RE_DEFAULT}
+        re="^[[:space:][:punct:]]*(error:[[:space:]]*)?($re)"
+        ;;
       operator-pattern) re=${SQUAD_PANE_SIGNATURE_RE:-} ;;
     esac
-    found=$(_pane_signature_line "$text" "$re")
+    found=$(_pane_signature_line "$region" "$re")
     [ -n "$found" ] || continue
     printf '%s|%s' "$name" "$found"
     return 0
