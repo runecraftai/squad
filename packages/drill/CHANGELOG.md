@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.12](https://github.com/runecraftai/squad/compare/drill-v0.1.11...drill-v0.1.12) (2026-10-25)
+
+
+### Bug Fixes
+
+* **drill:** recover custody when a run's recorded pipeline head is lost ([#297](https://github.com/runecraftai/squad/issues/297)) ([7d55ea9](https://github.com/runecraftai/squad/commit/7d55ea9cfb84bc6f55ee64cace80483dbc7e0378))
+
 ## [0.1.11](https://github.com/runecraftai/squad/compare/drill-v0.1.10...drill-v0.1.11) (2026-10-24)
 
 
