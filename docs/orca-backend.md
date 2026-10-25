@@ -96,6 +96,7 @@ The Pi receiver in `.pi/extensions/lib/sq-away-native.ts` checks actual idle, ed
 Adding another harness requires its own equally proven native receiver, not a different task owner or a redesign of the endpoint shape.
 Publication, queued messages, ambiguous sends, process death, receiver-session replacement, and reconnects are never treated as consumption or permission to replay.
 Only an exact consumption acknowledgement retires the covered buffer prefix; an unresolved request stays unresolved, including across restarts.
+Settlement is per exact primary: while a request published for any other primary is still unresolved, `start`, `stop`, and `reconcile` refuse rather than clear the shared escalation buffer it covers.
 This deliberately prioritizes avoiding duplicate effects over automatic recovery: stop reports failure and preserves lifecycle state while delivery or endpoint cleanup is uncertain.
 Inspect and reconcile that evidence before retrying; unresolved records are never deleted from a script or a flag to force a resend.
 

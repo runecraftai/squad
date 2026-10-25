@@ -84,7 +84,7 @@ Um registro de prontidão ausente, obsoleto, de processo estranho, de endpoint e
 Um shell puro não consegue publicar prontidão nativa.
 
 Use `bin/sq-afk-launch.sh start`, `status`, `stop` e `reconcile` para o ciclo de vida.
-O Orca cria uma aba de terminal para o daemon; a chamada de criação passa **nenhuma flag de foco** e nunca divide o primário, cria ou remove worktree nem para o runtime.
+A chamada de criação passa **nenhuma flag de foco** e nunca divide o primário, cria ou remove worktree nem para o runtime.
 Se o Orca foca, mantém ou oculta a nova aba é comportamento real do host que permanece **não verificado**, então trate o terminal daemon como possivelmente visível ou focado.
 A intenção de criação é gravada antes da chamada da CLI, e a limpeza exige o handle exato do terminal, a encarnação do runtime e do terminal, a identidade/caminho do worktree e o título único.
 Um processo de daemon vivo precisa ainda corresponder ao token de lançamento gravado e à identidade de processo do sistema operacional antes de poder ser sinalizado.
@@ -97,6 +97,7 @@ O receptor Pi em `.pi/extensions/lib/sq-away-native.ts` verifica o estado real d
 Adicionar outro harness exige seu próprio receptor nativo igualmente comprovado, não outro dono de tarefa nem um redesenho da forma do endpoint.
 Publicação, mensagens enfileiradas, envios ambíguos, morte de processo, substituição de sessão do receptor e reconexões nunca são tratados como consumo nem como permissão de replay.
 Apenas um reconhecimento exato de consumo retira o prefixo de buffer coberto; uma requisição não resolvida permanece não resolvida, inclusive entre reinicializações.
+A liquidação é por primário exato: enquanto uma requisição publicada para qualquer outro primário seguir não resolvida, `start`, `stop` e `reconcile` recusam em vez de limpar o buffer de escalonamento compartilhado que ela cobre.
 Isso prioriza deliberadamente evitar efeitos duplicados em vez de recuperação automática: o stop reporta falha e preserva o estado do ciclo de vida enquanto a entrega ou a limpeza do endpoint é incerta.
 Inspecione e reconcilie essa evidência antes de tentar de novo; registros não resolvidos nunca são apagados por script ou flag para forçar um reenvio.
 

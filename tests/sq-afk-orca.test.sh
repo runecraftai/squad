@@ -26,8 +26,8 @@ writeFileSync(`${fake}/orca`, `#!/usr/bin/env node
 const fs = require('fs'); const p = process.env.ORCA_TEST_DB; const d = JSON.parse(fs.readFileSync(p)); const a = process.argv.slice(2);
 fs.appendFileSync(process.env.ORCA_TEST_LOG, JSON.stringify(a)+'\\n');
 const value = k => a[a.indexOf(k)+1]; const out = result => console.log(JSON.stringify({ok:true,result,_meta:{runtimeId:d.runtime}}));
-if(a[0]==='status') { out({runtime:{runtimeId:d.runtime,reachable:d.ready,state:d.ready?'ready':'stopped',appVersion:'FAKE'}}); }
-else if(a[0]==='terminal' && a[1]==='show') { const t = d.terms.find(t=>t.handle===value('--terminal')); if(t) out({terminal: d.mismatch ? {...t,handle:'term-other'}:t}); else { console.log(JSON.stringify({ok:false,error:{code:'terminal_handle_not_found'}})); process.exitCode=1; } }
+if(a[0]==='status') { if(d.failStatus) process.exit(1); out({runtime:{runtimeId:d.runtime,reachable:d.ready,state:d.ready?'ready':'stopped',appVersion:'FAKE'}}); }
+else if(a[0]==='terminal' && a[1]==='show') { if(d.failShow) process.exit(1); const t = d.terms.find(t=>t.handle===value('--terminal')); if(t) out({terminal: d.mismatch ? {...t,handle:'term-other'}:t}); else { console.log(JSON.stringify({ok:false,error:{code:'terminal_handle_not_found'}})); process.exitCode=1; } }
 else if(a[0]==='terminal' && a[1]==='list') { if(d.unreadable) process.exit(1); out({terminals:d.terms,truncated:false}); }
 else if(a[0]==='terminal' && a[1]==='create') { const t = {handle:'term-daemon-'+(++d.count),title:value('--title'),incarnationId:'daemon-inc-'+d.count,worktreeId:'repo::'+process.env.SQUAD_BASE,worktreePath:process.env.SQUAD_BASE,connected:true,writable:true,orphaned:false,executionHostId:'local'}; d.terms.push(t); if(d.executeCommand) { const env={...process.env}; delete env.PI_CODING_AGENT; delete env.TMUX_PANE; delete env.TMUX; const child=require('child_process').spawn('bash',['-c',value('--command')],{detached:true,stdio:['ignore',fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a'),fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a')],env});d.spawnedPid=child.pid;child.unref(); } fs.writeFileSync(p,JSON.stringify(d)); if(d.lostCreate) process.exit(1); out({terminal:t}); }
 else if(a[0]==='terminal' && a[1]==='close') { if(d.cancelClose) {out({cancelled:true});} else {d.terms=d.terms.filter(t=>t.handle!==value('--terminal'));fs.writeFileSync(p,JSON.stringify(d));out({});} }
@@ -77,6 +77,12 @@ try {
   }
   check('all unproven harnesses refuse by name before any state or Orca mutation');
   model.ready=false;save(); let r=cli('start'); assert.notEqual(r.status,0);assert.match(r.stderr,/reachable ready runtime/);assert.equal(count('create'),0);
+  // A failing Orca CLI must name the failed command and its recovery instead of
+  // exiting nonzero with only whatever the CLI happened to print.
+  model.ready=true;model.failStatus=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/orca status --json` failed/);assert.match(r.stderr,/start the selected local Orca host/);assert.equal(count('create'),0);
+  model.failStatus=false;model.failShow=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/orca terminal show --terminal term-primary --json` failed/);assert.match(r.stderr,/verify that exact runtime-issued handle/);assert.equal(count('create'),0);
+  model.failShow=false;save();
+  check('a failing Orca CLI refuses with the failed command and its recovery');
   model.ready=true; model.mismatch=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/mismatched/);assert.equal(count('create'),0);
   delete model.mismatch;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/readiness is missing/);assert.equal(existsSync(`${state}/.afk`),false);
   check('unready runtime, target mismatch and missing native receiver refuse before mutation');
@@ -304,6 +310,27 @@ try {
   idle=true;consume=true;await tick();f=flush();assert.equal(f.status,0,f.stderr);assert.equal(existsSync(`${dir}/request.json`),false);
   r=cli('stop');assert.equal(r.status,0,r.stderr);
   assert.equal(calls().some(a=>a[1]==='send'||a[0]==='worktree'||a.includes('--tab')),false);
+  // A settle of the selected primary never accounts for a request published for
+  // another Orca primary; reporting success there would let start/stop clear the
+  // shared escalation buffer with that undelivered escalation still covered.
+  r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  idle=false;f=flush('signal: foreign primary unresolved');assert.notEqual(f.status,0);
+  const primaryReq=`${dir}/request.json`;assert.ok(existsSync(primaryReq));
+  const otherDir=script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' term-foreign`).stdout.trim();
+  mkdirSync(otherDir,{recursive:true,mode:0o700});
+  const otherReq=JSON.parse(readFileSync(primaryReq,'utf8'));
+  otherReq.id='foreign-request';otherReq.endpoint={...otherReq.endpoint,target:'term-foreign',incarnation:'inc-term-foreign'};
+  writeFileSync(`${otherDir}/request.json`,JSON.stringify(otherReq));
+  rmSync(primaryReq);rmSync(`${state}/.afk-daemon-terminal`);
+  const bufferBefore=readFileSync(`${state}/.subsuper-escalations`,'utf8');assert.ok(bufferBefore.length>0);
+  r=cli('reconcile');assert.notEqual(r.status,0);assert.match(r.stderr,/another primary/);
+  assert.equal(readFileSync(`${state}/.subsuper-escalations`,'utf8'),bufferBefore);assert.ok(existsSync(`${otherDir}/request.json`));
+  r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/another primary/);
+  assert.equal(readFileSync(`${state}/.subsuper-escalations`,'utf8'),bufferBefore);assert.ok(existsSync(`${otherDir}/request.json`));assert.ok(existsSync(`${state}/.afk`));
+  r=cli('stop');assert.notEqual(r.status,0);assert.match(r.stderr,/another primary/);
+  assert.equal(readFileSync(`${state}/.subsuper-escalations`,'utf8'),bufferBefore);assert.ok(existsSync(`${otherDir}/request.json`));assert.ok(existsSync(`${state}/.afk`));
+  rmSync(otherDir,{recursive:true,force:true});
+  check('an unresolved request for another primary blocks start/stop/reconcile and preserves the buffer');
   await emit('session_shutdown');
 } finally {
   globalThis.setInterval=oldSet;globalThis.clearInterval=oldClear;

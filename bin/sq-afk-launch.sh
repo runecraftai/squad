@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sq-afk-launch.sh - the single owner of the away-mode daemon TERMINAL lifecycle:
-# launch it in a NON-VISIBLE tracked terminal per backend, record its exact id,
+# launch it in a launcher-owned tracked terminal per backend, record its exact id,
 # tear it down by that exact id, and reconcile a leaked one after a crash.
 #
 # Why this exists (docs/herdr-backend.md "Away-mode daemon terminal launch"):
@@ -22,7 +22,7 @@
 # Usage:
 #   sq-afk-launch.sh start     Capture the commander pane, then (unless the daemon
 #                              is already running) launch the daemon in a fresh
-#                              non-visible terminal for the detected backend and
+#                              launcher-owned terminal for the detected backend and
 #                              record it. Idempotent: an already-running daemon
 #                              just refreshes state/.afk; a recorded-but-dead
 #                              terminal is reconciled (closed by id) first.
@@ -38,12 +38,14 @@
 #   sq-afk-launch.sh status   Print one read-only machine-readable health line and
 #                              return zero only when active state is healthy.
 #
-# Supported supervisor targets and non-visible daemon terminals: herdr, tmux,
-# TUIOS, and explicit native-only Orca. Orca's create call requests no focus flag
-# and never creates or removes a worktree; whether the host focuses or hides the
-# new terminal is unverified.
-# TUIOS uses an exact newly-created detached session and refuses all
-# cleanup unless its recorded identity still matches and it remains unattached.
+# Supported supervisor targets: herdr, tmux, TUIOS, and explicit native-only Orca.
+# herdr (a `--no-focus` workspace) and tmux (a detached session) launch the daemon
+# terminal without touching the commander's active tab; TUIOS uses an exact
+# newly-created detached session and refuses all cleanup unless its recorded
+# identity still matches and it remains unattached.
+# Orca's create call requests no focus flag and never creates or removes a
+# worktree; whether the host focuses, keeps, or hides the new terminal is
+# unverified, so treat it as possibly visible or focused.
 #
 # Test seam: SQUAD_AFK_LAUNCH_ENTRY overrides the command run in the created
 # terminal (default bin/sq-afk-start.sh), so a topology test can run a harmless
@@ -337,7 +339,8 @@ fm_afk_launch_status() {
     primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
     if [ "$daemon" = alive ] && ! fm_afk_launch_orca_daemon_owned; then return 1; fi
     fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "$primary" >/dev/null || return 1
-    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary" \
+      || fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
       fm_afk_launch_log 'Orca native delivery or buffer retirement is pending/uncertain'
       return 1
     fi
@@ -446,6 +449,21 @@ fm_afk_launch_herdr_recover_created() {  # <session> <label>
   return 1
 }
 
+# Settling one exact primary is only complete when no other primary's request
+# still covers a prefix of the shared escalation buffer.
+fm_afk_launch_native_settle() {  # <exact-primary> <preserve-message>
+  local primary=$1 message=$2
+  fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
+  if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+    fm_afk_launch_log "$message (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement})"
+    return 1
+  fi
+  if fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+    fm_afk_launch_log "$message (an unresolved native request for another primary still covers this escalation buffer; settle that exact endpoint first)"
+    return 1
+  fi
+}
+
 # Reconcile a recorded-but-dead terminal: if a record exists and no live daemon
 # owns it, close the leaked terminal by exact id and drop the record.
 fm_afk_launch_reconcile() {  # [exact-primary]
@@ -459,11 +477,7 @@ fm_afk_launch_reconcile() {  # [exact-primary]
     if [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
       fm_afk_launch_orca_resolve || return 1
       primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
-      fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
-      if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-        fm_afk_launch_log "Orca escalation is unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); preserving lifecycle during reconciliation"
-        return 1
-      fi
+      fm_afk_launch_native_settle "$primary" 'Orca escalation is unresolved, preserving lifecycle during reconciliation' || return 1
     fi
     fm_afk_launch_log "reconciling leaked daemon terminal ${SQUAD_AFK_REC_BACKEND}:${SQUAD_AFK_REC_TARGET}"
     fm_afk_launch_close_recorded
@@ -471,11 +485,7 @@ fm_afk_launch_reconcile() {  # [exact-primary]
     return 1
   elif fm_afk_launch_orca_scope || fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE"; then
     primary=$(fm_afk_launch_orca_primary "${1:-}") || return 1
-    fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
-    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-      fm_afk_launch_log "Orca native request remains unresolved even without a terminal record (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); preserving it"
-      return 1
-    fi
+    fm_afk_launch_native_settle "$primary" 'Orca native request remains unresolved even without a terminal record, preserving it' || return 1
   fi
 }
 
@@ -741,11 +751,7 @@ fm_afk_launch_stop() {
       return 1
     fi
     primary=$(fm_afk_launch_orca_primary) || return 1
-    fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
-    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-      fm_afk_launch_log "Orca native request remains unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); stop is not complete"
-      return 1
-    fi
+    fm_afk_launch_native_settle "$primary" 'Orca native request remains unresolved; stop is not complete' || return 1
   fi
   if [ "$read_result" -eq 1 ] && fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE"; then
     fm_afk_launch_log 'a native escalation request is unresolved without a recorded daemon terminal; set SQUAD_SUPERVISOR_TARGET to the exact primary and reconcile before stopping'
@@ -773,11 +779,7 @@ fm_afk_launch_stop() {
     # post-exit gate below re-checks the result. A consumed-but-not-yet-retired
     # request is delivered, not unresolved, so it must not block that shutdown.
     if ! daemon_lock_held_by_live_daemon; then
-      fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
-      if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-        fm_afk_launch_log "Orca native request or buffer retirement remains unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); stop is not complete, preserving lifecycle for inspection"
-        return 1
-      fi
+      fm_afk_launch_native_settle "$primary" 'Orca native request or buffer retirement remains unresolved; stop is not complete, preserving lifecycle for inspection' || return 1
     fi
   fi
   # (1) SIGTERM the daemon so its cleanup trap flushes buffered escalations
@@ -822,11 +824,7 @@ fm_afk_launch_stop() {
     fi
   fi
   if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
-    fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
-    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
-      fm_afk_launch_log "Orca shutdown delivery or buffer retirement is unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); stop is not complete, preserving lifecycle for retry"
-      return 1
-    fi
+    fm_afk_launch_native_settle "$primary" 'Orca shutdown delivery or buffer retirement is unresolved; stop is not complete, preserving lifecycle for retry' || return 1
   fi
   # (2) Close the daemon's own terminal by exact id.
   if [ "$read_result" -eq 0 ]; then
@@ -873,6 +871,10 @@ fm_afk_launch_main() {
           primary=$(fm_afk_launch_orca_primary) || return 1
           if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
             fm_afk_launch_log 'Orca native delivery remains uncertain; inspect the existing request before starting another away session'
+            return 1
+          fi
+          if fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+            fm_afk_launch_log 'an unresolved native request for another primary still covers this escalation buffer; settle that exact endpoint before starting another away session'
             return 1
           fi
         fi

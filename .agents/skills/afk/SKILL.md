@@ -39,7 +39,7 @@ batched digest rather than per-wake injections.
      If the native launch fails, run `bin/sq-afk-launch.sh stop` to roll back the prepared lifecycle.
      Do not wrap it in `nohup ... &` (Codex/herdr can reap fire-and-forget shell children after a tool call returns).
    - **Harness WITHOUT one** (e.g. pi): run `bin/sq-afk-launch.sh start`. It is
-     the single owner of the daemon terminal: it creates a NON-VISIBLE tracked
+     the single owner of the daemon terminal: it creates a separate tracked
      terminal for the current backend (a herdr dedicated `--no-focus` workspace,
      a detached tmux session), records its exact id, and passes the commander pane
      in as `SQUAD_SUPERVISOR_TARGET` so the daemon injects into the commander, not its

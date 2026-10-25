@@ -7,7 +7,8 @@
 # caller. The launcher forwards the proven readiness provider to the daemon,
 # whose process ancestry belongs to the runtime, not to the primary harness.
 # Prints the local runtime/terminal incarnation binding, or refuses read-only.
-# Sourced API: fm_supervisor_native_ready[_once]/submit/retire/pending <state> <target>.
+# Sourced API: fm_supervisor_native_ready[_once]/submit/retire/pending <state> <target>,
+# fm_supervisor_native_unresolved <state> [exact-target].
 # Requests bind endpoint + receiver process; only consumed acknowledgements retire
 # buffer prefixes. No timeout, process death or transport error authorizes replay.
 SQUAD_NATIVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,11 +21,15 @@ fm_supervisor_native_endpoint() {  # <backend> <target>
   if ! command -v orca >/dev/null || ! command -v jq >/dev/null; then
     echo 'error: Orca supervisor needs orca and jq on PATH' >&2; return 1
   fi
-  status=$(orca status --json) || return 1
+  status=$(orca status --json) || {
+    echo 'error: `orca status --json` failed; start the selected local Orca host, confirm it answers that command, and retry' >&2; return 1
+  }
   printf '%s' "$status" | jq -e '.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready" and (.result.runtime.runtimeId | type == "string" and length > 0)' >/dev/null || {
     echo 'error: Orca supervisor requires a reachable ready runtime with runtimeId; start the selected local Orca host first' >&2; return 1;
   }
-  terminal=$(orca terminal show --terminal "$target" --json) || return 1
+  terminal=$(orca terminal show --terminal "$target" --json) || {
+    echo "error: \`orca terminal show --terminal $target --json\` failed; verify that exact runtime-issued handle on the selected local Orca host" >&2; return 1
+  }
   jq -cen --arg target "$target" --argjson s "$status" --argjson t "$terminal" '
     select($t.ok == true and $t._meta.runtimeId == $s.result.runtime.runtimeId)
     | $t.result.terminal as $t | select($t != null)
@@ -37,7 +42,9 @@ fm_supervisor_native_endpoint() {  # <backend> <target>
 
 fm_supervisor_native_dir() {  # <state> <target>
   local key
-  key=$(node -e 'process.stdout.write(require("crypto").createHash("sha256").update("orca\\0" + process.argv[1]).digest("hex"))' "$2") || return 1
+  key=$(node -e 'process.stdout.write(require("crypto").createHash("sha256").update("orca\\0" + process.argv[1]).digest("hex"))' "$2") || {
+    echo 'error: Orca supervisor needs node on PATH to derive the native handoff directory' >&2; return 1
+  }
   printf '%s/.away-handoff/%s' "$1" "$key"
 }
 
@@ -126,12 +133,16 @@ fm_supervisor_native_pending() {  # <state> <target>; uncertainty is pending for
   [ -e "$dir/request.json" ] || [ -L "$dir/request.json" ]
 }
 
-fm_supervisor_native_unresolved() {  # <state>; any published request, even without its target
-  local dir
+fm_supervisor_native_unresolved() {  # <state> [exact-target]; any published request, even without its target
+  local dir bound target=${2:-}
   for dir in "$1"/.away-handoff/*/; do
     [ -d "$dir" ] || continue
     [ -e "$dir/request.json" ] || [ -L "$dir/request.json" ] || continue
-    return 0
+    [ -n "$target" ] || return 0
+    # Settling one exact primary never accounts for a request published for a
+    # different one, so an unreadable or foreign binding stays unresolved.
+    bound=$(jq -r 'if type == "object" then .endpoint.target // "" else "" end' "$dir/request.json" 2>/dev/null) || bound=
+    [ "$bound" = "$target" ] || return 0
   done
   return 1
 }
