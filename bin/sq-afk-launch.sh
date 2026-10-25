@@ -92,7 +92,7 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 . "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
   case "${1:-start}" in
-    start|start-native) fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1 ;;
+    start|start-native) fm_supervisor_native_ready_once "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1 ;;
   esac
 fi
 # sq-afk-start.sh provides the daemon-lock liveness helpers and
@@ -859,7 +859,7 @@ fm_afk_launch_main() {
   case "${1:-start}" in
     start|start-native)
       if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
-        fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
+        fm_supervisor_native_ready_once "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
         [ "${1:-start}" = start ] || { fm_afk_launch_log 'Orca requires start, not start-native, for exact terminal ownership'; return 1; }
         if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}"; then
           fm_afk_launch_log 'Orca native delivery remains uncertain; inspect the existing request before starting another away session'

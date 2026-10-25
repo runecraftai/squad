@@ -7,7 +7,7 @@
 # caller. The launcher forwards the proven readiness provider to the daemon,
 # whose process ancestry belongs to the runtime, not to the primary harness.
 # Prints the local runtime/terminal incarnation binding, or refuses read-only.
-# Sourced API: fm_supervisor_native_ready/submit/retire/pending <state> <target>.
+# Sourced API: fm_supervisor_native_ready[_once]/submit/retire/pending <state> <target>.
 # Requests bind endpoint + receiver process; only consumed acknowledgements retire
 # buffer prefixes. No timeout, process death or transport error authorizes replay.
 SQUAD_NATIVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -94,6 +94,21 @@ fm_supervisor_native_ready() {  # <state> <target> -> readiness JSON
   [ -f "$state/.lock" ] && [ ! -L "$state/.lock" ] || { echo 'error: Orca supervisor needs the exact live primary session owner' >&2; return 1; }
   holder=$(tr -d '[:space:]' < "$state/.lock")
   [ "$holder" = "$pid" ] || { echo 'error: Orca native receiver is not the primary session owner' >&2; return 1; }
+  printf '%s' "$ready"
+}
+
+# An entry-point guard and the main path it precedes run in the same process, so
+# a successful probe is reused instead of spawning the runtime CLI again. Live
+# daemon revalidation keeps calling fm_supervisor_native_ready directly.
+fm_supervisor_native_ready_once() {  # <state> <target> -> readiness JSON
+  local key="$1|$2" ready
+  if [ "${FM_SUPERVISOR_NATIVE_ONCE_KEY:-}" = "$key" ]; then
+    printf '%s' "${FM_SUPERVISOR_NATIVE_ONCE_JSON:-}"
+    return 0
+  fi
+  ready=$(fm_supervisor_native_ready "$1" "$2") || return 1
+  FM_SUPERVISOR_NATIVE_ONCE_KEY=$key
+  FM_SUPERVISOR_NATIVE_ONCE_JSON=$ready
   printf '%s' "$ready"
 }
 

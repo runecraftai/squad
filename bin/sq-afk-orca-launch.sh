@@ -51,7 +51,7 @@ fm_afk_launch_orca_absent() {  # <target> <record-json>
 
 fm_afk_launch_create_orca() {  # <commander-target> <commander-backend>
   local target=$1 ready parent title extra entry cmd out terminal endpoint
-  ready=$(fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "$target") || return 1
+  ready=$(fm_supervisor_native_ready_once "$SQUAD_AFK_LAUNCH_STATE" "$target") || return 1
   parent=$(printf '%s' "$ready" | jq -c .endpoint) || return 1
   title="sq-afk-$(node -e 'process.stdout.write(require("crypto").randomBytes(16).toString("hex"))')" || return 1
   extra=$(jq -cn --argjson parent "$parent" --arg title "$title" '{parent:$parent,title:$title}') || return 1

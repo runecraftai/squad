@@ -162,7 +162,7 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 # shellcheck source=bin/sq-supervisor-native.sh
 . "$SQUAD_DAEMON_DIR/sq-supervisor-native.sh"
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
-  fm_supervisor_native_ready "${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1
+  fm_supervisor_native_ready_once "${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1
 fi
 
 # Shared tmux pane primitives for supervisor injection (busy/composer detection
@@ -1578,7 +1578,7 @@ fm_super_main() {
   local STATE
   STATE="$(_state_root)"
   if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
-    fm_supervisor_native_ready "$STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
+    fm_supervisor_native_ready_once "$STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
     [ -n "${SQUAD_AFK_ORCA_OWNER:-}" ] || { echo 'error: launch the Orca daemon through sq-afk-launch.sh start to bind process ownership' >&2; return 1; }
   fi
   mkdir -p "$STATE"

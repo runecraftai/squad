@@ -99,6 +99,14 @@ try {
   const statusProbes=()=>calls().filter(a=>a[0]==='status').length;
   const probesBefore=statusProbes();await tick();await tick();await tick();assert.equal(statusProbes(),probesBefore);
   check('the native heartbeat tick publishes readiness without spawning Orca probes');
+  // An entry-point guard and the main path it precedes share one process, so
+  // the second readiness check must reuse the first verdict instead of probing
+  // again inside the launcher's startup budget.
+  const onceProbeBefore=statusProbes();
+  const memo=script(`. '${root}/bin/sq-supervisor-native.sh'; fm_supervisor_native_ready_once '${state}' term-primary >/dev/null && fm_supervisor_native_ready_once '${state}' term-primary >/dev/null`);
+  assert.equal(memo.status,0,memo.stderr);
+  assert.equal(statusProbes(),onceProbeBefore+1);
+  check('a readiness guard and its main path reuse one native probe per process');
   // One failed revalidation retries in seconds instead of blanking readiness for
   // the whole slow-probe window.
   const realNow=Date.now;let clock=realNow();Date.now=()=>clock;

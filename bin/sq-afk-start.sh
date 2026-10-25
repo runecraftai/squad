@@ -43,7 +43,7 @@ SQUAD_AFK_DAEMON="$SQUAD_AFK_START_DIR/sq-supervise-daemon.sh"
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
   # shellcheck source=bin/sq-supervisor-native.sh
   . "$SQUAD_AFK_START_DIR/sq-supervisor-native.sh"
-  fm_supervisor_native_ready "$SQUAD_AFK_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1
+  fm_supervisor_native_ready_once "$SQUAD_AFK_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1
 fi
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SQUAD_AFK_START_DIR/sq-stand-to-lib.sh"
@@ -126,7 +126,7 @@ fm_afk_start_main() {
   if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
     # shellcheck source=bin/sq-supervisor-native.sh
     . "$SQUAD_AFK_START_DIR/sq-supervisor-native.sh"
-    fm_supervisor_native_ready "$SQUAD_AFK_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
+    fm_supervisor_native_ready_once "$SQUAD_AFK_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
     [ "${SQUAD_AFK_STATE_PREPARED:-0}" = 1 ] || { echo 'error: Orca away mode must use sq-afk-launch.sh start for exact-owned terminal lifecycle' >&2; return 1; }
   fi
   mkdir -p "$SQUAD_AFK_STATE"
