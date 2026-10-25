@@ -783,6 +783,7 @@ reader_rc=0
 ```
 
 This proves the current CLI can establish a session-scoped event stream; it does not prove a blocked-agent event, supervisor wake, answer, or resume end to end.
+`tests/sq-backend-tuios.test.sh` pins what the fake CLI can prove: the baseline reconcile alone does not satisfy the wait, the consumed event line triggers its own authoritative re-read, the reader keeps its full budget after a non-actionable event, and SIGTERM terminates the subscription child. None of that is a substitute for the isolated real-runtime scenario below.
 
 Not established:
 

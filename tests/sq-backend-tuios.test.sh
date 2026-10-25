@@ -52,8 +52,8 @@ case "${1:-}" in
   subscribe)
     printf '{"type":"subscribed","boot_id":"boot-a","seq":1}\n'
     [ -z "${SQUAD_TUIOS_FAKE_EVENT:-}" ] || printf '{"type":"agent-state","window":"%s","state":"needs_input","seq":2,"boot_id":"boot-a"}\n' "${SQUAD_TUIOS_FAKE_EVENT}"
-    [ -z "${SQUAD_TUIOS_FAKE_EVENT:-}" ] || exit 0
-    sleep 5
+    [ -z "${SQUAD_TUIOS_FAKE_SUBSCRIBE_PID_FILE:-}" ] || printf '%s\n' "$$" > "$SQUAD_TUIOS_FAKE_SUBSCRIBE_PID_FILE"
+    exec sleep "${SQUAD_TUIOS_FAKE_SUBSCRIBE_SLEEP:-5}"
     ;;
   list-attention)
     printf '{"boot_id":"%s","success":true,"items":[]}\n' "${SQUAD_TUIOS_FAKE_BOOT_ID:-boot-a}"
@@ -156,6 +156,16 @@ case "${1:-}" in
     fi
     ;;
   list-agents)
+    if [ -n "${SQUAD_TUIOS_FAKE_AGENTS_SEQ:-}" ]; then
+      seq_file=${SQUAD_TUIOS_FAKE_AGENTS_COUNT_FILE:?}
+      n=$(cat "$seq_file" 2>/dev/null || echo 0)
+      n=$((n + 1))
+      printf '%s' "$n" > "$seq_file"
+      state=$(printf '%s' "$SQUAD_TUIOS_FAKE_AGENTS_SEQ" | cut -d, -f"$n")
+      [ -n "$state" ] || state=$(printf '%s' "$SQUAD_TUIOS_FAKE_AGENTS_SEQ" | awk -F, '{print $NF}')
+      printf '{"agents":[{"id":"w-opaque_7","foreground":"","state":"%s","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}\n' "$state"
+      exit 0
+    fi
     if [ -n "${SQUAD_TUIOS_FAKE_AGENTS:-}" ]; then printf '%s\n' "$SQUAD_TUIOS_FAKE_AGENTS"; else
       printf '{"agents":[{"id":"w-opaque_7","foreground":"pi","state":"done"}]}\n'
     fi
@@ -168,6 +178,10 @@ case "${1:-}" in
       "${SQUAD_TUIOS_FAKE_READY:-false}"
     ;;
   respond)
+    if [ -n "${SQUAD_TUIOS_FAKE_RESPOND_PROSE:-}" ]; then
+      jq -cn --arg err "$SQUAD_TUIOS_FAKE_RESPOND_PROSE" '{error: $err, success: false}'
+      exit 1
+    fi
     if [ "${SQUAD_TUIOS_FAKE_RESPOND_FAIL:-0}" = 1 ]; then
       printf '{"error":{"code":"%s","message":"simulated response refusal"}}\n' "${SQUAD_TUIOS_FAKE_RESPOND_ERROR:-timeout}" >&2
       exit 1
@@ -425,6 +439,14 @@ SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '[{"label":"Allow once"},{"text":"
 export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
 assert_contains "$(fm_backend_prompt_summary tuios owned:w-opaque_7)" '1) Allow once 2) Always allow' \
   'object-shaped options must render their label/text as numbered options'
+unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+
+# The daemon numbers each option itself (`n`), so a prompt whose numbers are not
+# 1..N must name the numbers a person actually sees.
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '[{"n":2,"label":"Allow once"},{"n":5,"label":"Always allow"}]')
+export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+assert_contains "$(fm_backend_prompt_summary tuios owned:w-opaque_7)" '2) Allow once 5) Always allow' \
+  "the summary must render the prompt's own on-screen option numbers"
 unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
 
 SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='[]'
@@ -1175,6 +1197,69 @@ unset SQUAD_TUIOS_FAKE_EVENT SQUAD_TUIOS_FAKE_AGENTS
 [ "$(fm_transition_to_status "$OUT")" = blocked ] || fail 'native event reconciliation must return the normalized blocked record'
 pass 'TUIOS backend: catalog-gated native event wake re-reads authoritative prompt state; unsupported daemons retain polling'
 
+# The baseline reconcile after subscribing must not be what satisfies the wait:
+# the pane is idle until the consumed event line re-reads it as blocked.
+EVENT_AGENTS_COUNT="$TMP_ROOT/event-agents-count"
+SQUAD_TUIOS_FAKE_AGENTS_SEQ='working,needs_input'
+SQUAD_TUIOS_FAKE_AGENTS_COUNT_FILE="$EVENT_AGENTS_COUNT"
+SQUAD_TUIOS_FAKE_EVENT=w-opaque_7
+export SQUAD_TUIOS_FAKE_AGENTS_SEQ SQUAD_TUIOS_FAKE_AGENTS_COUNT_FILE SQUAD_TUIOS_FAKE_EVENT
+printf '0' > "$EVENT_AGENTS_COUNT"
+OUT=$(fm_backend_tuios_wait_transition owned 2 "$TRANSITION_STATE" "$TWINDOW"); RC=$?
+unset SQUAD_TUIOS_FAKE_EVENT SQUAD_TUIOS_FAKE_AGENTS_SEQ SQUAD_TUIOS_FAKE_AGENTS_COUNT_FILE
+[ "$RC" -eq 0 ] || fail "an event on an idle baseline must wake the wait (rc=$RC, out=$OUT)"
+[ "$(fm_transition_to_status "$OUT")" = blocked ] || fail 'the event-triggered read must return the normalized blocked record'
+[ "$(cat "$EVENT_AGENTS_COUNT")" -ge 2 ] \
+  || fail 'the event line must trigger its own authoritative re-read, not rely on the baseline reconcile'
+
+# The reader is a bounded wait, not a one-shot: it keeps the stream open for the
+# whole budget so a non-actionable event cannot remove the poll-interval floor.
+tuios_bin=$(command -v tuios)
+SQUAD_TUIOS_FAKE_EVENT=w-opaque_7
+export SQUAD_TUIOS_FAKE_EVENT
+started_ms=$(python3 -c 'import time; print(int(time.monotonic() * 1000))')
+reader_out=$(python3 "$ROOT/bin/backends/tuios-eventwait.py" "$tuios_bin" owned 1 w-opaque_7 2>/dev/null)
+reader_rc=$?
+elapsed_ms=$(( $(python3 -c 'import time; print(int(time.monotonic() * 1000))') - started_ms ))
+unset SQUAD_TUIOS_FAKE_EVENT
+[ "$reader_rc" -eq 0 ] || fail "a matching event must not end the reader's budget (rc=$reader_rc)"
+assert_contains "$reader_out" "$(printf 'w-opaque_7\tevent')" 'the reader must project the matching event line'
+[ "$elapsed_ms" -ge 900 ] || fail "the reader must consume its whole budget instead of returning on the first event (elapsed=${elapsed_ms}ms)"
+
+# SIGTERM is how the caller stops a reader that found its edge, and it must take
+# the subscription child with it: a leaked `tuios subscribe` holds a daemon
+# connection until its next event.
+SUB_PID_FILE="$TMP_ROOT/eventwait-subscribe.pid"
+SQUAD_TUIOS_FAKE_SUBSCRIBE_PID_FILE="$SUB_PID_FILE"
+SQUAD_TUIOS_FAKE_SUBSCRIBE_SLEEP=60
+export SQUAD_TUIOS_FAKE_SUBSCRIBE_PID_FILE SQUAD_TUIOS_FAKE_SUBSCRIBE_SLEEP
+rm -f "$SUB_PID_FILE"
+python3 "$ROOT/bin/backends/tuios-eventwait.py" "$tuios_bin" owned 60 w-opaque_7 >/dev/null 2>&1 &
+reader_pid=$!
+expected_child=0
+while [ "$expected_child" -lt 300 ] && [ ! -s "$SUB_PID_FILE" ]; do
+  sleep 0.01
+  expected_child=$((expected_child + 1))
+done
+child_pid=$(cat "$SUB_PID_FILE" 2>/dev/null || true)
+[ -n "$child_pid" ] || { kill "$reader_pid" 2>/dev/null || true; fail 'the subscription child never started'; }
+kill -TERM "$reader_pid" 2>/dev/null || true
+wait "$reader_pid" 2>/dev/null || true
+child_gone=0
+checks=0
+while [ "$checks" -lt 200 ]; do
+  if ! kill -0 "$child_pid" 2>/dev/null; then child_gone=1; break; fi
+  sleep 0.01
+  checks=$((checks + 1))
+done
+if [ "$child_gone" != 1 ]; then
+  kill -9 "$child_pid" 2>/dev/null || true
+  unset SQUAD_TUIOS_FAKE_SUBSCRIBE_PID_FILE SQUAD_TUIOS_FAKE_SUBSCRIBE_SLEEP
+  fail 'SIGTERM must terminate the subscription child instead of orphaning it'
+fi
+unset SQUAD_TUIOS_FAKE_SUBSCRIBE_PID_FILE SQUAD_TUIOS_FAKE_SUBSCRIBE_SLEEP
+pass 'TUIOS backend: the native event reader keeps its full budget and terminates its subscription on SIGTERM'
+
 # The answer path requires the exact current prompt id and action, then invokes
 # TUIOS's one-shot respond verb; a changed prompt is refused before any write.
 SQUAD_TUIOS_FAKE_PROMPT_ID=p1
@@ -1189,26 +1274,32 @@ if fm_backend_tuios_respond owned:w-opaque_7 approve wrong-id >/dev/null 2>&1; t
   fail 'a response to a prompt id other than the currently read prompt must refuse'
 fi
 assert_not_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond ' 'a changed prompt must not invoke TUIOS respond'
-SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='["first","second"]'
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '[{"n":2,"label":"first"},{"n":5,"label":"second"}]')
 export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG" || true)
+if fm_backend_tuios_respond owned:w-opaque_7 choose p1 1 >/dev/null 2>&1; then
+  fail 'a number the prompt does not display must refuse even when it is within the option count'
+fi
 if fm_backend_tuios_respond owned:w-opaque_7 choose p1 3 >/dev/null 2>&1; then
-  fail 'a choice outside the currently displayed option list must refuse'
+  fail 'a choice outside the currently displayed option numbers must refuse'
 fi
 if fm_backend_tuios_respond owned:w-opaque_7 approve_always p1 >/dev/null 2>&1; then
   fail 'persistent approval must not be automated'
 fi
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$respond_count" ] \
   || fail 'an invalid option or persistent approval must not invoke TUIOS respond'
-OUT=$(fm_backend_tuios_respond owned:w-opaque_7 choose p1 2) || fail 'a displayed numbered choice should be accepted'
-assert_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 choose 2' \
-  'a choice must preserve the exact selected option and prompt id'
+OUT=$(fm_backend_tuios_respond owned:w-opaque_7 choose p1 5) || fail 'a displayed option number should be accepted'
+assert_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 choose 5' \
+  'a choice must preserve the exact displayed option number and prompt id'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 SQUAD_TUIOS_FAKE_RESPOND_FAIL=1
 export SQUAD_TUIOS_FAKE_RESPOND_FAIL
-if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>&1; then
+err="$TMP_ROOT/respond-uncertain.err"
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
   fail 'an uncertain native response must not report success'
 fi
+assert_contains "$(cat "$err")" 'outcome may be uncertain' \
+  'an unrecognized refusal must stay an uncertain outcome, never a known no-op'
 unset SQUAD_TUIOS_FAKE_RESPOND_FAIL
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'an uncertain native response must invoke respond exactly once'
@@ -1219,10 +1310,48 @@ err="$TMP_ROOT/respond-risk.err"
 if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then fail 'risk-matched approval without explicit acknowledgement must refuse'; fi
 assert_contains "$(cat "$err")" 'nothing was answered' 'a risk refusal must be stated as a known no-op'
 assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'risk refusal must not be misreported as uncertain'
-unset SQUAD_TUIOS_FAKE_RESPOND_FAIL SQUAD_TUIOS_FAKE_RESPOND_ERROR SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+unset SQUAD_TUIOS_FAKE_RESPOND_FAIL SQUAD_TUIOS_FAKE_RESPOND_ERROR
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a risk refusal must invoke the provider exactly once and must not be retried'
-pass 'TUIOS backend: prompt id, listed option, safety refusals, and uncertain outcomes are explicit'
+
+# The installed CLI renders these refusals as prose in `.error` and never prints
+# the machine code token, so the live sentences below are the only signal.
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+err="$TMP_ROOT/respond-prose.err"
+SQUAD_TUIOS_FAKE_RESPOND_PROSE='respond failed: respond pressed nothing: the pane is not on needs_input, no rule reads its prompt now, the prompt is not the one prompt_id names, or another client already answered it. Read it again with peek-prompt.'
+export SQUAD_TUIOS_FAKE_RESPOND_PROSE
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+  fail 'a prose prompt-changed refusal must not report success'
+fi
+assert_contains "$(cat "$err")" 'nothing was answered' 'a prose prompt-changed refusal must be stated as a known no-op'
+assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a prose prompt-changed refusal must not be misreported as uncertain'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a prose prompt-changed refusal must invoke the provider exactly once'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+SQUAD_TUIOS_FAKE_RESPOND_PROSE='An allow for an approval that matches a risk rule was refused because risk_ack did not name exactly the rules it matched. Nothing was answered. Read the rules with get-approval, or answer in the pane.'
+export SQUAD_TUIOS_FAKE_RESPOND_PROSE
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+  fail 'a prose risk refusal must not report success'
+fi
+assert_contains "$(cat "$err")" 'no risk acknowledgement was inferred' 'a prose risk refusal must be stated as a known no-op'
+assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a prose risk refusal must not be misreported as uncertain'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a prose risk refusal must invoke the provider exactly once'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+SQUAD_TUIOS_FAKE_RESPOND_PROSE='respond failed: respond is for the person at an attached client. Only the person may call it: a client attached right now passing its attach nonce, or a pane the person gave the respond grant may also call it.'
+export SQUAD_TUIOS_FAKE_RESPOND_PROSE
+TUIOS_SESSION=owned TUIOS_PANE_ID=w-supervisor \
+  fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err" \
+  && fail 'a prose caller refusal must not report success'
+assert_contains "$(cat "$err")" 'respond grant' 'a prose caller refusal must name the sanctioned grant remedy'
+assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a caller refusal must not be misreported as uncertain'
+[ "${SQUAD_BACKEND_PANE_GRANT_TARGET:-}" = 'owned:w-supervisor' ] \
+  || fail 'a caller refusal must name the pane that needs the respond grant'
+unset SQUAD_TUIOS_FAKE_RESPOND_PROSE SQUAD_BACKEND_PANE_GRANT_TARGET
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a prose caller refusal must invoke the provider exactly once'
+unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+pass 'TUIOS backend: prompt id, displayed option numbers, safety refusals, and uncertain outcomes are explicit'
 
 # Exercise the public send command from task metadata, not just the sourced
 # adapter: selectors must be tied to the recorded TUIOS session and window.

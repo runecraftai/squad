@@ -129,7 +129,7 @@ One delegation is enough after that: a pane that already holds `respond` can pas
 When a send is refused for this missing grant, `bin/sq-send.sh` prints that same `person command:` line for the pane that must hold it, and keeps only the provider's refusal sentence instead of forwarding its `set-pane-grants` remediation advice, which Squad's guard refuses.
 It recognises that refusal from the daemon's own sentence or its structured error code, so any other refusal keeps its full diagnostic and gets no grant hint.
 
-An agent-state event is only a wake hint: the sentry re-reads the exact window and prompt, and the stable prompt identity deduplicates repeated notifications. A new subscriber performs a baseline reconciliation; a stream gap or reader failure returns to the ordinary level-reconcile poll. The current reader starts a fresh subscription rather than requesting sequence replay, so the current state read and later polling are the recovery guarantees.
+An agent-state event is only a wake hint: the sentry re-reads the exact window and prompt, and the stable prompt identity deduplicates repeated notifications. A new subscriber performs a baseline reconciliation; a stream gap or reader failure returns to the ordinary level-reconcile poll. An event that does not produce a fresh actionable edge does not end the wait early, so the reader keeps the sentry's poll-interval floor, and the caller's SIGTERM stops the subscription with the reader instead of leaving it connected to the daemon. The current reader starts a fresh subscription rather than requesting sequence replay, so the current state read and later polling are the recovery guarantees.
 
 ## Restart recovery
 
