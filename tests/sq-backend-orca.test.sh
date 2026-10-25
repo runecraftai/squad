@@ -87,29 +87,120 @@ test_capture_reads_terminal_tail_json() {
   pass "fm_backend_orca_capture: parses result.terminal.tail and calls terminal read"
 }
 
+# The transition producer reads one exact-terminal observation per poll: the
+# helpers below drive the real adapter functions against the fake CLI.
+orca_wait_response() {  # <response-file> <json agentWait value>
+  local file=$1 wait=$2
+  printf '{"ok":true,"result":{"observation":{"agentWait":%s}}}\n' "$wait" > "$file"
+}
+
+orca_poll_transition() {  # <state> <session> <terminal>
+  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" "$3" "$4"' \
+    _ "$ROOT" "$1" "$2" "$3"
+}
+
+orca_commit_transition() {  # <state> <session> <record>
+  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_commit_transition "$2" "$3" "$4"' \
+    _ "$ROOT" "$1" "$2" "$3"
+}
+
+orca_prompt_summary() {  # <terminal>
+  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$1/bin/backends/orca.sh"; fm_backend_orca_prompt_summary "$2"' \
+    _ "$ROOT" "$1"
+}
+
+orca_marker() {  # <state> <prefix> <terminal>
+  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$1/bin/backends/orca.sh"; fm_backend_orca_transition_marker "$2" "$3" "$4"' \
+    _ "$ROOT" "$1" "$2" "$3"
+}
+
 test_orca_native_blocked_transition_dedupes_and_rearms() {
-  local state out rc marker
+  local state out rc marker hash_marker
   orca_case native-blocked-transition
   state="$CASE_DIR/state"
   mkdir -p "$state"
-  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/1.out"
-  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/2.out"
-  out=$(PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" term-123 term-123' _ "$ROOT" "$state")
-  [ "$(printf '%s' "$out" | cut -f1)" = term-123 ] || fail "blocked transition must bind the exact terminal, got '$out'"
+  orca_wait_response "$RESP/1.out" '{"kind":"permission","message":"Allow this directory?"}'
+  out=$(orca_poll_transition "$state" sess-abc term-123)
+  [ "$(printf '%s' "$out" | cut -f1)" = term-123 ] || fail "blocked transition must bind the exact terminal, not the session argument, got '$out'"
   [ "$(printf '%s' "$out" | cut -f4)" = blocked ] || fail "blocked transition must use the shared status contract, got '$out'"
-  marker=$(PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; fm_backend_orca_transition_marker "$2" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" term-123' _ "$ROOT" "$state")
-  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_commit_transition "$2" term-123 "$3"' _ "$ROOT" "$state" "$out"
+  marker=$(orca_marker "$state" .orca-escalated- term-123)
+  hash_marker=$(orca_marker "$state" .orca-prompt- term-123)
+  orca_commit_transition "$state" sess-abc "$out"
   [ -e "$marker" ] || fail "transition commit did not dedupe the exact terminal"
-  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/3.out"
-  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"Allow this directory?"}}}}' > "$RESP/4.out"
-  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" term-123 term-123' _ "$ROOT" "$state" >/dev/null
+  [ -e "$hash_marker" ] || fail "the poll did not record the prompt identity marker"
+
+  # A volatile per-read field must not turn one standing prompt into a fresh
+  # edge: only the source kind and message text form the dedupe identity.
+  orca_wait_response "$RESP/2.out" '{"kind":"permission","message":"Allow this directory?","id":"w-1","updatedAt":1729,"cursor":"c1"}'
+  orca_poll_transition "$state" sess-abc term-123 >/dev/null
   rc=$?
-  [ "$rc" -eq 1 ] || fail "an unchanged prompt must dedupe, got rc=$rc"
-  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"A different prompt"}}}}' > "$RESP/5.out"
-  printf '%s\n' '{"ok":true,"result":{"observation":{"agentWait":{"kind":"permission","message":"A different prompt"}}}}' > "$RESP/6.out"
-  out=$(PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c '. "$1/bin/backends/orca.sh"; . "$1/bin/sq-transition-lib.sh"; fm_backend_orca_poll_transition "$2" term-123 term-123' _ "$ROOT" "$state")
-  [ "$(printf '%s' "$out" | cut -f4)" = blocked ] || fail "a changed prompt must re-arm the blocked edge"
-  pass "Orca native agentWait poll uses exact terminal identity and dedupes unchanged prompts"
+  [ "$rc" -eq 1 ] || fail "an unchanged prompt with new volatile fields must dedupe, got rc=$rc"
+
+  orca_wait_response "$RESP/3.out" '{"kind":"permission","message":"Allow this directory?","id":"w-2","updatedAt":1730,"cursor":"c2"}'
+  orca_poll_transition "$state" sess-abc term-123 >/dev/null
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "a second unchanged poll must still dedupe, got rc=$rc"
+
+  orca_wait_response "$RESP/4.out" '{"kind":"permission","message":"A different prompt"}'
+  out=$(orca_poll_transition "$state" sess-abc term-123)
+  [ "$(printf '%s' "$out" | cut -f4)" = blocked ] || fail "a changed prompt must re-arm the blocked edge, got '$out'"
+  [ "$(wc -l < "$LOG" | tr -d ' ')" -eq 4 ] || fail "each poll must read the terminal exactly once, got $(wc -l < "$LOG") CLI calls for 4 polls"
+  pass "Orca native agentWait poll binds the exact terminal, reads once per poll, and dedupes unchanged prompts"
+}
+
+test_orca_native_prompt_summary_is_one_bounded_line() {
+  local out
+  orca_case native-prompt-summary
+  orca_wait_response "$RESP/1.out" '{"kind":"permission","message":"Allow\nthis\tpath?"}'
+  out=$(orca_prompt_summary term-123)
+  [ "$out" = 'Allow this path?' ] || fail "the prompt summary must scrub control characters into one line, got '$out'"
+  orca_wait_response "$RESP/2.out" '{"kind":"permission"}'
+  out=$(orca_prompt_summary term-123)
+  [ "$out" = 'agent is waiting for human input' ] || fail "an empty wait text must fall back to the generic summary, got '$out'"
+  orca_wait_response "$RESP/3.out" 'null'
+  out=$(orca_prompt_summary term-123)
+  [ -z "$out" ] || fail "a clear wait record must not render a blocked prompt summary, got '$out'"
+  pass "Orca prompt summary is one scrubbed bounded line and empty when nothing is waiting"
+}
+
+test_orca_clear_and_ambiguous_reads_clear_or_preserve_markers() {
+  local state out rc esc_marker hash_marker
+  orca_case native-transition-clear-ambiguous
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  esc_marker=$(orca_marker "$state" .orca-escalated- term-123)
+  hash_marker=$(orca_marker "$state" .orca-prompt- term-123)
+
+  orca_wait_response "$RESP/1.out" '{"kind":"permission","message":"Allow this directory?"}'
+  out=$(orca_poll_transition "$state" sess-abc term-123)
+  orca_commit_transition "$state" sess-abc "$out"
+  [ -e "$esc_marker" ] || fail "the blocked edge did not commit its escalation marker"
+
+  # A positively-read clear record is authoritative: the shared policy defers it,
+  # so both dedupe markers go and the pane returns to ordinary supervision.
+  orca_wait_response "$RESP/2.out" 'null'
+  orca_poll_transition "$state" sess-abc term-123 >/dev/null
+  rc=$?
+  [ "$rc" -eq 2 ] || fail "a clear wait record must fall through to ordinary supervision, got rc=$rc"
+  [ ! -e "$esc_marker" ] || fail "a clear wait record did not clear the escalation marker"
+  [ ! -e "$hash_marker" ] || fail "a clear wait record did not clear the prompt identity marker"
+
+  # An unreadable observation after escalation is ambiguous, not an unblock: the
+  # sentry must skip ordinary supervision and keep the markers.
+  orca_wait_response "$RESP/3.out" '{"kind":"permission","message":"Allow this directory?"}'
+  out=$(orca_poll_transition "$state" sess-abc term-123)
+  orca_commit_transition "$state" sess-abc "$out"
+  printf '1\n' > "$RESP/4.exit"
+  orca_poll_transition "$state" sess-abc term-123 >/dev/null
+  rc=$?
+  [ "$rc" -eq 3 ] || fail "an ambiguous read over a still-escalated prompt must skip supervision, got rc=$rc"
+  [ -e "$esc_marker" ] || fail "an ambiguous read cleared the escalation marker"
+  [ -e "$hash_marker" ] || fail "an ambiguous read cleared the prompt identity marker"
+  pass "Orca native transition clears its markers on a clear record and preserves them on an ambiguous read"
 }
 
 test_capture_rendered_reports_unverified_interface() {
@@ -1407,6 +1498,8 @@ test_dispatcher_sources_orca_and_routes_primitives() {
 
 test_capture_reads_terminal_tail_json
 test_orca_native_blocked_transition_dedupes_and_rearms
+test_orca_native_prompt_summary_is_one_bounded_line
+test_orca_clear_and_ambiguous_reads_clear_or_preserve_markers
 test_capture_rendered_reports_unverified_interface
 test_capture_falls_back_to_text_fields
 test_capture_fails_on_orca_error_json

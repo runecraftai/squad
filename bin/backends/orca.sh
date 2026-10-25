@@ -210,12 +210,19 @@ fm_backend_orca_capture_rendered() {  # <terminal-id>
 
 # Orca's terminal/worker observations can expose an exact agentWait record.
 # An absent field is unsupported or unobservable, never evidence of no prompt.
-fm_backend_orca_agent_wait() {  # <terminal-id> -> waiting|clear|unknown
+# ONE read answers the whole question: the wait verdict, the stable prompt
+# identity used for dedupe, and the prompt text the operator notification
+# carries. The identity deliberately covers only the source kind and the
+# message-ish text - never the raw record - because any volatile per-read field
+# (timestamp, id, cursor, attempt counter) would turn one standing prompt into a
+# fresh escalation on every poll.
+fm_backend_orca_agent_read() {  # <terminal-id> -> <verdict>\t<identity>\t<text>
   local out
   fm_backend_orca_tool_check || { printf 'unknown'; return 0; }
   out=$(orca terminal show --terminal "$1" --json 2>/dev/null) || { printf 'unknown'; return 0; }
   printf '%s' "$out" | node -e '
 const fs = require("fs");
+const crypto = require("crypto");
 let data;
 try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.stdout.write("unknown"); process.exit(0); }
 if (data.ok === false) { process.stdout.write("unknown"); process.exit(0); }
@@ -223,24 +230,19 @@ const r = data.result || {};
 const candidates = [r.observation?.agentWait, r.agentWait, r.terminal?.agentWait];
 const wait = candidates.find(v => v !== undefined);
 if (wait === undefined) { process.stdout.write("unknown"); process.exit(0); }
-process.stdout.write(wait === null || wait === false ? "clear" : "waiting");
+if (wait === null || wait === false) { process.stdout.write("clear"); process.exit(0); }
+const text = v => (typeof v === "string" || typeof v === "number") ? String(v) : "";
+const kind = text(wait.kind);
+const prompt = text(wait.question) || text(wait.prompt) || text(wait.title) || text(wait.message);
+const identity = crypto.createHash("md5").update(JSON.stringify([kind, prompt])).digest("hex");
+process.stdout.write(["waiting", identity, prompt].join("\t"));
 '
 }
 
-fm_backend_orca_agent_wait_json() {  # <terminal-id> -> compact exact wait record, if available
-  local out
-  out=$(orca terminal show --terminal "$1" --json 2>/dev/null) || return 1
-  printf '%s' "$out" | node -e '
-const fs = require("fs");
-let data;
-try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(1); }
-if (data.ok === false) process.exit(1);
-const r = data.result || {};
-const candidates = [r.observation?.agentWait, r.agentWait, r.terminal?.agentWait];
-const wait = candidates.find(v => v !== undefined);
-if (wait === undefined || wait === null || wait === false) process.exit(1);
-process.stdout.write(JSON.stringify(wait));
-'
+fm_backend_orca_agent_wait() {  # <terminal-id> -> waiting|clear|unknown
+  local snapshot
+  snapshot=$(fm_backend_orca_agent_read "$1")
+  printf '%s' "${snapshot%%$'\t'*}"
 }
 
 fm_backend_orca_json_text() {  # <json>
@@ -339,31 +341,46 @@ fm_backend_orca_composer_state() {  # <terminal-id> -> empty|pending|unknown
 SQUAD_BACKEND_ORCA_ESCALATED_PREFIX=".orca-escalated-"
 SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX=".orca-prompt-"
 
-fm_backend_orca_hash() {
-  if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
-}
-
 fm_backend_orca_transition_marker() {  # <state-dir> <prefix> <terminal>
   local key
   key=$(printf '%s' "$3" | tr ':/.' '___')
   printf '%s/%s%s' "$1" "$2" "$key"
 }
 
+# Translate Orca's own wait vocabulary into the shared transition vocabulary
+# (bin/sq-transition-lib.sh) so the shared policy table owns which action every
+# verdict triggers; this adapter never re-encodes that mapping.
+fm_backend_orca_normalize_status() {  # <agent-wait-verdict>
+  case "$1" in
+    waiting) printf 'blocked' ;;
+    clear) printf 'idle' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# One bounded line: the wait record is another program's text and must not break
+# the caller's one-line state contract, so control characters are scrubbed here
+# rather than by a regex inside the parser.
 fm_backend_orca_prompt_summary() {  # <terminal-id>
-  fm_backend_orca_agent_wait_json "$1" | node -e '
-const fs = require("fs");
-let wait;
-try { wait = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(1); }
-const text = wait.question || wait.prompt || wait.title || wait.message || "agent is waiting for human input";
-process.stdout.write(String(text).replace(/[\\t\\r\\n]+/g, " ").slice(0, 300));
-'
+  local snapshot verdict line
+  snapshot=$(fm_backend_orca_agent_read "$1")
+  verdict=${snapshot%%$'\t'*}
+  [ "$verdict" = waiting ] || return 0
+  line=${snapshot#*$'\t'}
+  line=${line#*$'\t'}
+  line=$(printf '%s' "$line" | LC_ALL=C tr '\t\r\n' '   ')
+  line=$(printf '%s' "$line" | sed -E 's/  +/ /g; s/^ +//; s/ +$//')
+  line=$(printf '%s' "$line" | cut -c1-300)
+  [ -n "$line" ] || line='agent is waiting for human input'
+  printf '%s' "$line"
 }
 
 fm_backend_orca_poll_transition() {  # <state-dir> <session> <terminal>
-  local state=$1 terminal=$3 status action hash_marker esc_marker stored wait_hash record
+  local state=$1 terminal=$3 snapshot status action hash_marker esc_marker stored wait_hash record
   [ -n "$terminal" ] || return 2
-  status=$(fm_backend_orca_agent_wait "$terminal")
-  action=$(case "$status" in waiting) printf actionable ;; clear) printf defer ;; *) printf fallback ;; esac)
+  snapshot=$(fm_backend_orca_agent_read "$terminal")
+  status=$(fm_backend_orca_normalize_status "${snapshot%%$'\t'*}")
+  action=$(fm_transition_policy "$status")
   esc_marker=$(fm_backend_orca_transition_marker "$state" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" "$terminal")
   hash_marker=$(fm_backend_orca_transition_marker "$state" "$SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX" "$terminal")
   if [ "$action" = fallback ]; then
@@ -374,11 +391,12 @@ fm_backend_orca_poll_transition() {  # <state-dir> <session> <terminal>
     rm -f "$esc_marker" "$hash_marker"
     return 2
   fi
-  if ! wait=$(fm_backend_orca_agent_wait_json "$terminal" 2>/dev/null); then
+  wait_hash=${snapshot#*$'\t'}
+  wait_hash=${wait_hash%%$'\t'*}
+  if [ -z "$wait_hash" ]; then
     [ -e "$esc_marker" ] && return 3
     return 2
   fi
-  wait_hash=$(printf '%s' "$wait" | fm_backend_orca_hash)
   stored=$(cat "$hash_marker" 2>/dev/null || true)
   [ -z "$stored" ] || [ "$stored" = "$wait_hash" ] || rm -f "$esc_marker"
   printf '%s' "$wait_hash" > "$hash_marker"

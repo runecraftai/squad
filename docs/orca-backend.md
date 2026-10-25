@@ -139,11 +139,15 @@ A disposable real-host probe therefore requires a proven independent Orca profil
   Filter semantics, real create/cleanup, focus behaviour and every real lifecycle path stay unproven, so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 - Orca does not expose the event stream used by Herdr; blocked-prompt detection polls `agentWait` and degrades to the existing sentry fallback when that observation is not available.
+  The non-null `agentWait` record's shape and meaning are **unverified**: only the absent value (`agentWait=null`) has been observed on a real terminal, so it is unknown whether every non-null record means a human must answer or whether it can also describe an operator parked at its composer between turns.
+  The read looks for the record under `result.observation.agentWait` and keeps two speculative fallback positions (`result.agentWait`, `result.terminal.agentWait`) for robustness; none of them is a verified shape, and an absent field is read as unknown rather than as no prompt.
+  This path is exercised by the fake-CLI suite only, which establishes call shape and this adapter's own behavior, never end-to-end Orca behaviour; treat a blocked escalation as unproven until a safe isolated real-runtime observation confirms the record's semantics.
 
 ## Regression entry points
 
 ```sh
 tests/sq-backend-orca.test.sh
+tests/sq-sentry-triage.test.sh
 tests/sq-afk-orca.test.sh
 tests/sq-afk-orca-live-optin.test.sh
 tests/sq-backend.test.sh
