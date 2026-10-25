@@ -126,6 +126,16 @@ fm_supervisor_native_pending() {  # <state> <target>; uncertainty is pending for
   [ -e "$dir/request.json" ] || [ -L "$dir/request.json" ]
 }
 
+fm_supervisor_native_unresolved() {  # <state>; any published request, even without its target
+  local dir
+  for dir in "$1"/.away-handoff/*/; do
+    [ -d "$dir" ] || continue
+    [ -e "$dir/request.json" ] || [ -L "$dir/request.json" ] || continue
+    return 0
+  done
+  return 1
+}
+
 fm_supervisor_native_submit() {  # <state> <target> <message> <covered-lines>
   local state=$1 target=$2 message=$3 lines=$4 ready dir request tmp id prefix
   ready=$(fm_supervisor_native_ready "$state" "$target") || return 1

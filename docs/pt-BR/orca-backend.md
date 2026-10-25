@@ -89,6 +89,7 @@ Se o Orca foca, mantém ou oculta a nova aba é comportamento real do host que p
 A intenção de criação é gravada antes da chamada da CLI, e a limpeza exige o handle exato do terminal, a encarnação do runtime e do terminal, a identidade/caminho do worktree e o título único.
 Um processo de daemon vivo precisa ainda corresponder ao token de lançamento gravado e à identidade de processo do sistema operacional antes de poder ser sinalizado.
 Criação incerta permanece gravada e bloqueia outra criação; a reconciliação pode recuperar somente o endpoint exato e unicamente titulado, nunca varrer outros terminais.
+`stop` e `reconcile` reconhecem o ciclo de vida Orca pelo terminal gravado e pelo marcador de dono no lock do daemon, não pelo `SQUAD_SUPERVISOR_BACKEND` do shell que invoca, então um stop sem essa variável ainda recusa um daemon sem registro ou uma requisição nativa não resolvida em vez de reportar conclusão.
 Alvos Orca remotos são recusados porque a prova local de posse do receptor/processo não se aplica a um host remoto.
 
 O protocolo nativo em `bin/sq-supervisor-native.sh` vincula requisições e reconhecimentos de consumo a um objeto de endpoint neutro de backend, à identidade do processo receptor e a um nonce de sessão do receptor.

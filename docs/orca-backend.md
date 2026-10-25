@@ -88,6 +88,7 @@ Whether Orca focuses, keeps, or hides the new terminal tab is real host behaviou
 The creation intent is recorded before the CLI call, and cleanup requires the exact terminal handle, runtime and terminal incarnation, worktree identity/path, and unique title.
 A live daemon process must additionally match the recorded launch token and operating-system process identity before it can be signalled.
 Uncertain creation remains recorded and blocks another creation; reconciliation may recover only the exact uniquely titled endpoint, never sweep other terminals.
+`stop` and `reconcile` recognise the Orca lifecycle from the recorded terminal and the daemon lock's owner marker, not from the invoking shell's `SQUAD_SUPERVISOR_BACKEND`, so a stop without that variable still refuses an unrecorded daemon or an unresolved native request instead of reporting completion.
 Remote Orca targets are refused because the local receiver/process ownership proof does not apply to a remote host.
 
 The native protocol in `bin/sq-supervisor-native.sh` binds requests and consumption acknowledgements to a backend-neutral endpoint object, receiver process identity, and receiver-session nonce.

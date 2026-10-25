@@ -38,6 +38,15 @@ fm_afk_launch_orca_resolve() {  # pending creation -> exact identity, read-only
   SQUAD_AFK_REC_EXTRA=$extra
 }
 
+fm_afk_launch_orca_scope() {  # recorded/daemon state owns this; the caller's environment is not authority
+  local owner
+  [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ] && return 0
+  [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ] && return 0
+  owner=$(daemon_lock_owner 2>/dev/null) || return 1
+  [ -n "$owner" ] || return 1
+  [ -f "$owner/orca-owner" ] && [ ! -L "$owner/orca-owner" ]
+}
+
 fm_afk_launch_orca_daemon_owned() {
   local owner title
   owner=$(daemon_lock_owner) || return 1

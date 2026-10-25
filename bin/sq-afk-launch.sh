@@ -469,7 +469,7 @@ fm_afk_launch_reconcile() {  # [exact-primary]
     fm_afk_launch_close_recorded
   elif [ "$read_result" -eq 2 ]; then
     return 1
-  elif [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+  elif fm_afk_launch_orca_scope || fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE"; then
     primary=$(fm_afk_launch_orca_primary "${1:-}") || return 1
     fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
     if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
@@ -671,7 +671,7 @@ fm_afk_launch_start() {
       tuios) fm_afk_launch_create_tuios "$commander_target" "$commander_backend"; result=$? ;;
       orca) fm_afk_launch_create_orca "$commander_target" "$commander_backend"; result=$? ;;
       *)
-        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$commander_backend' yet (supported: herdr, tmux, tuios, orca)"
+        fm_afk_launch_log "no daemon-terminal launch primitive for backend '$commander_backend' yet (supported: herdr, tmux, tuios, orca)"
         result=1
         ;;
     esac
@@ -735,7 +735,7 @@ fm_afk_launch_stop() {
     fm_afk_launch_log "malformed daemon terminal record; refusing to stop away mode"
     return 1
   fi
-  if [ "$read_result" -eq 1 ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+  if [ "$read_result" -eq 1 ] && fm_afk_launch_orca_scope; then
     if daemon_lock_held_by_live_daemon; then
       fm_afk_launch_log 'Orca live daemon has no terminal ownership record; refusing to signal it'
       return 1
@@ -746,6 +746,10 @@ fm_afk_launch_stop() {
       fm_afk_launch_log "Orca native request remains unresolved (${FM_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement}); stop is not complete"
       return 1
     fi
+  fi
+  if [ "$read_result" -eq 1 ] && fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE"; then
+    fm_afk_launch_log 'a native escalation request is unresolved without a recorded daemon terminal; set SQUAD_SUPERVISOR_TARGET to the exact primary and reconcile before stopping'
+    return 1
   fi
   if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = tuios ] \
     && ! fm_afk_launch_terminal_alive tuios "$SQUAD_AFK_REC_TARGET" \

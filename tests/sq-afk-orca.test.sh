@@ -176,6 +176,29 @@ try {
   r=cli('stop');assert.notEqual(r.status,0);assert.match(r.stderr,/process ownership does not match/);assert.equal(sleeper.exitCode,null);assert.equal(count('close'),1);
   sleeper.kill('SIGTERM');await new Promise(resolve=>sleeper.once('exit',resolve));tracked=[];rmSync(lock,{recursive:true});
   check('stop refuses to signal a live process whose exact ownership token differs');
+  // Orca ownership must come from recorded/daemon state, not the caller's
+  // environment: a stop without SQUAD_SUPERVISOR_BACKEND must refuse an
+  // unrecorded live daemon and an unresolved native request instead of
+  // reporting torn-down cleanup.
+  const scopeRecord=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
+  const scopeTitle=JSON.parse(scopeRecord.split('\t').slice(2).join('\t')).title;
+  rmSync(`${state}/.afk-daemon-terminal`);
+  const scopedDaemon=spawn('bash',['-c','sleep 60 & echo $!; wait'],{stdio:['ignore','pipe','ignore']});tracked.push(scopedDaemon);
+  const scopedPid=Number((await once(scopedDaemon.stdout,'data'))[0].toString().trim());assert.ok(scopedPid>1);
+  const scopedLock=`${state}/.supervise-daemon.lock`;mkdirSync(scopedLock);
+  writeFileSync(`${scopedLock}/pid`,String(scopedPid));
+  const scopedIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${scopedPid}'`);assert.equal(scopedIdentity.status,0);
+  writeFileSync(`${scopedLock}/pid-identity`,scopedIdentity.stdout.trim());writeFileSync(`${scopedLock}/orca-owner`,scopeTitle);
+  const closesBeforeScope=count('close');
+  r=cli('stop',{SQUAD_SUPERVISOR_BACKEND:'',SQUAD_SUPERVISOR_TARGET:''});
+  assert.notEqual(r.status,0);assert.match(r.stderr,/no terminal ownership record/);assert.equal(scopedDaemon.exitCode,null);assert.ok(existsSync(`${state}/.afk`));assert.equal(count('close'),closesBeforeScope);
+  scopedDaemon.kill('SIGTERM');await new Promise(resolve=>scopedDaemon.once('exit',resolve));tracked=tracked.filter(child=>child!==scopedDaemon);rmSync(scopedLock,{recursive:true});
+  mkdirSync(`${state}/.away-handoff/unrecorded-request`,{recursive:true,mode:0o700});writeFileSync(`${state}/.away-handoff/unrecorded-request/request.json`,'{}');
+  r=cli('stop',{SQUAD_SUPERVISOR_BACKEND:'',SQUAD_SUPERVISOR_TARGET:''});
+  assert.notEqual(r.status,0);assert.match(r.stderr,/unresolved without a recorded daemon terminal/);assert.ok(existsSync(`${state}/.afk`));assert.equal(count('close'),closesBeforeScope);
+  rmSync(`${state}/.away-handoff/unrecorded-request`,{recursive:true,force:true});
+  writeFileSync(`${state}/.afk-daemon-terminal`,scopeRecord);
+  check('stop without SQUAD_SUPERVISOR_BACKEND still refuses an unrecorded Orca daemon or unresolved request');
   daemon.incarnationId='foreign-incarnation';save();r=cli('stop');assert.notEqual(r.status,0);assert.ok(existsSync(`${state}/.afk`));assert.equal(count('close'),1);
   daemon.incarnationId='daemon-inc-'+model.count;save();model.cancelClose=true;save();r=cli('stop');assert.notEqual(r.status,0);assert.ok(existsSync(`${state}/.afk`));assert.ok(existsSync(`${state}/.afk-daemon-terminal`));
   model.cancelClose=false;save();r=cli('reconcile');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);
