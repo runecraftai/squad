@@ -9,6 +9,34 @@ import (
 	"testing"
 )
 
+func TestObjectMissingDistinguishesAbsenceFromInspectionFailure(t *testing.T) {
+	dir := initTestRepo(t)
+	head := run(t, dir, "git", "rev-parse", "HEAD")
+	missing := strings.Repeat("a", 40)
+	for _, tc := range []struct {
+		name, dir, sha       string
+		wantMissing, wantErr bool
+	}{
+		{"present", dir, head, false, false},
+		{"absent", dir, missing, true, false},
+		{"invalid identity", dir, "HEAD", false, true},
+		{"zero identity", dir, strings.Repeat("0", 64), false, true},
+		{"unavailable repository", filepath.Join(t.TempDir(), "absent"), missing, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ObjectMissing(context.Background(), tc.dir, tc.sha)
+			if got != tc.wantMissing || (err != nil) != tc.wantErr {
+				t.Fatalf("missing = %v, err = %v", got, err)
+			}
+		})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got, err := ObjectMissing(ctx, dir, missing); got || err == nil {
+		t.Fatalf("cancelled inspection: %v, %v", got, err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "drill-git-tests-")
 	if err != nil {

@@ -18,6 +18,10 @@
 # requiring separate authorization.
 # --specialized-review is accepted on the run form; --yes and --skip are forbidden;
 # no gate, fix-round limit or approval is bypassed.
+# Orphaned-run releases are owned by `axi sync --recover`, not local state edits:
+# Drill must prove the recorded object is missing, durably audit the lost fixes,
+# and return custody without moving refs. Missing recovery refs alone never
+# authorize dropping an existing divergent head. The CLI's audit is printed.
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/sq-drill-run-lib.sh
@@ -109,6 +113,8 @@ while :; do
     EVIDENCE=$("$DRILL_BIN" axi sync --recover 2>&1) || block 'guarded custody recovery refused'
     SYNC=$(sync_object "$EVIDENCE")
     SYNC_STATE=$(scalar "$SYNC" state)
+    LOSS_NOTE=$(scalar "$SYNC" custody_return_note)
+    [ -z "$LOSS_NOTE" ] || printf 'recovery audit: %s\n' "$LOSS_NOTE"
   fi
   # Accepted scope limit, not a missing recovery step: only unpublished custody
   # is resumed. Post-push terminal failures (behind/synchronized) and held

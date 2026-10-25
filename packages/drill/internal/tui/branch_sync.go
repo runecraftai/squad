@@ -5,9 +5,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
 	"github.com/runecraftai/squad/packages/drill/internal/telemetry"
 )
+
+// wrapBoxBody reflows only the lines that exceed the box's inner content
+// width, so long status and confirmation sentences stay fully visible in a
+// real terminal while short, deliberately aligned lines keep their layout.
+func wrapBoxBody(content string, width int) string {
+	lines := strings.Split(content, "\n")
+	wrapped := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if lipgloss.Width(line) <= width {
+			wrapped = append(wrapped, line)
+			continue
+		}
+		wrapped = append(wrapped, wrapText(line, width)...)
+	}
+	return strings.Join(wrapped, "\n")
+}
 
 func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int) string {
 	if state == nil {
@@ -21,7 +38,11 @@ func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int
 		switch state.State {
 		case branchsync.StatePipelineOwned:
 			if recoverableBranchSync(state) {
-				message = "Run ended without publishing its pipeline commits; they are preserved in the local gate. Recover custody to take the branch back, or rerun to resume validation."
+				if state.Pipeline.PreservedHeadMissing {
+					message = "The run's recorded pipeline head is missing from this repository and the local gate. The pipeline's unpublished fixes are lost with it; recover custody to start a fresh run from your current head."
+				} else {
+					message = "Run ended with unpublished pipeline commits preserved in the local gate. Recover custody to take the branch back, or rerun to resume validation."
+				}
 				footer = "u recover custody"
 			} else {
 				message = "Local branch unchanged; the pipeline fix is not pushed yet. Do not make follow-up commits."
@@ -57,7 +78,11 @@ func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int
 		case branchsync.StateTargetChanged:
 			message = "The configured push target changed after the pipeline push. Synchronization is blocked."
 		case branchsync.StateCustodyReturned:
-			message = "Custody returned; the branch is yours. Start a fresh run when ready."
+			if state.Pipeline.CustodyReturnNote != "" {
+				message = "Custody returned at your current head; the pipeline's unpublished fixes were lost with the missing recorded head. Start a fresh run when ready."
+			} else {
+				message = "Custody returned; the branch is yours. Start a fresh run when ready."
+			}
 		case branchsync.StateUserOwned:
 			message = "Run ended before the pipeline changed anything; the branch and head are yours and immediately usable."
 		default:
@@ -67,7 +92,7 @@ func renderLocalBranchStatus(state *branchsync.State, refreshing bool, width int
 	if width < 40 {
 		width = 80
 	}
-	return renderBoxWithFooter("Local branch", message, width, footer)
+	return renderBoxWithFooter("Local branch", wrapBoxBody(message, width-4), width, footer)
 }
 
 func trackTUISyncAttempt(mode string, state branchsync.State, result string, started time.Time) {
@@ -111,14 +136,25 @@ func renderRecoverConfirmation(state branchsync.State, width int) string {
 		width = 80
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "The run ended %s without publishing its pipeline commits. Recovery returns\n", state.Pipeline.Status)
-	fmt.Fprintf(&b, "custody by fast-forwarding a clean behind worktree, or by adopting a diverged\n")
-	fmt.Fprintf(&b, "preserved head only when it is proven to carry every local change.\n\n")
+	if state.Pipeline.PreservedHeadMissing || state.Pipeline.CustodyReturnNote != "" {
+		fmt.Fprintf(&b, "The run ended %s and its recorded pipeline head was lost:\n", state.Pipeline.Status)
+		fmt.Fprintf(&b, "%s is missing from this repository and the local gate.\n", state.Pipeline.CurrentHead)
+		fmt.Fprintf(&b, "The pipeline's unpublished fixes are lost with that object.\n\n")
+		fmt.Fprintf(&b, "Local branch:   %s\n", state.Local.Branch)
+		fmt.Fprintf(&b, "Local HEAD:     %s\n", state.Local.Head)
+		fmt.Fprintf(&b, "Recorded HEAD:  %s (missing)\n\n", state.Pipeline.CurrentHead)
+		b.WriteString("Recovery only records custody at your current head: no branch, ref, or worktree moves. Start a fresh run when ready.")
+		return renderBoxWithFooter("Confirm custody recovery", wrapBoxBody(b.String(), width-4), width, "u/enter recover  ·  esc cancel")
+	}
+	fmt.Fprintf(&b, "The run ended %s with unpublished pipeline commits in the local gate.\n", state.Pipeline.Status)
+	fmt.Fprintf(&b, "Recovery returns custody by fast-forwarding a clean behind worktree, or\n")
+	fmt.Fprintf(&b, "by adopting a diverged preserved head only when it is proven to carry every\n")
+	fmt.Fprintf(&b, "local change.\n\n")
 	fmt.Fprintf(&b, "Local branch:   %s\n", state.Local.Branch)
 	fmt.Fprintf(&b, "Local HEAD:     %s\n", state.Local.Head)
 	fmt.Fprintf(&b, "Preserved HEAD: %s\n\n", state.Pipeline.CurrentHead)
 	b.WriteString("Dirty worktrees and divergence that cannot be proven contained refuse without changes; `drill sync --recover --keep-local` keeps the current head instead. `drill rerun` resumes validation.")
-	return renderBoxWithFooter("Confirm custody recovery", b.String(), width, "u/enter recover  ·  esc cancel")
+	return renderBoxWithFooter("Confirm custody recovery", wrapBoxBody(b.String(), width-4), width, "u/enter recover  ·  esc cancel")
 }
 
 func renderSyncConfirmation(state branchsync.State, width int) string {
@@ -142,5 +178,5 @@ func renderSyncConfirmation(state branchsync.State, width int) string {
 	} else {
 		b.WriteString("No reset, stash, merge commit, rebase, force push, branch switch, or remote update can occur.")
 	}
-	return renderBoxWithFooter("Confirm local branch sync", b.String(), width, "u/enter apply  ·  esc cancel")
+	return renderBoxWithFooter("Confirm local branch sync", wrapBoxBody(b.String(), width-4), width, "u/enter apply  ·  esc cancel")
 }

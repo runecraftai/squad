@@ -271,6 +271,13 @@ func inspectAxiBranchSync(ctx context.Context, env *axiEnv) branchsync.State {
 
 func freshRunBranchOwnershipState(ctx context.Context, env *axiEnv) *branchsync.State {
 	state := inspectAxiBranchSync(ctx, env)
+	return branchOwnershipBlock(state)
+}
+
+// branchOwnershipBlock reduces an already-inspected branch-sync state to the
+// one that must refuse a fresh trigger, so a caller that already inspected can
+// raise the same structured refusal without paying for a second inspection.
+func branchOwnershipBlock(state branchsync.State) *branchsync.State {
 	switch state.State {
 	case branchsync.StatePipelineOwned:
 		// The ownership block exists to keep a fresh push from discarding
@@ -285,6 +292,11 @@ func freshRunBranchOwnershipState(ctx context.Context, env *axiEnv) *branchsync.
 		return &state
 	case branchsync.StatePushInProgress:
 		return &state
+	case branchsync.StateMergedRemoteRetained, branchsync.StateMergedRemoteRemoved, branchsync.StateClosed:
+		if state.Error == "" {
+			state.Error = branchsync.RetiredBranchError(state.PRState)
+		}
+		return &state
 	default:
 		return nil
 	}
@@ -295,6 +307,10 @@ func freshRunBranchOwnershipState(ctx context.Context, env *axiEnv) *branchsync.
 // no-op (the gate already had this commit). Callers must check for an existing
 // active run first (see activeRunID) and apply pre-flight guards.
 func triggerRun(ctx context.Context, env *axiEnv, branch, headSHA string, skipSteps []types.StepName, intent string, specializedReview bool) (string, error) {
+	state := inspectAxiBranchSync(ctx, env)
+	if state.State == branchsync.StateCustodyReturned && state.Pipeline.CustodyReturnNote != "" {
+		return triggerOrphanRun(ctx, env, state, branch, headSHA, skipSteps, intent, specializedReview)
+	}
 	pushOptions := formatSkipPushOptions(skipSteps)
 	if specializedReview {
 		pushOptions = append(pushOptions, specializedReviewPushOption)
@@ -308,8 +324,8 @@ func triggerRun(ctx context.Context, env *axiEnv, branch, headSHA string, skipSt
 		// a matching terminal run may predate this push, so do not attach to it.
 		priorRunIDs = nil
 	}
-	if state := freshRunBranchOwnershipState(ctx, env); state != nil {
-		return "", &branchOwnershipError{state: *state}
+	if blocked := branchOwnershipBlock(state); blocked != nil {
+		return "", &branchOwnershipError{state: *blocked}
 	}
 	pushErr := git.PushWithOptions(ctx, ".", gate.RemoteName, "refs/heads/"+branch, "", false, pushOptions)
 	if pushErr != nil {
@@ -920,7 +936,7 @@ func runAxiAbort(cmd *cobra.Command, runID string) error {
 		fields = append(fields, branchSyncField(state))
 	}
 	help := []string{
-		"Run `drill axi sync --check` before any local follow-up commit - a cancelled run can leave unpublished pipeline commits preserved in the local gate, and the check offers the guarded custody recovery",
+		"Run `drill axi sync --check` before any local follow-up commit - a cancelled run can leave unpublished pipeline commits in custody; when its recorded head was lost those fixes are lost with it, and the check offers the guarded custody recovery",
 	}
 	if state.Pipeline.RunID == active.Run.ID {
 		switch {

@@ -143,7 +143,8 @@ When a clean strict-behind relation is eligible, or a diverged relation may be e
 Pressing `u` explicitly refreshes the configured upstream or fork target, then opens a confirmation with both full SHAs, the exact target ref, and the clean-worktree proof.
 Confirm with `u` or Enter, or cancel with Escape.
 The apply path rechecks every mutable assumption and can only perform the same exact strict fast-forward or anchored equivalent-diverged advance as `drill sync`; blocked states never trigger destructive Git recovery.
-When the owning run ended without publishing its pipeline commits, the same box offers `u recover custody` instead: `u` opens a confirmation naming the terminal status, the local head, and the preserved head, and applying routes through the guarded recovery documented in [`drill axi sync`](/drill/reference/cli/#drill-axi-sync).
+When the owning run ended with unpublished pipeline commits still in custody - never published, or an unpublished tail past a published head - the same box offers `u recover custody` instead: `u` opens a confirmation naming the terminal status, the local head, and the preserved head, and applying routes through the guarded recovery documented in [`drill axi sync`](/drill/reference/cli/#drill-axi-sync).
+When the recorded pipeline head is missing from both this repository and the local gate, the box, the confirmation, and the returned state say plainly that the pipeline's unpublished fixes are lost with it and that recovery only records custody at the current head.
 
 ### Footer
 

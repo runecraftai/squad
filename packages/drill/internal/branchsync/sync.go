@@ -90,14 +90,21 @@ type LocalState struct {
 }
 
 type PipelineState struct {
-	RunID          string
-	Status         string
-	Phase          string
-	SubmittedHead  string
-	CurrentHead    string
-	PushedHead     string
-	PushedAt       int64
-	PushGeneration int64
+	RunID             string
+	Status            string
+	Phase             string
+	SubmittedHead     string
+	CurrentHead       string
+	PushedHead        string
+	PushedAt          int64
+	PushGeneration    int64
+	CustodyReturnNote string
+	CustodyReturnHead string
+	// PreservedHeadMissing reports a terminal run whose recorded pipeline head
+	// is proven absent from both the invoking repository and the validated local
+	// gate while any published head survives. It is the loss classification
+	// behind recoverOrphanedRun.
+	PreservedHeadMissing bool
 }
 
 type TargetState struct {
@@ -468,7 +475,8 @@ func (s *Service) Apply(ctx context.Context) State {
 //	work
 //	diverged   any       refuse (anchor named, manual   custody at local head;
 //	                     reconcile / rerun offered)     gate reset to it (CAS)
-//	P missing  any       refuse                         refuse
+//	P missing  clean     return custody with loss audit same
+//	P missing  dirty     refuse                         refuse
 //
 // The containment row exists because a cancelled validation routinely leaves P
 // as a REBASE of the local branch onto a newer base: the same logical commits
@@ -483,7 +491,13 @@ func (s *Service) Apply(ctx context.Context) State {
 //
 // Fail-safe rules, in the same spirit as Refresh/Apply:
 //   - An active run always refuses: only terminal runs are recoverable.
-//   - The preserved commits must be provably safe before custody moves: when
+//   - A terminal orphan whose recorded head is confirmed missing in both valid
+//     repos can return custody at the clean local head: either a never-pushed
+//     run, or a run whose unpublished tail past the published head was lost.
+//     The loss audit, the surviving published head, and the exact released
+//     local head are stamped atomically; no branch or recovery ref moves. A
+//     missing anchor alone is not loss.
+//   - Otherwise the preserved commits must be provably safe before custody moves: when
 //     already reachable from the local branch (equal/ahead), recovery pins the
 //     private anchor ref refs/drill/recover/<runID> locally without gate
 //     access; otherwise the preserved head is verified at the gate branch head
@@ -501,15 +515,20 @@ func (s *Service) Apply(ctx context.Context) State {
 //     and changes nothing.
 //
 // Recovery ends with a persisted custody-return stamp on the run; inspection
-// then reports custody_returned (never-pushed runs) or the ordinary
-// classification against the last push binding (pushed runs), both pointing at
-// run_pipeline as the next step. `drill rerun` remains the alternative
-// exit that resumes validating the preserved head instead of taking it back.
+// then reports custody_returned after an orphan release, or the ordinary
+// classification against the last push binding after taking a preserved head.
+// Both point at starting a fresh run, and `drill rerun` remains the alternative
+// exit that resumes validating a preserved head that still exists.
 func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 	if refusal, blocked := s.gateContextRefusal(ctx); blocked {
 		return refusal
 	}
 	state, run, _ := s.inspect(ctx)
+	// Retirement is terminal for the branch and outranks every release path:
+	// a merged or closed pull request refuses before any custody is returned.
+	if refusal, retired := retiredRefusal(state, run); retired {
+		return refusal
+	}
 	if run != nil && run.CustodyReturnedAt != nil {
 		state.Recovered = true
 		state.Changed = false
@@ -528,6 +547,13 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 	}
 	if !terminalRunStatus(run.Status) {
 		return blockedPlan(state, StatePipelineOwned, "blocked_recover_run_active", "the run that owns this branch is still active; drive it to completion or abort it first; no files or refs were changed")
+	}
+	// An absent local anchor is normal before the first recovery. It is never
+	// sufficient evidence of loss: the object must be absent from BOTH the
+	// invoking repository and the validated gate. Existing objects, even
+	// unreachable ones, continue through the original divergence checks.
+	if s.preservedHeadMissing(ctx, run) {
+		return s.recoverOrphanedRun(ctx, run, state)
 	}
 	if run.TerminalHeadVerifiedAt == nil {
 		branch := state.Local.Branch
@@ -633,6 +659,37 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 		blocked.NextAction = &NextAction{Code: "inspect_and_reconcile_manually", Command: "git log --oneline --left-right HEAD..." + anchorRef}
 		return blocked
 	}
+}
+
+// recoverOrphanedRun releases only a terminal record whose recorded head is
+// gone in both repositories: a never-pushed run, or a run whose unpublished
+// tail past the published head was lost. It never moves any ref or worktree.
+func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state State) State {
+	fresh, selected, _ := s.inspect(ctx)
+	if refusal, retired := retiredRefusal(fresh, selected); retired {
+		return refusal
+	}
+	if selected == nil || selected.ID != run.ID || selected.HeadSHA != run.HeadSHA ||
+		fresh.State != StatePipelineOwned || fresh.Local.Branch != state.Local.Branch ||
+		fresh.Local.Head != state.Local.Head {
+		return blockedPlan(fresh, fresh.State, "blocked_recover_assumptions_changed", "the orphaned run or local worktree changed while custody was being returned; custody was not returned")
+	}
+	if !fresh.Local.Clean {
+		blocked := blockedPlan(fresh, StatePipelineOwned, "blocked_recover_dirty", fmt.Sprintf("the invoking worktree is not clean (%s); commit or stash first and re-run the recovery; no files or refs were changed", fresh.Local.Reason))
+		blocked.NextAction = &NextAction{Code: "inspect_worktree", Command: "git status"}
+		return blocked
+	}
+	// Recheck absence immediately before recording the release. Inspection
+	// errors, invalid identities, and a newly available object all refuse.
+	if !s.preservedHeadMissing(ctx, run) {
+		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_assumptions_changed", "the recorded pipeline object is no longer proven missing; custody was not returned")
+	}
+	if err := s.DB.ReleaseOrphanedRun(run.ID, run.HeadSHA, fresh.Local.Head, ptr(run.LastPushedSHA)); err != nil {
+		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_stamp_failed", fmt.Sprintf("the orphaned run release and loss audit could not be recorded (%s); custody was not returned", err))
+	}
+	result, _, _ := s.inspect(ctx)
+	result.Recovered = true
+	return result
 }
 
 // recoverKeepLocal performs the explicit keep-local custody return: the
@@ -992,6 +1049,8 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 	state.Pipeline = PipelineState{
 		RunID: run.ID, Status: string(run.Status), SubmittedHead: ptr(run.SubmittedHeadSHA), CurrentHead: run.HeadSHA,
 		PushedHead: ptr(run.LastPushedSHA), PushedAt: value(run.LastPushedAt), PushGeneration: value(run.PushGeneration),
+		CustodyReturnNote: ptr(run.CustodyReturnNote),
+		CustodyReturnHead: ptr(run.CustodyReturnHead),
 	}
 	state.PRState = normalizePRState(run.PRState)
 	state.Target = TargetState{Kind: ptr(run.PushTargetKind), URL: displayTarget(s.Repo.PushURL()), Ref: ptr(run.PushRef)}
@@ -1004,6 +1063,16 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 		state.Pipeline.Phase = "push"
 		state.NextAction = &NextAction{Code: "continue_active_run", Command: "drill axi status"}
 		return state, run, false
+	}
+	// Terminal PR lifecycle retires the branch regardless of local dirtiness,
+	// custody history, or later target configuration. Refresh may classify
+	// retained versus removed only while the exact original target binding
+	// still matches.
+	if retiredState, retiredSafety, retired := retiredRunState(run); retired {
+		state.State = retiredState
+		state.Safety = retiredSafety
+		state.NextAction = nil
+		return state, run, true
 	}
 	if run.LastPushedSHA == nil || run.PushTargetFingerprint == nil || run.PushRef == nil || run.PushGeneration == nil || run.SubmittedHeadSHA == nil {
 		if run.SubmittedHeadSHA != nil && run.HeadSHA != ptr(run.SubmittedHeadSHA) {
@@ -1042,22 +1111,15 @@ func (s *Service) inspect(ctx context.Context) (State, *db.Run, bool) {
 		state.Error = "this run has no exact successful push provenance and cannot be synchronized safely"
 		return state, run, false
 	}
-	if run.HeadSHA != ptr(run.LastPushedSHA) && run.CustodyReturnedAt == nil {
-		s.classifyPipelineOwned(ctx, &state, run, "the pipeline head has not been successfully bound to the push target; do not make local follow-up commits yet")
-		return state, run, false
-	}
-	// Terminal PR lifecycle retires the branch regardless of local dirtiness
-	// or later target configuration. Refresh may classify retained versus
-	// removed only while the exact original target binding still matches.
-	if state.PRState == "merged" {
-		state.State = StateMergedRemoteRetained
-		state.Safety = "blocked_merged"
-		return state, run, true
-	}
-	if state.PRState == "closed" {
-		state.State = StateClosed
-		state.Safety = "blocked_closed"
-		return state, run, true
+	if run.HeadSHA != ptr(run.LastPushedSHA) {
+		if run.CustodyReturnedAt != nil && run.CustodyReturnNote != nil {
+			s.classifyCustodyReturned(ctx, &state)
+			return state, run, true
+		}
+		if run.CustodyReturnedAt == nil {
+			s.classifyPipelineOwned(ctx, &state, run, "the pipeline head has not been successfully bound to the push target; do not make local follow-up commits yet")
+			return state, run, false
+		}
 	}
 	if ptr(run.PushRef) != "refs/heads/"+branch || ptr(run.PushTargetFingerprint) != TargetFingerprint(s.Repo.PushURL()) || ptr(run.PushTargetKind) != targetKind(s.Repo) {
 		state.State = StateTargetChanged
@@ -1311,6 +1373,29 @@ func samePushTargetBinding(older, newer *db.Run) bool {
 		older.PushRef != nil && newer.PushRef != nil && ptr(older.PushRef) == ptr(newer.PushRef)
 }
 
+// preservedHeadMissing proves a terminal run's recorded head is absent from
+// both the invoking repository and the validated local gate, and that the lost
+// object is unpublished pipeline work: either the run never pushed, or the
+// pipeline advanced its head past the last successful push. A published head
+// that is itself missing is a repository repair problem, not a lost
+// unpublished tail, so it still refuses. A missing local object that still
+// exists in the gate, an unreachable gate, an invalid identity, or any
+// inspection error is not loss either.
+func (s *Service) preservedHeadMissing(ctx context.Context, run *db.Run) bool {
+	if run == nil || run.HeadSHA == "" || strings.TrimSpace(s.GateDir) == "" {
+		return false
+	}
+	if published := ptr(run.LastPushedSHA); published != "" && published == run.HeadSHA {
+		return false
+	}
+	localMissing, localErr := git.ObjectMissing(ctx, s.workDir(), run.HeadSHA)
+	if localErr != nil || !localMissing || git.ValidateBareRepository(ctx, s.GateDir) != nil {
+		return false
+	}
+	gateMissing, gateErr := git.ObjectMissing(ctx, s.GateDir, run.HeadSHA)
+	return gateErr == nil && gateMissing
+}
+
 func terminalRunStatus(status types.RunStatus) bool {
 	switch status {
 	case types.RunCompleted, types.RunFailed, types.RunCancelled:
@@ -1338,6 +1423,10 @@ func (s *Service) classifyPipelineOwned(ctx context.Context, state *State, run *
 	if terminalRunStatus(run.Status) {
 		state.Safety = "blocked_pipeline_owned_recoverable"
 		state.Error = "the run finished " + string(run.Status) + " with unpublished pipeline commits preserved in the local gate; recover custody before any local follow-up commit"
+		if s.preservedHeadMissing(ctx, run) {
+			state.Pipeline.PreservedHeadMissing = true
+			state.Error = "the run finished " + string(run.Status) + " and its recorded pipeline head is missing from both this repository and the local gate; the pipeline's unpublished fixes are lost with that object; recover custody to start a fresh run from the current head"
+		}
 		state.NextAction = &NextAction{Code: "recover_custody", Command: "drill axi sync --recover"}
 		return
 	}
@@ -1430,11 +1519,7 @@ func objectExists(ctx context.Context, dir, sha string) bool {
 }
 
 func isAncestor(ctx context.Context, dir, ancestor, descendant string) bool {
-	if ancestor == "" || descendant == "" {
-		return false
-	}
-	_, err := git.Run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
-	return err == nil
+	return git.IsAncestor(ctx, dir, ancestor, descendant)
 }
 
 func samePath(a, b string) bool {
@@ -1453,6 +1538,46 @@ func targetKind(repo *db.Repo) string {
 		return "fork"
 	}
 	return "upstream"
+}
+
+// retiredRunState reports the retired branch classification for a run whose
+// pull request was merged or closed. Retirement is permanent: it outranks every
+// release and fresh-start classification.
+func retiredRunState(run *db.Run) (string, string, bool) {
+	if run == nil {
+		return "", "", false
+	}
+	switch normalizePRState(run.PRState) {
+	case "merged":
+		return StateMergedRemoteRetained, "blocked_merged", true
+	case "closed":
+		return StateClosed, "blocked_closed", true
+	}
+	return "", "", false
+}
+
+func retiredRefusal(state State, run *db.Run) (State, bool) {
+	retiredState, _, refusal, retired := RetiredBranch(run)
+	if !retired {
+		return State{}, false
+	}
+	return blockedPlan(state, retiredState, "blocked_recover_retired", refusal+"; no files or refs were changed"), true
+}
+
+// RetiredBranch reports the retired classification and named refusal for a run
+// whose pull request was merged or closed. Retirement is permanent: it
+// outranks every release and every fresh-start admission path.
+func RetiredBranch(run *db.Run) (state, safety, refusal string, retired bool) {
+	state, safety, retired = retiredRunState(run)
+	if !retired {
+		return "", "", "", false
+	}
+	return state, safety, RetiredBranchError(ptr(run.PRState)), true
+}
+
+// RetiredBranchError builds the named refusal shared by every fresh-start path.
+func RetiredBranchError(prState string) string {
+	return "the branch is retired: its pull request was " + normalizePRState(&prState) + "; no fresh run was started"
 }
 
 func normalizePRState(state *string) string {

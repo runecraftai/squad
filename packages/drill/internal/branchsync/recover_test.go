@@ -155,6 +155,326 @@ func newRecoverFixture(t *testing.T, status types.RunStatus) *recoverFixture {
 	}
 }
 
+func TestRecoverOrphanedHeadReturnsCustodyWithoutMovingBranches(t *testing.T) {
+	t.Parallel()
+	f := newRecoverFixture(t, types.RunFailed)
+	missing := strings.Repeat("a", 40)
+	if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	if objectExists(f.ctx, f.local, missing) || objectExists(f.ctx, f.gate, missing) {
+		t.Fatal("orphan fixture unexpectedly has the recorded object")
+	}
+	pre := f.service.InspectCached(f.ctx)
+	if !pre.Pipeline.PreservedHeadMissing || pre.State != StatePipelineOwned ||
+		pre.Safety != "blocked_pipeline_owned_recoverable" || !strings.Contains(pre.Error, "lost") {
+		t.Fatalf("orphan classification = %#v", pre)
+	}
+	localRefs := mustRun(t, f.local, "show-ref")
+	gateRefs := mustRun(t, f.gate, "show-ref")
+	state := f.service.Recover(f.ctx, false)
+	if !state.Recovered || state.State != StateCustodyReturned || state.Changed {
+		t.Fatalf("orphan recovery = %#v", state)
+	}
+	if mustRun(t, f.local, "show-ref") != localRefs || mustRun(t, f.gate, "show-ref") != gateRefs {
+		t.Fatal("orphan release moved a ref")
+	}
+	if !f.custodyReturned() {
+		t.Fatal("orphan release did not persist custody")
+	}
+	persisted, err := f.db.GetRun(f.run.ID)
+	if err != nil || persisted.CustodyReturnNote == nil {
+		t.Fatalf("missing durable release audit: %#v, %v", persisted, err)
+	}
+	note := *persisted.CustodyReturnNote
+	for _, want := range []string{f.run.ID, missing, f.submitted, "orphaned", "unpublished fixes are lost"} {
+		if !strings.Contains(note, want) || !strings.Contains(state.Pipeline.CustodyReturnNote, want) {
+			t.Fatalf("audit missing %q: %s", want, note)
+		}
+	}
+	if persisted.CustodyReturnHead == nil || *persisted.CustodyReturnHead != f.submitted || state.Pipeline.CustodyReturnHead != f.submitted {
+		t.Fatalf("released local head audit = %#v", persisted.CustodyReturnHead)
+	}
+	again := f.service.Recover(f.ctx, false)
+	persisted, err = f.db.GetRun(f.run.ID)
+	if err != nil || !again.Recovered || *persisted.CustodyReturnNote != note {
+		t.Fatal("idempotent recovery changed the original audit")
+	}
+	fresh, err := f.db.InsertRun(f.repo.ID, f.run.Branch, f.submitted, f.base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.service.InspectCached(f.ctx); got.Pipeline.RunID != fresh.ID {
+		t.Fatalf("fresh run still blocked by orphan: %#v", got)
+	}
+}
+
+func TestRecoverMissingAnchorNeverReleasesExistingDivergentHead(t *testing.T) {
+	t.Parallel()
+	for _, location := range []string{"gate only", "local and gate"} {
+		t.Run(location, func(t *testing.T) {
+			f := newRecoverFixture(t, types.RunFailed)
+			if location == "local and gate" {
+				mustRun(t, f.local, "fetch", f.gate, "refs/heads/feature/recover")
+			}
+			// Move the gate to the submitted head, leaving the recorded
+			// pipeline object present but unreachable. No recovery ref exists.
+			mustRun(t, f.gate, "update-ref", "refs/heads/feature/recover", f.submitted)
+			if pre := f.service.InspectCached(f.ctx); pre.Pipeline.PreservedHeadMissing {
+				t.Fatalf("existing head mistaken for loss: %#v", pre)
+			}
+			before := mustRun(t, f.local, "show-ref")
+			state := f.service.Recover(f.ctx, false)
+			if state.Recovered || state.Safety != "blocked_recover_gate_diverged" || f.custodyReturned() {
+				t.Fatalf("existing head bypassed divergence: %#v", state)
+			}
+			if mustRun(t, f.local, "show-ref") != before {
+				t.Fatal("refusal moved a local ref")
+			}
+		})
+	}
+}
+
+func TestRecoverOrphanRefusals(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"active", "missing gate", "invalid head", "published head missing"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newRecoverFixture(t, types.RunFailed)
+			missing := strings.Repeat("a", 40)
+			if kind == "invalid head" {
+				missing = "not-an-object"
+			}
+			if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "active":
+				if err := f.db.UpdateRunStatus(f.run.ID, types.RunRunning); err != nil {
+					t.Fatal(err)
+				}
+			case "missing gate":
+				f.service.GateDir = filepath.Join(t.TempDir(), "absent")
+			case "published head missing":
+				if err := f.db.UpdateRunPushBinding(f.run.ID, db.PushBinding{HeadSHA: missing, TargetKind: "upstream", TargetFingerprint: TargetFingerprint(f.remote), Ref: "refs/heads/feature/recover"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := mustRun(t, f.local, "show-ref")
+			got := f.service.Recover(f.ctx, false)
+			if got.Recovered || f.custodyReturned() {
+				t.Fatalf("unsafe orphan release for %s: %#v", kind, got)
+			}
+			if mustRun(t, f.local, "show-ref") != before {
+				t.Fatal("refusal moved a ref")
+			}
+		})
+	}
+}
+
+// TestRecoverOrphanDirtyWorktreeRefusesWithInspectAction pins the refusal an
+// operator with uncommitted work sees: the orphan release still refuses, but
+// names the dirtiness and offers the same inspect_worktree exit as every other
+// dirty recovery refusal instead of a generic assumptions-changed block. The
+// uncommitted work survives and the release succeeds once the tree is clean.
+func TestRecoverOrphanDirtyWorktreeRefusesWithInspectAction(t *testing.T) {
+	t.Parallel()
+
+	f := newRecoverFixture(t, types.RunFailed)
+	missing := strings.Repeat("a", 40)
+	if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(f.local, "uncommitted.txt"), "keep me\n")
+	before := mustRun(t, f.local, "show-ref")
+
+	got := f.service.Recover(f.ctx, false)
+	if got.Recovered || got.Changed || f.custodyReturned() {
+		t.Fatalf("dirty orphan release was not refused: %#v", got)
+	}
+	if got.Safety != "blocked_recover_dirty" || got.State != StatePipelineOwned {
+		t.Fatalf("dirty orphan refusal = %s/%s", got.State, got.Safety)
+	}
+	if got.NextAction == nil || got.NextAction.Code != "inspect_worktree" || got.NextAction.Command != "git status" {
+		t.Fatalf("dirty orphan next action = %#v", got.NextAction)
+	}
+	if !strings.Contains(got.Error, "not clean") || !strings.Contains(got.Error, "commit or stash") {
+		t.Fatalf("dirty orphan refusal does not name the exit: %q", got.Error)
+	}
+	if mustRun(t, f.local, "show-ref") != before {
+		t.Fatal("dirty orphan refusal moved a ref")
+	}
+	if got := readOptional(t, filepath.Join(f.local, "uncommitted.txt")); got != "keep me\n" {
+		t.Fatalf("dirty orphan refusal touched uncommitted work: %q", got)
+	}
+
+	if err := os.Remove(filepath.Join(f.local, "uncommitted.txt")); err != nil {
+		t.Fatal(err)
+	}
+	clean := f.service.Recover(f.ctx, false)
+	if !clean.Recovered || clean.State != StateCustodyReturned || !f.custodyReturned() {
+		t.Fatalf("clean orphan release after the refusal = %#v", clean)
+	}
+}
+
+// TestRecoverPushedRunWithLostUnpublishedTailReleasesCustody covers the
+// published-then-lost class: the run pushed successfully, a later fix round
+// advanced its recorded head past the published head, and that unpublished
+// tail is gone from both repositories. The release must state the loss plainly,
+// name the surviving published head, leave every ref untouched, and expose the
+// released local head as the ancestry anchor for a fresh run.
+func TestRecoverPushedRunWithLostUnpublishedTailReleasesCustody(t *testing.T) {
+	t.Parallel()
+
+	f := newRecoverFixture(t, types.RunFailed)
+	mustRun(t, f.local, "push", f.remote, "refs/heads/feature/recover:refs/heads/feature/recover")
+	if err := f.db.UpdateRunPushBinding(f.run.ID, db.PushBinding{
+		HeadSHA: f.submitted, TargetKind: "upstream", TargetFingerprint: TargetFingerprint(f.remote), Ref: "refs/heads/feature/recover",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	missing := strings.Repeat("a", 40)
+	if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	if objectExists(f.ctx, f.local, missing) || objectExists(f.ctx, f.gate, missing) {
+		t.Fatal("fixture unexpectedly has the lost tail object")
+	}
+
+	pre := f.service.InspectCached(f.ctx)
+	if !pre.Pipeline.PreservedHeadMissing || pre.State != StatePipelineOwned || pre.Safety != "blocked_pipeline_owned_recoverable" {
+		t.Fatalf("pushed orphan classification = %#v", pre)
+	}
+	if pre.Pipeline.PushedHead != f.submitted || pre.Pipeline.CurrentHead != missing {
+		t.Fatalf("pushed orphan ownership facts = %#v", pre.Pipeline)
+	}
+	if !strings.Contains(pre.Error, "lost") || strings.Contains(pre.Error, "preserved") {
+		t.Fatalf("pushed orphan error does not state the loss plainly: %q", pre.Error)
+	}
+
+	localRefs := mustRun(t, f.local, "show-ref")
+	gateRefs := mustRun(t, f.gate, "show-ref")
+	state := f.service.Recover(f.ctx, false)
+	if !state.Recovered || state.Changed || state.State != StateCustodyReturned || state.Safety != "custody_returned" {
+		t.Fatalf("pushed orphan recovery = %#v", state)
+	}
+	if state.NextAction == nil || state.NextAction.Code != "run_pipeline" {
+		t.Fatalf("pushed orphan next action = %#v", state.NextAction)
+	}
+	if mustRun(t, f.local, "show-ref") != localRefs || mustRun(t, f.gate, "show-ref") != gateRefs {
+		t.Fatal("pushed orphan release moved a ref")
+	}
+	persisted, err := f.db.GetRun(f.run.ID)
+	if err != nil || persisted.CustodyReturnNote == nil || persisted.CustodyReturnHead == nil {
+		t.Fatalf("missing durable release audit: %#v, %v", persisted, err)
+	}
+	if *persisted.CustodyReturnHead != f.submitted {
+		t.Fatalf("released local head = %q, want %q", *persisted.CustodyReturnHead, f.submitted)
+	}
+	note := *persisted.CustodyReturnNote
+	for _, want := range []string{f.run.ID, missing, f.submitted, "unpublished fixes are lost", "published head " + f.submitted + " survives"} {
+		if !strings.Contains(note, want) {
+			t.Fatalf("release audit missing %q: %s", want, note)
+		}
+	}
+}
+
+// TestRecoverRetiredBranchRefusesEvenWithLostUnpublishedTail pins retirement as
+// absolute: a merged or closed pull request outranks orphan release, so a run
+// whose unpublished tail is gone still refuses with a named retirement error
+// instead of returning custody and inviting a fresh run.
+func TestRecoverRetiredBranchRefusesEvenWithLostUnpublishedTail(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		prState    string
+		wantState  string
+		wantSafety string
+	}{
+		{prState: "merged", wantState: StateMergedRemoteRetained, wantSafety: "blocked_merged"},
+		{prState: "closed", wantState: StateClosed, wantSafety: "blocked_closed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.prState, func(t *testing.T) {
+			f := newRecoverFixture(t, types.RunFailed)
+			mustRun(t, f.local, "push", f.remote, "refs/heads/feature/recover:refs/heads/feature/recover")
+			if err := f.db.UpdateRunPushBinding(f.run.ID, db.PushBinding{
+				HeadSHA: f.submitted, TargetKind: "upstream", TargetFingerprint: TargetFingerprint(f.remote), Ref: "refs/heads/feature/recover",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			missing := strings.Repeat("b", 40)
+			if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.db.UpdateRunPRState(f.run.ID, tc.prState); err != nil {
+				t.Fatal(err)
+			}
+
+			pre := f.service.InspectCached(f.ctx)
+			if pre.State != tc.wantState || pre.Safety != tc.wantSafety || pre.PRState != tc.prState {
+				t.Fatalf("retired classification = %#v", pre)
+			}
+			if pre.NextAction != nil {
+				t.Fatalf("retired branch offers an action: %#v", pre.NextAction)
+			}
+
+			localRefs := mustRun(t, f.local, "show-ref")
+			gateRefs := mustRun(t, f.gate, "show-ref")
+			state := f.service.Recover(f.ctx, false)
+			if state.Recovered || state.Changed {
+				t.Fatalf("retired branch reported recovery: %#v", state)
+			}
+			if state.State != tc.wantState || state.Safety != "blocked_recover_retired" {
+				t.Fatalf("retired refusal = %#v", state)
+			}
+			if !strings.Contains(state.Error, "retired") || !strings.Contains(state.Error, tc.prState) {
+				t.Fatalf("retired refusal does not name retirement: %q", state.Error)
+			}
+			if mustRun(t, f.local, "show-ref") != localRefs || mustRun(t, f.gate, "show-ref") != gateRefs {
+				t.Fatal("retired refusal moved a ref")
+			}
+			if f.custodyReturned() {
+				t.Fatal("retired branch returned custody")
+			}
+		})
+	}
+}
+
+// TestCustodyReturnedBranchMergedLaterClassifiesAsRetired covers a run released
+// while its pull request was still live and merged afterwards: the release
+// stamp may not mask the retirement, and recovery must refuse it.
+func TestCustodyReturnedBranchMergedLaterClassifiesAsRetired(t *testing.T) {
+	t.Parallel()
+
+	f := newRecoverFixture(t, types.RunFailed)
+	mustRun(t, f.local, "push", f.remote, "refs/heads/feature/recover:refs/heads/feature/recover")
+	if err := f.db.UpdateRunPushBinding(f.run.ID, db.PushBinding{
+		HeadSHA: f.submitted, TargetKind: "upstream", TargetFingerprint: TargetFingerprint(f.remote), Ref: "refs/heads/feature/recover",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	missing := strings.Repeat("c", 40)
+	if err := f.db.UpdateRunStatusWithVerifiedHead(f.run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	released := f.service.Recover(f.ctx, false)
+	if !released.Recovered || released.State != StateCustodyReturned {
+		t.Fatalf("live orphan release = %#v", released)
+	}
+	if err := f.db.UpdateRunPRState(f.run.ID, "merged"); err != nil {
+		t.Fatal(err)
+	}
+
+	state := f.service.InspectCached(f.ctx)
+	if state.State != StateMergedRemoteRetained || state.Safety != "blocked_merged" {
+		t.Fatalf("merged after release = %#v", state)
+	}
+	refused := f.service.Recover(f.ctx, false)
+	if refused.Recovered || refused.Safety != "blocked_recover_retired" || !strings.Contains(refused.Error, "retired") {
+		t.Fatalf("recover of retired released branch = %#v", refused)
+	}
+}
+
 func (f *recoverFixture) anchorRef() string { return "refs/drill/recover/" + f.run.ID }
 
 func (f *recoverFixture) custodyReturned() bool {
@@ -543,6 +863,9 @@ func TestRecoverTerminalPostPushRunWithMovedHead(t *testing.T) {
 	if state.State != StatePipelineOwned || state.Safety != "blocked_pipeline_owned_recoverable" {
 		t.Fatalf("post-push terminal state = %#v", state)
 	}
+	if state.Pipeline.PreservedHeadMissing {
+		t.Fatal("an existing preserved head was classified as lost")
+	}
 	if state.NextAction == nil || state.NextAction.Code != "recover_custody" {
 		t.Fatalf("post-push next action = %#v", state.NextAction)
 	}
@@ -559,6 +882,9 @@ func TestRecoverTerminalPostPushRunWithMovedHead(t *testing.T) {
 	}
 	if !f.custodyReturned() {
 		t.Fatal("post-push recover did not stamp custody")
+	}
+	if persisted, err := f.db.GetRun(f.run.ID); err != nil || persisted.CustodyReturnNote != nil {
+		t.Fatalf("existing preserved head was released as an orphan: %#v, %v", persisted, err)
 	}
 }
 

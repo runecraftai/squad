@@ -79,9 +79,42 @@ func runInDirWithEnv(ctx context.Context, dir string, extraEnv []string, args ..
 	return strings.TrimSpace(string(out)), err
 }
 
+// ObjectMissing distinguishes an absent object from a failed Git inspection.
+// Batch mode reports missing objects on stdout with a successful exit code.
+func ObjectMissing(ctx context.Context, dir, sha string) (bool, error) {
+	if (len(sha) != 40 && len(sha) != 64) || strings.Trim(sha, "0123456789abcdef") != "" || strings.Trim(sha, "0") == "" {
+		return false, fmt.Errorf("invalid object identity")
+	}
+	args := []string{"cat-file", "--batch-check"}
+	if isBareGitDir(dir) {
+		args = append([]string{"--git-dir=" + dir}, args...)
+	}
+	out, err := runInDirWithEnvRawInput(ctx, dir, []string{"GIT_NO_LAZY_FETCH=1"}, sha+"\n", args...)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == sha+" missing", nil
+}
+
+// IsAncestor reports whether ancestor is reachable from descendant (an equal
+// commit counts). Empty or unresolvable identities are not ancestors, so a
+// caller never treats missing evidence as a proven descent.
+func IsAncestor(ctx context.Context, dir, ancestor, descendant string) bool {
+	if ancestor == "" || descendant == "" {
+		return false
+	}
+	_, err := Run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
+	return err == nil
+}
+
 func runInDirWithEnvRaw(ctx context.Context, dir string, extraEnv []string, args ...string) ([]byte, error) {
+	return runInDirWithEnvRawInput(ctx, dir, extraEnv, "", args...)
+}
+
+func runInDirWithEnvRawInput(ctx context.Context, dir string, extraEnv []string, input string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(input)
 	cmd.Env = append(NonInteractiveEnv(dir), extraEnv...)
 	winproc.Harden(cmd)
 	out, err := cmd.Output()

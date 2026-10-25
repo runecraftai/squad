@@ -76,6 +76,9 @@ func newCLISyncFixture(t *testing.T) cliSyncFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Expose the registered, symlink-resolved root so direct database lookups
+	// match the stored working_path on every platform (macOS /var is a symlink).
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -393,6 +396,7 @@ func newCLIRecoverFixture(t *testing.T) cliRecoverFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -474,6 +478,7 @@ func newCLIUnmovedAbortFixture(t *testing.T) cliRecoverFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -682,6 +687,7 @@ func newCLIStaleUnpublishedFixtureWithOptions(t *testing.T, pushedDescendant boo
 	if err != nil {
 		t.Fatal(err)
 	}
+	local = registeredRoot
 	repo, err := database.InsertRepo(registeredRoot, remote, "main")
 	if err != nil {
 		t.Fatal(err)
@@ -891,6 +897,53 @@ func TestAxiSyncCheckSurfacesRecoveryForTerminalPrePushRun(t *testing.T) {
 	}
 	if got := cliGit(t, f.local, "rev-parse", "HEAD"); got != f.submitted {
 		t.Fatal("check moved HEAD")
+	}
+}
+
+func TestAxiSyncRecoverOrphanedHeadAuditsAndUnblocksFreshRun(t *testing.T) {
+	f := newCLIRecoverFixture(t)
+	p, err := paths.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := db.Open(p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	repo, err := database.GetRepoByPath(f.local)
+	if err != nil || repo == nil {
+		t.Fatalf("repo: %#v, %v", repo, err)
+	}
+	runs, err := database.GetRunsByRepo(repo.ID)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("runs: %#v, %v", runs, err)
+	}
+	run := runs[0]
+	missing := strings.Repeat("a", 40)
+	if err := database.UpdateRunStatusWithVerifiedHead(run.ID, types.RunFailed, missing); err != nil {
+		t.Fatal(err)
+	}
+	before := cliGit(t, f.local, "show-ref")
+	gateBefore := cliGit(t, f.gate, "show-ref")
+	out, err := executeCmd("axi", "sync", "--recover")
+	if err != nil {
+		t.Fatalf("orphan recovery: %v\n%s", err, out)
+	}
+	for _, want := range []string{"state: custody_returned", "changed: false", "recovered: true", "custody_return_note:", run.ID, missing, f.submitted, "unpublished fixes are lost"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	if cliGit(t, f.local, "show-ref") != before || cliGit(t, f.gate, "show-ref") != gateBefore {
+		t.Fatal("orphan recovery moved a ref")
+	}
+	if state := freshRunBranchOwnershipState(context.Background(), &axiEnv{d: database, repo: repo, p: p}); state != nil {
+		t.Fatalf("fresh run still blocked after orphan release: %#v", state)
+	}
+	stored, err := database.GetRun(run.ID)
+	if err != nil || stored.CustodyReturnNote == nil || stored.CustodyReturnedAt == nil {
+		t.Fatalf("missing durable audit: %#v, %v", stored, err)
 	}
 }
 

@@ -48,6 +48,8 @@ type Run struct {
 	// the last push). It never changes push provenance; it only records that
 	// the operator worktree took the branch back.
 	CustodyReturnedAt *int64
+	CustodyReturnNote *string
+	CustodyReturnHead *string
 	Error             *string
 	// AwaitingAgentSince is the unix-seconds timestamp at which the run parked
 	// at a gate awaiting the driving agent's response (an awaiting_approval or
@@ -68,7 +70,7 @@ type Run struct {
 	UpdatedAt       int64
 }
 
-const runColumns = `id, repo_id, branch, head_sha, base_sha, submitted_head_sha, drill_version, drill_build_sha, review_approved_head_sha, status, pr_url, pr_state, pr_state_observed_at, ci_ready_at, COALESCE(ci_ready_no_ci, 0), COALESCE(specialized_review_enabled, 0), last_pushed_sha, push_target_kind, push_target_fingerprint, push_ref, last_pushed_at, push_generation, COALESCE(push_active, 0), terminal_head_verified_at, custody_returned_at, error, awaiting_agent_since, COALESCE(parked_ms, 0), intent, intent_source, intent_session_id, intent_score, created_at, updated_at`
+const runColumns = `id, repo_id, branch, head_sha, base_sha, submitted_head_sha, drill_version, drill_build_sha, review_approved_head_sha, status, pr_url, pr_state, pr_state_observed_at, ci_ready_at, COALESCE(ci_ready_no_ci, 0), COALESCE(specialized_review_enabled, 0), last_pushed_sha, push_target_kind, push_target_fingerprint, push_ref, last_pushed_at, push_generation, COALESCE(push_active, 0), terminal_head_verified_at, custody_returned_at, custody_return_note, custody_return_head, error, awaiting_agent_since, COALESCE(parked_ms, 0), intent, intent_source, intent_session_id, intent_score, created_at, updated_at`
 
 func scanRun(row interface {
 	Scan(...any) error
@@ -78,7 +80,7 @@ func scanRun(row interface {
 		&r.PRURL, &r.PRState, &r.PRStateObservedAt, &r.CIReadyAt, &r.CIReadyNoCI, &r.SpecializedReview,
 		&r.LastPushedSHA, &r.PushTargetKind, &r.PushTargetFingerprint, &r.PushRef,
 		&r.LastPushedAt, &r.PushGeneration, &r.PushActive, &r.TerminalHeadVerifiedAt,
-		&r.CustodyReturnedAt, &r.Error, &r.AwaitingAgentSince, &r.ParkedMS,
+		&r.CustodyReturnedAt, &r.CustodyReturnNote, &r.CustodyReturnHead, &r.Error, &r.AwaitingAgentSince, &r.ParkedMS,
 		&r.Intent, &r.IntentSource, &r.IntentSessionID, &r.IntentScore,
 		&r.CreatedAt, &r.UpdatedAt,
 	)
@@ -284,6 +286,39 @@ func (d *DB) SetRunCustodyReturned(id string) error {
 	_, err := d.sql.Exec(`UPDATE runs SET custody_returned_at = COALESCE(custody_returned_at, ?), updated_at = ? WHERE id = ?`, ts, ts, id)
 	if err != nil {
 		return fmt.Errorf("set run custody returned: %w", err)
+	}
+	return nil
+}
+
+// ReleaseOrphanedRun atomically records the loss and returns custody. The exact
+// terminal run must still own the recorded head at write time, and the lost head
+// must be unpublished pipeline work: either the run never pushed, or the
+// published head survives separately. A retired run - one whose pull request was
+// merged or closed - is never released.
+func (d *DB) ReleaseOrphanedRun(id, missingHead, localHead, publishedHead string) error {
+	ts := now()
+	note := fmt.Sprintf("orphaned run %s: missing pipeline head %s; custody released to local head %s; pipeline unpublished fixes are lost with the missing object", id, missingHead, localHead)
+	if publishedHead != "" {
+		note += "; published head " + publishedHead + " survives"
+	}
+	result, err := d.sql.Exec(
+		`UPDATE runs SET custody_returned_at = ?, custody_return_note = ?, custody_return_head = ?, updated_at = ?
+		WHERE id = ? AND head_sha = ? AND custody_returned_at IS NULL
+		AND status IN ('failed', 'cancelled', 'completed') AND push_active = 0
+		AND (pr_state IS NULL OR LOWER(TRIM(pr_state)) NOT IN ('merged', 'closed'))
+		AND (last_pushed_sha IS NULL OR last_pushed_sha != head_sha)
+		AND NOT EXISTS (SELECT 1 FROM runs AS active WHERE active.repo_id = runs.repo_id
+		AND active.branch = runs.branch AND active.id != runs.id AND active.status IN ('pending', 'running'))`,
+		ts, note, localHead, ts, id, missingHead)
+	if err != nil {
+		return fmt.Errorf("release orphaned run: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("release orphaned run rows affected: %w", err)
+	}
+	if n != 1 {
+		return fmt.Errorf("orphaned run changed before custody could be returned")
 	}
 	return nil
 }

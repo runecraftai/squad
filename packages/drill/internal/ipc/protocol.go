@@ -16,6 +16,7 @@ const (
 	MethodGetRunsForHead = "get_runs_for_head"
 	MethodGetActiveRun   = "get_active_run"
 	MethodRerun          = "rerun"
+	MethodStartOrphan    = "start_orphan"
 	MethodSubscribe      = "subscribe"
 	MethodRespond        = "respond"
 	MethodCancelRun      = "cancel_run"
@@ -130,6 +131,29 @@ type RerunParams struct {
 	SkipSteps         []types.StepName `json:"skip_steps,omitempty"`
 	Intent            string           `json:"intent,omitempty"`
 	SpecializedReview bool             `json:"specialized_review,omitempty"`
+}
+
+// OrphanSubmissionPrefix is reserved for immutable local-head submissions.
+// Receiving one transfers objects, not branch ownership or pipeline admission.
+const OrphanSubmissionPrefix = "refs/drill/orphan-submit/"
+
+// OrphanStartParams starts the exact audited local head of a released orphan.
+// CheckOnly verifies daemon support and eligibility BEFORE any submission push.
+// The actual start requires that head at OrphanSubmissionPrefix + PreviousRunID.
+type OrphanStartParams struct {
+	RepoID            string           `json:"repo_id"`
+	Branch            string           `json:"branch"`
+	PreviousRunID     string           `json:"previous_run_id"`
+	HeadSHA           string           `json:"head_sha"`
+	CheckOnly         bool             `json:"check_only,omitempty"`
+	SkipSteps         []types.StepName `json:"skip_steps,omitempty"`
+	Intent            string           `json:"intent,omitempty"`
+	SpecializedReview bool             `json:"specialized_review,omitempty"`
+}
+
+type OrphanStartResult struct {
+	Ready bool   `json:"ready"`
+	RunID string `json:"run_id,omitempty"`
 }
 
 // SubscribeParams starts an event stream for a run.

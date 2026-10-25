@@ -5,6 +5,9 @@ It is not an exhaustive repository log and does not represent a root package ver
 
 ## Unreleased
 
+- Fix drill custody recovery deadlocking on a terminal run whose recorded pipeline head no longer exists: `drill axi sync --recover` proves the object is absent from both the invoking repository and the local gate, records the loss and the custody return atomically, and the human and TUI surfaces state plainly that the pipeline's unpublished fixes are lost with it instead of claiming they are preserved.
+  A fresh `drill axi run` then starts from the audited released local head or a proven descendant through a private submission ref, and a stale submission left by a failed start never wedges a later start while a live run still refuses.
+  A merged or closed pull request retires the branch, and every release and fresh-start path refuses a retired branch with a named error.
 - Detect frozen busy agents using the existing static-pane timer, including the rendered cost/token gauge, and report `busy expired without activity`; changing output resets the timer, while declared pauses and active drill run-steps still suppress wedge alarms.
   This replaces the completed-turn age bound and removes `SQUAD_BUSY_TURN_MAX_SECS`.
   Busy expiry hashes the complete rendered viewport on tmux, zellij and tuios; unverified Herdr/Orca viewport interfaces and the missing verified cmux viewport read return cannot-evaluate and log a named limitation instead of raising a false alarm.

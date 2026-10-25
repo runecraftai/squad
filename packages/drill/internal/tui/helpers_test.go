@@ -20,6 +20,33 @@ func stripANSI(s string) string {
 	return ansiRegexp.ReplaceAllString(s, "")
 }
 
+// visibleBoxText flattens a rendered box into its visible content, joining
+// wrapped lines so assertions follow what a terminal actually displays rather
+// than where the renderer happened to break a line.
+func visibleBoxText(rendered string) string {
+	var lines []string
+	for _, line := range strings.Split(rendered, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "│") {
+			continue
+		}
+		line = strings.TrimSuffix(strings.TrimPrefix(line, "│"), "│")
+		lines = append(lines, strings.TrimSpace(line))
+	}
+	return strings.Join(strings.Fields(strings.Join(lines, " ")), " ")
+}
+
+// assertRenderedLinesFit proves the renderer never emits a line wider than the
+// terminal, which is what would clip text in a real terminal.
+func assertRenderedLinesFit(t *testing.T, rendered string, width int) {
+	t.Helper()
+	for _, line := range strings.Split(rendered, "\n") {
+		if got := lipgloss.Width(line); got > width {
+			t.Errorf("rendered line is %d columns wide, want <= %d: %q", got, width, stripANSI(line))
+		}
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
 
 func testSocketPath(t *testing.T) string {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
+	"github.com/runecraftai/squad/packages/drill/internal/branchsync"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
 	"github.com/runecraftai/squad/packages/drill/internal/db"
 	"github.com/runecraftai/squad/packages/drill/internal/gate"
@@ -612,6 +613,11 @@ func assertGateTrustedConfigReadable(ctx context.Context, wtDir, defaultBranch, 
 // HandlePushReceived processes a push notification from the post-receive hook.
 // It creates a run, sets up a worktree, and launches pipeline execution in the background.
 func (m *RunManager) HandlePushReceived(ctx context.Context, params *ipc.PushReceivedParams) (string, error) {
+	if strings.HasPrefix(params.Ref, ipc.OrphanSubmissionPrefix) {
+		// Private submission transfers objects only. The explicit guarded IPC
+		// start selects the audited local commit, never the gate branch tip.
+		return "", nil
+	}
 	// Ref deletion (git push remote :branch) sends new SHA as all-zeros.
 	// Nothing to validate - skip pipeline.
 	if git.IsZeroSHA(params.New) {
@@ -740,6 +746,35 @@ func enableSpecializedReviewShadow(mode *config.ReviewMode) error {
 // when no intent is supplied, RunIntentSourceAgent for a new explicit
 // override, and RunIntentSourceRerun for inherited explicit intent.
 func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo, branch, headSHA, baseSHA, trigger string, skipSteps []types.StepName, intent, source string, specializedReview bool) (string, error) {
+	return m.startRunChecked(ctx, repo, branch, headSHA, baseSHA, trigger, skipSteps, intent, source, specializedReview, nil)
+}
+
+func (m *RunManager) branchLock(repoID, branch string) *sync.Mutex {
+	lockVal, _ := m.branchLocks.LoadOrStore(repoID+"/"+branch, &sync.Mutex{})
+	return lockVal.(*sync.Mutex)
+}
+
+// retiredBranchRefusal is the shared admission refusal for every start path:
+// a merged or closed pull request retires the branch permanently, so a new
+// push, a rerun, and an orphan start all refuse before any run is created or
+// active runs are cancelled.
+func (m *RunManager) retiredBranchRefusal(repoID, branch string) error {
+	runs, err := m.db.GetRunsByRepo(repoID)
+	if err != nil {
+		return fmt.Errorf("cannot verify branch retirement: %w", err)
+	}
+	for _, run := range runs {
+		if run.Branch != branch {
+			continue
+		}
+		if _, _, refusal, retired := branchsync.RetiredBranch(run); retired {
+			return fmt.Errorf("branch_retired: %s", refusal)
+		}
+	}
+	return nil
+}
+
+func (m *RunManager) startRunChecked(ctx context.Context, repo *db.Repo, branch, headSHA, baseSHA, trigger string, skipSteps []types.StepName, intent, source string, specializedReview bool, check func() error) (string, error) {
 	branchRole := telemetryBranchRole(branch, repo.DefaultBranch)
 	trackStartFailure := func(stage string) {
 		telemetry.Track("run", telemetry.Fields{
@@ -757,11 +792,18 @@ func (m *RunManager) startRunWithIntentSource(ctx context.Context, repo *db.Repo
 
 	// Serialize per repo+branch to prevent two concurrent pushes from both
 	// passing cancelActiveRuns and creating duplicate pipelines.
-	lockKey := repo.ID + "/" + branch
-	lockVal, _ := m.branchLocks.LoadOrStore(lockKey, &sync.Mutex{})
-	branchMu := lockVal.(*sync.Mutex)
+	branchMu := m.branchLock(repo.ID, branch)
 	branchMu.Lock()
 	defer branchMu.Unlock()
+	if err := m.retiredBranchRefusal(repo.ID, branch); err != nil {
+		trackStartFailure("branch_retired")
+		return "", err
+	}
+	if check != nil {
+		if err := check(); err != nil {
+			return "", err
+		}
+	}
 
 	// Best-effort only: a clone's remotes may change after init. Refresh the
 	// registered URLs before constructing any run-owned Git operation, but keep
