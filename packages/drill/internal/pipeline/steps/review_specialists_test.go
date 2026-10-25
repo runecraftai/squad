@@ -94,6 +94,8 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 	var active, peak atomic.Int32
 	var completionMu sync.Mutex
 	var completionOrder []string
+	requirementsStarted := make(chan struct{})
+	var requirementsOnce sync.Once
 	a := controlledReviewAgent{run: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
 		validPurpose := false
 		for _, lens := range reviewLensInstructions {
@@ -110,6 +112,17 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 			}
 		}
 		defer active.Add(-1)
+		// The slower security lens waits for the fast requirements lens to enter
+		// its run so overlap does not depend on clone/checkout setup timings.
+		if opts.Purpose == "review-lens:requirements" {
+			requirementsOnce.Do(func() { close(requirementsStarted) })
+		} else if opts.Purpose == "review-lens:security" {
+			select {
+			case <-requirementsStarted:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		delay := 20 * time.Millisecond
 		if opts.Purpose == "review-lens:security" {
 			delay = 80 * time.Millisecond
