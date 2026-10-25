@@ -685,7 +685,7 @@ func (s *Service) recoverOrphanedRun(ctx context.Context, run *db.Run, state Sta
 		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_assumptions_changed", "the recorded pipeline object is no longer proven missing; custody was not returned")
 	}
 	if err := s.DB.ReleaseOrphanedRun(run.ID, run.HeadSHA, fresh.Local.Head, ptr(run.LastPushedSHA)); err != nil {
-		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_stamp_failed", "the orphaned run release and loss audit could not be recorded; custody was not returned")
+		return blockedPlan(fresh, StatePipelineOwned, "blocked_recover_stamp_failed", fmt.Sprintf("the orphaned run release and loss audit could not be recorded (%s); custody was not returned", err))
 	}
 	result, _, _ := s.inspect(ctx)
 	result.Recovered = true
