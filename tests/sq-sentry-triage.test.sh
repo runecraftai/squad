@@ -3373,12 +3373,14 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
 
 # The dirty clock is independent of both pane hashes and the pause cadence.
 # Use real Git dirt, not a canned cleanliness verdict.
+pause_watch_cwd=''
 start_pause_watch() {  # <extra env assignments...>
-  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
-    SQUAD_FAKE_TMUX_CURRENT_COMMAND=zsh SQUAD_STATE_OVERRIDE="$state" \
-    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_FAKE_CREW_STATE='state: paused · source: status-log · external wait' \
-    SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
-    "$@" "$WATCH" >> "$out" &
+  ( cd "${pause_watch_cwd:-.}" && exec env \
+      PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+      SQUAD_FAKE_TMUX_CURRENT_COMMAND=zsh SQUAD_STATE_OVERRIDE="$state" \
+      SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_FAKE_CREW_STATE='state: paused · source: status-log · external wait' \
+      SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 \
+      "$@" "$WATCH" ) >> "$out" &
   pid=$!
 }
 
@@ -3520,9 +3522,83 @@ test_pause_episode_classifier() {
   pass "pause identity renews on declarations, not resolutions, and clears on resumed work"
 }
 
+# The dirty clock must measure the task's recorded worktree. `git -C ""` does not
+# fail: it silently adopts the sentry's own CWD, so an unrecorded worktree would
+# read (and alarm on) an unrelated checkout.
+test_dirty_check_requires_recorded_worktree() {
+  local dir state fakebin out capture_file window key wt pid dirty mode
+  for mode in missing empty; do
+    pause_worktree_case "dirty-no-worktree-$mode"
+    case "$mode" in
+      missing) printf 'window=%s\nkind=strike\n' "$window" > "$state/held.meta" ;;
+      empty)   printf 'window=%s\nkind=strike\nworktree=\n' "$window" > "$state/held.meta" ;;
+    esac
+    dirty="$dir/unrelated-checkout"
+    git init -q "$dirty"
+    printf 'unrelated uncommitted work\n' > "$dirty/stray"
+    printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.dirty-since-$key"
+    pause_watch_cwd="$dirty"
+    start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+    wait_live "$pid" 30 || { reap "$pid"; pause_watch_cwd=''; fail "$mode worktree alarmed on the sentry CWD: $(cat "$out")"; }
+    reap "$pid"
+    pause_watch_cwd=''
+    [ ! -s "$out" ] || fail "$mode worktree emitted a wake from an unrelated checkout"
+    [ ! -e "$state/.dirty-since-$key" ] || fail "$mode worktree kept a dirty clock for an unrecorded tree"
+  done
+  pass "a missing or empty recorded worktree never reads the sentry's own checkout"
+}
+
+# A pane that keeps reporting busy must not swallow the pause: once a pause has
+# aged out, a busy pane defers to the existing pause cadence instead of being
+# left with no supervision at all.
+test_aged_out_pause_keeps_busy_pane_supervised() {
+  local dir state fakebin out capture_file window key wt pid
+  pause_worktree_case aged-out-busy
+  set_mtime $(( $(date +%s) - 500 )) "$state/held.status"
+  printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+  printf 'harness=pi\n' >> "$state/held.meta"
+  record_pi_busy "$state" held
+  start_pause_watch env SQUAD_PAUSE_MAX_SECS=0 SQUAD_PAUSE_RESURFACE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "an aged-out pause on a busy pane lost its pause recheck"; }
+  grep -F 'rechecked on a long cadence' "$out" >/dev/null || fail "busy pane did not fall back to the pause cadence: $(cat "$out")"
+  grep -F 'declared pause aged out' "$out" >/dev/null && fail "a busy pane was reported as an aged-out stall"
+  pass "an aged-out pause on a busy pane defers to the pause cadence instead of going unsupervised"
+}
+
+# An unreadable status mtime must not be aged from epoch 0, which would report a
+# brand-new pause as aged out immediately with a nonsense age.
+test_unreadable_pause_mtime_does_not_age_out() {
+  local dir state fakebin out capture_file window key pid real_stat since
+  pause_worktree_case pause-mtime-unreadable
+  real_stat=$(command -v stat)
+  cat > "$fakebin/stat" <<SH
+#!/usr/bin/env bash
+real=\${REAL_STAT_FOR_TEST:?}
+case "\${1:-}:\${2:-}" in
+  -c:%Y|-f:%m)
+    for arg in "\$@"; do
+      [ "\$arg" = "\$STAT_MTIME_FAIL_FILE" ] && { echo 'stat: simulated failure' >&2; exit 1; }
+    done
+    ;;
+esac
+exec "\$real" "\$@"
+SH
+  chmod +x "$fakebin/stat"
+  start_pause_watch env REAL_STAT_FOR_TEST="$real_stat" STAT_MTIME_FAIL_FILE="$state/held.status"
+  wait_live "$pid" 60 || { reap "$pid"; fail "an unreadable status mtime instantly aged out a fresh pause: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "unreadable status mtime emitted a wake: $(cat "$out")"
+  since=$(awk '{ print $2 }' "$state/.pause-episode-$key" 2>/dev/null)
+  [ "${since:-0}" -ge "$(( $(date +%s) - 60 ))" ] || fail "pause age was anchored on an unreadable mtime: $since"
+  pass "a fresh pause with an unreadable status mtime is aged from now, not epoch 0"
+}
+
 test_idle_dirty_pause_escalates
 test_dirty_staged_pause_survives_footer_change
 test_pause_episode_classifier
+test_dirty_check_requires_recorded_worktree
+test_aged_out_pause_keeps_busy_pane_supervised
+test_unreadable_pause_mtime_does_not_age_out
 test_dirty_pause_protections
 test_clean_fresh_pause_suppresses
 test_pause_ages_out_once_per_episode
