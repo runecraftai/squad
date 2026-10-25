@@ -213,8 +213,8 @@ Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.
 ## Away-mode supervisor backend (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
 
 The `/afk` sub-supervisor injects escalation digests into Squad's own pane independently of where new task endpoints are spawned.
-It supports `tmux`, `herdr`, and `tuios` supervisor panes.
-Set `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios` and `SQUAD_SUPERVISOR_TARGET=<target>` to override both axes explicitly; the herdr target is `"<session>:<pane-id>"` and the TUIOS target is `"<session>:<window-id>"`.
+It supports `tmux`, `herdr`, `tuios`, and explicitly selected native-only `orca` supervisor panes.
+Set `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios|orca` and `SQUAD_SUPERVISOR_TARGET=<target>` to override both axes explicitly; the herdr target is `"<session>:<pane-id>"` and the TUIOS target is `"<session>:<window-id>"`.
 Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TUIOS_ENV=1` with `TUIOS_SESSION` and `TUIOS_PANE_ID`, then falls back to `tmux`.
 That keeps a tmux pane nested inside herdr or TUIOS on the tmux transport, matching the runtime backend's innermost-first rule.
 Target detection uses `SQUAD_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then `"$TUIOS_SESSION:$TUIOS_PANE_ID"` under TUIOS, then the legacy `Squad:0` tmux fallback, which is logged like any other guess rather than passing silently.
@@ -223,7 +223,8 @@ A preferred candidate whose target is gone - a stale inherited `HERDR_PANE_ID` i
 An explicit `SQUAD_SUPERVISOR_BACKEND` or `SQUAD_SUPERVISOR_TARGET` is authoritative and is never replaced by a detected marker; the daemon refuses loudly at startup when that explicit target does not resolve.
 A TUIOS supervisor pane receives terminal typing only through the guarded fallback: escalation digests prefer the Pi-native handoff owned by `.pi/extensions/sq-primary-away-handoff.ts`, which queues a follow-up through Pi's own `sendUserMessage` and acknowledges consumption, and the typing path runs only after that handoff refuses and the pane's composer is read as empty.
 See [`tuios-backend.md`](tuios-backend.md#away-mode-supervision).
-Selecting any other supervisor backend, including `zellij`, `orca`, and `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
+[`orca-backend.md`](orca-backend.md#away-mode-supervision) owns Orca's primary selection, proven harness coverage, native-only delivery, exact cleanup, and remaining verification limits.
+Selecting any other supervisor backend, including `zellij` and `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 

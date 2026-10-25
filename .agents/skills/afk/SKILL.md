@@ -47,6 +47,7 @@ batched digest rather than per-wake injections.
      active pane** (`herdr pane split`): a split co-tenants the tab and visibly
      shrinks the commander's pane (docs/herdr-backend.md "Away-mode supervisor
      support").
+   For an explicitly selected Orca primary, use the native-only coverage and lifecycle in [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision); its daemon terminal is unfocused, not hidden.
    Both paths share `bin/sq-afk-start.sh` as the daemon entry.
    The native path tells it that the launcher already prepared lifecycle state; the terminal-backed path lets the entry perform its existing state setup inside the new terminal.
    It exits immediately if the identity-backed daemon lock already names a live process, otherwise it execs `bin/sq-supervise-daemon.sh` in the foreground.
@@ -93,6 +94,7 @@ The operational prefix travels with the message text; it does not rely on harnes
 ## Busy-guard and composer guard
 
 The daemon never injects into an in-use pane.
+Orca is native-only under [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision).
 A TUIOS supervisor pane with the shipped Pi extension is delivered through the native handoff instead of terminal typing (`docs/tuios-backend.md` "Away-mode supervision"), so the guards below and the type-once submit model that follows govern tmux, herdr, and the TUIOS fallback path rather than that native route.
 Two checks run before every such injection, dispatched through `bin/sq-backend.sh` for the supervisor's own backend (tmux, herdr, or tuios; see "Auto-discovered supervisor pane" below):
 
@@ -229,7 +231,7 @@ the operational prefix lets Squad distinguish it from a real commander message.
   herdr, then `"${TUIOS_SESSION}:${TUIOS_PANE_ID}"` under tuios, then a
   `Squad:0` fallback with a warning. Both resolution sources are logged at
   startup so a wrong-but-resolving fallback is detectable. Other runtime
-  backends, including zellij, orca, and cmux, are not yet supported as
+  backends, including zellij and cmux, are not yet supported as
   supervisor backends; the daemon refuses loudly at startup instead of
   misapplying tmux primitives to a pane that isn't one
   (docs/herdr-backend.md "Away-mode supervisor support").

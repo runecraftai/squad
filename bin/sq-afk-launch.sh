@@ -39,7 +39,9 @@
 #                              return zero only when active state is healthy.
 #
 # Supported supervisor targets and non-visible daemon terminals: herdr, tmux,
-# and TUIOS. TUIOS uses an exact newly-created detached session and refuses all
+# TUIOS, and explicit native-only Orca. Orca creates an unfocused terminal tab,
+# not a hidden terminal, and never creates or removes a worktree.
+# TUIOS uses an exact newly-created detached session and refuses all
 # cleanup unless its recorded identity still matches and it remains unattached.
 #
 # Test seam: SQUAD_AFK_LAUNCH_ENTRY overrides the command run in the created
@@ -82,8 +84,17 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 . "$SQUAD_AFK_LAUNCH_DIR/sq-backend.sh"
 # shellcheck source=bin/sq-afk-tuios-launch.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-afk-tuios-launch.sh"
+# shellcheck source=bin/sq-supervisor-native.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-native.sh"
+# shellcheck source=bin/sq-afk-orca-launch.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-afk-orca-launch.sh"
 # shellcheck source=bin/sq-supervisor-target-lib.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+  case "${1:-start}" in
+    start|start-native) fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1 ;;
+  esac
+fi
 # sq-afk-start.sh provides the daemon-lock liveness helpers and
 # fm_afk_clear_stale_artifacts; it is sourceable (BASH_SOURCE guard) and its
 # main does not run on source. It sets `set -eu`, so turn errexit back off for
@@ -191,6 +202,12 @@ fm_afk_launch_record_read() {
   fi
   SQUAD_AFK_REC_EXTRA=$extra
   case "$SQUAD_AFK_REC_BACKEND" in
+    orca)
+      printf '%s' "$extra" | jq -e --arg target "$SQUAD_AFK_REC_TARGET" '
+        (.title | type == "string" and startswith("sq-afk-")) and .parent.backend == "orca"
+        and (.parent.target | type == "string" and length > 0)
+        and (($target == "pending" and .endpoint == null) or (.endpoint.backend == "orca" and .endpoint.target == $target))' >/dev/null || return 2
+      ;;
     herdr|tuios) [ -n "$extra" ] ;;
     tmux) : ;;
     none) [ "$SQUAD_AFK_REC_TARGET" = - ] && [ "$extra" = native ] ;;
@@ -211,6 +228,12 @@ fm_afk_launch_record_validate_if_present() {
 fm_afk_launch_close_terminal() {  # <backend> <target>
   local backend=$1 target=$2
   case "$backend" in
+    orca)
+      fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
+      local out
+      out=$(orca terminal close --terminal "$target" --json) || return 1
+      printf '%s' "$out" | jq -e '.ok == true' >/dev/null
+      ;;
     herdr)
       fm_backend_source herdr || return 1
       local session=${target%%:*} pane=${target#*:}
@@ -240,6 +263,7 @@ fm_afk_launch_close_terminal() {  # <backend> <target>
 fm_afk_launch_terminal_absent() {  # <backend> <target>
   local backend=$1 target=$2 session pane out result code
   case "$backend" in
+    orca) fm_afk_launch_orca_absent "$target" "$SQUAD_AFK_REC_EXTRA" ;;
     tuios)
       fm_afk_launch_tuios_session_absent "$target"
       ;;
@@ -307,6 +331,16 @@ fm_afk_launch_status() {
   printf 'active=%s terminal=%s daemon=%s housekeeping_age=%s scan_age=%s\n' \
     "$active" "$terminal" "$daemon" "$housekeeping_age" "$scan_age"
   [ "$read_result" -eq 2 ] && return 2
+  if [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ]; then
+    local primary
+    primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
+    if [ "$daemon" = alive ] && ! fm_afk_launch_orca_daemon_owned; then return 1; fi
+    fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "$primary" >/dev/null || return 1
+    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+      fm_afk_launch_log 'Orca native delivery or buffer retirement is pending/uncertain'
+      return 1
+    fi
+  fi
   [ "$healthy" -eq 1 ]
 }
 
@@ -325,6 +359,7 @@ fm_afk_launch_close_recorded() {
 fm_afk_launch_terminal_alive() {  # <backend> <target>
   local backend=$1 target=$2 session pane
   case "$backend" in
+    orca) fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" ;;
     tuios)
       fm_afk_launch_tuios_owned "$target" "$SQUAD_AFK_REC_EXTRA"
       ;;
@@ -349,7 +384,9 @@ fm_afk_launch_wait_ready() {  # <backend> <target>
   fi
   while [ "$attempt" -lt 100 ]; do
     attempt=$((attempt + 1))
-    daemon_lock_held_by_live_daemon && return 0
+    if daemon_lock_held_by_live_daemon; then
+      if [ "$backend" != orca ] || fm_afk_launch_orca_daemon_owned; then return 0; fi
+    fi
     fm_afk_launch_terminal_alive "$backend" "$target" || return 1
     sleep 0.05
   done
@@ -412,10 +449,26 @@ fm_afk_launch_reconcile() {
   fm_afk_launch_record_read
   read_result=$?
   if [ "$read_result" -eq 0 ]; then
+    if [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
+      fm_afk_launch_orca_resolve || return 1
+      local primary
+      primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
+      fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
+      if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+        fm_afk_launch_log 'Orca escalation is unresolved; preserving lifecycle during reconciliation'
+        return 1
+      fi
+    fi
     fm_afk_launch_log "reconciling leaked daemon terminal ${SQUAD_AFK_REC_BACKEND}:${SQUAD_AFK_REC_TARGET}"
     fm_afk_launch_close_recorded
   elif [ "$read_result" -eq 2 ]; then
     return 1
+  elif [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+    fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" || true
+    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}"; then
+      fm_afk_launch_log 'Orca native request remains unresolved even without a terminal record; preserving it'
+      return 1
+    fi
   fi
 }
 
@@ -549,6 +602,16 @@ fm_afk_launch_start() {
 
   if daemon_lock_held_by_live_daemon; then
     fm_afk_launch_record_validate_if_present || return 1
+    if [ "$commander_backend" = orca ]; then
+      fm_afk_launch_record_read || return 1
+      [ "$SQUAD_AFK_REC_BACKEND" = orca ] || return 1
+      fm_afk_launch_orca_resolve || return 1
+      fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" || return 1
+      fm_afk_launch_orca_daemon_owned || return 1
+      local current
+      current=$(fm_supervisor_native_endpoint orca "$commander_target") || return 1
+      printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --argjson current "$current" '.parent == $current' >/dev/null || return 1
+    fi
     if ! fm_afk_launch_flag_write; then
       fm_afk_launch_log "failed to refresh away-mode flag"
       return 1
@@ -589,8 +652,9 @@ fm_afk_launch_start() {
       herdr) fm_afk_launch_create_herdr "$commander_target" "$commander_backend"; result=$? ;;
       tmux)  fm_afk_launch_create_tmux "$commander_target" "$commander_backend"; result=$? ;;
       tuios) fm_afk_launch_create_tuios "$commander_target" "$commander_backend"; result=$? ;;
+      orca) fm_afk_launch_create_orca "$commander_target" "$commander_backend"; result=$? ;;
       *)
-        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$commander_backend' yet (supported: herdr, tmux, tuios)"
+        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$commander_backend' yet (supported: herdr, tmux, tuios, orca)"
         result=1
         ;;
     esac
@@ -654,11 +718,45 @@ fm_afk_launch_stop() {
     fm_afk_launch_log "malformed daemon terminal record; refusing to stop away mode"
     return 1
   fi
+  if [ "$read_result" -eq 1 ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+    if daemon_lock_held_by_live_daemon; then
+      fm_afk_launch_log 'Orca live daemon has no terminal ownership record; refusing to signal it'
+      return 1
+    fi
+    fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" || true
+    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}"; then
+      fm_afk_launch_log 'Orca native request remains unresolved; stop is not complete'
+      return 1
+    fi
+  fi
   if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = tuios ] \
     && ! fm_afk_launch_terminal_alive tuios "$SQUAD_AFK_REC_TARGET" \
     && ! fm_afk_launch_terminal_absent tuios "$SQUAD_AFK_REC_TARGET"; then
     fm_afk_launch_log "TUIOS daemon session is attached or unreadable; preserving away mode and refusing session cleanup"
     return 1
+  fi
+  if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
+    fm_afk_launch_orca_resolve || return 1
+    if ! fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" \
+      && ! fm_afk_launch_orca_absent "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA"; then
+      fm_afk_launch_log 'Orca daemon identity is uncertain; preserving away mode and process'
+      return 1
+    fi
+    if daemon_lock_held_by_live_daemon && ! fm_afk_launch_orca_daemon_owned; then
+      fm_afk_launch_log 'Orca daemon process ownership does not match the recorded terminal; refusing to signal it'
+      return 1
+    fi
+    local primary
+    primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
+    # The live daemon alone retires its buffer. Once dead, this serialized
+    # launcher can finish retirement without racing a shutdown flush.
+    if ! daemon_lock_held_by_live_daemon; then
+      fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
+    fi
+    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+      fm_afk_launch_log 'Orca native request or buffer retirement remains unresolved; stop is not complete, preserving lifecycle for inspection'
+      return 1
+    fi
   fi
   # (1) SIGTERM the daemon so its cleanup trap flushes buffered escalations
   # WHILE state/.afk is still present (the exit-ordering fix: clearing .afk
@@ -670,6 +768,16 @@ fm_afk_launch_stop() {
     pid_identity=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
   fi
   if [ -n "$pid" ]; then
+    if [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ]; then
+      local owner expected_identity
+      owner=$(daemon_lock_owner) || return 1
+      expected_identity=$(cat "$owner/pid-identity" 2>/dev/null) || return 1
+      if ! fm_afk_launch_orca_daemon_owned || [ "$(daemon_lock_pid)" != "$pid" ] \
+        || [ "$expected_identity" != "$pid_identity" ] || [ "$(fm_pid_identity "$pid")" != "$pid_identity" ]; then
+        fm_afk_launch_log 'Orca daemon process changed before stop; preserving lifecycle without signalling'
+        return 1
+      fi
+    fi
     if ! kill -TERM "$pid" 2>/dev/null; then
       fm_afk_launch_log "failed to signal away-mode daemon pid=$pid"
       result=1
@@ -691,9 +799,20 @@ fm_afk_launch_stop() {
       return 1
     fi
   fi
+  if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
+    fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
+    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+      fm_afk_launch_log 'Orca shutdown delivery or buffer retirement is unresolved; stop is not complete, preserving lifecycle for retry'
+      return 1
+    fi
+  fi
   # (2) Close the daemon's own terminal by exact id.
   if [ "$read_result" -eq 0 ]; then
     fm_afk_launch_close_recorded || result=1
+  fi
+  if [ "$result" -ne 0 ] && [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ]; then
+    fm_afk_launch_log 'Orca terminal cleanup is unconfirmed; stop is not complete'
+    return 1
   fi
   # (3) Clear the away-mode flag LAST.
   if ! rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk"; then
@@ -719,6 +838,19 @@ fm_afk_launch_main() {
     fm_afk_launch_status
     return $?
   fi
+  # Orca capability and target proof precede even the launch lock/state mkdir.
+  case "${1:-start}" in
+    start|start-native)
+      if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+        fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
+        [ "${1:-start}" = start ] || { fm_afk_launch_log 'Orca requires start, not start-native, for exact terminal ownership'; return 1; }
+        if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}"; then
+          fm_afk_launch_log 'Orca native delivery remains uncertain; inspect the existing request before starting another away session'
+          return 1
+        fi
+      fi
+      ;;
+  esac
   trap fm_afk_launch_lock_release EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM

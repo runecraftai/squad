@@ -29,6 +29,8 @@ mkdir -p "$TMP_ROOT/lib" "$TMP_ROOT/node_modules/@earendil-works" "$TMP_ROOT/nod
 cp "$ROOT/.pi/extensions/sq-calm.ts" "$TMP_ROOT/sq-calm.ts"
 cp "$ROOT/.pi/extensions/sq-primary-pi-watch.ts" "$TMP_ROOT/sq-primary-pi-watch.ts"
 cp "$ROOT/.pi/extensions/sq-primary-turnend-guard.ts" "$TMP_ROOT/sq-primary-turnend-guard.ts"
+cp "$ROOT/.pi/extensions/sq-primary-away-handoff.ts" "$TMP_ROOT/sq-primary-away-handoff.ts"
+cp "$ROOT/.pi/extensions/lib/sq-away-native.ts" "$TMP_ROOT/lib/sq-away-native.ts"
 cp "$ROOT/.pi/extensions/lib/sq-calm-assistant-layout.ts" "$TMP_ROOT/lib/sq-calm-assistant-layout.ts"
 cp "$ROOT/.pi/extensions/lib/sq-calm-operational-user-layout.ts" "$TMP_ROOT/lib/sq-calm-operational-user-layout.ts"
 cp "$ROOT/.pi/extensions/lib/sq-calm-visibility.ts" "$TMP_ROOT/lib/sq-calm-visibility.ts"

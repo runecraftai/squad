@@ -81,15 +81,15 @@
 #                                   actually exists wins, so a stale preferred
 #                                   marker falls through instead of blocking away
 #                                   mode. An explicit override is never replaced.
-#          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr|tuios;
+#          SQUAD_SUPERVISOR_BACKEND    supervisor pane BACKEND (tmux|herdr|tuios|orca;
 #                                   override; otherwise auto-discovered the same
 #                                   way bin/sq-backend.sh's fm_backend_detect
 #                                   resolves the runtime Squad itself is
 #                                   executing inside - $TMUX_PANE selects tmux,
 #                                   $HERDR_ENV=1 selects herdr, and $TUIOS_ENV=1
 #                                   with $TUIOS_SESSION/$TUIOS_PANE_ID selects
-#                                   tuios - falling back to tmux). zellij, orca,
-#                                   and cmux are not yet supported as supervisor
+#                                   tuios - falling back to tmux). Orca is explicit
+#                                   and native-only. zellij and cmux are unsupported supervisor
 #                                   backends; the daemon refuses loudly at startup
 #                                   rather than trying tmux primitives against a
 #                                   non-tmux pane.
@@ -159,6 +159,12 @@ SQUAD_DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SQUAD_DAEMON_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 
+# shellcheck source=bin/sq-supervisor-native.sh
+. "$SQUAD_DAEMON_DIR/sq-supervisor-native.sh"
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+  fm_supervisor_native_ready "${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1
+fi
+
 # Shared tmux pane primitives for supervisor injection (busy/composer detection
 # + verify-retry submit). Sourced at top level so BOTH the executed daemon and
 # the unit tests (which source this file for its pure functions) get the
@@ -198,12 +204,13 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 . "$SQUAD_DAEMON_DIR/sq-busy-lib.sh"
 
 # --- tunables ---------------------------------------------------------------
-# Supervisor backends this daemon knows how to inject into today. zellij, orca,
-# and cmux remain unsupported supervisor targets. TUIOS uses its native
+# Supervisor backends this daemon knows how to inject into today. zellij
+# and cmux remain unsupported supervisor targets. Orca requires the native
+# delivery contract and never falls back to terminal typing. TUIOS uses its native
 # queue and Pi's sendUserMessage handoff when the primary extension is available;
 # otherwise it must pass the same explicit busy/composer/submit guards as other
 # backends. See docs/tuios-backend.md and the away-mode verification evidence.
-SQUAD_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr tuios"
+SQUAD_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr tuios orca"
 INJECT_SKIP_DEFAULT="heartbeat"
 STALE_ESCALATE_SECS_DEFAULT=240
 ESCALATE_BATCH_SECS_DEFAULT=90
@@ -624,6 +631,14 @@ mark_escalated_seen() {  # <kind> <arg> <state>
 # Resolved lazily and memoized: harness detection walks process ancestry, which
 # is too heavy to pay on every source of this library (the unit tests and the
 # launcher source it purely for its pure functions).
+fm_daemon_supervisor_target_ready() {  # <state> <backend> <target>
+  if [ "$2" = orca ]; then
+    fm_supervisor_native_ready "$1" "$3" >/dev/null
+  else
+    fm_backend_target_exists "$2" "$3"
+  fi
+}
+
 fm_daemon_primary_harness() {
   if [ -z "${SQUAD_DAEMON_PRIMARY_HARNESS:-}" ]; then
     SQUAD_DAEMON_PRIMARY_HARNESS=$("$SQUAD_DAEMON_DIR/sq-harness.sh" 2>/dev/null || printf 'unknown')
@@ -811,6 +826,9 @@ escalate_flush() {  # <state>
   # Retire the exact prefix a consumed native handoff covered before rebuilding
   # the digest, so an acknowledged escalation is never sent a second time.
   fm_pi_handoff_retire "$state" || true
+  if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+    fm_supervisor_native_retire "$state" "${SQUAD_SUPERVISOR_TARGET:-}" || true
+  fi
   [ -s "$buf" ] || return 0
   n=$(wc -l < "$buf" 2>/dev/null || echo 0)
   msg=$(fm_escalation_digest "$state" "$n")
@@ -1315,6 +1333,10 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   # when unset (sourced/test contexts that never ran fm_super_main's startup
   # discovery), matching this function's pre-existing default assumption.
   backend="${SQUAD_SUPERVISOR_BACKEND:-tmux}"
+  if [ "$backend" = orca ]; then
+    fm_supervisor_native_submit "$state" "$target" "$msg" "$covered"
+    return $?
+  fi
   fm_backend_target_exists "$backend" "$target" || return 1
   # Pi's native follow-up queue is the only safe route for its TUIOS composer:
   # it preserves pending human input and queues without terminal typing. Its
@@ -1537,6 +1559,10 @@ trim_log() {
 fm_super_main() {
   local STATE
   STATE="$(_state_root)"
+  if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+    fm_supervisor_native_ready "$STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
+    [ -n "${SQUAD_AFK_ORCA_OWNER:-}" ] || { echo 'error: launch the Orca daemon through sq-afk-launch.sh start to bind process ownership' >&2; return 1; }
+  fi
   mkdir -p "$STATE"
 
   # Source the portable lock helpers (works on macOS where flock is absent).
@@ -1568,6 +1594,11 @@ fm_super_main() {
   fi
   echo "$$" > "$PIDFILE"
   fm_pid_identity "${BASHPID:-$$}" > "$LOCK/pid-identity" 2>/dev/null || true
+  if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+    if ! printf '%s' "$SQUAD_AFK_ORCA_OWNER" > "$LOCK/orca-owner"; then
+      fm_lock_release "$LOCK"; rm -f "$PIDFILE"; return 1
+    fi
+  fi
 
   # --- resolve the supervisor pane (backend and target together) -----------
   # bin/sq-supervisor-target-lib.sh owns the preference order, the explicit
@@ -1592,7 +1623,7 @@ fm_super_main() {
   # uses its native Pi handoff when validated; otherwise unknown composer state
   # remains fail-safe and non-Pi TUIOS delivery is not attempted.
   if ! fm_backend_list_contains "$SQUAD_SUPERVISOR_SUPPORTED_BACKENDS" "$BACKEND"; then
-    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $SQUAD_SUPERVISOR_SUPPORTED_BACKENDS); set SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios and SQUAD_SUPERVISOR_TARGET to run Squad's own pane under a supported backend" >&2
+    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $SQUAD_SUPERVISOR_SUPPORTED_BACKENDS); set SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios|orca and SQUAD_SUPERVISOR_TARGET to run Squad's own pane under a supported backend" >&2
     log "startup failed: unsupported supervisor backend '$BACKEND' (source=$backend_source)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true
@@ -1614,7 +1645,7 @@ fm_super_main() {
   # loudly when it does not resolve. Dispatches through bin/sq-backend.sh instead
   # of a raw `tmux display-message` probe, so a herdr supervisor pane is checked
   # via the herdr adapter.
-  if [ "$pane_settled" = "explicit" ] && ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
+  if [ "$pane_settled" = "explicit" ] && ! fm_daemon_supervisor_target_ready "$STATE" "$BACKEND" "$TARGET"; then
     echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane; set SQUAD_SUPERVISOR_TARGET" >&2
     log "startup failed: target '$TARGET' not found (backend=$BACKEND)"
     fm_lock_release "$LOCK" 2>/dev/null || true
@@ -1682,7 +1713,7 @@ fm_super_main() {
     # has nowhere to go, and Squad itself is the consumer of escalations.
     # Catch-up signals persist in state/*.status and flow on the next run, so
     # this delays rather than loses work.
-    if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
+    if ! fm_daemon_supervisor_target_ready "$STATE" "$BACKEND" "$TARGET"; then
       log "warn: supervisor target '$TARGET' gone; backing off ${INJECT_FAIL_SLEEP}s, will retry"
       # Flush is pointless with no pane; preserve any buffered escalations.
       sleep "$INJECT_FAIL_SLEEP"

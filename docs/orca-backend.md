@@ -69,6 +69,40 @@ A missing, unreadable, or mismatched identity preserves metadata and stops rathe
 After those checks, Squad closes the exact terminal and releases the exact worktree with Orca's worktree command.
 It never raw-deletes an Orca worktree.
 
+## Away-mode supervision
+
+An Orca-hosted primary is explicit-only: launch the primary with `SQUAD_SUPERVISOR_BACKEND=orca` and `SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>` already set.
+The target must be a connected, writable, non-orphaned local terminal whose worktree path is the physical `SQUAD_BASE` directory.
+This selection is independent of `config/backend`; changing task placement is not required.
+Do not select a currently active tab by name, attach another multiplexer as evidence of native mobile support, or infer a primary from an operator's terminal.
+
+Only the interactive **Pi** receiver is enabled initially.
+`pi-signed`, Claude, Codex, OpenCode, Grok, Kimi, Muse, and unknown harnesses are refused by name before away-mode state or endpoints are created because their native draft/modal safety and consumed-message acknowledgement have not been proven for this integration.
+Load the shipped `.pi/extensions/sq-primary-away-handoff.ts` in the selected primary and let that primary acquire the base's session ownership before entering away mode.
+A missing, stale, foreign-process, foreign-endpoint, or replaced-incarnation readiness record refuses rather than falling back to terminal typing.
+A bare shell cannot publish native readiness.
+
+Use `bin/sq-afk-launch.sh start`, `status`, `stop`, and `reconcile` for the lifecycle.
+Orca creates an **unfocused terminal tab**, not a hidden terminal; it does not split or focus the primary, create a worktree, delete a worktree, or stop the runtime.
+The creation intent is recorded before the CLI call, and cleanup requires the exact terminal handle, runtime and terminal incarnation, worktree identity/path, and unique title.
+A live daemon process must additionally match the recorded launch token and operating-system process identity before it can be signalled.
+Uncertain creation remains recorded and blocks another creation; reconciliation may recover only the exact uniquely titled endpoint, never sweep other terminals.
+Remote Orca targets are refused because the local receiver/process ownership proof does not apply to a remote host.
+
+The native protocol in `bin/sq-supervisor-native.sh` binds requests and consumption acknowledgements to a backend-neutral endpoint object, receiver process identity, and receiver-session nonce.
+The Pi receiver in `.pi/extensions/lib/sq-away-native.ts` checks actual idle, editor-draft and open-modal state before calling the supported message API.
+Adding another harness requires its own equally proven native receiver, not a different task owner or a redesign of the endpoint shape.
+Publication, queued messages, ambiguous sends, process death, receiver-session replacement, and reconnects are never treated as consumption or permission to replay.
+Only an exact consumption acknowledgement retires the covered buffer prefix; an unresolved request stays unresolved, including across restarts.
+This deliberately prioritizes avoiding duplicate effects over automatic recovery: stop reports failure and preserves lifecycle state while delivery or endpoint cleanup is uncertain.
+Inspect and reconcile that evidence before retrying; do not delete the request to force a resend.
+
+Verification is split explicitly: Linux Orca **1.4.188** supplied the read-only runtime/terminal identity schema; interactive **Pi 1.1.0** supplied real editor/modal and native consumption proof on an isolated PTY with a **fake Orca identity CLI**.
+No combined real Orca + Pi supervisor/AFK lifecycle, macOS supervisor, Chat UI eligibility, or physical Android acceptance is claimed by those separate checks.
+The installed host has shared live terminals, and its documented `serve` options do not prove a separate user-data/profile boundary; a different port or project root alone is not isolation.
+A disposable real-host probe therefore requires a proven independent Orca profile/runtime before launch, without restarting or reconfiguring the shared host.
+[`verification/runtime-backends.md`](verification/runtime-backends.md#orca) records the exact refresh commands and evidence limits.
+
 ## Active limits
 
 - Orca is explicit-only on macOS and Linux.
@@ -83,6 +117,8 @@ It never raw-deletes an Orca worktree.
 
 ```sh
 tests/sq-backend-orca.test.sh
+tests/sq-afk-orca.test.sh
+tests/sq-afk-orca-live-optin.test.sh
 tests/sq-backend.test.sh
 tests/sq-bootstrap.test.sh
 ```

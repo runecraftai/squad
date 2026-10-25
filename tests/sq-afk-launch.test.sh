@@ -865,6 +865,10 @@ unit_flag_write_failure_aborts() {
 # E2E herdr: topology invariant.
 # ---------------------------------------------------------------------------
 e2e_herdr() {
+  if [ "${SQUAD_AFK_SKIP_HERDR_E2E:-0}" = 1 ]; then
+    echo 'skip: real Herdr lifecycle explicitly disabled; fake Herdr regressions still run'
+    return 0
+  fi
   command -v herdr >/dev/null 2>&1 || { echo "skip: herdr not found (herdr e2e)"; return 0; }
   command -v jq >/dev/null 2>&1 || { echo "skip: jq not found (herdr e2e)"; return 0; }
   # shellcheck source=tests/herdr-test-safety.sh

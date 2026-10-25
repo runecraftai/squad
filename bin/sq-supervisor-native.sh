@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Native supervisor delivery contract, independent of the terminal backend and
+# receiver harness. Currently Orca endpoints and the Pi receiver are proven.
+# Usage: sq-supervisor-native.sh endpoint <backend> <exact-target>
+#        sq-supervisor-native.sh dir <state> <exact-target> (path only; no mkdir)
+# SQUAD_SUPERVISOR_HARNESS selects the receiver adapter; otherwise detect the
+# caller. The launcher forwards the proven readiness provider to the daemon,
+# whose process ancestry belongs to the runtime, not to the primary harness.
+# Prints the local runtime/terminal incarnation binding, or refuses read-only.
+# Sourced API: fm_supervisor_native_ready/submit/retire/pending <state> <target>.
+# Requests bind endpoint + receiver process; only consumed acknowledgements retire
+# buffer prefixes. No timeout, process death or transport error authorizes replay.
+SQUAD_NATIVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+fm_supervisor_native_endpoint() {  # <backend> <target>
+  local backend=$1 target=$2 status terminal
+  [ "$backend" = orca ] || { echo "error: no native endpoint binding for $backend" >&2; return 1; }
+  [ -z "${ORCA_ENVIRONMENT:-}${ORCA_PAIRING_CODE:-}" ] || { echo 'error: Orca supervisor requires a local host for process identity verification; unset ORCA_ENVIRONMENT/ORCA_PAIRING_CODE' >&2; return 1; }
+  case "$target" in term_*|term-*) ;; *) echo 'error: Orca supervisor requires an exact runtime-issued terminal handle' >&2; return 1 ;; esac
+  if ! command -v orca >/dev/null || ! command -v jq >/dev/null; then
+    echo 'error: Orca supervisor needs orca and jq on PATH' >&2; return 1
+  fi
+  status=$(orca status --json) || return 1
+  printf '%s' "$status" | jq -e '.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready" and (.result.runtime.runtimeId | type == "string" and length > 0)' >/dev/null || {
+    echo 'error: Orca supervisor requires a reachable ready runtime with runtimeId; start the selected local Orca host first' >&2; return 1;
+  }
+  terminal=$(orca terminal show --terminal "$target" --json) || return 1
+  jq -cen --arg target "$target" --argjson s "$status" --argjson t "$terminal" '
+    select($t.ok == true and $t._meta.runtimeId == $s.result.runtime.runtimeId)
+    | $t.result.terminal as $t | select($t != null)
+    | select($t.handle == $target and $t.connected == true and $t.writable == true and $t.orphaned == false and $t.executionHostId == "local")
+    | select(all([$t.incarnationId,$t.worktreeId,$t.worktreePath][]; type == "string" and length > 0))
+    | {backend:"orca",target:$target,runtime:$s.result.runtime.runtimeId,incarnation:$t.incarnationId,worktree:$t.worktreeId,path:$t.worktreePath}' || {
+      echo "error: Orca supervisor target $target is mismatched, disconnected, orphaned, remote, or lacks incarnation/worktree identity" >&2; return 1;
+    }
+}
+
+fm_supervisor_native_dir() {  # <state> <target>
+  local key
+  key=$(node -e 'process.stdout.write(require("crypto").createHash("sha256").update("orca\\0" + process.argv[1]).digest("hex"))' "$2") || return 1
+  printf '%s/.away-handoff/%s' "$1" "$key"
+}
+
+fm_supervisor_native_safe_dir() {  # <state> <target>
+  local dir
+  dir=$(fm_supervisor_native_dir "$1" "$2") || return 1
+  [ -d "$1/.away-handoff" ] && [ ! -L "$1/.away-handoff" ] && [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+  # The receiver creates owner-only directories; refuse a permissive replacement.
+  [ "$(find "$1/.away-handoff" "$dir" -maxdepth 0 \( -perm -077 -o ! -user "$(id -u)" \) -print)" = '' ] || return 1
+  printf '%s' "$dir"
+}
+
+fm_supervisor_native_ready() {  # <state> <target> -> readiness JSON
+  local state=$1 target=$2 harness dir file ready endpoint pid identity holder
+  harness=${SQUAD_SUPERVISOR_HARNESS:-}
+  if [ -z "$harness" ]; then harness=$("$SQUAD_NATIVE_DIR/sq-harness.sh") || harness=unknown; fi
+  [ "$harness" = pi ] || {
+    echo "error: Orca supervisor harness '$harness' is unsupported: native draft/modal safety and consumed-message acknowledgement are not proven; use the proven Pi receiver or a supported supervisor backend" >&2; return 1;
+  }
+  endpoint=$(fm_supervisor_native_endpoint orca "$target") || return 1
+  [ "$(printf '%s' "$endpoint" | jq -r .path)" = "$(cd "$SQUAD_BASE" && pwd -P)" ] || { echo 'error: Orca supervisor worktree path does not match this Squad base' >&2; return 1; }
+  dir=$(fm_supervisor_native_safe_dir "$state" "$target") || { echo 'error: Orca Pi supervisor native readiness is missing; load the project away-handoff extension in the exact local primary' >&2; return 1; }
+  file="$dir/ready.json"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  ready=$(jq -ce --argjson endpoint "$endpoint" --argjson now "$(date '+%s')" '
+    select(.version == 1 and .provider == "pi" and .endpoint == $endpoint)
+    | select((.pid | type == "number" and . > 1 and floor == .) and (.identity | type == "string" and length > 0) and (.session | type == "string" and test("^[a-f0-9]{64}$")))
+    | select((.idle | type == "boolean") and (.draft | type == "boolean") and (.prompts | type == "number" and . >= 0) and (.sending | type == "boolean"))
+    | select((.heartbeat | type == "number") and ($now * 1000 - .heartbeat) >= -1000 and ($now * 1000 - .heartbeat) <= 5000)' "$file") || {
+      echo 'error: Orca Pi supervisor native readiness is stale or names another endpoint/incarnation; inspect the primary rather than typing a fallback' >&2; return 1;
+    }
+  pid=$(printf '%s' "$ready" | jq -r .pid)
+  identity=$(printf '%s' "$ready" | jq -r .identity)
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  SQUAD_STATE_OVERRIDE="$state" . "$SQUAD_NATIVE_DIR/sq-stand-to-lib.sh"
+  fm_pid_alive "$pid" && [ "$(fm_pid_identity "$pid")" = "$identity" ] || { echo 'error: Orca supervisor native receiver died or changed identity' >&2; return 1; }
+  [ -f "$state/.lock" ] && [ ! -L "$state/.lock" ] || { echo 'error: Orca supervisor needs the exact live primary session owner' >&2; return 1; }
+  holder=$(tr -d '[:space:]' < "$state/.lock")
+  [ "$holder" = "$pid" ] || { echo 'error: Orca native receiver is not the primary session owner' >&2; return 1; }
+  printf '%s' "$ready"
+}
+
+fm_supervisor_native_ack() {  # <dir> -> true only for the exact consumed request
+  [ -f "$1/request.json" ] && [ ! -L "$1/request.json" ] && [ -f "$1/result.json" ] && [ ! -L "$1/result.json" ] || return 1
+  jq -e --slurpfile request "$1/request.json" '
+    .status == "handled" and .id == $request[0].id and .receiver == $request[0].receiver and .endpoint == $request[0].endpoint' "$1/result.json" >/dev/null
+}
+
+fm_supervisor_native_pending() {  # <state> <target>; uncertainty is pending forever
+  local dir
+  dir=$(fm_supervisor_native_dir "$1" "$2") || return 0
+  # A consumed but not yet retired request also keeps lifecycle ownership:
+  # malformed/mismatched buffer coverage must never be reported as completion.
+  [ -e "$dir/request.json" ] || [ -L "$dir/request.json" ]
+}
+
+fm_supervisor_native_submit() {  # <state> <target> <message> <covered-lines>
+  local state=$1 target=$2 message=$3 lines=$4 ready dir request tmp id prefix
+  ready=$(fm_supervisor_native_ready "$state" "$target") || return 1
+  dir=$(fm_supervisor_native_safe_dir "$state" "$target") || return 1
+  request="$dir/request.json"
+  # Nothing ever replaces an unresolved request, even after restart/reconnect.
+  if [ -e "$request" ] || [ -L "$request" ]; then return 1; fi
+  case "$lines" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$lines" -gt 0 ] || return 1
+  id=$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))') || return 1
+  prefix=$(head -n "$lines" "$state/.subsuper-escalations") || return 1
+  tmp=$(mktemp "$dir/.request.XXXXXX") || return 1
+  jq -n --arg id "$id" --arg message "$message" --arg prefix "$prefix" --argjson lines "$lines" --argjson ready "$ready" '
+    {version:1,id:$id,provider:$ready.provider,endpoint:$ready.endpoint,receiver:{pid:$ready.pid,identity:$ready.identity,session:$ready.session},message:$message,lines:$lines,prefix:$prefix}' > "$tmp" \
+    && chmod 600 "$tmp" && ln "$tmp" "$request"
+  local result=$?
+  rm -f "$tmp"
+  [ "$result" -eq 0 ] || return 1
+  # Publishing is not consumption. The next flush observes the receiver's ack.
+  return 1
+}
+
+fm_supervisor_native_retire() {  # <state> <target>
+  local state=$1 target=$2 dir lines expected actual buf
+  dir=$(fm_supervisor_native_safe_dir "$state" "$target") || return 1
+  fm_supervisor_native_ack "$dir" || return 1
+  jq -e --arg target "$target" '.version == 1 and .endpoint.backend == "orca" and .endpoint.target == $target' "$dir/request.json" >/dev/null || return 1
+  lines=$(jq -er '.lines | select(type == "number" and floor == . and . > 0)' "$dir/request.json") || return 1
+  expected=$(jq -er '.prefix' "$dir/request.json") || return 1
+  buf="$state/.subsuper-escalations"
+  [ -f "$buf" ] && [ "$(wc -l < "$buf")" -ge "$lines" ] || return 1
+  actual=$(head -n "$lines" "$buf") || return 1
+  [ "$expected" = "$actual" ] || return 1
+  tail -n "+$((lines + 1))" "$buf" > "$buf.retire.$$" && mv "$buf.retire.$$" "$buf" || return 1
+  # On a crash before unlink, a mismatched prefix remains blocked, never replayed.
+  rm -f "$dir/request.json" || return 1
+  [ -s "$buf" ] || rm -f "$buf.since"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1:-}" in
+    endpoint) fm_supervisor_native_endpoint "${2:-}" "${3:-}" ;;
+    dir) fm_supervisor_native_dir "${2:-}" "${3:-}" ;;
+    *) echo 'usage: sq-supervisor-native.sh endpoint <backend> <exact-target>' >&2; exit 2 ;;
+  esac
+fi
