@@ -279,6 +279,7 @@ retire_watcher_markers() {  # <state-dir> <task-id> <window>
   rm -f "$state/.hash-$key" "$state/.count-$key" "$state/.stale-$key" \
     "$state/.stale-since-$key" "$state/.wedge-escalations-$key" "$state/.paused-$key" \
     "$state/.dirty-since-$key" "$state/.pause-episode-$key" \
+    "$state/.sig-hash-$key" "$state/.sig-since-$key" "$state/.sig-reported-$key" "$state/.sig-unreadable-$key" \
     "$state/.seen-${sfx}_status" "$state/.seen-${sfx}_turn-ended"
 }
 

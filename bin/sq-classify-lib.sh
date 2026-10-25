@@ -137,6 +137,56 @@ status_pause_episode() {  # <status-file> -> record ordinal, or empty
   printf '%s' "$episode"
 }
 
+# --- stuck-pane text signatures --------------------------------------------
+#
+# The sentry's third independent objective stall rule reads the task's complete
+# rendered pane, not its status line or a harness busy claim. What a pane SHOWS is
+# the evidence; these constants are the objective text signatures it names, never a
+# verdict inferred from the harness or agent name:
+#   compaction-banner   a context-compaction banner that never clears
+#   cancelled-continue  an interrupted/cancelled turn or a prompt awaiting y/n
+#   error-dialog        a provider/transport error dialog left on screen
+# SQUAD_PANE_SIGNATURE_RE adds one operator-supplied POSIX ERE as an
+# `operator-pattern` signature without editing the built-ins; the per-class
+# variables exist so a base can replace a noisy built-in set.
+SQUAD_PANE_SIGNATURE_CANCELLED_RE_DEFAULT='press esc to cancel|request (was )?cancell?ed|cancell?ed by user|request interrupted|interrupted by user|continue\? *\(y/n\)|\[y/n\]'
+SQUAD_PANE_SIGNATURE_COMPACTION_RE_DEFAULT='compacting (the )?(conversation|context)|compaction in progress|auto-?compacting'
+SQUAD_PANE_SIGNATURE_ERROR_RE_DEFAULT='api error|connection (error|failed)|overloaded(_error)?|rate limit(ed|ing)?|insufficient (quota|credits)|credit balance|something went wrong|unexpected error|maximum context length|context length exceeded'
+
+# First matching line for <re>, with runs of whitespace collapsed and the result
+# bounded, so a reason can quote what the pane actually showed.
+_pane_signature_line() {  # <text> <re>
+  local text=$1 re=$2 line
+  [ -n "$re" ] || return 0
+  line=$(printf '%s\n' "$text" | grep -Ei -m1 -- "$re" 2>/dev/null) || return 0
+  line=$(printf '%s' "$line" | tr -s '[:space:]' ' ')
+  printf '%s' "${line:0:120}"
+}
+
+# Classify a complete rendered pane (stdin) as "<signature>|<observed line>", or
+# print nothing when no signature is present. Pure: reads stdin, writes stdout,
+# touches no state. A signature is objective pane text, never a harness guess and
+# never a substitute for a readable pane (an unreadable capture must be reported
+# as cannot-evaluate by the caller, not fabricated here).
+pane_signature_classify() {
+  local text name re found
+  text=$(cat)
+  [ -n "${text//[[:space:]]/}" ] || return 0
+  for name in cancelled-continue compaction-banner error-dialog operator-pattern; do
+    case "$name" in
+      cancelled-continue) re=${SQUAD_PANE_SIGNATURE_CANCELLED_RE:-$SQUAD_PANE_SIGNATURE_CANCELLED_RE_DEFAULT} ;;
+      compaction-banner) re=${SQUAD_PANE_SIGNATURE_COMPACTION_RE:-$SQUAD_PANE_SIGNATURE_COMPACTION_RE_DEFAULT} ;;
+      error-dialog) re=${SQUAD_PANE_SIGNATURE_ERROR_RE:-$SQUAD_PANE_SIGNATURE_ERROR_RE_DEFAULT} ;;
+      operator-pattern) re=${SQUAD_PANE_SIGNATURE_RE:-} ;;
+    esac
+    found=$(_pane_signature_line "$text" "$re")
+    [ -n "$found" ] || continue
+    printf '%s|%s' "$name" "$found"
+    return 0
+  done
+  return 0
+}
+
 # 0 if the given (last) status line's leading verb is a real terminal commander verb
 # (done, needs-decision, blocked, failed). Free-text tokens alone never count here;
 # callers that need legacy free-text matching use status_is_commander_relevant.
