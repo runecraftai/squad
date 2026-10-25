@@ -210,7 +210,7 @@ The caller-facing label remains `sq-<id>`, but the actual cmux workspace title i
 Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.md#current-operation-and-safety), never enumerate-and-close every workspace.
 `config/backend` is inherited into XO bases under the primary-authoritative contract owned by [`xo-provisioning`](../.agents/skills/xo-provisioning/SKILL.md).
 
-## Away-mode supervisor backend (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
+## Away-mode supervisor backend (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET / SQUAD_SUPERVISOR_HARNESS)
 
 The `/afk` sub-supervisor injects escalation digests into Squad's own pane independently of where new task endpoints are spawned.
 It supports `tmux`, `herdr`, `tuios`, and explicitly selected native-only `orca` supervisor panes.
@@ -221,6 +221,9 @@ Target detection uses `SQUAD_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HER
 A detected marker is a preference, not a verdict: backend and target are resolved together, each detected candidate is probed in that order, and the first target that actually exists wins.
 A preferred candidate whose target is gone - a stale inherited `HERDR_PANE_ID` inside a live TUIOS session, for example - is skipped with its source named in the daemon and launcher logs, so it can no longer block entering away mode.
 An explicit `SQUAD_SUPERVISOR_BACKEND` or `SQUAD_SUPERVISOR_TARGET` is authoritative and is never replaced by a detected marker; the daemon refuses loudly at startup when that explicit target does not resolve.
+An `orca` supervisor pane additionally needs a proven receiver adapter, selected by `SQUAD_SUPERVISOR_HARNESS`.
+Without it, `bin/sq-harness.sh` walks process ancestry and must resolve the exact Pi primary to `pi`; a lifecycle invoked from a shell outside that primary - an Orca terminal's own shell, for example - resolves `unknown` and refuses rather than typing a fallback.
+Set `SQUAD_SUPERVISOR_HARNESS=pi` there; every other value is refused by name before any away-mode state or endpoint exists, and the variable only names the adapter, so the primary's published readiness record still has to prove the receiver process, endpoint, and session identity.
 A TUIOS supervisor pane receives terminal typing only through the guarded fallback: escalation digests prefer the Pi-native handoff owned by `.pi/extensions/sq-primary-away-handoff.ts`, which queues a follow-up through Pi's own `sendUserMessage` and acknowledges consumption, and the typing path runs only after that handoff refuses and the pane's composer is read as empty.
 See [`tuios-backend.md`](tuios-backend.md#away-mode-supervision).
 [`orca-backend.md`](orca-backend.md#away-mode-supervision) owns Orca's primary selection, proven harness coverage, native-only delivery, exact cleanup, and remaining verification limits.
@@ -838,6 +841,7 @@ SQUAD_PENDING_REPLY_GRACE_SECS=120   # seconds after marked-request delivery bef
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
 SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr/tuios, or explicit-only orca with the shipped Pi receiver, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID then TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID before tmux fallback, probing each detected candidate's target in that order and using the first that exists
 SQUAD_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target, herdr <session>:<pane-id>, tuios <session>:<window-id>, or an exact Orca terminal handle, otherwise auto-detected
+SQUAD_SUPERVISOR_HARNESS=             # optional Orca receiver adapter selector; pi is the only proven value, otherwise bin/sq-harness.sh process ancestry must resolve the exact Pi primary to pi before any away-mode mutation
 SQUAD_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
 SQUAD_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
 SQUAD_MAX_DEFER_SECS=300              # max buffered escalation age before retry plus wedge alarm; 0 disables

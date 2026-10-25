@@ -81,6 +81,9 @@ Only the interactive **Pi** receiver is enabled initially.
 Load the shipped `.pi/extensions/sq-primary-away-handoff.ts` in the selected primary and let that primary acquire the base's session ownership before entering away mode.
 A missing, stale, foreign-process, foreign-endpoint, or replaced-incarnation readiness record refuses rather than falling back to terminal typing.
 A bare shell cannot publish native readiness.
+`SQUAD_SUPERVISOR_HARNESS` names that receiver adapter for the daemon.
+When it is unset, `bin/sq-harness.sh` process ancestry must resolve the exact Pi primary to `pi`; a lifecycle invoked from a shell outside that primary - an Orca terminal's own shell, for example - resolves `unknown` and refuses rather than typing a fallback, so set `SQUAD_SUPERVISOR_HARNESS=pi` there.
+The variable selects only the adapter: the primary's published readiness record still has to prove the receiver process, endpoint, and session identity, so it cannot manufacture readiness.
 
 Use `bin/sq-afk-launch.sh start`, `status`, `stop`, and `reconcile` for the lifecycle.
 The create call passes **no focus flag** and never splits the primary, creates or removes a worktree, or stops the runtime.

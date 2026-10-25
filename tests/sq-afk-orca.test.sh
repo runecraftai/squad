@@ -71,11 +71,25 @@ try {
       assert.notEqual(r.status,0,`${entry}: ${harness} unexpectedly supported`);
       // direct starter takes no positional start; the other entries exercise native preflight.
       assert.match(r.stderr,new RegExp(`harness '${harness}' is unsupported`));
+      assert.match(r.stderr,/SQUAD_SUPERVISOR_HARNESS=pi/,`${entry}: refusal did not name the proven selector`);
       assert.equal(existsSync(missing),false,`${entry} mutated state before refusal`);
     }
     process.title=oldTitle;
   }
   check('all unproven harnesses refuse by name before any state or Orca mutation');
+  // With no selector at all, detection must name the selector and the ancestry
+  // requirement instead of claiming Pi's own proof is what is missing.
+  {
+    const missing=`${home}/missing-detected`;
+    const r=spawnSync('bash',[`${root}/bin/sq-afk-start.sh`,'start'],{encoding:'utf8',env:{...env(),PI_CODING_AGENT:'',CLAUDECODE:'',GROK_AGENT:'',SQUAD_PI_HARNESS:'',SQUAD_SUPERVISOR_HARNESS:'',SQUAD_STATE_OVERRIDE:missing,ORCA_TEST_UNKNOWN:'1'}});
+    assert.notEqual(r.status,0);
+    assert.match(r.stderr,/detection resolved 'unknown'/);
+    assert.match(r.stderr,/ancestry/);
+    assert.match(r.stderr,/SQUAD_SUPERVISOR_HARNESS=pi/);
+    assert.doesNotMatch(r.stderr,/is unsupported/);
+    assert.equal(existsSync(missing),false,'unresolved detection mutated state before refusal');
+  }
+  check('unresolved harness detection refuses with the selector and ancestry requirement');
   model.ready=false;save(); let r=cli('start'); assert.notEqual(r.status,0);assert.match(r.stderr,/reachable ready runtime/);assert.equal(count('create'),0);
   // A failing Orca CLI must name the failed command and its recovery instead of
   // exiting nonzero with only whatever the CLI happened to print.

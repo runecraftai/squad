@@ -75,10 +75,16 @@ fm_supervisor_native_safe_dir() {  # <state> <target>
 fm_supervisor_native_ready() {  # <state> <target> -> readiness JSON
   local state=$1 target=$2 harness dir file ready endpoint pid identity holder
   harness=${SQUAD_SUPERVISOR_HARNESS:-}
-  if [ -z "$harness" ]; then harness=$("$SQUAD_NATIVE_DIR/sq-harness.sh") || harness=unknown; fi
-  [ "$harness" = pi ] || {
-    echo "error: Orca supervisor harness '$harness' is unsupported: native draft/modal safety and consumed-message acknowledgement are not proven; use the proven Pi receiver or a supported supervisor backend" >&2; return 1;
-  }
+  if [ -n "$harness" ]; then
+    [ "$harness" = pi ] || {
+      echo "error: Orca supervisor harness '$harness' is unsupported: native draft/modal safety and consumed-message acknowledgement are not proven for it; set SQUAD_SUPERVISOR_HARNESS=pi to use the proven Pi receiver, or select a supported supervisor backend" >&2; return 1;
+    }
+  else
+    harness=$("$SQUAD_NATIVE_DIR/sq-harness.sh") || harness=unknown
+    [ "$harness" = pi ] || {
+      echo "error: Orca supervisor harness detection resolved '$harness', not the proven Pi receiver, from this process ancestry: native draft/modal safety and consumed-message acknowledgement are proven only for Pi; run the lifecycle from inside the exact Pi primary that owns this base, or set SQUAD_SUPERVISOR_HARNESS=pi explicitly (the primary's own readiness record still has to prove the receiver)" >&2; return 1;
+    }
+  fi
   endpoint=$(fm_supervisor_native_endpoint orca "$target") || return 1
   [ "$(printf '%s' "$endpoint" | jq -r .path)" = "$(cd "$SQUAD_BASE" && pwd -P)" ] || { echo 'error: Orca supervisor worktree path does not match this Squad base' >&2; return 1; }
   dir=$(fm_supervisor_native_safe_dir "$state" "$target") || { echo 'error: Orca Pi supervisor native readiness is missing; load the project away-handoff extension in the exact local primary' >&2; return 1; }

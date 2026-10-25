@@ -82,6 +82,9 @@ Apenas o receptor interativo **Pi** é habilitado inicialmente.
 Carregue o `.pi/extensions/sq-primary-away-handoff.ts` distribuído no primário selecionado e deixe aquele primário adquirir a posse de sessão da base antes de entrar no away-mode.
 Um registro de prontidão ausente, obsoleto, de processo estranho, de endpoint estranho ou de encarnação substituída recusa em vez de cair na digitação no terminal.
 Um shell puro não consegue publicar prontidão nativa.
+`SQUAD_SUPERVISOR_HARNESS` nomeia esse adaptador receptor para o daemon.
+Sem ele, a ancestralidade de processos do `bin/sq-harness.sh` precisa resolver o primário Pi exato como `pi`; um ciclo de vida invocado de um shell fora desse primário - o próprio shell de um terminal Orca, por exemplo - resolve `unknown` e recusa em vez de cair na digitação, então defina `SQUAD_SUPERVISOR_HARNESS=pi` nesse caso.
+A variável apenas seleciona o adaptador: o registro de prontidão publicado pelo primário ainda precisa provar o processo, o endpoint e a identidade de sessão do receptor, então ela não consegue fabricar prontidão.
 
 Use `bin/sq-afk-launch.sh start`, `status`, `stop` e `reconcile` para o ciclo de vida.
 A chamada de criação passa **nenhuma flag de foco** e nunca divide o primário, cria ou remove worktree nem para o runtime.

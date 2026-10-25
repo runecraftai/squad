@@ -141,7 +141,7 @@ Limpeza de teste deve usar o caminho protegido em [`docs/cmux-backend.md`](cmux-
 TUIOS usa a `SQUAD_TUIOS_SESSION` explicitamente configurada; cada tarefa recebe seu próprio workspace existente, vazio e sem nome, com o `config/tuios-workspace` opcional como número preferido; suas janelas são escopadas por ids opacos e a limpeza nunca remove a sessão.
 `config/backend` é herdado para bases XO sob o contrato de autoridade primária dona de [`xo-provisioning`](../../.agents/skills/xo-provisioning/SKILL.md).
 
-## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET)
+## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET / SQUAD_SUPERVISOR_HARNESS)
 
 O sub-supervisor `/afk` injeta resumos de escalação no próprio painel do Squad independentemente de onde novos endpoints de tarefa são criados.
 Suporta painéis de supervisor `tmux`, `herdr`, `tuios` e `orca` nativo-somente quando explicitamente selecionado.
@@ -149,6 +149,9 @@ Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios|orca` e `SQUAD_SUPERVISOR_TARG
 Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois `TUIOS_ENV=1` com `TUIOS_SESSION` e `TUIOS_PANE_ID`, depois recua para `tmux`.
 Isso mantém um painel tmux aninhado dentro de herdr ou TUIOS no transport tmux, correspondendo à regra de dentro para fora do backend de runtime.
 A detecção de alvo usa `SQUAD_SUPERVISOR_TARGET`, depois `$TMUX_PANE`, depois `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` sob herdr, depois `"$TUIOS_SESSION:$TUIOS_PANE_ID"` sob TUIOS, depois o fallback legado `Squad:0` do tmux com um aviso.
+Um painel de supervisor `orca` também precisa de um adaptador receptor comprovado, selecionado por `SQUAD_SUPERVISOR_HARNESS`.
+Sem ele, `bin/sq-harness.sh` percorre a ancestralidade de processos e precisa resolver o primário Pi exato como `pi`; um ciclo de vida invocado de um shell fora desse primário - o próprio shell de um terminal Orca, por exemplo - resolve `unknown` e recusa em vez de cair na digitação.
+Defina `SQUAD_SUPERVISOR_HARNESS=pi` nesse caso; qualquer outro valor é recusado pelo nome antes de existir estado de away-mode ou endpoint, e a variável apenas nomeia o adaptador, então o registro de prontidão publicado pelo primário ainda precisa provar o processo, o endpoint e a identidade de sessão do receptor.
 Um painel de supervisor TUIOS só recebe digitação no terminal pelo fallback guardado: os resumos de escalação preferem o handoff nativo do Pi dono de `.pi/extensions/sq-primary-away-handoff.ts`, que enfileira um follow-up pelo próprio `sendUserMessage` do Pi e reconhece o consumo, e o caminho digitado só roda depois que esse handoff recusa e o composer do painel é lido como vazio.
 Veja [`tuios-backend.md`](../tuios-backend.md#away-mode-supervision).
 [`orca-backend.md`](orca-backend.md#supervisão-de-away-mode) é dono da seleção do primário Orca, da cobertura de harness comprovada, da entrega nativo-somente, da limpeza exata e dos limites de verificação restantes; apenas o receptor Pi é habilitado e todo outro harness recusa pelo nome antes de qualquer mutação de estado.
@@ -724,6 +727,7 @@ SQUAD_PENDING_REPLY_GRACE_SECS=120   # segundos após entrega de solicitação m
 # sub-supervisor (bin/sq-supervise-daemon.sh); presence-gated via /afk
 SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de supervisor opcional; tmux/herdr/tuios, ou orca explicit-only com o receptor Pi distribuído, caso contrário detecta $TMUX_PANE depois HERDR_ENV/HERDR_PANE_ID depois TUIOS_ENV/TUIOS_SESSION/TUIOS_PANE_ID antes de fallback tmux
 SQUAD_SUPERVISOR_TARGET=              # sobrescrever alvo de painel de supervisor opcional; alvo tmux, herdr <session>:<pane-id>, tuios <session>:<window-id>, ou um handle exato de terminal Orca, caso contrário auto-detectado
+SQUAD_SUPERVISOR_HARNESS=             # seletor opcional de adaptador receptor Orca; pi é o único valor comprovado, caso contrário a ancestralidade de processos do bin/sq-harness.sh precisa resolver o primário Pi exato como pi antes de qualquer mutação de away-mode
 SQUAD_INJECT_SKIP=heartbeat           # prefixos |-forçam auto-tratamento ignorando classificação; vazio desativa
 SQUAD_ESCALATE_BATCH_SECS=90          # janela de buffer para resumos de escalação em lote; 0 = esvaziar imediatamente
 SQUAD_MAX_DEFER_SECS=300              # idade máxima de escalação em buffer antes de retentativa mais alarme wedge; 0 desativa
