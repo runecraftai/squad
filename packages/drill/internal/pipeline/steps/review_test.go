@@ -753,6 +753,30 @@ func TestReviewStep_TolerantParseIncidentEndToEnd(t *testing.T) {
 	}
 }
 
+func TestReviewStep_MissingRiskScopeSurfacesUnknownRisk(t *testing.T) {
+	t.Parallel()
+	dir, baseSHA, headSHA := setupGitRepo(t)
+	const payload = `{"findings":[],"summary":"clean","risk_level":"low","risk_rationale":"well-bounded"}`
+	ag := &mockAgent{
+		name: "pi",
+		runFn: func(context.Context, agent.RunOpts) (*agent.Result, error) {
+			return &agent.Result{Output: json.RawMessage(payload)}, nil
+		},
+	}
+	sctx := newTestContextWithDBRecords(t, ag, dir, baseSHA, headSHA, config.Commands{})
+	outcome, err := (&ReviewStep{}).Execute(sctx)
+	if err != nil {
+		t.Fatalf("review should complete when risk_scope is omitted: %v", err)
+	}
+	var findings Findings
+	if err := json.Unmarshal([]byte(outcome.Findings), &findings); err != nil {
+		t.Fatalf("unmarshal review findings: %v", err)
+	}
+	if findings.RiskLevel != "unknown" || findings.RiskRationale != "risk assessment unavailable because risk_scope was omitted" || findings.RiskScope != "unknown" {
+		t.Fatalf("risk fields = %q/%q/%q, want explicit unknown values", findings.RiskLevel, findings.RiskRationale, findings.RiskScope)
+	}
+}
+
 // TestReviewStep_BareFindingsArrayPayloadIsConsumed walks the 2026-10-20
 // incident end to end at the review gate. The pi review agent returned its
 // findings as a bare JSON array, and the run died with `agent review: pi

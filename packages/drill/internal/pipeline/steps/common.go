@@ -120,7 +120,7 @@ var reviewFindingsSchema = json.RawMessage(`{
 		"risk_rationale": {"type": "string"},
 		"risk_scope": {"type": "string", "enum": ["source-or-external", "pipeline-owned-delivery"]}
 	},
-	"required": ["findings", "risk_level", "risk_rationale", "risk_scope"]
+	"required": ["findings", "risk_level", "risk_rationale"]
 }`)
 
 // AllSteps returns the fixed pipeline step sequence.
