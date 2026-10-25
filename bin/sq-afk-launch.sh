@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sq-afk-launch.sh - the single owner of the away-mode daemon TERMINAL lifecycle:
-# launch it in a NON-VISIBLE tracked terminal per backend, record its exact id,
+# launch it in a launcher-owned tracked terminal per backend, record its exact id,
 # tear it down by that exact id, and reconcile a leaked one after a crash.
 #
 # Why this exists (docs/herdr-backend.md "Away-mode daemon terminal launch"):
@@ -22,7 +22,7 @@
 # Usage:
 #   sq-afk-launch.sh start     Capture the commander pane, then (unless the daemon
 #                              is already running) launch the daemon in a fresh
-#                              non-visible terminal for the detected backend and
+#                              launcher-owned terminal for the detected backend and
 #                              record it. Idempotent: an already-running daemon
 #                              just refreshes state/.afk; a recorded-but-dead
 #                              terminal is reconciled (closed by id) first.
@@ -38,9 +38,14 @@
 #   sq-afk-launch.sh status   Print one read-only machine-readable health line and
 #                              return zero only when active state is healthy.
 #
-# Supported supervisor targets and non-visible daemon terminals: herdr, tmux,
-# and TUIOS. TUIOS uses an exact newly-created detached session and refuses all
-# cleanup unless its recorded identity still matches and it remains unattached.
+# Supported supervisor targets: herdr, tmux, TUIOS, and explicit native-only Orca.
+# herdr (a `--no-focus` workspace) and tmux (a detached session) launch the daemon
+# terminal without touching the commander's active tab; TUIOS uses an exact
+# newly-created detached session and refuses all cleanup unless its recorded
+# identity still matches and it remains unattached.
+# Orca's create call requests no focus flag and never creates or removes a
+# worktree; whether the host focuses, keeps, or hides the new terminal is
+# unverified, so treat it as possibly visible or focused.
 #
 # Test seam: SQUAD_AFK_LAUNCH_ENTRY overrides the command run in the created
 # terminal (default bin/sq-afk-start.sh), so a topology test can run a harmless
@@ -82,8 +87,17 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 . "$SQUAD_AFK_LAUNCH_DIR/sq-backend.sh"
 # shellcheck source=bin/sq-afk-tuios-launch.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-afk-tuios-launch.sh"
+# shellcheck source=bin/sq-supervisor-native.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-native.sh"
+# shellcheck source=bin/sq-afk-orca-launch.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-afk-orca-launch.sh"
 # shellcheck source=bin/sq-supervisor-target-lib.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+  case "${1:-start}" in
+    start|start-native) fm_supervisor_native_ready_once "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1 ;;
+  esac
+fi
 # sq-afk-start.sh provides the daemon-lock liveness helpers and
 # fm_afk_clear_stale_artifacts; it is sourceable (BASH_SOURCE guard) and its
 # main does not run on source. It sets `set -eu`, so turn errexit back off for
@@ -191,6 +205,12 @@ fm_afk_launch_record_read() {
   fi
   SQUAD_AFK_REC_EXTRA=$extra
   case "$SQUAD_AFK_REC_BACKEND" in
+    orca)
+      printf '%s' "$extra" | jq -e --arg target "$SQUAD_AFK_REC_TARGET" '
+        (.title | type == "string" and startswith("sq-afk-")) and .parent.backend == "orca"
+        and (.parent.target | type == "string" and length > 0)
+        and (($target == "pending" and .endpoint == null) or (.endpoint.backend == "orca" and .endpoint.target == $target))' >/dev/null
+      ;;
     herdr|tuios) [ -n "$extra" ] ;;
     tmux) : ;;
     none) [ "$SQUAD_AFK_REC_TARGET" = - ] && [ "$extra" = native ] ;;
@@ -211,6 +231,12 @@ fm_afk_launch_record_validate_if_present() {
 fm_afk_launch_close_terminal() {  # <backend> <target>
   local backend=$1 target=$2
   case "$backend" in
+    orca)
+      fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
+      local out
+      out=$(orca terminal close --terminal "$target" --json) || return 1
+      printf '%s' "$out" | jq -e '.ok == true' >/dev/null
+      ;;
     herdr)
       fm_backend_source herdr || return 1
       local session=${target%%:*} pane=${target#*:}
@@ -240,6 +266,7 @@ fm_afk_launch_close_terminal() {  # <backend> <target>
 fm_afk_launch_terminal_absent() {  # <backend> <target>
   local backend=$1 target=$2 session pane out result code
   case "$backend" in
+    orca) fm_afk_launch_orca_absent "$target" "$SQUAD_AFK_REC_EXTRA" ;;
     tuios)
       fm_afk_launch_tuios_session_absent "$target"
       ;;
@@ -307,6 +334,17 @@ fm_afk_launch_status() {
   printf 'active=%s terminal=%s daemon=%s housekeeping_age=%s scan_age=%s\n' \
     "$active" "$terminal" "$daemon" "$housekeeping_age" "$scan_age"
   [ "$read_result" -eq 2 ] && return 2
+  if [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ]; then
+    local primary
+    primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
+    if [ "$daemon" = alive ] && ! fm_afk_launch_orca_daemon_owned; then return 1; fi
+    fm_supervisor_native_ready "$SQUAD_AFK_LAUNCH_STATE" "$primary" >/dev/null || return 1
+    if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary" \
+      || fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+      fm_afk_launch_log 'Orca native delivery or buffer retirement is pending/uncertain'
+      return 1
+    fi
+  fi
   [ "$healthy" -eq 1 ]
 }
 
@@ -325,6 +363,7 @@ fm_afk_launch_close_recorded() {
 fm_afk_launch_terminal_alive() {  # <backend> <target>
   local backend=$1 target=$2 session pane
   case "$backend" in
+    orca) fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" ;;
     tuios)
       fm_afk_launch_tuios_owned "$target" "$SQUAD_AFK_REC_EXTRA"
       ;;
@@ -342,15 +381,23 @@ fm_afk_launch_terminal_alive() {  # <backend> <target>
 }
 
 fm_afk_launch_wait_ready() {  # <backend> <target>
-  local backend=$1 target=$2 attempt=0
+  local backend=$1 target=$2 attempt=0 started=$SECONDS
   if [ -n "${SQUAD_AFK_LAUNCH_ENTRY:-}" ]; then
     fm_afk_launch_terminal_alive "$backend" "$target"
     return
   fi
-  while [ "$attempt" -lt 100 ]; do
+  # Wall-clock bounded: each Orca terminal-alive probe spawns the Orca CLI, so
+  # probing on every 50ms tick would stretch a failing start far past the short
+  # readiness budget. Cheap daemon ownership is checked every tick; the
+  # expensive identity probe runs early and then rarely.
+  while [ $((SECONDS - started)) -lt 5 ]; do
     attempt=$((attempt + 1))
-    daemon_lock_held_by_live_daemon && return 0
-    fm_afk_launch_terminal_alive "$backend" "$target" || return 1
+    if daemon_lock_held_by_live_daemon; then
+      if [ "$backend" != orca ] || fm_afk_launch_orca_daemon_owned; then return 0; fi
+    fi
+    if [ "$backend" != orca ] || [ "$attempt" -le 2 ] || [ $((attempt % 20)) -eq 0 ]; then
+      fm_afk_launch_terminal_alive "$backend" "$target" || return 1
+    fi
     sleep 0.05
   done
   return 1
@@ -402,21 +449,57 @@ fm_afk_launch_herdr_recover_created() {  # <session> <label>
   return 1
 }
 
+# Settling one exact primary is only complete when no other primary's request
+# still covers a prefix of the shared escalation buffer.
+fm_afk_launch_native_settle() {  # <exact-primary> <preserve-message>
+  local primary=$1 message=$2
+  fm_supervisor_native_retire "$SQUAD_AFK_LAUNCH_STATE" "$primary" || true
+  if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+    fm_afk_launch_log "$message (${SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON:-no consumed acknowledgement})"
+    return 1
+  fi
+  if fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+    fm_afk_launch_log "$message (an unresolved native request for another primary still covers this escalation buffer; settle that exact endpoint first)"
+    return 1
+  fi
+}
+
 # Reconcile a recorded-but-dead terminal: if a record exists and no live daemon
 # owns it, close the leaked terminal by exact id and drop the record.
-fm_afk_launch_reconcile() {
-  local read_result
+fm_afk_launch_reconcile() {  # [exact-primary]
+  local read_result primary
   if daemon_lock_held_by_live_daemon; then
     return 0
   fi
   fm_afk_launch_record_read
   read_result=$?
   if [ "$read_result" -eq 0 ]; then
+    if [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
+      fm_afk_launch_orca_resolve || return 1
+      primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
+      fm_afk_launch_native_settle "$primary" 'Orca escalation is unresolved, preserving lifecycle during reconciliation' || return 1
+    fi
     fm_afk_launch_log "reconciling leaked daemon terminal ${SQUAD_AFK_REC_BACKEND}:${SQUAD_AFK_REC_TARGET}"
     fm_afk_launch_close_recorded
   elif [ "$read_result" -eq 2 ]; then
     return 1
+  elif fm_afk_launch_orca_scope || fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE"; then
+    primary=$(fm_afk_launch_orca_primary "${1:-}") || return 1
+    fm_afk_launch_native_settle "$primary" 'Orca native request remains unresolved even without a terminal record, preserving it' || return 1
   fi
+}
+
+fm_afk_launch_snapshot_artifacts() {  # <backup-dir>
+  local backup=$1 artifact
+  [ -d "$backup" ] || return 1
+  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
+    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || return 1
+  fi
+  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
+    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
+      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || return 1
+    fi
+  done
 }
 
 fm_afk_launch_restore_backup() {  # <backup> <had-afk>
@@ -523,7 +606,7 @@ fm_afk_launch_create_tmux() {  # <commander-target> <commander-backend>
 }
 
 fm_afk_launch_start() {
-  local commander_target commander_backend backup artifact had_afk=0 result
+  local commander_target commander_backend backup="" had_afk=0 result
   local pane_line pane_status=0 fallback_note
   if [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/sq-afk-return.sh check before re-entering away mode"
@@ -549,6 +632,26 @@ fm_afk_launch_start() {
 
   if daemon_lock_held_by_live_daemon; then
     fm_afk_launch_record_validate_if_present || return 1
+    if [ "$commander_backend" = orca ]; then
+      fm_afk_launch_record_read || { fm_afk_launch_log 'a daemon is already running without an Orca terminal ownership record; refusing to refresh away mode'; return 1; }
+      [ "$SQUAD_AFK_REC_BACKEND" = orca ] || { fm_afk_launch_log "a live '$SQUAD_AFK_REC_BACKEND' daemon is already running; stop it before switching to an Orca supervisor"; return 1; }
+      fm_afk_launch_orca_resolve || return 1
+      fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" || { fm_afk_launch_log 'the running Orca daemon terminal no longer matches its recorded identity; refusing to refresh away mode'; return 1; }
+      fm_afk_launch_orca_daemon_owned || { fm_afk_launch_log 'the running Orca daemon process does not own its recorded terminal; refusing to refresh away mode'; return 1; }
+      local current bound recorded live
+      current=$(fm_supervisor_native_endpoint orca "$commander_target") || { fm_afk_launch_log "the selected Orca primary $commander_target no longer resolves to a ready readable endpoint; refusing to refresh away mode"; return 1; }
+      if ! printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --argjson current "$current" '.parent == $current' >/dev/null; then
+        bound=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.parent.target // empty' 2>/dev/null) || bound=
+        if [ "$bound" = "$commander_target" ]; then
+          recorded=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.parent | "runtime=\(.runtime // "unknown") incarnation=\(.incarnation // "unknown")"' 2>/dev/null) || recorded=
+          live=$(printf '%s' "$current" | jq -r '"runtime=\(.runtime // "unknown") incarnation=\(.incarnation // "unknown")"' 2>/dev/null) || live=
+          fm_afk_launch_log "the selected Orca primary $commander_target changed identity since this daemon was launched (recorded ${recorded:-unknown}; current ${live:-unknown}); stop away mode before restarting it against the reconnected primary"
+        else
+          fm_afk_launch_log "a live Orca daemon is already bound to primary handle '${bound:-unknown}', not $commander_target; stop it before switching primary"
+        fi
+        return 1
+      fi
+    fi
     if ! fm_afk_launch_flag_write; then
       fm_afk_launch_log "failed to refresh away-mode flag"
       return 1
@@ -557,19 +660,19 @@ fm_afk_launch_start() {
     return 0
   fi
 
-  backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
-  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
-    had_afk=1
-    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
-  fi
-  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
-    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
-      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
-    fi
-  done
-  if ! fm_afk_launch_reconcile; then
+  if ! fm_afk_launch_reconcile "$commander_target"; then
     result=1
   else
+    # Snapshot only after reconciliation settles: a restore may undo the clear
+    # below, never re-cover a prefix reconciliation already retired.
+    backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") \
+      || { fm_afk_launch_log 'failed to create the away-mode rollback snapshot'; return 1; }
+    [ ! -e "$SQUAD_AFK_LAUNCH_STATE/.afk" ] || had_afk=1
+    if ! fm_afk_launch_snapshot_artifacts "$backup"; then
+      rm -rf "$backup" || true
+      fm_afk_launch_log 'failed to snapshot away-mode artifacts for rollback'
+      return 1
+    fi
     if fm_afk_clear_stale_artifacts "$SQUAD_AFK_LAUNCH_STATE"; then
       result=0
     else
@@ -589,22 +692,25 @@ fm_afk_launch_start() {
       herdr) fm_afk_launch_create_herdr "$commander_target" "$commander_backend"; result=$? ;;
       tmux)  fm_afk_launch_create_tmux "$commander_target" "$commander_backend"; result=$? ;;
       tuios) fm_afk_launch_create_tuios "$commander_target" "$commander_backend"; result=$? ;;
+      orca) fm_afk_launch_create_orca "$commander_target" "$commander_backend"; result=$? ;;
       *)
-        fm_afk_launch_log "no non-visible daemon-launch primitive for backend '$commander_backend' yet (supported: herdr, tmux, tuios)"
+        fm_afk_launch_log "no daemon-terminal launch primitive for backend '$commander_backend' yet (supported: herdr, tmux, tuios, orca)"
         result=1
         ;;
     esac
   fi
   if [ "$result" -ne 0 ]; then
-    fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
-  else
-    rm -rf "$backup" || result=1
+    if [ -n "$backup" ]; then
+      fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+    fi
+  elif [ -n "$backup" ] && ! rm -rf "$backup"; then
+    result=1
   fi
   return "$result"
 }
 
 fm_afk_launch_start_native() {
-  local backup artifact had_afk=0 result=0
+  local backup="" had_afk=0 result=0
   mkdir -p "$SQUAD_AFK_LAUNCH_STATE" || return 1
   if [ -e "$SQUAD_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/sq-afk-return.sh check before re-entering away mode"
@@ -616,18 +722,17 @@ fm_afk_launch_start_native() {
     fm_afk_launch_log "daemon already running; refreshed away-mode flag"
     return 0
   fi
-  backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") || return 1
-  if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
-    had_afk=1
-    cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || { rm -rf "$backup"; return 1; }
-  fi
-  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
-    if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
-      cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || { rm -rf "$backup"; return 1; }
+  if ! fm_afk_launch_reconcile; then
+    result=1
+  else
+    backup=$(mktemp -d "$SQUAD_AFK_LAUNCH_STATE/.afk-launch-backup.XXXXXX") \
+      || { fm_afk_launch_log 'failed to create the away-mode rollback snapshot'; return 1; }
+    [ ! -e "$SQUAD_AFK_LAUNCH_STATE/.afk" ] || had_afk=1
+    if ! fm_afk_launch_snapshot_artifacts "$backup"; then
+      rm -rf "$backup" || true
+      fm_afk_launch_log 'failed to snapshot away-mode artifacts for rollback'
+      return 1
     fi
-  done
-  fm_afk_launch_reconcile || result=1
-  if [ "$result" -eq 0 ]; then
     if ! fm_afk_clear_stale_artifacts "$SQUAD_AFK_LAUNCH_STATE"; then
       fm_afk_launch_log "failed to clear stale away-mode artifacts"
       result=1
@@ -639,19 +744,33 @@ fm_afk_launch_start_native() {
     fm_afk_launch_record_write none - native || result=1
   fi
   if [ "$result" -ne 0 ]; then
-    fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
-  else
-    rm -rf "$backup" || result=1
+    if [ -n "$backup" ]; then
+      fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+    fi
+  elif [ -n "$backup" ] && ! rm -rf "$backup"; then
+    result=1
   fi
   return "$result"
 }
 
 fm_afk_launch_stop() {
-  local pid pid_identity current_identity result=0 read_result
+  local pid pid_identity current_identity result=0 read_result primary
   fm_afk_launch_record_read
   read_result=$?
   if [ "$read_result" -eq 2 ]; then
     fm_afk_launch_log "malformed daemon terminal record; refusing to stop away mode"
+    return 1
+  fi
+  if [ "$read_result" -eq 1 ] && fm_afk_launch_orca_scope; then
+    if daemon_lock_held_by_live_daemon; then
+      fm_afk_launch_log 'Orca live daemon has no terminal ownership record; refusing to signal it'
+      return 1
+    fi
+    primary=$(fm_afk_launch_orca_primary) || return 1
+    fm_afk_launch_native_settle "$primary" 'Orca native request remains unresolved; stop is not complete' || return 1
+  fi
+  if [ "$read_result" -eq 1 ] && fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE"; then
+    fm_afk_launch_log 'a native escalation request is unresolved without a recorded daemon terminal; set SQUAD_SUPERVISOR_TARGET to the exact primary and reconcile before stopping'
     return 1
   fi
   if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = tuios ] \
@@ -659,6 +778,25 @@ fm_afk_launch_stop() {
     && ! fm_afk_launch_terminal_absent tuios "$SQUAD_AFK_REC_TARGET"; then
     fm_afk_launch_log "TUIOS daemon session is attached or unreadable; preserving away mode and refusing session cleanup"
     return 1
+  fi
+  if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
+    fm_afk_launch_orca_resolve || return 1
+    if ! fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" \
+      && ! fm_afk_launch_orca_absent "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA"; then
+      fm_afk_launch_log 'Orca daemon identity is uncertain; preserving away mode and process'
+      return 1
+    fi
+    if daemon_lock_held_by_live_daemon && ! fm_afk_launch_orca_daemon_owned; then
+      fm_afk_launch_log 'Orca daemon process ownership does not match the recorded terminal; refusing to signal it'
+      return 1
+    fi
+    primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
+    # A live daemon alone retires its buffer during the SIGTERM flush, and the
+    # post-exit gate below re-checks the result. A consumed-but-not-yet-retired
+    # request is delivered, not unresolved, so it must not block that shutdown.
+    if ! daemon_lock_held_by_live_daemon; then
+      fm_afk_launch_native_settle "$primary" 'Orca native request or buffer retirement remains unresolved; stop is not complete, preserving lifecycle for inspection' || return 1
+    fi
   fi
   # (1) SIGTERM the daemon so its cleanup trap flushes buffered escalations
   # WHILE state/.afk is still present (the exit-ordering fix: clearing .afk
@@ -670,6 +808,16 @@ fm_afk_launch_stop() {
     pid_identity=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
   fi
   if [ -n "$pid" ]; then
+    if [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ]; then
+      local owner expected_identity
+      owner=$(daemon_lock_owner) || return 1
+      expected_identity=$(cat "$owner/pid-identity" 2>/dev/null) || return 1
+      if ! fm_afk_launch_orca_daemon_owned || [ "$(daemon_lock_pid)" != "$pid" ] \
+        || [ "$expected_identity" != "$pid_identity" ] || [ "$(fm_pid_identity "$pid")" != "$pid_identity" ]; then
+        fm_afk_launch_log 'Orca daemon process changed before stop; preserving lifecycle without signalling'
+        return 1
+      fi
+    fi
     if ! kill -TERM "$pid" 2>/dev/null; then
       fm_afk_launch_log "failed to signal away-mode daemon pid=$pid"
       result=1
@@ -691,9 +839,16 @@ fm_afk_launch_stop() {
       return 1
     fi
   fi
+  if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
+    fm_afk_launch_native_settle "$primary" 'Orca shutdown delivery or buffer retirement is unresolved; stop is not complete, preserving lifecycle for retry' || return 1
+  fi
   # (2) Close the daemon's own terminal by exact id.
   if [ "$read_result" -eq 0 ]; then
     fm_afk_launch_close_recorded || result=1
+  fi
+  if [ "$result" -ne 0 ] && [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ]; then
+    fm_afk_launch_log 'Orca terminal cleanup is unconfirmed; stop is not complete'
+    return 1
   fi
   # (3) Clear the away-mode flag LAST.
   if ! rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk"; then
@@ -719,6 +874,29 @@ fm_afk_launch_main() {
     fm_afk_launch_status
     return $?
   fi
+  # Orca capability and target proof precede even the launch lock/state mkdir.
+  case "${1:-start}" in
+    start|start-native)
+      if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+        fm_supervisor_native_ready_once "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
+        [ "${1:-start}" = start ] || { fm_afk_launch_log 'Orca requires start, not start-native, for exact terminal ownership'; return 1; }
+        # Only a create path is protected by that pending gate: an already
+        # running daemon just refreshes state/.afk and creates nothing.
+        if ! daemon_lock_held_by_live_daemon; then
+          local primary
+          primary=$(fm_afk_launch_orca_primary) || return 1
+          if fm_supervisor_native_pending "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+            fm_afk_launch_log 'Orca native delivery remains uncertain; inspect the existing request before starting another away session'
+            return 1
+          fi
+          if fm_supervisor_native_unresolved "$SQUAD_AFK_LAUNCH_STATE" "$primary"; then
+            fm_afk_launch_log 'an unresolved native request for another primary still covers this escalation buffer; settle that exact endpoint before starting another away session'
+            return 1
+          fi
+        fi
+      fi
+      ;;
+  esac
   trap fm_afk_launch_lock_release EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM

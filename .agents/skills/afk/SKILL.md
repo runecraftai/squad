@@ -39,7 +39,7 @@ batched digest rather than per-wake injections.
      If the native launch fails, run `bin/sq-afk-launch.sh stop` to roll back the prepared lifecycle.
      Do not wrap it in `nohup ... &` (Codex/herdr can reap fire-and-forget shell children after a tool call returns).
    - **Harness WITHOUT one** (e.g. pi): run `bin/sq-afk-launch.sh start`. It is
-     the single owner of the daemon terminal: it creates a NON-VISIBLE tracked
+     the single owner of the daemon terminal: it creates a separate tracked
      terminal for the current backend (a herdr dedicated `--no-focus` workspace,
      a detached tmux session), records its exact id, and passes the commander pane
      in as `SQUAD_SUPERVISOR_TARGET` so the daemon injects into the commander, not its
@@ -47,6 +47,7 @@ batched digest rather than per-wake injections.
      active pane** (`herdr pane split`): a split co-tenants the tab and visibly
      shrinks the commander's pane (docs/herdr-backend.md "Away-mode supervisor
      support").
+   For an explicitly selected Orca primary, use the native-only coverage and lifecycle in [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision); its create call requests no focus flag, and whether the host focuses or hides the daemon terminal is unverified.
    Both paths share `bin/sq-afk-start.sh` as the daemon entry.
    The native path tells it that the launcher already prepared lifecycle state; the terminal-backed path lets the entry perform its existing state setup inside the new terminal.
    It exits immediately if the identity-backed daemon lock already names a live process, otherwise it execs `bin/sq-supervise-daemon.sh` in the foreground.
@@ -93,6 +94,7 @@ The operational prefix travels with the message text; it does not rely on harnes
 ## Busy-guard and composer guard
 
 The daemon never injects into an in-use pane.
+Orca is native-only under [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision).
 A TUIOS supervisor pane with the shipped Pi extension is delivered through the native handoff instead of terminal typing (`docs/tuios-backend.md` "Away-mode supervision"), so the guards below and the type-once submit model that follows govern tmux, herdr, and the TUIOS fallback path rather than that native route.
 Two checks run before every such injection, dispatched through `bin/sq-backend.sh` for the supervisor's own backend (tmux, herdr, or tuios; see "Auto-discovered supervisor pane" below):
 
@@ -218,18 +220,22 @@ the operational prefix lets Squad distinguish it from a real commander message.
 - **Dedupe across signal/stale/scan** - `classify_signal` and terminal `classify_stale` paths check the seen-status marker before escalating, so a commander-relevant status escalated by one path is not re-escalated by another in the same digest.
   The marker does not clear or suppress possible-wedge aging for a nonterminal progress line.
 - **Auto-discovered supervisor pane** - the daemon resolves its own BACKEND
-  (tmux vs herdr vs tuios) and TARGET independently, mirroring
-  `bin/sq-backend.sh`'s own runtime auto-detection. Backend: `SQUAD_SUPERVISOR_BACKEND`
+  (tmux vs herdr vs tuios, or explicitly selected native-only Orca) and TARGET
+  independently, mirroring `bin/sq-backend.sh`'s own runtime auto-detection.
+  Backend: `SQUAD_SUPERVISOR_BACKEND`
   override, then `$TMUX_PANE` set (tmux), then `$HERDR_ENV=1` with
   `$HERDR_PANE_ID` present (herdr), then `$TUIOS_ENV=1` with
   `$TUIOS_SESSION` and `$TUIOS_PANE_ID` present (tuios), then a tmux fallback.
   Target: `SQUAD_SUPERVISOR_TARGET` override (a tmux target, a herdr
-  `"<session>:<pane-id>"` target, or a tuios `"<session>:<window-id>"` target),
-  then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under
-  herdr, then `"${TUIOS_SESSION}:${TUIOS_PANE_ID}"` under tuios, then a
-  `Squad:0` fallback with a warning. Both resolution sources are logged at
-  startup so a wrong-but-resolving fallback is detectable. Other runtime
-  backends, including zellij, orca, and cmux, are not yet supported as
+  `"<session>:<pane-id>"` target, a tuios `"<session>:<window-id>"` target, or an
+  exact Orca terminal handle for explicit native-only Orca), then `$TMUX_PANE`,
+  then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then
+  `"${TUIOS_SESSION}:${TUIOS_PANE_ID}"` under tuios, then a `Squad:0` fallback
+  with a warning. Both resolution sources are logged at startup so a
+  wrong-but-resolving fallback is detectable. Orca is never auto-detected;
+  selecting it requires the explicit native-only setup in
+  [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision).
+  Other runtime backends, including zellij and cmux, are not yet supported as
   supervisor backends; the daemon refuses loudly at startup instead of
   misapplying tmux primitives to a pane that isn't one
   (docs/herdr-backend.md "Away-mode supervisor support").

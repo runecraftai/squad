@@ -6,6 +6,7 @@ import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { installNativeAway } from "./lib/sq-away-native.ts";
 
 const extensionDir = dirname(fileURLToPath(import.meta.url));
 const markerPrefix = "[SQUAD_PI_AFK_HANDOFF:";
@@ -127,6 +128,7 @@ function messageText(message: unknown): string {
 }
 
 export default function (pi: ExtensionAPI): void {
+  installNativeAway(pi);
   let dir: string | null = null;
   let readyFile: string | null = null;
   let workerUntil = 0;

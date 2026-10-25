@@ -23,10 +23,11 @@
 #     run this directly via that tool, so the daemon inherits the commander pane's
 #     env and auto-discovers it.
 #   - Harnesses with NO native background mechanism (e.g. pi) run this THROUGH
-#     bin/sq-afk-launch.sh, which creates a non-visible tracked terminal per
-#     backend (herdr tab/workspace, tmux detached session) and passes the
-#     commander pane in as SQUAD_SUPERVISOR_TARGET so injection targets it, not the
-#     daemon's own new pane.
+#     bin/sq-afk-launch.sh, which creates a separate launcher-owned terminal per
+#     backend (herdr --no-focus tab/workspace, tmux detached session; Orca
+#     requests no focus flag and its real host focus behaviour is unverified) and
+#     passes the commander pane in as SQUAD_SUPERVISOR_TARGET so injection targets
+#     it, not the daemon's own new pane.
 # Do not wrap this in `nohup ... &`: Codex/herdr can reap fire-and-forget shell
 # children after the tool call returns, while a tracked background terminal stays
 # attached and has a real lifecycle.
@@ -39,6 +40,12 @@ SQUAD_AFK_STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 SQUAD_AFK_LOCK="$SQUAD_AFK_STATE/.supervise-daemon.lock"
 SQUAD_AFK_DAEMON="$SQUAD_AFK_START_DIR/sq-supervise-daemon.sh"
 
+# Refuse unsupported Orca receivers before sourcing helpers that mkdir state.
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+  # shellcheck source=bin/sq-supervisor-native.sh
+  . "$SQUAD_AFK_START_DIR/sq-supervisor-native.sh"
+  fm_supervisor_native_ready_once "$SQUAD_AFK_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1
+fi
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SQUAD_AFK_START_DIR/sq-stand-to-lib.sh"
 
@@ -117,6 +124,12 @@ fm_afk_start_main() {
     * ) echo "usage: $(basename "${BASH_SOURCE[1]:-sq-afk-start.sh}")" >&2; return 2 ;;
   esac
 
+  if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
+    # shellcheck source=bin/sq-supervisor-native.sh
+    . "$SQUAD_AFK_START_DIR/sq-supervisor-native.sh"
+    fm_supervisor_native_ready_once "$SQUAD_AFK_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || return 1
+    [ "${SQUAD_AFK_STATE_PREPARED:-0}" = 1 ] || { echo 'error: Orca away mode must use sq-afk-launch.sh start for exact-owned terminal lifecycle' >&2; return 1; }
+  fi
   mkdir -p "$SQUAD_AFK_STATE"
   if [ "${SQUAD_AFK_STATE_PREPARED:-0}" = 1 ]; then
     [ -f "$SQUAD_AFK_STATE/.afk" ] || { echo "afk: launcher-prepared state is missing" >&2; return 1; }

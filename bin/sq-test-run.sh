@@ -182,7 +182,7 @@ family_for_basename() {
     sq-tangle-guard.test.sh|sq-update.test.sh)
       printf '%s\n' session-bootstrap
       ;;
-    sq-afk-pi-herdr-return-e2e.test.sh|sq-afk-tuios-live-optin.test.sh|\
+    sq-afk-pi-herdr-return-e2e.test.sh|sq-afk-tuios-live-optin.test.sh|sq-afk-orca-live-optin.test.sh|\
     sq-claude-account-live-e2e.test.sh|\
     sq-codex-continuity-live-e2e.test.sh|sq-grok-continuity-live-e2e.test.sh|\
     sq-grok-stop-live-e2e.test.sh|sq-harness-liveness-drift-live-e2e.test.sh|\
@@ -206,7 +206,7 @@ family_for_basename() {
     sq-teardown.test.sh|sq-x-mode.test.sh)
       printf '%s\n' pr-forge
       ;;
-    sq-afk-inject-e2e.test.sh|sq-afk-return.test.sh)
+    sq-afk-inject-e2e.test.sh|sq-afk-return.test.sh|sq-afk-orca.test.sh)
       printf '%s\n' afk
       ;;
     sq-sitrep-snapshot.test.sh|sq-unit-snapshot-view.test.sh)
@@ -882,6 +882,11 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' live-harness-optin
       ;;
+    bin/sq-supervisor-native.sh)
+      printf '%s\n' afk
+      printf '%s\n' sentry-wake-lock
+      printf '%s\n' live-harness-optin
+      ;;
     bin/sq-afk-tuios-lab.sh)
       printf '%s\n' afk
       printf '%s\n' live-harness-optin
@@ -975,6 +980,13 @@ families_for_changed_path() {
     bin/sq-primary-scope-lib.sh|bin/sq-project-mode.sh|bin/sq-promote.sh|\
     bin/sq-ff-lib.sh|bin/sq-gotmp*|bin/*pretool*)
       printf '%s\n' pure-contract-unit
+      ;;
+    .pi/extensions/lib/sq-away-native.ts)
+      # The native Pi receiver: its behavioral coverage is the AFK/native
+      # delivery suite, and its type-shape contract is the Pi extensions test.
+      printf '%s\n' afk
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' live-harness-optin
       ;;
     .agents/skills/quota-array-dispatch/SKILL.md)
       printf '%s\n' pure-contract-unit

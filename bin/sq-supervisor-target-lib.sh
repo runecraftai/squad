@@ -5,7 +5,7 @@
 # Squad itself, both to inject escalations into it and, for the daemon, to
 # validate that target at startup. The script-owned away launcher
 # (bin/sq-afk-launch.sh) must resolve the SAME commander pane BEFORE it creates a
-# separate, non-visible terminal for the daemon, so it can pass that pane in as
+# separate launcher-owned terminal for the daemon, so it can pass that pane in as
 # SQUAD_SUPERVISOR_TARGET (otherwise the daemon, running in its own terminal, would
 # auto-discover its OWN pane and inject there instead of into the commander's).
 #
@@ -70,8 +70,9 @@ _supervisor_target_valid() {  # <backend> <target>
 
 # discover_supervisor_target: resolve the pane running Squad. Priority:
 #   1. SQUAD_SUPERVISOR_TARGET env (explicit override) - may be a tmux target, a
-#      herdr "<session>:<pane-id>" target, or a TUIOS "<session>:<window-id>"
-#      target (paired with discover_supervisor_backend to know which).
+#      herdr "<session>:<pane-id>" target, a TUIOS "<session>:<window-id>" target,
+#      or an exact Orca terminal handle for explicit native-only Orca (paired with
+#      discover_supervisor_backend to know which).
 #   2. The first detected candidate from _supervisor_pane_candidates.
 #   3. SQUAD_SUPERVISOR_TARGET_DEFAULT - legacy tmux fallback (may not resolve if
 #      the session is named differently). Returns 1 so the caller can warn.

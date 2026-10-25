@@ -109,7 +109,8 @@ init_changed_fixture_repo() {
     sq-sitrep-snapshot.test.sh \
     sq-backend-cmux.test.sh \
     sq-backend-zellij.test.sh \
-    sq-backend-orca.test.sh; do
+    sq-backend-orca.test.sh \
+    sq-afk-orca.test.sh; do
     printf '#!/usr/bin/env bash\n# tests/lib.sh\n' >"$repo/tests/$script"
     chmod +x "$repo/tests/$script"
   done
@@ -120,11 +121,12 @@ init_changed_fixture_repo() {
   printf '# .claude/settings.json\n# .pi/extensions/sq-primary-turnend-guard.ts\n' \
     >>"$repo/tests/sq-cd-pretool-check.test.sh"
   printf '# .pi/extensions/sq-primary-pi-watch.ts\n' >>"$repo/tests/sq-pi-watch-extension.test.sh"
-  mkdir -p "$repo/.agents/skills/example" "$repo/.claude" "$repo/.pi/extensions" "$repo/src"
+  mkdir -p "$repo/.agents/skills/example" "$repo/.claude" "$repo/.pi/extensions/lib" "$repo/src"
   : >"$repo/.agents/skills/example/SKILL.md"
   : >"$repo/.claude/settings.json"
   : >"$repo/.pi/extensions/sq-primary-pi-watch.ts"
   : >"$repo/.pi/extensions/sq-primary-turnend-guard.ts"
+  : >"$repo/.pi/extensions/lib/sq-away-native.ts"
   : >"$repo/src/unmapped.ts"
   git -C "$repo" init -q
   git -C "$repo" add .
@@ -164,6 +166,12 @@ test_changed_dependency_selection_and_unmapped_failure() {
   assert_contains "$listed" "tests/sq-daemon.test.sh" "Pi handoff library selects daemon coverage"
   git -C "$repo" add bin/sq-afk-pi-handoff.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm handoff-lib-change
+
+  printf '\n' >>"$repo/.pi/extensions/lib/sq-away-native.ts"
+  listed=$(cd "$repo" && bin/sq-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/sq-afk-orca.test.sh" "native Pi receiver selects afk coverage"
+  git -C "$repo" add .pi/extensions/lib/sq-away-native.ts
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm native-receiver-change
 
   printf '\n' >>"$repo/.agents/skills/example/SKILL.md"
   printf '\n' >>"$repo/.claude/settings.json"

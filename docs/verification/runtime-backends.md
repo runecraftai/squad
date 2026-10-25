@@ -602,6 +602,58 @@ tests/sq-bootstrap.test.sh
 
 The fake-Orca suite covers readiness, registration, create response parsing, metadata routing, popup-safe submit, and path-matched release refusal.
 
+### Native away-mode supervisor verification
+
+Verified on 2026-10-24 with Linux Orca 1.4.188 and Pi 1.1.0, with separate proof boundaries rather than a combined real-runtime claim.
+The real host was inspected read-only:
+
+```sh
+orca status --json | jq -c '{version:.result.runtime.appVersion,ready:(.result.runtime.reachable == true and .result.runtime.state == "ready"),runtimeIdentity:(.result.runtime.runtimeId | type == "string")}'
+```
+
+```text
+{"version":"1.4.188","ready":true,"runtimeIdentity":true}
+```
+
+An existing shell endpoint's `terminal show --terminal <handle> --json` also supplied handle, incarnation, worktree/path, connected/writable and local-host fields, with `agentWait=null`.
+That identity schema is not proof of draft/modal safety or message consumption.
+Two read-only shapes the Orca launcher and its lost-create reconciliation depend on - the worktree-filtered `orca terminal list --worktree id:<worktree> --json` response including `result.truncated`, `result.hostScope.omittedHostIds` and `result.terminals[].title/worktreeId/worktreePath`, and the `orca terminal create --worktree/--command` flags - were observed read-only on 2026-10-25 and are recorded in the [read-only host observation](#2026-10-25---read-only-orca-host-observation) below.
+That single shape observation leaves their worktree-filter and recovery semantics UNVERIFIED and claims no real create or cleanup path; an unexpected or unreadable inventory still keeps the recorded creation intent uncertain instead of recovering an endpoint.
+No terminal input, creation, close, worktree operation, host restart, or configuration change was performed on the shared real Orca runtime.
+An independent user-data/profile boundary could not be established from the installed host's documented `serve` options, so the real-runtime lifecycle probe was not attempted.
+
+Portable public-helper tests use a fake Orca CLI and the shipped Pi receiver:
+
+```sh
+bash tests/sq-afk-orca.test.sh
+```
+
+They cover named refusal for every unproven harness before mutation, unavailable readiness, mismatched targets, real process-identity/launch-token refusal, native busy/draft/modal deferral, exact consumed acknowledgements, submitting/queued/uncertain replay refusal, reconnect/session/runtime replacement, cancelled cleanup, exact terminal preservation, and lost-create-response reconciliation.
+The currently supported tmux, Herdr and TUIOS paths remain covered by `tests/sq-afk-launch.test.sh` and `tests/sq-daemon.test.sh`; real Herdr lifecycle is separately gated by the test's explicit opt-out and requires the normal isolated lab authorization.
+
+The real-Pi guard is registered in the `live-harness-optin` family and was run with:
+
+```sh
+SQUAD_ORCA_PI_LIVE=1 SQUAD_ORCA_PI_MODEL=openai-codex/gpt-6.1-sol bash tests/sq-afk-orca-live-optin.test.sh
+```
+
+```text
+ok - Pi 1.1.0 real interactive editor and built-in modal defer native delivery until safe; exact consumed acknowledgements retire both requests
+limit - Orca CLI identity was fake; no real Orca runtime, daemon terminal lifecycle, or Android acceptance claimed
+```
+
+Only Pi is enabled for the new native receiver contract.
+Pi-signed and every other harness refuse until individually proven; the existing TUIOS-native Pi path is unchanged.
+Combined real Orca + Pi AFK lifecycle, macOS supervisor behavior, Chat UI support, and physical Android acceptance remain unverified.
+[`orca-backend.md`](../orca-backend.md#away-mode-supervision) owns current selection, lifecycle, recovery and delivery limits.
+
+### 2026-10-25 - read-only Orca host observation
+
+On 2026-10-25, read-only observation of the installed Orca 1.4.188 host returned, for the worktree-filtered terminal list, ok=true, exactly one terminal matching the recorded worktree, totalCount=1, truncated=false, local host scope with no omitted host ids, and the same runtime identity as the earlier host.
+The installed create help advertises worktree, title, command, focus and json flags and qualifies no-focus behaviour with 'when possible'.
+Filter semantics, real terminal creation, cleanup, focus behaviour and Android operation remain UNVERIFIED.
+No real lifecycle test was executed.
+
 ## cmux
 
 The current compatibility floor is cmux 0.64, and the active live evidence uses 0.64.17 build 97 on macOS aarch64.

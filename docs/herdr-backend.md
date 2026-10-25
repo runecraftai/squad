@@ -274,8 +274,8 @@ There is still one sentry process; the event reader is a bounded child of that s
 
 ## Away-mode supervisor support
 
-The away daemon supports tmux, Herdr, and TUIOS supervisor panes.
-It refuses Zellij, Orca, and cmux as supervisor backends rather than applying the wrong transport.
+The away daemon supports tmux, Herdr, and TUIOS supervisor panes, plus an explicit-only Orca primary whose Pi receiver publishes native readiness ([`orca-backend.md`](orca-backend.md#away-mode-supervision)).
+It refuses Zellij and cmux as supervisor backends rather than applying the wrong transport.
 For Herdr, target existence, native state, capture, composer state, and verified submit all route through the shared backend dispatcher and the explicit named-session CLI owner.
 A TUIOS supervisor pane prefers the Pi-native follow-up handoff and types only into a composer read as empty; [`tuios-backend.md`](tuios-backend.md#away-mode-supervision) owns that contract.
 The pane-independent max-defer alert is configured in [`wedge-alarm.md`](wedge-alarm.md).
@@ -312,7 +312,7 @@ Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never 
 - Mid-session XO liveness is not implemented.
 - OpenCode 1.18.4 can accept Enter while busy without clearing the composer.
   The tmux backend has a busy-queue fallback, but Herdr still reports this case as submit pending and needs a separate adapter fix.
-- Only tmux, Herdr, and TUIOS can host the away-mode supervisor terminal.
+- Only tmux, Herdr, TUIOS, and an explicit-only native Orca primary can host the away-mode supervisor terminal.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 
 ## Regression entry points
