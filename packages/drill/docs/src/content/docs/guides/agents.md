@@ -176,7 +176,7 @@ drill axi abort --run <id>
 
 Before any post-pipeline local commit or fresh run, read `branch_sync`.
 Only when its structured `next_action.code` is `sync`, run `drill axi sync` first.
-When `next_action.code` is `recover_custody` - a terminal run left unpublished pipeline commits in custody. When `pipeline.preserved_head_missing` is true the recorded head was lost and those unpublished fixes are lost with it, so `drill axi sync --recover` only records custody at your current head and a fresh run starts from there. Otherwise `drill axi sync --recover` returns custody and takes the preserved head, or `drill rerun` resumes validating it.
+When `next_action.code` is `recover_custody`, a terminal run left unpublished pipeline commits in custody. When `pipeline.preserved_head_missing` is true the recorded head was lost and those unpublished fixes are lost with it, so `drill axi sync --recover` only records custody at your current head and a fresh run starts from there. Otherwise `drill axi sync --recover` returns custody and takes the preserved head, or `drill rerun` resumes validating it.
 A `branch_sync.state` of `user_owned` means the run went terminal before changing the submitted head and cancellation released the branch: it is immediately usable and needs no sync action.
 When `next_action.code` is `continue_active_run`, run the reported command and keep driving the active run.
 If synchronization is blocked, process that state instead of improvising reset, stash, merge, rebase, force, or branch replacement.

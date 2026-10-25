@@ -212,7 +212,7 @@ drill axi sync --recover --keep-local
 | Flag           | Type   | Default | Description                                                                  |
 | -------------- | ------ | ------- | ---------------------------------------------------------------------------- |
 | `--check`      | `bool` | `false` | Verify the live target and exact plan without changing `HEAD`                |
-| `--recover`    | `bool` | `false` | Return custody of a branch stranded by a terminal run with unpublished pipeline commits (a no-op when cancellation already released the branch) |
+| `--recover`    | `bool` | `false` | Return custody of a branch stranded by a terminal run with unpublished pipeline commits, or release a run whose recorded head is provably gone (a no-op when cancellation already released the branch) |
 | `--keep-local` | `bool` | `false` | With `--recover`: keep the current local head; never touches the worktree   |
 
 The default command is an explicit non-interactive apply request and never prompts.
@@ -377,7 +377,7 @@ drill sync --recover --keep-local
 | -------------- | ------ | ------- | --------------------------------------------------------------- |
 | `--check`      | `bool` | `false` | Verify and print the fresh plan without changing `HEAD`         |
 | `-y`, `--yes`  | `bool` | `false` | Apply an eligible guarded synchronization without an interactive prompt |
-| `--recover`    | `bool` | `false` | Return custody of a branch stranded by a terminal run with unpublished pipeline commits (a no-op when cancellation already released the branch) |
+| `--recover`    | `bool` | `false` | Return custody of a branch stranded by a terminal run with unpublished pipeline commits, or release a run whose recorded head is provably gone (a no-op when cancellation already released the branch) |
 | `--keep-local` | `bool` | `false` | With `--recover`: keep the current local head; never touches the worktree |
 
 Without `--yes`, apply prints the exact full-SHA plan and requires TTY confirmation; `--recover` prompts the same way before returning custody.
