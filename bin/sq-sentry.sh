@@ -422,7 +422,11 @@ dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
     rm -f "$marker"
     return
   fi
-  wt=$(awk '/^worktree=/ {sub(/^worktree=/, ""); print; exit}' "$STATE/$task.meta")
+  wt=$(awk '/^worktree=/ {sub(/^worktree=/, ""); print; exit}' "$STATE/$task.meta") || true
+  if [ -z "$wt" ] || [ ! -d "$wt" ]; then
+    rm -f "$marker"
+    return
+  fi
   dirt=$(git --no-optional-locks -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null) || dirt=
   if [ -z "$dirt" ]; then
     rm -f "$marker"
@@ -450,19 +454,21 @@ dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
 # Initial age uses the status mtime (the log has no event timestamps); later
 # unrelated appends cannot move the clock. Active runs and busy panes defer.
 pause_age_check() {  # <window> <task> <key> <busy: 0=yes>
-  local win=$1 task=$2 marker="$STATE/.pause-episode-$3" busy=$4 episode saved since reported age reason
+  local win=$1 task=$2 marker="$STATE/.pause-episode-$3" busy=$4 episode saved since reported age reason valid=1
   episode=$(status_pause_episode "$STATE/$task.status")
   if [ -z "$episode" ]; then rm -f "$marker"; return 1; fi
   saved='' since='' reported=''
   read -r saved since reported 2>/dev/null < "$marker" || true
-  if [ "$saved" != "$episode" ] || [[ ! "$since" =~ ^[0-9]+$ ]]; then
-    since=$(stat_mtime "$STATE/$task.status")
+  case "$since" in ''|*[!0-9]*) valid=0 ;; esac
+  if [ "$saved" != "$episode" ] || [ "$valid" -eq 0 ]; then
+    since=$(stat_mtime "$STATE/$task.status") || true
+    case "$since" in ''|*[!0-9]*) since=$(date +%s) ;; esac
     reported=0
     printf '%s %s 0\n' "$episode" "$since" > "$marker"
   fi
   age=$(( $(date +%s) - since ))
   [ "$age" -ge "$PAUSE_MAX_SECS" ] || return 1
-  [ "$busy" -ne 0 ] || return 0
+  [ "$busy" -eq 0 ] && return 1
   window_run_step_active "$win" && return 1
   operator_is_finished "$task" && return 0
   if [ "$reported" != 1 ]; then
@@ -491,7 +497,7 @@ handle_paused_stale() {  # <window> <task> <hash>
   : > "$STATE/.paused-$key"
   rm -f "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key"
   statusf="$STATE/$task.status"
-  mtime=$(stat_mtime "$statusf")
+  mtime=$(stat_mtime "$statusf") || true
   case "$mtime" in ''|*[!0-9]*) mtime=$(date +%s) ;; esac
   age=$(( $(date +%s) - mtime ))
   rf="$STATE/.paused-resurfaced-$key"
