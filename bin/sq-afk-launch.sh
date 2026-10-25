@@ -377,17 +377,23 @@ fm_afk_launch_terminal_alive() {  # <backend> <target>
 }
 
 fm_afk_launch_wait_ready() {  # <backend> <target>
-  local backend=$1 target=$2 attempt=0
+  local backend=$1 target=$2 attempt=0 started=$SECONDS
   if [ -n "${SQUAD_AFK_LAUNCH_ENTRY:-}" ]; then
     fm_afk_launch_terminal_alive "$backend" "$target"
     return
   fi
-  while [ "$attempt" -lt 100 ]; do
+  # Wall-clock bounded: each Orca terminal-alive probe spawns the Orca CLI, so
+  # probing on every 50ms tick would stretch a failing start far past the short
+  # readiness budget. Cheap daemon ownership is checked every tick; the
+  # expensive identity probe runs early and then rarely.
+  while [ $((SECONDS - started)) -lt 5 ]; do
     attempt=$((attempt + 1))
     if daemon_lock_held_by_live_daemon; then
       if [ "$backend" != orca ] || fm_afk_launch_orca_daemon_owned; then return 0; fi
     fi
-    fm_afk_launch_terminal_alive "$backend" "$target" || return 1
+    if [ "$backend" != orca ] || [ "$attempt" -le 2 ] || [ $((attempt % 20)) -eq 0 ]; then
+      fm_afk_launch_terminal_alive "$backend" "$target" || return 1
+    fi
     sleep 0.05
   done
   return 1

@@ -49,9 +49,9 @@ const oldSet = globalThis.setInterval, oldClear = globalThis.clearInterval;
 globalThis.setInterval = fn => { const t={fn,unref(){}};timers.push(t);return t; };
 globalThis.clearInterval = t => {timers=timers.filter(v=>v!==t);};
 let tracked = [];
-let handlers = new Map(), sent = [], idle = true, draft = '', failSend = false, consume = false;
+let handlers = new Map(), sent = [], idle = true, draft = '', failSend = false, consume = false, structured = false;
 const emit = async (name, ...args) => { for(const handler of handlers.get(name)||[]) await handler(...args); };
-const pi = {on(name,fn){handlers.set(name,[...(handlers.get(name)||[]),fn]);},async sendUserMessage(message){sent.push(message);if(consume) await emit('before_agent_start',{prompt:message});if(failSend) throw Error('accepted then connection lost');}};
+const pi = {on(name,fn){handlers.set(name,[...(handlers.get(name)||[]),fn]);},async sendUserMessage(message){sent.push(message);if(consume) await emit('before_agent_start',{prompt:structured?{content:[{type:'text',text:message}]}:message});if(failSend) throw Error('accepted then connection lost');}};
 const context = {mode:'tui',hasUI:true,isIdle:()=>idle,ui:{getEditorText:()=>draft}};
 const tick = async () => { for(const t of [...timers]) await t.fn(); await new Promise(r=>setImmediate(r)); };
 const nativeDir = () => script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' term-primary`).stdout.trim();
@@ -80,6 +80,13 @@ try {
   model.ready=true; model.mismatch=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/mismatched/);assert.equal(count('create'),0);
   delete model.mismatch;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/readiness is missing/);assert.equal(existsSync(`${state}/.afk`),false);
   check('unready runtime, target mismatch and missing native receiver refuse before mutation');
+  // An owner-only handoff directory without a readiness record must name the
+  // missing proof instead of exiting 1 with no output.
+  const bareDir=script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' term-primary`).stdout.trim();
+  mkdirSync(`${state}/.away-handoff`,{mode:0o700});mkdirSync(bareDir,{mode:0o700});
+  r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/readiness record is missing/);assert.equal(existsSync(`${state}/.afk`),false);
+  rmSync(bareDir,{recursive:true,force:true});rmSync(`${state}/.away-handoff`,{recursive:true,force:true});
+  check('a handoff directory without a readiness record refuses with an actionable reason');
   writeFileSync(`${state}/.lock`,String(process.pid));
   const mod=await import(pathToFileURL(`${root}/.pi/extensions/sq-primary-away-handoff.ts`).href);mod.default(pi);
   mkdirSync(`${home}/outside`);symlinkSync(`${home}/outside`,`${state}/.away-handoff`);
@@ -185,9 +192,9 @@ try {
   // daemon still owns buffer retirement: its SIGTERM flush retires it.
   await tick();r=cli('start');assert.equal(r.status,0,r.stderr);reload();
   const consumedRecord=JSON.parse(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t').slice(2).join('\t'));
-  idle=true;draft='';consume=true;await tick();
+  idle=true;draft='';consume=true;structured=true;await tick();
   f=flush('signal: consumed before the next batch retire');assert.notEqual(f.status,0);await tick();
-  assert.ok(existsSync(`${dir}/request.json`));assert.equal(JSON.parse(readFileSync(`${dir}/result.json`)).status,'handled');
+  assert.ok(existsSync(`${dir}/request.json`));assert.equal(JSON.parse(readFileSync(`${dir}/result.json`)).status,'handled');structured=false;
   const closesBefore=count('close');
   // A wrapper shell keeps and reaps the exact daemon pid, so stop observes its
   // death even while this test process is blocked inside spawnSync.

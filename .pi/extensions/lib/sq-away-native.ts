@@ -48,6 +48,14 @@ function physical(path: string): string {
   try { return realpathSync(path); } catch { return ""; }
 }
 function same(a: unknown, b: unknown): boolean { return JSON.stringify(a) === JSON.stringify(b); }
+function messageText(message: unknown): string {
+  if (typeof message === "string") return message;
+  if (!message || typeof message !== "object") return "";
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => part && typeof part === "object" && "text" in part ? String(part.text) : "").join("\n");
+}
 
 export function installNativeAway(pi: ExtensionAPI): void {
   let ctx: ExtensionContext | null = null;
@@ -159,7 +167,8 @@ export function installNativeAway(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => {
     if (!dir || !receiver || !owner() || !safeDir()) return;
     const request = read<Request>(`${dir}/request.json`);
-    if (!matches(request) || event.prompt !== `${request.message}\n\n${marker}${request.id}]`) return;
+    const prompt = typeof event.prompt === "string" ? event.prompt : messageText(event.prompt);
+    if (!matches(request) || prompt !== `${request.message}\n\n${marker}${request.id}]`) return;
     const prior = read<{ id: string; status: string }>(`${dir}/result.json`);
     if (prior?.id === request.id && ["submitting", "queued", "uncertain"].includes(prior.status)) result(request, "handled");
   });

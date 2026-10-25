@@ -76,7 +76,9 @@ fm_supervisor_native_ready() {  # <state> <target> -> readiness JSON
   [ "$(printf '%s' "$endpoint" | jq -r .path)" = "$(cd "$SQUAD_BASE" && pwd -P)" ] || { echo 'error: Orca supervisor worktree path does not match this Squad base' >&2; return 1; }
   dir=$(fm_supervisor_native_safe_dir "$state" "$target") || { echo 'error: Orca Pi supervisor native readiness is missing; load the project away-handoff extension in the exact local primary' >&2; return 1; }
   file="$dir/ready.json"
-  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  [ -f "$file" ] && [ ! -L "$file" ] || {
+    echo 'error: Orca Pi supervisor native readiness record is missing or unreadable; load the project away-handoff extension in the exact local primary and confirm it owns this state directory' >&2; return 1;
+  }
   ready=$(jq -ce --argjson endpoint "$endpoint" --argjson now "$(date '+%s')" '
     select(.version == 1 and .provider == "pi" and .endpoint == $endpoint)
     | select((.pid | type == "number" and . > 1 and floor == .) and (.identity | type == "string" and length > 0) and (.session | type == "string" and test("^[a-f0-9]{64}$")))
