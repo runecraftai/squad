@@ -582,7 +582,10 @@ pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rende
   if [ "$busy" -ne 0 ]; then
     case "$composer" in
       empty) note=', idle empty composer' ;;
-      pending|pending-unproven) pane_signature_deferral_note "$win" "$key" "$name" "$h"; return 0 ;;
+      pending|pending-unproven)
+        date +%s > "$sincefile"
+        pane_signature_deferral_note "$win" "$key" "$name" "$h"
+        return 0 ;;
     esac
   fi
   reason="stale: $win (pane signature: ${name} \"${observed}\"${note}, complete rendered output unchanged for ${age}s at hash ${h:0:12}; inspect the stuck pane)"

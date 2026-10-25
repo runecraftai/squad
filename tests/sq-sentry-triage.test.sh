@@ -3900,6 +3900,63 @@ SH
   pass "composer deferral logging is one line per signature episode"
 }
 
+# A deferral holds the signature clock. Both the run-step and the finished-crew
+# deferrals restart it, and so must an idle pane holding pending composer input:
+# otherwise, once the pane has been static past the escalation window, every poll
+# re-runs the crew-state reads (window_run_step_active plus operator_is_finished,
+# each of which can issue a bounded drill call) plus the composer read for the
+# whole episode.
+test_composer_deferral_holds_the_signature_clock() {
+  local dir state fakebin out capture_file window key wt pid reads
+  pause_worktree_case composer-deferral-clock
+  printf '✻ Compacting conversation… (esc to interrupt)\n' > "$capture_file"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.hash-$key"
+  printf '%s' "$(hash_text "$(cat "$capture_file")")" > "$state/.sig-hash-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.sig-since-$key"
+  printf '╭────────────╮\n│ draft msg  │\n╰────────────╯\n' > "$fakebin/composer.txt"
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=$(dirname "$0")
+case "${1:-}" in
+  list-windows)
+    if [ -n "${SQUAD_FAKE_TMUX_WINDOW:-}" ]; then printf '%s\n' "${SQUAD_FAKE_TMUX_WINDOW#*:}"; fi
+    exit 0 ;;
+  display-message)
+    case "$*" in
+      *'#{cursor_y}'*) printf '2\n'; exit 0 ;;
+      *pane_current_command*) printf '%s\n' "${SQUAD_FAKE_TMUX_CURRENT_COMMAND:-}"; exit 0 ;;
+    esac
+    exit 1 ;;
+  capture-pane)
+    for arg in "$@"; do
+      if [ "$arg" = -e ]; then cat "$dir/composer.txt"; exit 0; fi
+    done
+    cat "$SQUAD_FAKE_TMUX_CAPTURE"
+    exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  mv "$fakebin/sq-crew-state.sh" "$fakebin/sq-crew-state-real.sh"
+  cat > "$fakebin/sq-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf 'read\n' >> "$(dirname "$0")/crew-reads"
+exec "$(dirname "$0")/sq-crew-state-real.sh" "$@"
+SH
+  chmod +x "$fakebin/sq-crew-state.sh"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=30
+  wait_live "$pid" 200 || { reap "$pid"; fail "a pane holding composer input escalated: $(cat "$out")"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "a pane holding composer input raised a wake: $(cat "$out")"
+  reads=$(wc -l < "$fakebin/crew-reads" 2>/dev/null || printf '0')
+  [ "${reads:-0}" -le 8 ] \
+    || fail "the composer deferral re-read crew state on every poll (${reads} reads in ~200 polls): $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"
+  pass "a deferred composer signature holds its clock instead of re-reading crew state every poll"
+}
+
 test_error_dialog_requires_bottom_affordance() {
   local dialog sig
   dialog=$(printf 'API error: rate limit exceeded\n[r] Retry request  [q] Dismiss\n')
@@ -3932,6 +3989,7 @@ test_static_compaction_signature_escalates
 test_changing_pane_signature_never_alarms
 test_unreadable_pane_signature_is_cannot_evaluate
 test_composer_deferral_logged_once_per_signature
+test_composer_deferral_holds_the_signature_clock
 test_dirty_pause_protections
 test_clean_fresh_pause_suppresses
 test_pause_ages_out_once_per_episode
