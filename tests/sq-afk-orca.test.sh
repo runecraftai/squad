@@ -92,6 +92,17 @@ try {
   const statusProbes=()=>calls().filter(a=>a[0]==='status').length;
   const probesBefore=statusProbes();await tick();await tick();await tick();assert.equal(statusProbes(),probesBefore);
   check('the native heartbeat tick publishes readiness without spawning Orca probes');
+  // One failed revalidation retries in seconds instead of blanking readiness for
+  // the whole slow-probe window.
+  const realNow=Date.now;let clock=realNow();Date.now=()=>clock;
+  const heartbeat=()=>JSON.parse(readFileSync(`${dir}/ready.json`,'utf8')).heartbeat;
+  clock+=30000;model.mismatch=true;save();await tick();
+  const unpublished=heartbeat();model.mismatch=false;save();
+  clock+=1000;await tick();assert.equal(heartbeat(),unpublished);
+  clock+=5000;await tick();assert.equal(heartbeat(),clock);
+  Date.now=realNow;
+  await emit('session_shutdown');await emit('session_start',{},context);await tick();
+  check('a failed native revalidation retries quickly instead of blanking readiness');
   // A symlinked SQUAD_BASE passes the launcher's `pwd -P` worktree gate, so the
   // receiver must resolve the same physical path instead of dropping readiness.
   await emit('session_shutdown');assert.equal(existsSync(`${dir}/ready.json`),false);

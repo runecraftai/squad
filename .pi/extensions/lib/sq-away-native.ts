@@ -14,6 +14,7 @@ const helper = resolve(dirname(fileURLToPath(import.meta.url)), "../../../bin/sq
 const marker = "[SQUAD_NATIVE_AWAY:";
 const bind_timeout_ms = 5000;
 const revalidate_ms = 30000;
+const retry_ms = 5000;
 const revalidate_timeout_ms = 2000;
 
 function read<T>(path: string): T | null {
@@ -89,12 +90,13 @@ export function installNativeAway(pi: ExtensionAPI): void {
       if (!safeDir(true)) return;
       // Revalidation is the only part of the heartbeat that spawns processes.
       // It runs on a slow cadence with a short timeout, and a failed probe keeps
-      // readiness unpublished until the next attempt, so a wedged Orca CLI can
-      // never stall the interactive event loop on every tick.
+      // readiness unpublished while retrying quickly, so a wedged Orca CLI can
+      // never stall the interactive event loop on every tick or blank readiness
+      // for the whole slow-probe window on one transient failure.
       const now = Date.now();
       if (now >= next_check) {
-        next_check = now + revalidate_ms;
         bound_ok = bound(revalidate_timeout_ms);
+        next_check = now + (bound_ok ? revalidate_ms : retry_ms);
       }
       if (!bound_ok) return;
       // Read actual native editor/modal state, not old terminal output.

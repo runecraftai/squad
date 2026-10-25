@@ -981,6 +981,13 @@ families_for_changed_path() {
     bin/sq-ff-lib.sh|bin/sq-gotmp*|bin/*pretool*)
       printf '%s\n' pure-contract-unit
       ;;
+    .pi/extensions/lib/sq-away-native.ts)
+      # The native Pi receiver: its behavioral coverage is the AFK/native
+      # delivery suite, and its type-shape contract is the Pi extensions test.
+      printf '%s\n' afk
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' live-harness-optin
+      ;;
     .agents/skills/quota-array-dispatch/SKILL.md)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
