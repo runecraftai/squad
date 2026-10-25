@@ -313,7 +313,11 @@ func (d *DB) ReleaseOrphanedRun(id, missingHead, localHead, publishedHead string
 	if err != nil {
 		return fmt.Errorf("release orphaned run: %w", err)
 	}
-	if n, err := result.RowsAffected(); err != nil || n != 1 {
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("release orphaned run rows affected: %w", err)
+	}
+	if n != 1 {
 		return fmt.Errorf("orphaned run changed before custody could be returned")
 	}
 	return nil
