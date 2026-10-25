@@ -34,7 +34,9 @@ else if(a[0]==='terminal' && a[1]==='close') { if(d.cancelClose) {out({cancelled
 else { console.error('forbidden fake Orca operation '+JSON.stringify(a)); process.exit(99); }
 `);
 chmodSync(`${fake}/orca`, 0o700);
-writeFileSync(`${fake}/ps`, '#!/usr/bin/env bash\nif [ "${ORCA_TEST_UNKNOWN:-}" = 1 ]; then case "$*" in *comm*) echo test ;; *ppid*) echo 1 ;; esac; else exec /usr/bin/ps "$@"; fi\n');
+const realPs = ['/bin/ps', '/usr/bin/ps'].find(path => existsSync(path));
+assert.ok(realPs, 'no system ps found for the fake ps shim');
+writeFileSync(`${fake}/ps`, `#!/usr/bin/env bash\nif [ "\${ORCA_TEST_UNKNOWN:-}" = 1 ]; then case "$*" in *comm*) echo test ;; *ppid*) echo 1 ;; esac; else exec ${realPs} "$@"; fi\n`);
 chmodSync(`${fake}/ps`, 0o700);
 Object.assign(process.env, { SQUAD_BASE:home, SQUAD_STATE_OVERRIDE:state, SQUAD_SUPERVISOR_BACKEND:'orca', SQUAD_SUPERVISOR_TARGET:'term-primary', PI_CODING_AGENT:'true', ORCA_TEST_DB:db, ORCA_TEST_LOG:log, PATH:`${fake}:${process.env.PATH}` });
 delete process.env.CLAUDECODE; delete process.env.SQUAD_PI_HARNESS; delete process.env.ORCA_ENVIRONMENT; delete process.env.ORCA_PAIRING_CODE;
