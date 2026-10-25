@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Exact Orca daemon-terminal lifecycle, sourced by sq-afk-launch.sh.
-# Never creates/removes a worktree, switches focus, stops a runtime, or closes a
-# tab. A pre-create intent survives ambiguous CLI returns; no blind create retry.
+# Requests no focus flag (real host focus behaviour is unverified) and never
+# creates/removes a worktree or stops a runtime; cleanup requests close only for
+# the exact daemon terminal it created, never another terminal's tab. Real
+# create/cleanup semantics remain unverified. A pre-create intent survives
+# ambiguous CLI returns; no blind create retry.
 
 fm_afk_launch_orca_primary() {  # [exact-target]; never guesses an unresolved primary
   local primary=${1:-${SQUAD_SUPERVISOR_TARGET:-}}
