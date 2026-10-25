@@ -1536,6 +1536,7 @@ test_teardown_retires_watcher_markers() {
   : > "$case_dir/state/.wedge-escalations-$key"
   : > "$case_dir/state/.paused-$key"
   : > "$case_dir/state/.dirty-since-$key"
+  : > "$case_dir/state/.dirty-unreadable-$key"
   : > "$case_dir/state/.pause-episode-$key"
   : > "$case_dir/state/.sig-hash-$key"
   : > "$case_dir/state/.sig-since-$key"
@@ -1567,6 +1568,8 @@ test_teardown_retires_watcher_markers() {
     || fail "watcher-markers: teardown left .paused-* behind"
   [ ! -e "$case_dir/state/.dirty-since-$key" ] \
     || fail "watcher-markers: teardown left dirty-worktree tracking behind"
+  [ ! -e "$case_dir/state/.dirty-unreadable-$key" ] \
+    || fail "watcher-markers: teardown left cannot-evaluate dirty tracking behind"
   [ ! -e "$case_dir/state/.pause-episode-$key" ] \
     || fail "watcher-markers: teardown left pause episode tracking behind"
   [ ! -e "$case_dir/state/.sig-hash-$key" ] \

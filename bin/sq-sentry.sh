@@ -283,7 +283,7 @@ recorded_windows() {
 # is a backend target mangled by tr ':/.' '___' - the same transform
 # sq-teardown.sh and the away-mode daemon apply. Longest family first: ".stale-"
 # is a prefix of ".stale-since-" and ".paused-" of its two cadence markers.
-SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
+SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
 
 # drop_window_markers: reset every piece of per-window bookkeeping this sentry
 # keeps for <window> - the pane hash/count, the stale suppressor and its wedge
@@ -299,7 +299,7 @@ drop_window_markers() {  # <window>
   rm -f "$STATE/.hash-$key" "$STATE/.count-$key" "$STATE/.stale-$key" \
     "$STATE/.stale-since-$key" "$STATE/.wedge-escalations-$key" \
     "$STATE/.paused-$key" "$STATE/.paused-rechecked-$key" "$STATE/.paused-resurfaced-$key" \
-    "$STATE/.dirty-since-$key" "$STATE/.pause-episode-$key" \
+    "$STATE/.dirty-since-$key" "$STATE/.dirty-unreadable-$key" "$STATE/.pause-episode-$key" \
     "$STATE/.sig-hash-$key" "$STATE/.sig-since-$key" "$STATE/.sig-reported-$key" "$STATE/.sig-unreadable-$key"
 }
 
@@ -324,7 +324,7 @@ drop_orphan_window_markers() {
   done < <(recorded_windows)
   for f in "$STATE"/.wedge-escalations-* "$STATE"/.paused-resurfaced-* \
            "$STATE"/.paused-rechecked-* "$STATE"/.pause-episode-* "$STATE"/.dirty-since-* \
-           "$STATE"/.sig-reported-* "$STATE"/.sig-since-* "$STATE"/.sig-hash-* "$STATE"/.sig-unreadable-* \
+           "$STATE"/.dirty-unreadable-* "$STATE"/.sig-reported-* "$STATE"/.sig-since-* "$STATE"/.sig-hash-* "$STATE"/.sig-unreadable-* \
            "$STATE"/.stale-* "$STATE"/.paused-* "$STATE"/.count-* "$STATE"/.hash-*; do
     [ -e "$f" ] || continue
     base=${f##*/}
@@ -424,9 +424,10 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
 
 # Independent of pane hashes and pause suppression: an idle dirty worktree is
 # unfinished work, even if a footer keeps changing. Never write the Git index.
-# Reset on busy/clean/terminal; report once per continuous idle-dirty episode.
+# Reset on busy/clean/terminal; a failed read is cannot-evaluate and keeps the
+# clock; report once per continuous idle-dirty episode.
 dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
-  local win=$1 task=$2 marker="$STATE/.dirty-since-$3" busy=$4 last=$5 wt dirt since age reason
+  local win=$1 task=$2 marker="$STATE/.dirty-since-$3" unreadable="$STATE/.dirty-unreadable-$3" busy=$4 last=$5 wt dirt since age reason
   if [ "$busy" -eq 0 ] || status_is_terminal_verb "$last"; then
     rm -f "$marker"
     return
@@ -438,8 +439,11 @@ dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
   fi
   if ! dirt=$(git --no-optional-locks -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null); then
     triage_log "cannot evaluate worktree status (git status failed): $win"
+    since=$(cat "$marker" 2>/dev/null || true)
+    [ -z "$since" ] || [ "$since" = reported ] || : > "$unreadable"
     return
   fi
+  rm -f "$unreadable"
   if [ -z "$dirt" ]; then
     rm -f "$marker"
     return
@@ -558,13 +562,17 @@ pane_signature_check() {  # <window> <task> <key> <backend> <busy: 0=yes> <rende
   wake "$reason"
 }
 
-# 0 when an independent pause-era rule is still accumulating evidence for <key>,
-# so away mode must let that rule hand off the named evidence instead of
-# pre-empting it with a plain window identity. The dirty-worktree clock and a
+# 0 when an independent pause-era rule is still accumulating readable evidence
+# for <key>, so away mode must let that rule hand off the named evidence instead
+# of pre-empting it with a plain window identity. The dirty-worktree clock and a
 # live pane-signature episode are the two rules that need time; the pause-age
-# rule escalates before this check runs.
+# rule escalates before this check runs. A cannot-evaluate marker means the rule
+# is not accumulating evidence, so it must not suppress the plain handoff.
 pause_era_evidence_tracking() {  # <key>
-  [ -e "$STATE/.dirty-since-$1" ] || [ -e "$STATE/.sig-hash-$1" ]
+  if [ -e "$STATE/.dirty-since-$1" ] && [ ! -e "$STATE/.dirty-unreadable-$1" ]; then
+    return 0
+  fi
+  [ -e "$STATE/.sig-hash-$1" ] && [ ! -e "$STATE/.sig-unreadable-$1" ]
 }
 
 # Absorb a stale pane under a declared external-wait pause (paused:) or a

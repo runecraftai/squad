@@ -3549,7 +3549,8 @@ test_dirty_check_requires_recorded_worktree() {
 }
 
 # A failed Git read is cannot-evaluate: it must not be reported as a clean tree,
-# and it must not discard an idle-dirty clock already measuring known work.
+# and it must not discard or monopolize an idle-dirty clock already measuring
+# known work: away mode still gets its plain handoff.
 test_failed_dirty_read_is_cannot_evaluate() {
   local dir state fakebin out capture_file window key wt pid old real_git
   pause_worktree_case dirty-read-failure
@@ -3576,7 +3577,30 @@ SH
     || fail "a failed git read reset the idle-dirty clock instead of keeping it"
   grep -F 'cannot evaluate worktree status' "$state/.sentry-triage.log" >/dev/null \
     || fail "a failed git read was not reported as cannot-evaluate"
-  pass "a failed worktree read is cannot-evaluate and keeps the idle-dirty clock"
+  [ -e "$state/.dirty-unreadable-$key" ] || fail "a failed git read did not record cannot-evaluate"
+
+  date '+%s' > "$state/.afk"
+  : > "$out"
+  rm -f "$state/.stale-$key" "$state/.stale-since-$key" "$state/.hash-$key" "$state/.count-$key"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "an unreadable dirty clock suppressed the away-mode handoff: $(cat "$out")"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "away mode did not hand off the window identity"
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
+    && fail "away mode escalated dirty work without a readable worktree: $(cat "$out")"
+  grep -F 'deferred plain handoff' "$out" >/dev/null \
+    && fail "the unreadable dirty clock still claimed pause-era ownership: $(cat "$out")"
+  [ "$(cat "$state/.dirty-since-$key" 2>/dev/null || true)" = "$old" ] \
+    || fail "the away-mode handoff disturbed the preserved dirty clock"
+
+  rm -f "$fakebin/git"
+  : > "$out"
+  start_pause_watch env SQUAD_STALE_ESCALATE_SECS=240
+  wait_for_exit "$pid" 80 || { reap "$pid"; fail "a recovered worktree read did not resume the preserved dirty clock: $(cat "$out")"; }
+  grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
+    || fail "a recovered worktree read lost the preserved dirty clock: $(cat "$out")"
+  [ "$(cat "$state/.dirty-since-$key")" = reported ] || fail "the recovered dirty episode did not close"
+  [ ! -e "$state/.dirty-unreadable-$key" ] || fail "a recovered worktree read left cannot-evaluate state behind"
+  pass "a failed worktree read is cannot-evaluate, yields the plain away handoff, and resumes its preserved clock"
 }
 
 # A pane that keeps reporting busy must not swallow the pause: once a pause has
