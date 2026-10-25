@@ -189,6 +189,121 @@ func TestRebaseStep_FixModeCallsAgent(t *testing.T) {
 	}
 }
 
+// rebaseConflictFixture builds a repository whose feature branch conflicts with
+// the upstream default branch and returns the worktree plus its recorded SHAs.
+func rebaseConflictFixture(t *testing.T) (dir, upstream, baseSHA, headSHA string) {
+	t.Helper()
+	upstream = t.TempDir()
+	gitCmd(t, upstream, "init", "--bare")
+
+	dir = t.TempDir()
+	gitCmd(t, dir, "init")
+	gitCmd(t, dir, "config", "user.name", "test")
+	gitCmd(t, dir, "config", "user.email", "test@test.com")
+	gitCmd(t, dir, "checkout", "-b", "main")
+	gitCmd(t, dir, "remote", "add", "origin", upstream)
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("base content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "base commit")
+	baseSHA = gitCmd(t, dir, "rev-parse", "HEAD")
+	gitCmd(t, dir, "push", "origin", "main")
+
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("feature change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "feature change")
+	headSHA = gitCmd(t, dir, "rev-parse", "HEAD")
+
+	gitCmd(t, dir, "checkout", "main")
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("main change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, dir, "add", "-A")
+	gitCmd(t, dir, "commit", "-m", "main conflict")
+	gitCmd(t, dir, "push", "origin", "main")
+	gitCmd(t, dir, "checkout", "feature")
+	return dir, upstream, baseSHA, headSHA
+}
+
+// TestRebaseStep_FixModeCompletesRebaseWhenAgentOnlyEditsFiles reproduces the
+// confinement split: the agent shares the working files but not the pipeline's
+// Git, so the pipeline - not the agent - must stage and continue the rebase.
+func TestRebaseStep_FixModeCompletesRebaseWhenAgentOnlyEditsFiles(t *testing.T) {
+	t.Parallel()
+	dir, upstream, baseSHA, headSHA := rebaseConflictFixture(t)
+
+	ag := &mockAgent{
+		name: "test",
+		runFn: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
+			if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("resolved content\n"), 0o644); err != nil {
+				return nil, err
+			}
+			return &agent.Result{Output: json.RawMessage(`{"summary":"resolve merge conflict in shared.txt"}`)}, nil
+		},
+	}
+
+	sctx := newTestContextWithDBRecords(t, ag, dir, baseSHA, headSHA, config.Commands{})
+	sctx.Run.Branch = "refs/heads/feature"
+	sctx.Repo.UpstreamURL = upstream
+	sctx.Fixing = true
+
+	outcome, err := (&RebaseStep{}).Execute(sctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.NeedsApproval {
+		t.Fatalf("expected no approval after conflict resolution, got %#v", outcome.Findings)
+	}
+	mergeBase := gitCmd(t, dir, "merge-base", "HEAD", "origin/main")
+	originMain := gitCmd(t, dir, "rev-parse", "origin/main")
+	if mergeBase != originMain {
+		t.Fatalf("merge-base = %s, want origin/main %s", mergeBase, originMain)
+	}
+	if status := gitStatusPorcelain(t, dir); status != "" {
+		t.Fatalf("worktree left dirty after conflict resolution: %s", status)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "shared.txt")); err != nil || string(data) != "resolved content\n" {
+		t.Fatalf("resolved content = %q, err=%v", data, err)
+	}
+}
+
+// TestRebaseStep_FixModeRejectsUnresolvedConflictMarkers proves the pipeline
+// never continues a rebase over an agent's partial resolution.
+func TestRebaseStep_FixModeRejectsUnresolvedConflictMarkers(t *testing.T) {
+	t.Parallel()
+	dir, upstream, baseSHA, headSHA := rebaseConflictFixture(t)
+
+	ag := &mockAgent{
+		name: "test",
+		runFn: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
+			markers := "<<<<<<< HEAD\nmain change\n=======\nfeature change\n>>>>>>> feature\n"
+			if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte(markers), 0o644); err != nil {
+				return nil, err
+			}
+			return &agent.Result{Output: json.RawMessage(`{"summary":"give up"}`)}, nil
+		},
+	}
+
+	sctx := newTestContextWithDBRecords(t, ag, dir, baseSHA, headSHA, config.Commands{})
+	sctx.Run.Branch = "refs/heads/feature"
+	sctx.Repo.UpstreamURL = upstream
+	sctx.Fixing = true
+
+	if _, err := (&RebaseStep{}).Execute(sctx); err == nil {
+		t.Fatal("expected an error when the agent leaves conflict markers behind")
+	}
+	if rebaseInProgress(context.Background(), dir) {
+		t.Fatal("rebase left in progress after unresolved conflict markers")
+	}
+	if status := gitStatusPorcelain(t, dir); status != "" {
+		t.Fatalf("worktree left dirty after abandoning the rebase: %s", status)
+	}
+}
+
 func TestRebaseStep_ForkSyncsPushBranchBeforeDefaultBranch(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()

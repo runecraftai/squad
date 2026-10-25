@@ -4,6 +4,7 @@ package executionpolicy
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -32,6 +33,7 @@ type Policy struct {
 	workDir      string
 	root         string
 	gitDir       string
+	configDigest [sha256.Size]byte
 	gitFile      string
 	gitLink      string
 	gitLinkIsDir bool
@@ -93,6 +95,20 @@ func New(workDir string) (*Policy, error) {
 	if _, err := gitOutput(gitDir, "symbolic-ref", "HEAD", "refs/heads/drill-execution"); err != nil {
 		return fail(fmt.Errorf("%s: initialize task-private Git branch: %w", Name, err))
 	}
+	if _, err := gitOutput(gitDir, "read-tree", initialHead); err != nil {
+		return fail(fmt.Errorf("%s: initialize task-private Git index: %w", Name, err))
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("\n"), 0o600); err != nil {
+		return fail(fmt.Errorf("%s: seal task-private Git common directory: %w", Name, err))
+	}
+	configDigest, err := fileDigest(filepath.Join(gitDir, "config"))
+	if err != nil {
+		return fail(fmt.Errorf("%s: record task-private Git configuration: %w", Name, err))
+	}
+	cacheDir := filepath.Join(root, "cache")
+	if err := os.Mkdir(cacheDir, 0o700); err != nil {
+		return fail(fmt.Errorf("%s: create task-private build cache: %w", Name, err))
+	}
 	gitLink := filepath.Join(abs, ".git")
 	gitLinkIsDir := false
 	if info, statErr := os.Stat(gitLink); statErr == nil && info.IsDir() {
@@ -105,7 +121,7 @@ func New(workDir string) (*Policy, error) {
 			return fail(fmt.Errorf("%s: prepare private Git pointer: %w", Name, err))
 		}
 	}
-	p := &Policy{workDir: abs, root: root, gitDir: gitDir, gitFile: gitFile, gitLink: gitLink, gitLinkIsDir: gitLinkIsDir, syncedHead: initialHead}
+	p := &Policy{workDir: abs, root: root, gitDir: gitDir, configDigest: configDigest, gitFile: gitFile, gitLink: gitLink, gitLinkIsDir: gitLinkIsDir, syncedHead: initialHead}
 	if err := p.acknowledge(bubblewrap); err != nil {
 		return fail(err)
 	}
@@ -147,20 +163,36 @@ func (p *Policy) baseArgs(home string) []string {
 		args = append(args, "--ro-bind", "/etc/ssl/certs", "/etc/ssl/certs")
 	}
 	args = append(args, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/run", "--dir", "/run/drill-execution")
+	for _, path := range []string{"/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/host.conf", "/etc/gai.conf"} {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		args = append(args, "--ro-bind", path, path)
+		if resolved, err := filepath.EvalSymlinks(path); err == nil && resolved != path {
+			args = append(args, "--ro-bind", path, resolved)
+		}
+	}
 	toolDirs := managedToolDirs()
 	for _, root := range toolDirs.roots {
 		args = append(args, "--ro-bind", root, root)
 	}
 	args = append(args, "--bind", p.workDir, p.workDir, "--bind", p.gitDir, "/run/drill-execution/git",
-		"--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config")
+		"--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config",
+		"--ro-bind", filepath.Join(p.gitDir, "commondir"), "/run/drill-execution/git/commondir")
 	if p.gitLinkIsDir {
 		args = append(args, "--bind", p.gitDir, p.gitLink,
-			"--ro-bind", filepath.Join(p.gitDir, "config"), filepath.Join(p.gitLink, "config"))
+			"--ro-bind", filepath.Join(p.gitDir, "config"), filepath.Join(p.gitLink, "config"),
+			"--ro-bind", filepath.Join(p.gitDir, "commondir"), filepath.Join(p.gitLink, "commondir"))
 	} else {
 		args = append(args, "--ro-bind", p.gitFile, p.gitLink)
 	}
-	args = append(args, "--bind", home, "/run/drill-execution/home",
+	args = append(args, "--bind", filepath.Join(p.root, "cache"), "/run/drill-execution/cache",
+		"--bind", home, "/run/drill-execution/home",
 		"--setenv", "HOME", "/run/drill-execution/home", "--setenv", "TMPDIR", "/tmp",
+		"--setenv", "GOCACHE", "/run/drill-execution/cache/go-build",
+		"--setenv", "GOMODCACHE", "/run/drill-execution/cache/go-mod",
+		"--setenv", "GIT_EDITOR", "true", "--setenv", "GIT_SEQUENCE_EDITOR", "true",
+		"--setenv", "GIT_TERMINAL_PROMPT", "0", "--setenv", "GIT_OPTIONAL_LOCKS", "0",
 		"--setenv", "PATH", strings.Join(append(toolDirs.bins, "/usr/local/bin", "/usr/bin", "/bin"), string(os.PathListSeparator)))
 	for _, key := range []string{"LANG", "LC_ALL", "TERM", "CI"} {
 		if value, ok := os.LookupEnv(key); ok {
@@ -216,6 +248,7 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 		return err
 	}
 	args := p.baseArgs(home)
+	args = append(args, "--setenv", "PWD", absCwd)
 	schemaBinds, err := executionSchemaAccess(argv)
 	if err != nil {
 		return err
@@ -384,6 +417,7 @@ func executionSchemaAccess(argv []string) ([]string, error) {
 
 func sandboxEnv(env []string) []string {
 	allowed := map[string]bool{"LANG": true, "LC_ALL": true, "TERM": true, "CI": true,
+		"PWD": true, "GOFLAGS": true, "GOTOOLCHAIN": true, "DRILL_GATE": true,
 		"OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true, "GEMINI_API_KEY": true,
 		"GOOGLE_API_KEY": true, "XAI_API_KEY": true, "GROQ_API_KEY": true,
 		"OPENROUTER_API_KEY": true, "KIMI_API_KEY": true}
@@ -520,7 +554,7 @@ func (p *Policy) Sync() error {
 	if p.isClosed() {
 		return errors.New(Name + ": execution policy is unavailable")
 	}
-	privateHead, err := gitOutput(p.gitDir, "rev-parse", "HEAD")
+	privateHead, err := p.privateGit("rev-parse", "HEAD")
 	if err != nil {
 		return fmt.Errorf("%s: read private Git head: %w", Name, err)
 	}
@@ -532,27 +566,27 @@ func (p *Policy) Sync() error {
 		p.syncedHead = hostHead
 		return nil
 	}
-	if _, err := gitOutput(p.gitDir, "fetch", "--no-write-fetch-head", "--no-tags", p.workDir, hostHead); err != nil {
+	if _, err := p.privateGit("fetch", "--no-write-fetch-head", "--no-tags", p.workDir, hostHead); err != nil {
 		return fmt.Errorf("%s: import host execution-copy objects into private Git: %w", Name, err)
 	}
-	if _, err := gitOutput(p.gitDir, "merge-base", "--is-ancestor", privateHead, hostHead); err == nil {
-		if _, err := gitOutput(p.gitDir, "update-ref", "refs/heads/drill-execution", hostHead, privateHead); err != nil {
+	if _, err := p.privateGit("merge-base", "--is-ancestor", privateHead, hostHead); err == nil {
+		if _, err := p.privateGit("update-ref", "refs/heads/drill-execution", hostHead, privateHead); err != nil {
 			return fmt.Errorf("%s: import host execution-copy commit into private Git: %w", Name, err)
 		}
-		if _, err := gitOutput(p.gitDir, "reset", "--mixed", hostHead); err != nil {
+		if _, err := p.privateGit("reset", "--mixed", hostHead); err != nil {
 			return fmt.Errorf("%s: refresh private Git index: %w", Name, err)
 		}
 		p.syncedHead = hostHead
 		return nil
 	}
-	if _, err := gitOutput(p.gitDir, "merge-base", "--is-ancestor", hostHead, privateHead); err != nil {
+	if _, err := p.privateGit("merge-base", "--is-ancestor", hostHead, privateHead); err != nil {
 		if privateHead != p.syncedHead {
 			return fmt.Errorf("%s: host and private Git histories diverged", Name)
 		}
-		if _, err := gitOutput(p.gitDir, "update-ref", "refs/heads/drill-execution", hostHead, privateHead); err != nil {
+		if _, err := p.privateGit("update-ref", "refs/heads/drill-execution", hostHead, privateHead); err != nil {
 			return fmt.Errorf("%s: align private Git after host history rewrite: %w", Name, err)
 		}
-		if _, err := gitOutput(p.gitDir, "reset", "--mixed", hostHead); err != nil {
+		if _, err := p.privateGit("reset", "--mixed", hostHead); err != nil {
 			return fmt.Errorf("%s: refresh private Git index after host history rewrite: %w", Name, err)
 		}
 		p.syncedHead = hostHead
@@ -616,15 +650,69 @@ func (p *Policy) Close() error {
 }
 
 func gitOutput(dir string, args ...string) (string, error) {
-	argv := append([]string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "protocol.file.allow=always"}, args...)
+	argv := append([]string{
+		"-c", "core.hooksPath=/dev/null",
+		"-c", "core.fsmonitor=false",
+		"-c", "protocol.allow=never",
+		"-c", "protocol.file.allow=always",
+		"-c", "protocol.ext.allow=never",
+		"-c", "protocol.ssh.allow=never",
+		"-c", "protocol.git.allow=never",
+		"-c", "protocol.http.allow=never",
+		"-c", "protocol.https.allow=never",
+		"-c", "protocol.ftp.allow=never",
+		"-c", "protocol.ftps.allow=never",
+	}, args...)
 	cmd := exec.Command("git", argv...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1")
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_SYSTEM=/dev/null",
+		"GIT_CONFIG_GLOBAL=/dev/null",
+	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(string(out)), err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func fileDigest(path string) ([sha256.Size]byte, error) {
+	var digest [sha256.Size]byte
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return digest, err
+	}
+	return sha256.Sum256(data), nil
+}
+
+// privateGit runs a host-side command against the task-private Git database
+// only after proving the database still carries the sealed control files the
+// policy created, so a writable-control-file regression cannot redirect host
+// Git into executing repository-authored programs.
+func (p *Policy) privateGit(args ...string) (string, error) {
+	if err := p.verifyPrivateGit(); err != nil {
+		return "", err
+	}
+	return gitOutput(p.gitDir, args...)
+}
+
+func (p *Policy) verifyPrivateGit() error {
+	commondir, err := os.ReadFile(filepath.Join(p.gitDir, "commondir"))
+	if err != nil || len(strings.TrimSpace(string(commondir))) != 0 {
+		return fmt.Errorf("%s: task-private Git common directory was redirected", Name)
+	}
+	for _, name := range []string{"alternates", "http-alternates"} {
+		if _, err := os.Lstat(filepath.Join(p.gitDir, "objects", "info", name)); err == nil {
+			return fmt.Errorf("%s: task-private Git object storage was redirected", Name)
+		}
+	}
+	digest, err := fileDigest(filepath.Join(p.gitDir, "config"))
+	if err != nil || digest != p.configDigest {
+		return fmt.Errorf("%s: task-private Git configuration was modified", Name)
+	}
+	return nil
 }

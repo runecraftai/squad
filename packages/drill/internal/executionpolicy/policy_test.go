@@ -387,3 +387,251 @@ func git(t *testing.T, dir string, args ...string) string {
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
+
+func TestPrivateGitIndexMatchesItsHeadInsideTheSandbox(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.Mkdir(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	git(t, source, "init", "-q")
+	git(t, source, "config", "user.name", "Policy Test")
+	git(t, source, "config", "user.email", "policy@example.invalid")
+	for _, name := range []string{"tracked.txt", "second.txt"} {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(name+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git(t, source, "add", "tracked.txt", "second.txt")
+	git(t, source, "commit", "-q", "-m", "fixture")
+	repo := filepath.Join(root, "execution-copy")
+	git(t, source, "worktree", "add", "--detach", repo, "HEAD")
+
+	policy, err := New(repo)
+	if err != nil {
+		t.Fatalf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+
+	out, code, err := policy.RunCommand(context.Background(), "git status --porcelain", nil)
+	if err != nil || code != 0 {
+		t.Fatalf("confined status: output=%q code=%d err=%v", out, code, err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("private Git index does not match its head: %q", out)
+	}
+	out, code, err = policy.RunCommand(context.Background(), "git diff --staged --name-only", nil)
+	if err != nil || code != 0 || strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("private Git staged diff should be empty: output=%q code=%d err=%v", out, code, err)
+	}
+
+	commit := "printf one > one.txt && git add one.txt && GIT_AUTHOR_NAME='Sandbox Agent' GIT_AUTHOR_EMAIL=sandbox@example.invalid GIT_COMMITTER_NAME='Sandbox Agent' GIT_COMMITTER_EMAIL=sandbox@example.invalid git commit -q -m one-file"
+	if out, code, err := policy.RunCommand(context.Background(), commit, nil); err != nil || code != 0 {
+		t.Fatalf("confined git commit failed: output=%q code=%d err=%v", out, code, err)
+	}
+	out, code, err = policy.RunCommand(context.Background(), "git ls-tree --name-only HEAD", nil)
+	if err != nil || code != 0 {
+		t.Fatalf("confined ls-tree: output=%q code=%d err=%v", out, code, err)
+	}
+	tracked := strings.Fields(string(out))
+	for _, want := range []string{"one.txt", "second.txt", "tracked.txt"} {
+		found := false
+		for _, name := range tracked {
+			if name == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("commit dropped tracked path %q: staged commit tree %v", want, tracked)
+		}
+	}
+}
+
+func TestSandboxResolvesHostnamesFromTheHostResolverConfiguration(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	resolver, err := os.ReadFile("/etc/resolv.conf")
+	if err != nil {
+		t.Skip("host has no /etc/resolv.conf")
+	}
+	root := t.TempDir()
+	repo := createExecutionCopy(t, root)
+	policy, err := New(repo)
+	if err != nil {
+		t.Fatalf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+
+	out, code, err := policy.RunCommand(context.Background(), "cat /etc/resolv.conf", nil)
+	if err != nil || code != 0 {
+		t.Fatalf("confined resolver read: output=%q code=%d err=%v", out, code, err)
+	}
+	if string(out) != string(resolver) {
+		t.Fatalf("sandbox resolver configuration differs from the host: got %q want %q", out, resolver)
+	}
+	out, code, err = policy.RunCommand(context.Background(), "getent hosts localhost", nil)
+	if err != nil || code != 0 || strings.TrimSpace(string(out)) == "" {
+		t.Fatalf("confined hostname lookup failed: output=%q code=%d err=%v", out, code, err)
+	}
+}
+
+func TestSandboxKeepsNonInteractiveGitAndGateEnvironment(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root := t.TempDir()
+	repo := createExecutionCopy(t, root)
+	policy, err := New(repo)
+	if err != nil {
+		t.Fatalf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+
+	probe := filepath.Join(root, "probe")
+	script := "#!/bin/sh\nprintf '%s|%s|%s|%s|%s' \"$GIT_EDITOR\" \"$GIT_SEQUENCE_EDITOR\" \"$GIT_TERMINAL_PROMPT\" \"$DRILL_GATE\" \"$PWD\"\n"
+	if err := os.WriteFile(probe, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(probe)
+	cmd.Dir = repo
+	cmd.Env = []string{"GIT_EDITOR=vim", "GIT_SEQUENCE_EDITOR=vim", "GIT_TERMINAL_PROMPT=1", "DRILL_GATE=1"}
+	if err := policy.Command(cmd); err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("confined environment probe: output=%q err=%v", out, err)
+	}
+	want := "true|true|0|1|" + repo
+	if strings.TrimSpace(string(out)) != want {
+		t.Fatalf("confined environment = %q, want %q", out, want)
+	}
+	if _, code, err := policy.RunCommand(context.Background(), "mkdir -p \"$GOCACHE\" && printf cached > \"$GOCACHE/probe\"", nil); err != nil || code != 0 {
+		t.Fatalf("confined build cache is not writable: code=%d err=%v", code, err)
+	}
+	if out, code, err := policy.RunCommand(context.Background(), "cat \"$GOCACHE/probe\"", nil); err != nil || code != 0 || strings.TrimSpace(string(out)) != "cached" {
+		t.Fatalf("build cache did not persist across confined commands: output=%q code=%d err=%v", out, code, err)
+	}
+}
+
+func TestSandboxCannotRedirectPrivateGitCommonDirectory(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	for _, layout := range []struct {
+		name   string
+		create func(*testing.T, string) string
+	}{
+		{"worktree", createExecutionCopy},
+		{"standard-clone", createStandardClone},
+	} {
+		t.Run(layout.name, func(t *testing.T) {
+			root := t.TempDir()
+			repo := layout.create(t, root)
+			marker := filepath.Join(root, "host-executed")
+			policy, err := New(repo)
+			if err != nil {
+				t.Fatalf("execution sandbox unavailable: %v", err)
+			}
+			defer policy.Close()
+			plant := "printf " + shellQuote(repo+"/.evil") + " > /run/drill-execution/git/commondir"
+			if _, code, err := policy.RunCommand(context.Background(), plant, nil); err != nil || code == 0 {
+				t.Fatalf("sandbox redirected the private Git common directory: code=%d err=%v", code, err)
+			}
+			if err := os.WriteFile(filepath.Join(repo, "host-change.txt"), []byte("host\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			git(t, repo, "add", "host-change.txt")
+			git(t, repo, "commit", "-q", "-m", "host change")
+			if err := policy.Sync(); err != nil {
+				t.Fatalf("sync after a refused redirect: %v", err)
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatal("host Git executed a program reached through the private Git common directory")
+			}
+		})
+	}
+}
+
+func TestHostGitRefusesTamperedPrivateGitControlFiles(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	for _, tamper := range []struct {
+		name  string
+		apply func(*testing.T, *Policy, string, string)
+	}{
+		{"common-directory-redirect", func(t *testing.T, policy *Policy, evil, script string) {
+			if err := os.WriteFile(filepath.Join(policy.gitDir, "commondir"), []byte(evil+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"config-transport-rewrite", func(t *testing.T, policy *Policy, evil, script string) {
+			config := "[protocol \"ext\"]\n\tallow = always\n[url \"ext::sh -c '" + script + "' %S\"]\n\tinsteadOf = " + policy.workDir + "\n"
+			file, err := os.OpenFile(filepath.Join(policy.gitDir, "config"), os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			if _, err := file.WriteString(config); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tamper.name, func(t *testing.T) {
+			root := t.TempDir()
+			repo := createExecutionCopy(t, root)
+			marker := filepath.Join(root, "host-executed")
+			script := filepath.Join(repo, "evil.sh")
+			if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf pwned > "+shellQuote(marker)+"\nexec git \"$@\"\n"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			evil := filepath.Join(repo, ".evil")
+			if err := os.Mkdir(evil, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			git(t, evil, "init", "-q", "--bare")
+			git(t, evil, "config", "protocol.ext.allow", "always")
+			git(t, evil, "config", "url.ext::sh -c '"+script+"' %S.insteadOf", repo)
+
+			policy, err := New(repo)
+			if err != nil {
+				t.Fatalf("execution sandbox unavailable: %v", err)
+			}
+			defer policy.Close()
+			tamper.apply(t, policy, evil, script)
+
+			if _, err := gitOutput(policy.gitDir, "fetch", "--no-write-fetch-head", "--no-tags", policy.workDir, "HEAD"); err == nil {
+				t.Fatal("host Git accepted a tampered private Git database")
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatal("host Git executed a repository-authored program from a tampered private Git database")
+			}
+			if err := policy.Sync(); err == nil {
+				t.Fatal("policy synchronized a tampered private Git database")
+			}
+			if _, err := os.Stat(marker); err == nil {
+				t.Fatal("policy Sync executed a repository-authored program from a tampered private Git database")
+			}
+		})
+	}
+}
