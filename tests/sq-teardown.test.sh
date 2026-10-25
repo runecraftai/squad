@@ -1543,6 +1543,7 @@ test_teardown_retires_watcher_markers() {
   : > "$case_dir/state/.sig-since-$key"
   : > "$case_dir/state/.sig-reported-$key"
   : > "$case_dir/state/.sig-unreadable-$key"
+  : > "$case_dir/state/.sig-deferred-log-$key"
   : > "$case_dir/state/.seen-task-x1_status"
   : > "$case_dir/state/.seen-task-x1_turn-ended"
   : > "$case_dir/state/.subsuper-stale-task-x1"
@@ -1583,6 +1584,8 @@ test_teardown_retires_watcher_markers() {
     || fail "watcher-markers: teardown left pane-signature escalation marker behind"
   [ ! -e "$case_dir/state/.sig-unreadable-$key" ] \
     || fail "watcher-markers: teardown left pane-signature cannot-evaluate marker behind"
+  [ ! -e "$case_dir/state/.sig-deferred-log-$key" ] \
+    || fail "watcher-markers: teardown left pane-signature deferral logging state behind"
   [ ! -e "$case_dir/state/.seen-task-x1_status" ] \
     || fail "watcher-markers: teardown left .seen-*_status behind"
   [ ! -e "$case_dir/state/.seen-task-x1_turn-ended" ] \
