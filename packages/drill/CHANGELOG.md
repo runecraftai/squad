@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.13](https://github.com/runecraftai/squad/compare/drill-v0.1.12...drill-v0.1.13) (2026-10-25)
+
+
+### Features
+
+* **drill:** confine repository commands and agents in a mandatory execution sandbox ([#298](https://github.com/runecraftai/squad/issues/298)) ([356d974](https://github.com/runecraftai/squad/commit/356d9741d6392f48d56d3476c1f687c43b367998))
+
 ## [0.1.12](https://github.com/runecraftai/squad/compare/drill-v0.1.11...drill-v0.1.12) (2026-10-25)
 
 
