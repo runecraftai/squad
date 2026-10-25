@@ -429,18 +429,19 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
 dirty_worktree_check() {  # <window> <task> <key> <busy: 0=yes> <last-status>
   local win=$1 task=$2 marker="$STATE/.dirty-since-$3" unreadable="$STATE/.dirty-unreadable-$3" busy=$4 last=$5 wt dirt since age reason
   if [ "$busy" -eq 0 ] || status_is_terminal_verb "$last"; then
-    rm -f "$marker"
+    rm -f "$marker" "$unreadable"
     return
   fi
   wt=$(awk '/^worktree=/ {sub(/^worktree=/, ""); print; exit}' "$STATE/$task.meta") || true
   if [ -z "$wt" ] || [ ! -d "$wt" ]; then
-    rm -f "$marker"
+    rm -f "$marker" "$unreadable"
     return
   fi
   if ! dirt=$(git --no-optional-locks -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null); then
-    triage_log "cannot evaluate worktree status (git status failed): $win"
-    since=$(cat "$marker" 2>/dev/null || true)
-    [ -z "$since" ] || [ "$since" = reported ] || : > "$unreadable"
+    if [ ! -e "$unreadable" ]; then
+      : > "$unreadable"
+      triage_log "cannot evaluate worktree status (git status failed): $win"
+    fi
     return
   fi
   rm -f "$unreadable"

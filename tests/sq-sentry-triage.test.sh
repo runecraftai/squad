@@ -3552,7 +3552,7 @@ test_dirty_check_requires_recorded_worktree() {
 # and it must not discard or monopolize an idle-dirty clock already measuring
 # known work: away mode still gets its plain handoff.
 test_failed_dirty_read_is_cannot_evaluate() {
-  local dir state fakebin out capture_file window key wt pid old real_git
+  local dir state fakebin out capture_file window key wt pid old real_git polls
   pause_worktree_case dirty-read-failure
   printf 'unfinished\n' > "$wt/untracked"
   old=$(( $(date +%s) - 500 ))
@@ -3570,13 +3570,23 @@ exec "$real_git" "\$@"
 SH
   chmod +x "$fakebin/git"
   start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1
-  wait_live "$pid" 30 || { reap "$pid"; fail "an unreadable worktree was escalated as dirty: $(cat "$out")"; }
+  polls=0
+  while [ "$polls" -lt 60 ]; do
+    case "$(cat "$state/.count-$key" 2>/dev/null || true)" in
+      ''|*[!0-9]*) ;;
+      *) [ "$(cat "$state/.count-$key")" -ge 3 ] && break ;;
+    esac
+    sleep 0.1
+    polls=$((polls + 1))
+  done
   reap "$pid"
   [ ! -s "$out" ] || fail "an unreadable worktree emitted a wake: $(cat "$out")"
   [ "$(cat "$state/.dirty-since-$key" 2>/dev/null || true)" = "$old" ] \
     || fail "a failed git read reset the idle-dirty clock instead of keeping it"
   grep -F 'cannot evaluate worktree status' "$state/.sentry-triage.log" >/dev/null \
     || fail "a failed git read was not reported as cannot-evaluate"
+  [ "$(grep -cF 'cannot evaluate worktree status' "$state/.sentry-triage.log")" = 1 ] \
+    || fail "a persistently unreadable worktree flooded the triage log: $(grep -F 'cannot evaluate worktree status' "$state/.sentry-triage.log")"
   [ -e "$state/.dirty-unreadable-$key" ] || fail "a failed git read did not record cannot-evaluate"
 
   date '+%s' > "$state/.afk"
@@ -3591,6 +3601,8 @@ SH
     && fail "the unreadable dirty clock still claimed pause-era ownership: $(cat "$out")"
   [ "$(cat "$state/.dirty-since-$key" 2>/dev/null || true)" = "$old" ] \
     || fail "the away-mode handoff disturbed the preserved dirty clock"
+  [ "$(grep -cF 'cannot evaluate worktree status' "$state/.sentry-triage.log")" = 1 ] \
+    || fail "the away-mode poll repeated the cannot-evaluate worktree log"
 
   rm -f "$fakebin/git"
   : > "$out"
