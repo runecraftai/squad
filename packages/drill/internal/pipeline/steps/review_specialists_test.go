@@ -690,7 +690,7 @@ func TestReviewLensCannotReadOutsideExecutionCopy(t *testing.T) {
 		t.Skip("Bubblewrap unavailable")
 	}
 	previousPolicyFactory := newReviewLensExecutionPolicy
-	newReviewLensExecutionPolicy = func(checkout string) (reviewLensExecutionPolicy, error) {
+	newReviewLensExecutionPolicy = func(checkout string) (ReviewLensExecutionPolicy, error) {
 		return executionpolicy.New(checkout)
 	}
 	t.Cleanup(func() { newReviewLensExecutionPolicy = previousPolicyFactory })
@@ -734,7 +734,7 @@ func TestReviewLensCannotReadOutsideExecutionCopy(t *testing.T) {
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", "", head, "", nil, "", "", "", "")
-	result := runReviewLens(context.Background(), a, parentPolicy, dir, snapshot, 0, time.Second, nil)
+	result := runReviewLens(context.Background(), a, parentPolicy, nil, dir, snapshot, 0, time.Second, nil)
 	if !strings.Contains(inside, "review-lens-inside-marker") {
 		t.Fatalf("review lens could not read its own execution copy: %q", inside)
 	}
@@ -847,7 +847,7 @@ func TestStandaloneReviewPopulatesRiskFields(t *testing.T) {
 			return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":["feature.txt"]}`)}, nil
 		}
 	}}
-	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil, fixtureExecutionPolicy{dir: dir})
+	findings, err := RunStandaloneReview(context.Background(), a, dir, base, head, "intent", 6, time.Second, nil, fixtureExecutionPolicy{dir: dir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

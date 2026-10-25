@@ -108,7 +108,10 @@ func newReviewCmd() *cobra.Command {
 			defer policy.Close()
 			ag = agent.WithExecutionPolicy(ag, policy)
 			defer ag.Close()
-			findings, err := steps.RunStandaloneReview(cmd.Context(), ag, worktree, baseSHA, headSHA, intent, cfg.Review.Topology.MaxParallel, cfg.Review.Topology.Timeout, func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) }, policy)
+			lensPolicies := func(checkout string) (steps.ReviewLensExecutionPolicy, error) {
+				return newReviewExecutionPolicy(checkout)
+			}
+			findings, err := steps.RunStandaloneReview(cmd.Context(), ag, worktree, baseSHA, headSHA, intent, cfg.Review.Topology.MaxParallel, cfg.Review.Topology.Timeout, func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) }, policy, lensPolicies)
 			if err != nil {
 				return err
 			}

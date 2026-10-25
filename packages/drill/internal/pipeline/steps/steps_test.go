@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 	// via GIT_CONFIG_COUNT/KEY_n/VALUE_n; tests that need it re-set it with
 	// t.Setenv (issue #362).
 	os.Unsetenv("GIT_CONFIG_COUNT")
-	newReviewLensExecutionPolicy = func(checkout string) (reviewLensExecutionPolicy, error) {
+	newReviewLensExecutionPolicy = func(checkout string) (ReviewLensExecutionPolicy, error) {
 		return fixtureExecutionPolicy{dir: checkout}, nil
 	}
 	os.Exit(m.Run())

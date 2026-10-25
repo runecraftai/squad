@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/runecraftai/squad/packages/drill/internal/agent"
 	"github.com/runecraftai/squad/packages/drill/internal/config"
@@ -309,7 +310,13 @@ func TestStandaloneReviewCancellationCleansDisposableCheckout(t *testing.T) {
 		_, err := executeStandaloneReviewCmdContext(ctx, "review", "--base", base, "--head", head)
 		result <- err
 	}()
-	<-started
+	select {
+	case <-started:
+	case err := <-result:
+		t.Fatalf("review finished before the blocking lens started: %v", err)
+	case <-time.After(2 * time.Minute):
+		t.Fatal("review never started a lens")
+	}
 	cancel()
 	if err := <-result; err == nil {
 		t.Fatal("expected cancellation")
