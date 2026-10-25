@@ -25,12 +25,10 @@
 # never ordinary work.
 #
 # Shared, backend-neutral normalized-transition shape and the single-owner
-# status->action policy table (bin/sq-transition-lib.sh). TUIOS exposes no
-# subscribe/after_seq verb (docs/tuios-backend.md "Limits and verification"),
-# so unlike herdr's event subscriber this adapter produces the same normalized
-# record on the sentry's ordinary poll loop instead (fm_backend_tuios_poll_transition,
-# the "state, prompts, and provenance" section below) - it never re-encodes the
-# policy mapping either.
+# status->action policy table (bin/sq-transition-lib.sh). TUIOS versions with
+# subscribe support use its native agent-state stream for prompt wakes. Older
+# supported versions retain level-reconcile polling through
+# fm_backend_tuios_poll_transition; both paths share the same transition policy.
 SQUAD_BACKEND_TUIOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=bin/sq-transition-lib.sh
 . "$SQUAD_BACKEND_TUIOS_ROOT/bin/sq-transition-lib.sh"
@@ -797,12 +795,12 @@ fm_backend_tuios_prompt_hash() {  # <target>
 }
 
 # --- backend-neutral transition producer (level-reconcile / poll path) ------
-# TUIOS exposes no event subscription, so it never satisfies fm_backend_has_push
-# and is never offered to the sentry's event-wait splice (bin/sq-sentry.sh
-# event_wait_or_sleep). It still produces the SAME normalized transition record
-# (bin/sq-transition-lib.sh) on the sentry's ordinary per-window poll instead:
-# fm_backend_tuios_poll_transition reads the daemon's current level
-# (fm_backend_tuios_busy_state), translates it into the shared
+# TUIOS versions with subscribe support satisfy fm_backend_has_push and use the
+# sentry's event-wait splice. The native stream is only a wake signal; the
+# authoritative per-window level is re-read before action. Older versions still
+# produce the SAME normalized transition record (bin/sq-transition-lib.sh) on
+# the ordinary poll instead: fm_backend_tuios_poll_transition reads current
+# state (fm_backend_tuios_busy_state), translates it into the shared
 # idle|working|blocked|done|unknown vocabulary, and routes it through the same
 # policy table and per-pane dedupe shape herdr's event stream uses
 # (fm_backend_tuios_apply_transition mirrors fm_backend_herdr_apply_transition
@@ -905,10 +903,10 @@ fm_backend_tuios_clear_transition() {  # <state_dir> <window>
   rm -f "$(fm_backend_tuios_prompt_hash_marker "$state" "$window")" 2>/dev/null || true
 }
 
-# fm_backend_tuios_poll_transition: the level-reconcile producer called on the
-# sentry's ordinary per-window poll cycle (TUIOS has no event stream to wait
-# on). Prints the normalized record and returns 0 on a fresh actionable edge
-# for the caller to hand to handle_push_transition; returns 1 when the pane is
+# fm_backend_tuios_poll_transition: level-reconcile producer called on the
+# ordinary per-window poll cycle and on native-event reconnect/edges. Prints the
+# normalized record and returns 0 on a fresh actionable edge for the caller to
+# hand to handle_push_transition; returns 1 when the pane is
 # STILL blocked but already escalated for its current prompt (the caller must
 # still skip the ordinary stale/wedge machinery, just without a fresh wake);
 # returns 2 when the pane is not currently blocked (the caller falls through to
@@ -951,6 +949,68 @@ fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
   record=$(fm_transition_record "${window#*:}" "" "" blocked "")
   hit=$(fm_backend_tuios_apply_transition "$state" "$session" "$record") || return 1
   printf '%s' "$hit"
+}
+
+# fm_backend_tuios_events_capable: the installed daemon's own catalog is the
+# authority for native subscriptions. This is optional so older supported
+# TUIOS versions continue using the ordinary level-reconcile poll.
+fm_backend_tuios_events_capable() {  # <session>
+  local catalog=$1 bin
+  bin=$(fm_backend_tuios_bin)
+  command -v python3 >/dev/null 2>&1 || return 1
+  catalog=$("$bin" list-verbs --json 2>/dev/null) || return 1
+  printf '%s' "$catalog" | jq -e '
+    (.verbs | type) == "array"
+    and any(.verbs[]; (.verb == "subscribe")
+      and ([.params[]?.name] | index("session") != null)
+      and ([.params[]?.name] | index("types") != null)
+      and ([.returns[]?.name] | index("seq") != null)
+      and ([.returns[]?.name] | index("boot_id") != null))
+  ' >/dev/null 2>&1
+}
+
+# fm_backend_tuios_wait_transition: subscribe before reconciling, then treat each
+# event only as a prompt to re-read the exact task window. The per-prompt marker
+# makes reconnect/replay duplicates harmless; gaps and reader failures return 2
+# so the sentry falls back to bounded polling.
+fm_backend_tuios_wait_transition() {  # <session> <timeout> <state_dir> <window...>
+  local session=$1 timeout=$2 state=$3; shift 3
+  local windows=("$@") w bin reader=() fifo_dir fifo reader_pid line event_window record hit rc=1 reader_rc=0
+  [ "${#windows[@]}" -gt 0 ] || return 2
+  fm_backend_tuios_events_capable "$session" || return 2
+  bin=$(fm_backend_tuios_bin)
+  reader=(python3 "$SQUAD_BACKEND_TUIOS_ROOT/bin/backends/tuios-eventwait.py" "$bin" "$session" "$timeout")
+  for w in "${windows[@]}"; do reader+=("${w#*:}"); done
+  fifo_dir=$(mktemp -d "${TMPDIR:-/tmp}/sq-tuios-eventwait.XXXXXX") || return 2
+  fifo="$fifo_dir/events"
+  if ! mkfifo "$fifo" 2>/dev/null; then rm -rf "$fifo_dir"; return 2; fi
+  "${reader[@]}" > "$fifo" 2>/dev/null &
+  reader_pid=$!
+  if ! exec 9< "$fifo"; then kill "$reader_pid" 2>/dev/null || true; wait "$reader_pid" 2>/dev/null || true; rm -rf "$fifo_dir"; return 2; fi
+  if ! IFS= read -r -u 9 line || [ "$line" != "@subscribed" ]; then
+    rc=2
+  else
+    # Reconcile after subscription is live: an already blocked prompt is not
+    # lost between the sentry's previous poll and the stream connection.
+    for w in "${windows[@]}"; do
+      if hit=$(fm_backend_tuios_poll_transition "$state" "$session" "$w"); then printf '%s' "$hit"; rc=0; break; fi
+    done
+  fi
+  while [ "$rc" -eq 1 ] && IFS= read -r -u 9 line; do
+    [ -n "$line" ] || continue
+    event_window=$(printf '%s' "$line" | cut -f1)
+    [ -n "$event_window" ] || continue
+    w="$session:$event_window"
+    if hit=$(fm_backend_tuios_poll_transition "$state" "$session" "$w"); then printf '%s' "$hit"; rc=0; break; fi
+  done
+  [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] && { kill "$reader_pid" 2>/dev/null || true; }
+  wait "$reader_pid" 2>/dev/null || reader_rc=$?
+  exec 9<&-
+  rm -rf "$fifo_dir" 2>/dev/null || true
+  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 2 ] && return 2
+  [ "$reader_rc" -eq 0 ] && return 1
+  return 2
 }
 
 # --- delivery ----------------------------------------------------------

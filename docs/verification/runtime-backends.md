@@ -733,8 +733,8 @@ App-server partial methods and raw socket experiments do not satisfy that bridge
 
 ## TUIOS
 
-Installed product: `tuios version 0.8.0 [pure-Go backend]`, commit `a169a8f4b0513e8e56af4c75a746a582b7f42dfc`.
-Mechanisms were validated against the installed binary's own `--version`, `list-verbs`, and `--help` surfaces.
+The current shared runtime is `tuios version 0.9.1 [pure-Go backend]`, commit `a9e96db81607bc0ed42ccd02d2fb5a564c35b808`; earlier live scenarios below retain the version used for each run.
+Mechanisms are validated against the installed binary's own `--version`, `list-verbs`, and `--help` surfaces.
 Portable regression coverage (fake CLIs, no live daemon):
 
 ```sh
@@ -767,14 +767,30 @@ Established live:
 - **`respond` belongs to the pane that types the answer (2026-10-20).** Verified against TUIOS 0.9.1, commit `a9e96db81607bc0ed42ccd02d2fb5a564c35b808`, on one disposable session and one private daemon with fresh `XDG_RUNTIME_DIR` and `XDG_STATE_HOME` under `/tmp` (both destroyed afterwards); the shared daemon was only read through `pane-grants` and `list-windows`. With a pane reported `needs_input` (`tuios set-agent-state needs_input -w <window> --kind approval`), `tuios send-keys -w <blocked> Enter` from a pane holding `admin` returned rc=1 and `send-keys is refused for this pane: window <id> is waiting on a prompt, and what is typed now would answer it, which needs the respond grant`, whose hint named the caller's own pane; after the same pane held `admin,respond` the identical command returned rc=0 and printed `sent 1 key`. `tuios set-pane-grants -w <self> --grants admin,respond`, the same call for another pane, and `tuios new-window --grants read,write,fan,respond` were all refused from inside a pane with `set-pane-grants is refused for this pane: a pane cannot give more than it holds`, while the same grant from a caller running in no pane succeeded and read back as `{"grants":["respond","admin"]}`, and `--reset` restored `grants: null`. A pane that already held `respond` was allowed to give another pane `admin,respond`, so one outside-pane delegation is enough to seed the rest. `bin/sq-pane-grants.sh` and `tests/sq-pane-grants.test.sh` cover the wrapper and the `sq-send` remedy hint portably, and the portable tests drive `show <target>`, `grant respond`, and `verify` from the outside-pane payload below, which is the only caller TUIOS accepts for the first grant.
 The payload shapes that wrapper reads were captured from that daemon: `tuios list-windows --json` returns `{"success":true,"windows":[{"window_id":"<uuid>","display_name":"<label>","agent_state":"...","grants":["respond","admin"]}]}` with `grants` absent for a pane holding the daemon default, and `tuios pane-grants --json` returns `{"success":true,"pane":true,"session":"squad","window":"<uuid>","explicit":true,"mode":"open","default_grants":["admin"],"grants":["admin"]}` from inside a pane, and `{"success":true,"pane":false,"mode":"open","default_grants":["admin"],"message":"command executed","note":"The caller runs in no pane of this daemon, so no pane grants apply to it."}` from a caller outside every pane, re-read with `tuios pane-grants --json` from the person's own shell. The outside-pane payload carries no `session`/`window` but still reports the daemon's `default_grants`, which is what lets the add-only read resolve a default-granted pane from that placement. The daemon's own verb catalogue (`tuios list-verbs --json`, `daemon_version 0.9.1`) lists `pane-grants` with those returns and `set-pane-grants` with the params `session`, `window`, `grants`, and `reset`, so the wrapper's `set-pane-grants --session <session> --window <uuid> --grants <csv>` and its re-read are the daemon's documented parameter set rather than a guessed one.
 
+Native event subscription was checked read-only on 2026-10-25 against the current shared TUIOS 0.9.1 daemon; the shared session was subscribed to for one second and only the probe process was terminated at timeout.
+
+```sh
+python3 bin/backends/tuios-eventwait.py tuios squad 1 d1828f70-56fb-4251-bdbd-eaeaca1d8df6
+tuios list-verbs --json | jq -e '.verbs[] | select(.verb=="subscribe") | {verb,params:[.params[].name],returns:[.returns[].name]}'
+```
+
+Observed output:
+
+```text
+@subscribed
+reader_rc=0
+{"verb":"subscribe","params":["session","window","types","queue","after_seq","boot_id","hosts"],"returns":["seq","boot_id","replayed"]}
+```
+
+This proves the current CLI can establish a session-scoped event stream; it does not prove a blocked-agent event, supervisor wake, answer, or resume end to end.
+
 Not established:
 
 - `not_ready` and `prompt_stalled` were not observed live. They are mapped from the daemon's documented refusal codes and covered by the fake-CLI test, but the asynchronous queue path does not raise them; they belong to the synchronous ask path, which Squad does not currently call.
 - A live `queue-prompt` refusal reason other than `queue_full` and the no-attributed-agent refusal was not produced.
 - The bounded queue observation window (10s by default) proved wide enough for the observed 5s stall gate; a slower daemon configuration could close the window while an entry is still being typed, in which case the adapter reports the entry as safely queued and the daemon's Inbox question is the durable signal.
-- Supervision on this backend remains poll-based by design; no event subscription or gap replay is used.
-  The blocked-pane wake rides that poll rather than any push stream, and that poll-driven wake is not live-verified here.
-  `docs/tuios-backend.md` records its portable coverage and latency bound.
+- An isolated real-runtime blocked-event-to-supervisor-wake, prompt-specific answer, and operator-resume scenario has not been proven; the new portable test uses a fake CLI and proves call shape only.
+  Until that scenario is run in a private TUIOS daemon with a real harness, the live end-to-end guarantee is unverified.
 - Simultaneous allocations across separate Squad bases sharing one TUIOS session have not been exercised live. The adapter uses one per-session lock under the user's shared `XDG_RUNTIME_DIR` when available, then rechecks authoritative session inventory before each creation.
 - The finished-and-foreground-less recovery rule is derived from one daemon build (TUIOS 0.8.0): every live agent observed reported a `foreground` program, and the one exited agent reported none. A build or harness that reports `state=done` without a `foreground` program while its agent is still running has not been observed; `docs/tuios-backend.md` "Finished-agent recovery" names that as the unproven case.
 - The away-mode live path was verified against one Pi version (0.99.0) and one TUIOS build (0.8.0). Its open-prompt guard reads Pi's `ui_prompt_start`/`ui_prompt_end` events, which are not a documented public API, so a Pi upgrade must re-verify that they are still emitted before the guard is trusted.
