@@ -333,7 +333,8 @@ func newFixtureAccessFixture(t *testing.T) (*Policy, string, string, string) {
 func fixtureGrantedToNamedBinary(t *testing.T, policy *Policy, root, repo, fixture, name string) bool {
 	t.Helper()
 	fake := filepath.Join(root, name)
-	if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+	script := "#!/bin/sh\ncat " + shellQuote(fixture) + "\n"
+	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(fake)
@@ -342,7 +343,12 @@ func fixtureGrantedToNamedBinary(t *testing.T, policy *Policy, root, repo, fixtu
 	if err := policy.Command(cmd); err != nil {
 		t.Fatal(err)
 	}
-	return strings.Contains(strings.Join(cmd.Args, "\x00"), fixture)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("confined %s could not read the fixture: %v", name, err)
+		return false
+	}
+	return strings.Contains(string(out), "scenario: synthetic")
 }
 
 func TestEachCommandGetsAFreshCredentialHome(t *testing.T) {

@@ -306,16 +306,21 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 		e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusCompleted), "", "", &duration)
 		return e.executeRecoveredRemainder(ctx, run, repo, workDir, logDir, gate.index+1)
 	}
+	reconcileAgent := e.agent
+	if reconcileAgent != nil {
+		reconcileAgent = &gateStepBoundaryAgent{inner: reconcileAgent, phase: gate.step.Name(), policy: e.executionPolicy}
+	}
 	reconcileCtx := &StepContext{
-		Ctx:      ctx,
-		Run:      run,
-		Repo:     repo,
-		WorkDir:  workDir,
-		Config:   e.config,
-		DB:       e.db,
-		Agent:    e.agent,
-		Sessions: e.sessions,
-		Shared:   e.shared,
+		Ctx:             ctx,
+		Run:             run,
+		Repo:            repo,
+		WorkDir:         workDir,
+		ExecutionPolicy: e.executionPolicy,
+		Config:          e.config,
+		DB:              e.db,
+		Agent:           reconcileAgent,
+		Sessions:        e.sessions,
+		Shared:          e.shared,
 		Log: func(message string) {
 			slog.Info("recovered approval gate reconciliation", "run_id", run.ID, "step", gate.step.Name(), "message", message)
 		},

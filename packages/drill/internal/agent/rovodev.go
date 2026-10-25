@@ -38,7 +38,13 @@ func (a *rovodevAgent) recoverTransientRetry(policy ProcessExecutionPolicy, labe
 	a.servers.stop(policy)
 }
 
-func (a *rovodevAgent) runOnce(ctx context.Context, opts RunOpts) (*Result, error) {
+func (a *rovodevAgent) runOnce(ctx context.Context, opts RunOpts) (result *Result, runErr error) {
+	defer func() {
+		if syncErr := syncRunResult(opts.ExecutionPolicy); syncErr != nil && runErr == nil {
+			result, runErr = nil, syncErr
+		}
+	}()
+
 	// Start server on first invocation (synchronized)
 	baseURL, err := a.ensureServer(ctx, opts.CWD, opts.ExecutionPolicy)
 	if err != nil {

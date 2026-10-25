@@ -233,6 +233,18 @@ func (p *serverPool) stopAll() {
 	}
 }
 
+// syncRunResult imports the private Git result a confined run produced into
+// the linked execution copy, so the pipeline observes the agent's commits.
+func syncRunResult(policy ProcessExecutionPolicy) error {
+	if policy == nil {
+		return nil
+	}
+	if err := policy.Sync(); err != nil {
+		return fmt.Errorf("import confined agent result: %w", err)
+	}
+	return nil
+}
+
 // baseURL returns the server's base URL.
 func (s *managedServer) baseURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%d", s.port)
