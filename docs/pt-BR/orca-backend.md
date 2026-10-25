@@ -134,7 +134,8 @@ Uma sonda real descartável no host exige, portanto, um perfil/runtime Orca comp
 - Escape não é suportado.
 - O Orca expõe nenhum marcador estável de versão de CLI ou protocolo, então a prontidão é o gate de compatibilidade em vez de um piso de versão.
 - Apenas os campos verificados de resultado de terminal-handle e worktree são aceitos; formatos especulativos de resposta são rejeitados.
-- A resposta de `orca terminal list` filtrada por worktree (`truncated`, `hostScope`, `terminals[]`), as flags `orca terminal create --worktree/--command` e todo caminho real de criação/limpeza seguem não comprovados: nenhum recibo somente-leitura deles é retido, então qualquer formato inesperado é um resultado incerto que preserva o registro pendente em vez de recuperar.
+- A resposta de `orca terminal list` filtrada por worktree (`truncated`, `hostScope`, `terminals[]`) e as flags da ajuda instalada de `orca terminal create --help` foram observadas somente-leitura em 2026-10-25, e essa observação está retida em [`verification/runtime-backends.md`](../verification/runtime-backends.md#orca).
+  A semântica de filtro, a criação/limpeza real, o comportamento de foco e todo caminho real de ciclo de vida seguem não comprovados, então qualquer formato inesperado é um resultado incerto que preserva o registro pendente em vez de recuperar.
 - Expiração de busy não pode ser avaliada: a leitura completa da viewport não foi verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
 
 ## Pontos de entrada de regressão

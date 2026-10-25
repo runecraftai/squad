@@ -133,7 +133,8 @@ A disposable real-host probe therefore requires a proven independent Orca profil
 - Escape is unsupported.
 - Orca exposes no stable CLI version or protocol marker, so readiness is the compatibility gate rather than a version floor.
 - Only the verified terminal-handle and worktree result fields are accepted; speculative response shapes are rejected.
-- The worktree-filtered `orca terminal list` response (`truncated`, `hostScope`, `terminals[]`), the `orca terminal create --worktree/--command` flags, and every real create/cleanup path remain unproven: no read-only receipt for them is retained, so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
+- The worktree-filtered `orca terminal list` response (`truncated`, `hostScope`, `terminals[]`) and the installed `orca terminal create --help` flags were observed read-only on 2026-10-25 and that observation is retained in [`verification/runtime-backends.md`](verification/runtime-backends.md#orca).
+  Filter semantics, real create/cleanup, focus behaviour and every real lifecycle path stay unproven, so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 
 ## Regression entry points
