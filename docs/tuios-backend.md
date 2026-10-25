@@ -70,8 +70,10 @@ The adapter reads the daemon's own agent report and keeps its provenance instead
 
 When the installed daemon advertises a verified `subscribe` verb in its catalog, TUIOS agent-state events wake the sentry's bounded native event wait. Events are wake hints only: Squad re-reads the exact window's current state and prompt before acting, using the normalized transition policy (`bin/sq-transition-lib.sh`). Daemons without the catalogued verb are poll-only instead: `fm_backend_tuios_poll_transition` in `bin/backends/tuios.sh` is the level-reconcile producer, and `docs/architecture.md`'s "Capability matrix: the person-needed escalation" owns how both TUIOS paths fit alongside Herdr's push path, Orca's poll path, and the backends that cannot report the condition at all.
 
-On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any, instead of leaving the pane unanswered until a manual inspection.
-Latency is bounded by the supervision poll interval (`SQUAD_POLL`), since no event subscription is used.
+On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any.
+With catalogued `subscribe`, agent-state events provide the prompt wake; the adapter subscribes before reconciliation, then re-reads current state and prompt before applying shared policy.
+This is a wake hint, not a decision or an answer: only a person-authorized `sq-send --respond` call can answer, and TUIOS checks both the `respond` grant and the prompt id.
+Event delivery is prompt and bounded; gap, reconnect, or unsupported capability falls back to the ordinary `SQUAD_POLL` reconciliation.
 The wake fires exactly once per distinct pending prompt, keyed on the prompt's own identity rather than the `needs_input` status alone; [`architecture.md`](architecture.md#capability-matrix-the-person-needed-escalation) owns that identity's exact contents and its numbered-options exclusion.
 A status-only dedupe would miss a pane that shows one prompt, has it dismissed, and immediately shows a different one while never leaving `needs_input`.
 A new or changed prompt always wakes again, the identical standing prompt never repeats one, and a blocked pane is never folded into the ordinary stale/wedge detection, so it is never misread as a possible wedge.
@@ -114,14 +116,20 @@ The flow when a dialog blocks an operator:
 2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_PANE_ID"` says whether the answering pane can already answer it, and prints the `person command:` line when it cannot.
    That delegation is the person's, once, from a shell outside TUIOS; no pane can give it to itself.
 3. `bin/sq-pane-grants.sh verify <target>` confirms the grant landed before anything is retyped, and its non-zero exit means the send would still be refused.
-4. With `respond` on the answering pane, the supervisor answers the prompt with keys through `bin/sq-send.sh <id> --key Enter` (or the key the prompt asks for).
-   Only key sends become possible: `bin/sq-send.sh` still refuses free text into a pane whose agent is blocked, because text typed there would answer the prompt without the grant check Squad does not own.
-   A dialog that demands a typed answer is therefore out of scope here and needs its own decision, not a wider grant.
+4. The authorized actor reads the current prompt id and options with `tuios peek-prompt --session "$TUIOS_SESSION" --window <window-id> --json`, then decides the answer.
+   Send it with `bin/sq-send.sh <id> --respond <action> <prompt-id> [value]`.
+   It re-reads the current prompt, requires the same `prompt_id`, verifies the action and selected option, then lets TUIOS enforce the answering pane's `respond` authority and atomically refuse a changed prompt.
+   `approve_always` and risk-matched approvals are not inferred or automated; a TUIOS risk refusal confirms that nothing was answered.
+   The command invokes `respond` once; if its result is uncertain, inspect `peek-prompt` before any retry.
+   The older `bin/sq-send.sh <id> --key <key>` path remains available for key-only prompts, but it does not bind the answer to a prompt id.
+   Free text through ordinary `sq-send` remains refused while blocked because that would answer without the prompt-specific permission and identity checks.
 5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.
 
 One delegation is enough after that: a pane that already holds `respond` can pass it on, so a supervisor holding it can grant it to a task pane that supervises its own operators, such as an XO primary.
 When a send is refused for this missing grant, `bin/sq-send.sh` prints that same `person command:` line for the pane that must hold it, and keeps only the provider's refusal sentence instead of forwarding its `set-pane-grants` remediation advice, which Squad's guard refuses.
 It recognises that refusal from the daemon's own sentence or its structured error code, so any other refusal keeps its full diagnostic and gets no grant hint.
+
+An agent-state event is only a wake hint: the sentry re-reads the exact window and prompt, and the stable prompt identity deduplicates repeated notifications. A new subscriber performs a baseline reconciliation; a stream gap or reader failure returns to the ordinary level-reconcile poll. The current reader starts a fresh subscription rather than requesting sequence replay, so the current state read and later polling are the recovery guarantees.
 
 ## Restart recovery
 
@@ -207,7 +215,7 @@ Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redra
   The composer path types only into a composer positively read as empty, and defers on a draft, a busy or blocked pane, or any frame it cannot identify.
 - The open-prompt guard depends on Pi's `ui_prompt_start`/`ui_prompt_end` events, which were verified live on Pi 0.99.0 by opening a real dialog while the primary was idle and confirming the escalation was held until it closed.
   A future Pi release that stopped emitting those events would silently reduce the guard to idle plus draft, so that event contract must be re-verified on a Pi upgrade.
-- Native agent-state events are used when the daemon's verb catalogue confirms `subscribe` and its required parameters. A stream gap or reader failure falls back to ordinary reconciliation; the durable per-prompt marker prevents replayed or repeated events from duplicating a wake. Older daemons remain poll-supervised, with latency bounded by `SQUAD_POLL`.
+- Native agent-state events are used when the daemon's verb catalogue confirms `subscribe` and its required parameters. Subscription occurs before a baseline reconciliation; a stream gap or reader failure falls back to ordinary reconciliation. The durable per-prompt marker prevents repeated notifications from duplicating a wake. The current reader does not request sequence replay, so recovery after reconnect depends on the baseline read and bounded poll. Older daemons remain poll-supervised, with latency bounded by `SQUAD_POLL`.
 - The daemon's queue, mail, activity, and agent state live in daemon memory and die with it; a restart is reconciled from the inventory and the durable Squad task record, never from a replayed event.
 - `not_ready` and `prompt_stalled` mappings exist and are tested against the daemon's documented codes, but the asynchronous queue path does not raise them, so they were not observed live.
 - The durable lease on a failed spawn is returned by the adapter; a lease whose spawn succeeded is returned by Squad teardown.

@@ -28,7 +28,8 @@ emit_verb_catalogue() {
  {"verb":"resume-agent","params":[{"name":"session"},{"name":"window"},{"name":"dry_run"}]},
  {"verb":"send-keys","params":[{"name":"session"},{"name":"window"},{"name":"keys"}]},
  {"verb":"send-text","params":[{"name":"session"},{"name":"window"},{"name":"text"}]},
- {"verb":"subscribe","params":[{"name":"session"},{"name":"types"}],"returns":[{"name":"seq"},{"name":"boot_id"}]}
+ {"verb":"subscribe","params":[{"name":"session"},{"name":"types"}],"returns":[{"name":"seq"},{"name":"boot_id"}]},
+ {"verb":"respond","params":[{"name":"session"},{"name":"window"},{"name":"action"},{"name":"value"},{"name":"prompt_id"}],"returns":[{"name":"prompt_id"},{"name":"settled_by"}]}
 ]}
 JSON
 }
@@ -166,11 +167,19 @@ case "${1:-}" in
       "${SQUAD_TUIOS_FAKE_NEEDS_YOU:-false}" \
       "${SQUAD_TUIOS_FAKE_READY:-false}"
     ;;
+  respond)
+    if [ "${SQUAD_TUIOS_FAKE_RESPOND_FAIL:-0}" = 1 ]; then
+      printf '{"error":{"code":"%s","message":"simulated response refusal"}}\n' "${SQUAD_TUIOS_FAKE_RESPOND_ERROR:-timeout}" >&2
+      exit 1
+    fi
+    printf '{"success":true,"prompt_id":"%s","settled_by":"%s","state":"%s"}\n' \
+      "${SQUAD_TUIOS_FAKE_RESPOND_ID:-p1}" "${SQUAD_TUIOS_FAKE_SETTLED:-state}" "${SQUAD_TUIOS_FAKE_STATE:-working}"
+    ;;
   peek-prompt)
     if [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ]; then
       printf '{"blocked":false,"found":false,"reason":"the pane is not on needs_input","success":true}\n'
     else
-      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"p1","answerable":false,"reason":"%s","success":true}\n' \
+      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"p1","actions":["approve","deny","choose","text"],"answerable":true,"reason":"%s","success":true}\n' \
         "${SQUAD_TUIOS_FAKE_PROMPT_FOUND:-true}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_KIND:-approval}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
@@ -1165,6 +1174,72 @@ unset SQUAD_TUIOS_FAKE_EVENT SQUAD_TUIOS_FAKE_AGENTS
 [ "$RC" -eq 0 ] || fail "a native blocked event must trigger authoritative level reconciliation (rc=$RC, out=$OUT)"
 [ "$(fm_transition_to_status "$OUT")" = blocked ] || fail 'native event reconciliation must return the normalized blocked record'
 pass 'TUIOS backend: catalog-gated native event wake re-reads authoritative prompt state; unsupported daemons retain polling'
+
+# The answer path requires the exact current prompt id and action, then invokes
+# TUIOS's one-shot respond verb; a changed prompt is refused before any write.
+SQUAD_TUIOS_FAKE_PROMPT_ID=p1
+export SQUAD_TUIOS_FAKE_PROMPT_ID
+# The fixture's default peek-prompt identity is p1.
+OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve p1); RC=$?
+[ "$RC" -eq 0 ] || fail "a current supported prompt should answer through TUIOS respond (rc=$RC, out=$OUT)"
+assert_contains "$OUT" '"prompt_id":"p1"' 'the response confirmation must identify the prompt answered'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 approve' \
+  'the exact answer must use the native prompt-id-bound verb'
+if fm_backend_tuios_respond owned:w-opaque_7 approve wrong-id >/dev/null 2>&1; then
+  fail 'a response to a prompt id other than the currently read prompt must refuse'
+fi
+assert_not_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond ' 'a changed prompt must not invoke TUIOS respond'
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='["first","second"]'
+export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG" || true)
+if fm_backend_tuios_respond owned:w-opaque_7 choose p1 3 >/dev/null 2>&1; then
+  fail 'a choice outside the currently displayed option list must refuse'
+fi
+if fm_backend_tuios_respond owned:w-opaque_7 approve_always p1 >/dev/null 2>&1; then
+  fail 'persistent approval must not be automated'
+fi
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$respond_count" ] \
+  || fail 'an invalid option or persistent approval must not invoke TUIOS respond'
+OUT=$(fm_backend_tuios_respond owned:w-opaque_7 choose p1 2) || fail 'a displayed numbered choice should be accepted'
+assert_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 choose 2' \
+  'a choice must preserve the exact selected option and prompt id'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+SQUAD_TUIOS_FAKE_RESPOND_FAIL=1
+export SQUAD_TUIOS_FAKE_RESPOND_FAIL
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>&1; then
+  fail 'an uncertain native response must not report success'
+fi
+unset SQUAD_TUIOS_FAKE_RESPOND_FAIL
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'an uncertain native response must invoke respond exactly once'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+SQUAD_TUIOS_FAKE_RESPOND_FAIL=1 SQUAD_TUIOS_FAKE_RESPOND_ERROR=risk_unacknowledged
+export SQUAD_TUIOS_FAKE_RESPOND_FAIL SQUAD_TUIOS_FAKE_RESPOND_ERROR
+err="$TMP_ROOT/respond-risk.err"
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then fail 'risk-matched approval without explicit acknowledgement must refuse'; fi
+assert_contains "$(cat "$err")" 'nothing was answered' 'a risk refusal must be stated as a known no-op'
+assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'risk refusal must not be misreported as uncertain'
+unset SQUAD_TUIOS_FAKE_RESPOND_FAIL SQUAD_TUIOS_FAKE_RESPOND_ERROR SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a risk refusal must invoke the provider exactly once and must not be retried'
+pass 'TUIOS backend: prompt id, listed option, safety refusals, and uncertain outcomes are explicit'
+
+# Exercise the public send command from task metadata, not just the sourced
+# adapter: selectors must be tied to the recorded TUIOS session and window.
+SEND_HOME="$TMP_ROOT/respond-home"
+mkdir -p "$SEND_HOME/state"
+fm_write_meta "$SEND_HOME/state/respond-task.meta" \
+  'backend=tuios' 'kind=strike' 'window=owned:w-opaque_7' \
+  'tuios_session=owned' 'tuios_window_id=w-opaque_7'
+SQUAD_TUIOS_LOG="$TMP_ROOT/sq-send-respond.log"
+export SQUAD_TUIOS_LOG
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_BASE="$SEND_HOME" SQUAD_BACKEND=tuios SQUAD_TUIOS_SESSION=owned \
+  SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-send.sh" respond-task --respond approve p1 >/dev/null \
+  || fail 'sq-send should resolve task metadata and answer the exact TUIOS prompt'
+[ "$(grep -c '^respond --json ' "$SQUAD_TUIOS_LOG")" -eq 1 ] \
+  || fail 'sq-send must invoke native respond exactly once'
+pass 'sq-send: recorded task id routes a prompt-bound response to its TUIOS window'
 
 # --- composer state ---------------------------------------------------------
 # The composer is read from the pane: a bordered box whose rows are all blank is

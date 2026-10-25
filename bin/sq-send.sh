@@ -7,6 +7,7 @@
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
 # Special keys instead of text: sq-send.sh <target> --key Enter
+# Exact TUIOS prompt response: sq-send.sh <task-id> --respond <action> <prompt-id> [value]
 # A call with no arguments, or a resolvable target with --key and no key value, prints this usage to stderr and exits 2.
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
@@ -85,6 +86,7 @@ set -eu
 fm_send_usage() {
   echo "Usage: sq-send.sh <target> [--resolve-key <key>]... <text...>" >&2
   echo "       sq-send.sh <target> --key Enter" >&2
+  echo "       sq-send.sh <task-id> --respond <action> <prompt-id> [value]" >&2
 }
 
 if [ "$#" -eq 0 ]; then
@@ -532,7 +534,20 @@ fm_send_close_resolved_keys() {  # <answer-text>
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
-if [ "${1:-}" = "--key" ]; then
+if [ "${1:-}" = "--respond" ]; then
+  [ -z "$RESOLVE_KEYS" ] || { echo 'error: --respond cannot accompany --resolve-key; nothing was answered' >&2; exit 1; }
+  [ "$TARGET_SELECTOR" = 1 ] && [ -n "$TARGET_META" ] || { echo 'error: --respond requires a recorded task selector, not an explicit backend target' >&2; exit 1; }
+  [ "$TARGET_BACKEND" = tuios ] || { echo "error: --respond requires backend=tuios; found ${TARGET_BACKEND:-unknown}" >&2; exit 1; }
+  [ "$#" -ge 3 ] && [ "$#" -le 4 ] || { fm_send_usage; exit 2; }
+  action=$2
+  prompt_id=$3
+  value=${4:-}
+  fm_backend_source tuios || exit 1
+  if ! fm_backend_tuios_respond "$T" "$action" "$prompt_id" "$value"; then
+    fm_send_pane_grant_hint
+    exit 1
+  fi
+elif [ "${1:-}" = "--key" ]; then
   case "$*" in
     *--resolve-key*)
       echo "error: --resolve-key cannot accompany --key; answering a decision requires a text answer" >&2
