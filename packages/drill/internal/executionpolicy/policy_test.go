@@ -94,6 +94,93 @@ func TestRepositoryCommandCannotReadOutsideExecutionCopy(t *testing.T) {
 	}
 }
 
+func TestRunEvidenceDirectoryIsSharedWithTheHostFromInsideTheSandbox(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	root := t.TempDir()
+	hostTemp := filepath.Join(root, "host-tmp")
+	if err := os.Mkdir(hostTemp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", hostTemp)
+	repoRoot := filepath.Join(root, "repo-root")
+	if err := os.Mkdir(repoRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	repo := createExecutionCopy(t, repoRoot)
+	policy, err := New(repo)
+	if err != nil {
+		t.Fatalf("execution sandbox unavailable: %v", err)
+	}
+	defer policy.Close()
+
+	evidenceDir := filepath.Join(os.TempDir(), "drill-evidence", "run-123")
+	artifact := filepath.Join(evidenceDir, "artifact.txt")
+	write := "mkdir -p " + shellQuote(evidenceDir) + " && printf evidence > " + shellQuote(artifact)
+	if out, code, err := policy.RunCommand(context.Background(), write, nil); err != nil || code != 0 {
+		t.Fatalf("confined evidence write failed: output=%q code=%d err=%v", out, code, err)
+	}
+	if data, err := os.ReadFile(artifact); err != nil || string(data) != "evidence" {
+		t.Fatalf("confined evidence write did not reach the host evidence directory: data=%q err=%v", data, err)
+	}
+	if out, code, err := policy.RunCommand(context.Background(), "cat "+shellQuote(artifact), nil); err != nil || code != 0 || strings.TrimSpace(string(out)) != "evidence" {
+		t.Fatalf("evidence did not survive into the next launch: output=%q code=%d err=%v", out, code, err)
+	}
+}
+
+func TestSandboxCannotRedirectPrivateGitObjectStorage(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux and Bubblewrap")
+	}
+	if _, err := exec.LookPath("bwrap"); err != nil {
+		t.Skip("Bubblewrap unavailable")
+	}
+	for _, layout := range []struct {
+		name   string
+		create func(*testing.T, string) string
+	}{
+		{"worktree", createExecutionCopy},
+		{"standard-clone", createStandardClone},
+	} {
+		t.Run(layout.name, func(t *testing.T) {
+			root := t.TempDir()
+			repo := layout.create(t, root)
+			policy, err := New(repo)
+			if err != nil {
+				t.Fatalf("execution sandbox unavailable: %v", err)
+			}
+			defer policy.Close()
+			for _, gitRoot := range []string{"/run/drill-execution/git", filepath.Join(repo, ".git")} {
+				plant := "printf " + shellQuote(filepath.Join(root, "host-objects")+"\\n") + " > " + shellQuote(filepath.Join(gitRoot, "objects", "info", "alternates"))
+				if _, code, err := policy.RunCommand(context.Background(), plant, nil); err != nil || code == 0 {
+					t.Fatalf("sandbox redirected private Git object storage via %s: code=%d err=%v", gitRoot, code, err)
+				}
+			}
+			if _, err := os.Lstat(filepath.Join(policy.gitDir, "objects", "info", "alternates")); err != nil {
+				t.Fatalf("sealed object storage file is missing: %v", err)
+			}
+			commit := "printf planted > planted.txt && git add planted.txt && GIT_AUTHOR_NAME='Sandbox Agent' GIT_AUTHOR_EMAIL=sandbox@example.invalid GIT_COMMITTER_NAME='Sandbox Agent' GIT_COMMITTER_EMAIL=sandbox@example.invalid git commit -q -m planted"
+			if out, code, err := policy.RunCommand(context.Background(), commit, nil); err != nil || code != 0 {
+				t.Fatalf("sandbox commit after refused redirect failed: output=%q code=%d err=%v", out, code, err)
+			}
+			alternates := filepath.Join(policy.gitDir, "objects", "info", "alternates")
+			if data, err := os.ReadFile(alternates); err != nil || len(data) != 0 {
+				t.Fatalf("sealed object storage file = %q err=%v, want empty", data, err)
+			}
+			if err := os.WriteFile(alternates, []byte(filepath.Join(root, "host-objects")+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := policy.Sync(); err == nil {
+				t.Fatal("policy synchronized a private Git database with redirected object storage")
+			}
+		})
+	}
+}
+
 func TestStandardCloneLayoutRunsConfinedCommandsOnPrivateGit(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("drill-repository-execution-v1 requires Linux and Bubblewrap; unsupported hosts must refuse execution")

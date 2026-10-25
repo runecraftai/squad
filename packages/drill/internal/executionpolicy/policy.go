@@ -33,6 +33,7 @@ type Policy struct {
 	workDir      string
 	root         string
 	gitDir       string
+	evidenceDir  string
 	configDigest [sha256.Size]byte
 	gitFile      string
 	gitLink      string
@@ -109,6 +110,18 @@ func New(workDir string) (*Policy, error) {
 	if err := os.Mkdir(cacheDir, 0o700); err != nil {
 		return fail(fmt.Errorf("%s: create task-private build cache: %w", Name, err))
 	}
+	evidenceDir := filepath.Join(os.TempDir(), "drill-evidence")
+	if err := os.MkdirAll(evidenceDir, 0o755); err != nil {
+		return fail(fmt.Errorf("%s: prepare run evidence directory: %w", Name, err))
+	}
+	if err := os.MkdirAll(filepath.Join(gitDir, "objects", "info"), 0o700); err != nil {
+		return fail(fmt.Errorf("%s: prepare task-private Git object metadata: %w", Name, err))
+	}
+	for _, name := range sealedObjectStorageFiles {
+		if err := os.WriteFile(filepath.Join(gitDir, "objects", "info", name), nil, 0o600); err != nil {
+			return fail(fmt.Errorf("%s: seal task-private Git object storage: %w", Name, err))
+		}
+	}
 	gitLink := filepath.Join(abs, ".git")
 	gitLinkIsDir := false
 	if info, statErr := os.Stat(gitLink); statErr == nil && info.IsDir() {
@@ -121,7 +134,7 @@ func New(workDir string) (*Policy, error) {
 			return fail(fmt.Errorf("%s: prepare private Git pointer: %w", Name, err))
 		}
 	}
-	p := &Policy{workDir: abs, root: root, gitDir: gitDir, configDigest: configDigest, gitFile: gitFile, gitLink: gitLink, gitLinkIsDir: gitLinkIsDir, syncedHead: initialHead}
+	p := &Policy{workDir: abs, root: root, gitDir: gitDir, evidenceDir: evidenceDir, configDigest: configDigest, gitFile: gitFile, gitLink: gitLink, gitLinkIsDir: gitLinkIsDir, syncedHead: initialHead}
 	if err := p.acknowledge(bubblewrap); err != nil {
 		return fail(err)
 	}
@@ -141,6 +154,21 @@ func (p *Policy) acknowledge(bwrap string) error {
 		return fmt.Errorf("%s: sandbox capability check failed: %s", Name, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// sealedObjectStorageFiles are the Git object-store redirection files the
+// policy creates empty and binds read-only inside the sandbox, so
+// repository-controlled programs cannot point host Git at an object database
+// the policy never proved.
+var sealedObjectStorageFiles = []string{"alternates", "http-alternates"}
+
+func sealedObjectStorage(gitRoot, gitDir string) []string {
+	var args []string
+	for _, name := range sealedObjectStorageFiles {
+		source := filepath.Join(gitDir, "objects", "info", name)
+		args = append(args, "--ro-bind", source, filepath.Join(gitRoot, "objects", "info", name))
+	}
+	return args
 }
 
 func (p *Policy) baseArgs(home string) []string {
@@ -179,15 +207,18 @@ func (p *Policy) baseArgs(home string) []string {
 	args = append(args, "--bind", p.workDir, p.workDir, "--bind", p.gitDir, "/run/drill-execution/git",
 		"--ro-bind", filepath.Join(p.gitDir, "config"), "/run/drill-execution/git/config",
 		"--ro-bind", filepath.Join(p.gitDir, "commondir"), "/run/drill-execution/git/commondir")
+	args = append(args, sealedObjectStorage("/run/drill-execution/git", p.gitDir)...)
 	if p.gitLinkIsDir {
 		args = append(args, "--bind", p.gitDir, p.gitLink,
 			"--ro-bind", filepath.Join(p.gitDir, "config"), filepath.Join(p.gitLink, "config"),
 			"--ro-bind", filepath.Join(p.gitDir, "commondir"), filepath.Join(p.gitLink, "commondir"))
+		args = append(args, sealedObjectStorage(p.gitLink, p.gitDir)...)
 	} else {
 		args = append(args, "--ro-bind", p.gitFile, p.gitLink)
 	}
 	args = append(args, "--bind", filepath.Join(p.root, "cache"), "/run/drill-execution/cache",
 		"--bind", home, "/run/drill-execution/home",
+		"--bind", p.evidenceDir, p.evidenceDir,
 		"--setenv", "HOME", "/run/drill-execution/home", "--setenv", "TMPDIR", "/tmp",
 		"--setenv", "GOCACHE", "/run/drill-execution/cache/go-build",
 		"--setenv", "GOMODCACHE", "/run/drill-execution/cache/go-mod",
@@ -592,6 +623,9 @@ func (p *Policy) Sync() error {
 		p.syncedHead = hostHead
 		return nil
 	}
+	if err := p.verifyPrivateGit(); err != nil {
+		return err
+	}
 	if _, err := gitOutput(p.workDir, "fetch", "--no-write-fetch-head", "--no-tags", p.gitDir, privateHead); err != nil {
 		return fmt.Errorf("%s: import private Git result: %w", Name, err)
 	}
@@ -705,8 +739,12 @@ func (p *Policy) verifyPrivateGit() error {
 	if err != nil || len(strings.TrimSpace(string(commondir))) != 0 {
 		return fmt.Errorf("%s: task-private Git common directory was redirected", Name)
 	}
-	for _, name := range []string{"alternates", "http-alternates"} {
-		if _, err := os.Lstat(filepath.Join(p.gitDir, "objects", "info", name)); err == nil {
+	for _, name := range sealedObjectStorageFiles {
+		data, err := os.ReadFile(filepath.Join(p.gitDir, "objects", "info", name))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || len(strings.TrimSpace(string(data))) != 0 {
 			return fmt.Errorf("%s: task-private Git object storage was redirected", Name)
 		}
 	}
