@@ -603,14 +603,15 @@ fm_afk_launch_start() {
   if daemon_lock_held_by_live_daemon; then
     fm_afk_launch_record_validate_if_present || return 1
     if [ "$commander_backend" = orca ]; then
-      fm_afk_launch_record_read || return 1
-      [ "$SQUAD_AFK_REC_BACKEND" = orca ] || return 1
+      fm_afk_launch_record_read || { fm_afk_launch_log 'a daemon is already running without an Orca terminal ownership record; refusing to refresh away mode'; return 1; }
+      [ "$SQUAD_AFK_REC_BACKEND" = orca ] || { fm_afk_launch_log "a live '$SQUAD_AFK_REC_BACKEND' daemon is already running; stop it before switching to an Orca supervisor"; return 1; }
       fm_afk_launch_orca_resolve || return 1
-      fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" || return 1
-      fm_afk_launch_orca_daemon_owned || return 1
-      local current
-      current=$(fm_supervisor_native_endpoint orca "$commander_target") || return 1
-      printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --argjson current "$current" '.parent == $current' >/dev/null || return 1
+      fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" || { fm_afk_launch_log 'the running Orca daemon terminal no longer matches its recorded identity; refusing to refresh away mode'; return 1; }
+      fm_afk_launch_orca_daemon_owned || { fm_afk_launch_log 'the running Orca daemon process does not own its recorded terminal; refusing to refresh away mode'; return 1; }
+      local current bound
+      current=$(fm_supervisor_native_endpoint orca "$commander_target") || { fm_afk_launch_log "the selected Orca primary $commander_target no longer resolves to a ready readable endpoint; refusing to refresh away mode"; return 1; }
+      bound=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.parent.target // empty' 2>/dev/null) || bound=
+      printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --argjson current "$current" '.parent == $current' >/dev/null || { fm_afk_launch_log "a live Orca daemon is already bound to primary handle '${bound:-unknown}', not $commander_target; stop it before switching primary"; return 1; }
     fi
     if ! fm_afk_launch_flag_write; then
       fm_afk_launch_log "failed to refresh away-mode flag"

@@ -94,6 +94,12 @@ try {
   assert.equal(calls().find(a=>a[1]==='create').includes('--focus'),false);
   r=cli('status');assert.match(r.stdout,/active=1 terminal=alive daemon=dead/);assert.notEqual(r.status,0);
   check('public start/status bind the exact primary and create one unfocused daemon terminal');
+  // The shell guard must apply the receiver's owner-only rule (any group/other
+  // bit refuses), not a '-perm -077' all-bits test that accepts 0755.
+  chmodSync(dir,0o755);let permissive=flush('signal: permissive receiver directory');assert.notEqual(permissive.status,0);assert.equal(existsSync(`${dir}/request.json`),false);chmodSync(dir,0o700);
+  chmodSync(`${state}/.away-handoff`,0o750);permissive=flush('signal: permissive handoff directory');assert.notEqual(permissive.status,0);assert.equal(existsSync(`${dir}/request.json`),false);chmodSync(`${state}/.away-handoff`,0o700);
+  rmSync(`${state}/.subsuper-escalations`,{force:true});rmSync(`${state}/.subsuper-escalations.since`,{force:true});
+  check('group/other-accessible replacement directories are refused before publishing');
   let f=flush('signal: bounded test');assert.notEqual(f.status,0);assert.ok(existsSync(`${dir}/request.json`));assert.equal(sent.length,0);
   idle=false;await tick();assert.equal(sent.length,0);idle=true;draft='do not touch';await tick();assert.equal(sent.length,0);draft='';await emit('ui_prompt_start');await tick();assert.equal(sent.length,0);
   await emit('ui_prompt_end');consume=true;await tick();assert.equal(sent.length,1);assert.equal(JSON.parse(readFileSync(`${dir}/result.json`)).status,'handled');
@@ -135,6 +141,12 @@ try {
   check('changed endpoint and cancelled close preserve lifecycle; dead-daemon reconcile closes only owned endpoint');
   await tick();model.executeCommand=true;save();r=cli('start',{SQUAD_AFK_LAUNCH_ENTRY:''});assert.equal(r.status,0,r.stderr+'\n'+readFileSync(`${home}/daemon-output.txt`,'utf8'));reload();
   r=cli('status');assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/active=1 terminal=alive daemon=alive/);
+  const createdWhileAlive=count('create');const foreignDir=script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' term-foreign`).stdout.trim();
+  const foreignEndpoint=JSON.parse(script(`bash '${root}/bin/sq-supervisor-native.sh' endpoint orca term-foreign`).stdout);
+  mkdirSync(foreignDir,{recursive:true,mode:0o700});writeFileSync(`${foreignDir}/ready.json`,JSON.stringify({...JSON.parse(readFileSync(`${dir}/ready.json`)),endpoint:foreignEndpoint,heartbeat:Date.now()}));
+  r=cli('start',{SQUAD_SUPERVISOR_TARGET:'term-foreign'});assert.notEqual(r.status,0);assert.match(r.stderr,/already bound to primary handle 'term-primary'/);assert.equal(count('create'),createdWhileAlive);assert.ok(existsSync(`${state}/.afk`));
+  rmSync(foreignDir,{recursive:true,force:true});
+  check('an already running daemon refuses another ready primary with an actionable refusal');
   r=cli('stop');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);delete model.executeCommand;delete model.spawnedPid;save();
   check('public helpers start and stop the real daemon process inside a fake Orca terminal without inherited Pi environment');
   await tick();model.lostCreate=true;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);

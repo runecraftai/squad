@@ -41,12 +41,27 @@ fm_supervisor_native_dir() {  # <state> <target>
   printf '%s/.away-handoff/%s' "$1" "$key"
 }
 
+fm_supervisor_native_owner_only() {  # <path>: same rule as the receiver's safeDir
+  local path=$1 expected_uid owner mode
+  [ -d "$path" ] && [ ! -L "$path" ] || return 1
+  expected_uid=$(id -u) || return 1
+  if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+    owner=$(stat -f '%u' "$path" 2>/dev/null) || return 1
+    mode=$(stat -f '%Lp' "$path" 2>/dev/null) || return 1
+  else
+    owner=$(stat -c '%u' "$path" 2>/dev/null) || return 1
+    mode=$(stat -c '%a' "$path" 2>/dev/null) || return 1
+  fi
+  [ "$owner" = "$expected_uid" ] || return 1
+  case "$mode" in ''|*[!0-7]*) return 1 ;; esac
+  [ $(( 8#$mode & 077 )) -eq 0 ]
+}
+
 fm_supervisor_native_safe_dir() {  # <state> <target>
   local dir
   dir=$(fm_supervisor_native_dir "$1" "$2") || return 1
-  [ -d "$1/.away-handoff" ] && [ ! -L "$1/.away-handoff" ] && [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
   # The receiver creates owner-only directories; refuse a permissive replacement.
-  [ "$(find "$1/.away-handoff" "$dir" -maxdepth 0 \( -perm -077 -o ! -user "$(id -u)" \) -print)" = '' ] || return 1
+  fm_supervisor_native_owner_only "$1/.away-handoff" && fm_supervisor_native_owner_only "$dir" || return 1
   printf '%s' "$dir"
 }
 
