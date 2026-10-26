@@ -1418,7 +1418,7 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
     return 0  # Backend confirmed the submit.
   fi
   case "$verdict" in
-    agent_blocked|queue_full|no_agent)
+    agent_blocked|queue_full|no_agent|not_ready)
       log "inject failed: the backend refused before typing (verdict=$verdict, nothing is in the composer; digest stays buffered)"
       return 1
       ;;
