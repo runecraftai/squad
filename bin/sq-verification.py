@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 MARKER = "<!-- squad-escaped-defect:v1 -->"
@@ -107,6 +108,19 @@ def render_section(values):
     return "\n".join(lines) + "\n"
 
 
+def patch_issue_body(repo, number, body):
+    handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="", suffix=".md",
+                                         delete=False)
+    path = Path(handle.name)
+    try:
+        with handle:
+            handle.write(body)
+        sq_gh(["api", "PATCH", f"/repos/{repo}/issues/{number}",
+               "--field", f"body=@{path}"])
+    finally:
+        path.unlink(missing_ok=True)
+
+
 def issue_record(args):
     repo, number = repo_issue(args.issue)
     values = {
@@ -129,8 +143,7 @@ def issue_record(args):
     if MARKER in body:
         body = body.split(MARKER, 1)[0].rstrip()
     prefix = body.rstrip() + "\n\n" if body.strip() else ""
-    sq_gh(["api", "PATCH", f"/repos/{repo}/issues/{number}",
-           "--field", f"body={prefix}{render_section(values)}"])
+    patch_issue_body(repo, number, f"{prefix}{render_section(values)}")
     print(f"recorded: {args.issue}")
 
 

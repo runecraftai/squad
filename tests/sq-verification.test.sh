@@ -64,10 +64,18 @@ const jqExpression = jqAt === -1 ? undefined : argv[jqAt + 1];
 const fieldAt = argv.indexOf("--field");
 const field = fieldAt === -1 ? undefined : argv[fieldAt + 1];
 
+// Mirrors gh api's -F/--field value parsing: a leading @ reads a file, and
+// {owner}/{repo}/{branch} expand from the repository the request targets.
+function fieldValue(raw) {
+  if (raw.startsWith("@")) return readFileSync(raw.slice(1), "utf8");
+  const placeholders = { owner: "acme", repo: "app", branch: "main" };
+  return raw.replace(/\{(owner|repo|branch)\}/g, (_, name) => placeholders[name]);
+}
+
 const issues = JSON.parse(readFileSync(process.env.ISSUES_JSON, "utf8"));
 let data;
 if (method === "PATCH") {
-  writeFileSync(process.env.PATCH_BODY, String(field).replace(/^body=/, ""));
+  writeFileSync(process.env.PATCH_BODY, fieldValue(String(field).replace(/^body=/, "")));
   data = { number: Number(path.split("/").pop()) };
 } else if (path.includes("?")) {
   const page = Number(new URLSearchParams(path.split("?")[1]).get("page"));
@@ -149,6 +157,12 @@ issues = [
         "title": "Recorded defect behind astral text",
         "html_url": "https://github.com/acme/app/issues/21",
         "body": ("\U0001F642" * 1400) + ("x" * 200) + "\n\n" + section + "\n",
+    },
+    {
+        "number": 22,
+        "title": "Recorded mention and placeholders",
+        "html_url": "https://github.com/acme/app/issues/22",
+        "body": "@maintainers see {owner}/{repo} on {branch}\n\n" + section + "\n",
     },
     {
         "number": 99,
@@ -341,5 +355,22 @@ assert_contains "$written" "$ASTRAL_RUN" \
 assert_contains "$written" "reproduction: run astral case" \
   "record omitted the astral-body issue's reproduction"
 pass "record preserves a body containing non-BMP text"
+
+: > "$CALL_LOG"
+"$VERIFY" record https://github.com/acme/app/issues/22 \
+  --discovered-at 2026-11-05T00:00:00Z --pr https://github.com/acme/app/pull/8 \
+  --sha "$SHA" --reproduction '@maintainers reproduce on {branch}' \
+  --regression 'tests/output.test.sh' --gate 'Drill CI' --missed-reason 'case missing' >/dev/null \
+  || fail "record failed on an issue body that starts with an @-mention"
+written=$(cat "$PATCH_BODY")
+assert_contains "$written" '@maintainers see {owner}/{repo} on {branch}' \
+  "record dropped or rewrote pre-existing body text that gh's typed field parses"
+assert_contains "$written" 'reproduction: @maintainers reproduce on {branch}' \
+  "record rewrote a recorded value that gh's typed field parses"
+replace_issue_body "$ISSUES_JSON" 22 "$PATCH_BODY"
+out=$("$VERIFY" report acme/app) || fail "report failed after recording an @-mention body"
+assert_contains "$out" '  reproduction: @maintainers reproduce on {branch}' \
+  "report lost an @-prefixed recorded value"
+pass "record and report transmit @-prefixed and placeholder-bearing text verbatim"
 
 printf 'sq-verification tests passed\n'
