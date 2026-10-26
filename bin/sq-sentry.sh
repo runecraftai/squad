@@ -974,14 +974,15 @@ signal_task_is_terminal_and_agentless() {  # <signal-file>
 # mtime-vs-a-startup-touch, so signals that land while no sentry is running
 # are caught by the next one, and same-second writes cannot slip through a
 # strict -nt comparison. Prints one "<seen-file>\t<sig>\t<file>" line per
-# changed file; its only other write is the orphan drop below. .seen-* is
-# updated only after the wake is either surfaced or intentionally absorbed, so
-# a sentry killed mid-cycle never swallows a signal. A signal whose task record
-# is gone belongs to a torn-down task that nothing supervises: it is dropped
-# with its .seen-* marker here, so a late turn-end touch cannot keep waking
-# Squad for a task that no longer exists.
+# changed file; its other writes are the orphan drop and the terminal-agentless
+# marker retirement below, and both only run for a file that would otherwise be
+# reported. .seen-* is updated only after the wake is either surfaced or
+# intentionally absorbed, so a sentry killed mid-cycle never swallows a signal.
+# A signal whose task record is gone belongs to a torn-down task that nothing
+# supervises: it is dropped with its .seen-* marker here, so a late turn-end
+# touch cannot keep waking Squad for a task that no longer exists.
 scan_signals() {
-  local f sig sf
+  local f sig sf task
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
     [ -e "$f" ] || continue
     sf="$STATE/.seen-$(basename "$f" | tr '.' '_')"
@@ -989,6 +990,8 @@ scan_signals() {
       rm -f "$sf"
       continue
     fi
+    sig=$(stat_sig "$f") || continue
+    [ "$sig" = "$(cat "$sf" 2>/dev/null)" ] && continue
     if signal_task_is_terminal_and_agentless "$f"; then
       task=${f##*/}
       task=${task%.status}
@@ -996,10 +999,7 @@ scan_signals() {
       retire_task_watcher_markers "$STATE" "$task"
       continue
     fi
-    sig=$(stat_sig "$f") || continue
-    if [ "$sig" != "$(cat "$sf" 2>/dev/null)" ]; then
-      printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
-    fi
+    printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
   done
   return 0
 }
