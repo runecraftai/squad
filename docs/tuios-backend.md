@@ -45,6 +45,7 @@ Distinct delivery verdicts reach the caller:
 | `stalled` | The entry was typed and the agent showed no sign of taking it. Do not resend. | non-zero |
 | `not_ready`, `prompt_stalled` | Mapped from the daemon's documented refusal codes. The asynchronous queue path does not currently raise them. | non-zero |
 | `no_agent` | TUIOS cannot attribute an agent to the pane; Squad refuses delivery without typing into the terminal. | non-zero |
+| `uncertain-delivery` | The daemon's queue reply carried no unambiguous entry id, so bytes may already have been queued. Never retype; inspect the queue and the pane. | non-zero |
 | `send-failed` | Any other refusal. | non-zero |
 
 Pi and pi-signed tasks still use Squad's task-private Pi delivery dropbox first, exactly as on every other backend; the TUIOS path is used when that dropbox is unavailable and for every other harness.

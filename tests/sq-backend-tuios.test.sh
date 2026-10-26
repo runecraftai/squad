@@ -1414,6 +1414,24 @@ SQUAD_BASE="$SEND_HOME" SQUAD_BACKEND=tuios SQUAD_TUIOS_SESSION=owned \
   || fail 'sq-send must invoke native respond exactly once'
 pass 'sq-send: recorded task id routes a prompt-bound response to its TUIOS window'
 
+# The no-attributed-agent refusal is a no-op, not an ambiguous send: sq-send
+# must say nothing was typed so no caller re-sends into that terminal.
+: > "$SQUAD_TUIOS_LOG"
+err="$TMP_ROOT/sq-send-no-agent.err"
+if SQUAD_BASE="$SEND_HOME" SQUAD_BACKEND=tuios SQUAD_TUIOS_SESSION=owned \
+  SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-respond-task \
+  SQUAD_TUIOS_FAKE_QUEUE_FAIL=1 \
+  SQUAD_TUIOS_FAKE_QUEUE_ERROR='queue-prompt failed: window w-opaque_7 runs no agent tuios knows of, so nothing would take a queued prompt.' \
+  "$ROOT/bin/sq-send.sh" respond-task 'pick up the next unit' >/dev/null 2>"$err"; then
+  fail 'a no-attributed-agent refusal must not report a delivered steer'
+fi
+assert_contains "$(cat "$err")" 'nothing was typed' 'a no-attributed-agent refusal must be reported as nothing typed'
+assert_not_contains "$(cat "$err")" 'delivery unconfirmed' 'a no-attributed-agent refusal must not be reported as an unconfirmed send'
+if grep -qE '^(send-text|send-keys) ' "$SQUAD_TUIOS_LOG"; then
+  fail 'a no-attributed-agent refusal must not type into the pane'
+fi
+pass 'sq-send: a no-attributed-agent refusal reports nothing typed and types nothing'
+
 # --- composer state ---------------------------------------------------------
 # The composer is read from the pane: a bordered box whose rows are all blank is
 # empty, any content is pending, and anything not provably a composer box at the

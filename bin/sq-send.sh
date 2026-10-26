@@ -692,9 +692,10 @@ else
       echo "error: text was typed into $T but the agent showed no sign of taking it (verdict=${verdict:-unknown}; tried $RESOLUTION_TRIED); inspect the pane before resending" >&2
       exit 1
       ;;
-    agent_blocked|queue_full|not_ready)
-      # The target declined before anything was typed, or its agent queue is
-      # full. The distinct verdict names which; nothing is retried.
+    agent_blocked|queue_full|not_ready|no_agent)
+      # The target declined before anything was typed, its agent queue is full,
+      # or no agent could be attributed to the pane. The distinct verdict names
+      # which; nothing is retried.
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi
