@@ -1553,10 +1553,10 @@ if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-pros
   fail 'a malformed changed-prompt recovery reply must still be a known no-op'
 fi
 printf '%s' "$(cat "$TMP_ROOT/respond-prose-malformed.out")" | jq -e '
-  .type == "tuios_prompt_recovery"
-  and .reason == "changed_prompt_refusal"
-  and .read == "failed"
-  and has("blocked") | not
+  (.type == "tuios_prompt_recovery")
+  and (.reason == "changed_prompt_refusal")
+  and (.read == "failed")
+  and (has("blocked") | not)
 ' >/dev/null 2>&1 || fail 'a recovery reply without a boolean blocked state must be an explicit read failure'
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a malformed recovery reply must invoke the provider exactly once'
