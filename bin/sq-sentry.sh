@@ -240,8 +240,6 @@ _event_cap_fails=0
 TERMINAL_PROBE_SECS=300
 _terminal_probe_memo=""
 _terminal_probe_hit=""
-_terminal_probe_logged=""
-_terminal_probe_age=""
 
 # afk_present: 0 while the away-mode flag exists. When set, the daemon wraps this
 # sentry and owns triage, so the sentry must behave one-shot (enqueue + exit on
@@ -274,14 +272,10 @@ window_is_busy() {  # <window> <tail40>
 }
 
 # terminal_probe_lookup: 0 when a memoized verdict for <task> at <signature> is
-# still within TERMINAL_PROBE_SECS, leaving it in _terminal_probe_hit, with its
-# bounded-trace state in _terminal_probe_logged and its record time in
-# _terminal_probe_age.
+# still within TERMINAL_PROBE_SECS, leaving it in _terminal_probe_hit.
 terminal_probe_lookup() {  # <task> <signature>
-  local task=$1 sig=$2 line age verdict logged now=
+  local task=$1 sig=$2 line age verdict now=
   _terminal_probe_hit=""
-  _terminal_probe_logged=""
-  _terminal_probe_age=""
   while IFS= read -r line; do
     [ "${line%%$'\t'*}" = "$task" ] || continue
     line=${line#*$'\t'}
@@ -290,14 +284,10 @@ terminal_probe_lookup() {  # <task> <signature>
     age=${line%%$'\t'*}
     line=${line#*$'\t'}
     verdict=${line%%$'\t'*}
-    logged=${line#*$'\t'}
     case "$age" in ''|*[!0-9]*) return 1 ;; esac
     [ -n "$now" ] || now=$(date +%s)
     [ $(( now - age )) -lt "$TERMINAL_PROBE_SECS" ] || return 1
-    case "$logged" in 0|1) ;; *) logged=0 ;; esac
     _terminal_probe_hit=$verdict
-    _terminal_probe_logged=$logged
-    _terminal_probe_age=$age
     return 0
   done <<EOF
 $_terminal_probe_memo
@@ -305,14 +295,32 @@ EOF
   return 1
 }
 
+# terminal_probe_traced: 1 when the memo already recorded a traced terminal skip
+# for <task> at <signature>. A refresh re-confirms the same generation instead of
+# starting a new one, so it never repeats the trace.
+terminal_probe_traced() {  # <task> <signature>
+  local task=$1 sig=$2 line rest logged
+  while IFS= read -r line; do
+    [ "${line%%$'\t'*}" = "$task" ] || continue
+    rest=${line#*$'\t'}
+    [ "${rest%%$'\t'*}" = "$sig" ] || continue
+    rest=${rest#*$'\t'}
+    rest=${rest#*$'\t'}
+    logged=${rest#*$'\t'}
+    case "$logged" in 1) printf '1'; return 0 ;; esac
+    printf '0'
+    return 0
+  done <<EOF
+$_terminal_probe_memo
+EOF
+  printf '0'
+}
+
 # terminal_probe_store: replace <task>'s memo entry with <signature> <verdict>
-# <logged>, recorded at <recorded-at> (default now) so marking an existing
-# generation as traced does not extend its own refresh, and dropping the
-# generations of tasks whose metadata is gone so a long-lived sentry's memo
-# stays bounded by the live supervision set.
-terminal_probe_store() {  # <task> <signature> <verdict> <logged> [recorded-at]
-  local task=$1 sig=$2 verdict=$3 logged=$4 at=${5:-} kept="" line
-  [ -n "$at" ] || at=$(date +%s)
+# <logged>, dropping the generations of tasks whose metadata is gone so a
+# long-lived sentry's memo stays bounded by the live supervision set.
+terminal_probe_store() {  # <task> <signature> <verdict> <logged>
+  local task=$1 sig=$2 verdict=$3 logged=$4 kept="" line
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     [ "${line%%$'\t'*}" = "$task" ] && continue
@@ -321,7 +329,7 @@ terminal_probe_store() {  # <task> <signature> <verdict> <logged> [recorded-at]
   done <<EOF
 $_terminal_probe_memo
 EOF
-  _terminal_probe_memo="$kept$task"$'\t'"$sig"$'\t'"$at"$'\t'"$verdict"$'\t'"$logged"$'\n'
+  _terminal_probe_memo="$kept$task"$'\t'"$sig"$'\t'"$(date +%s)"$'\t'"$verdict"$'\t'"$logged"$'\n'
 }
 
 # A window whose execution is genuinely terminal and whose recorded pane has no
@@ -339,12 +347,12 @@ EOF
 # side. The verdict is memoized per task generation, which carries the
 # attribution and the busy-record/dispatch signatures the projection consumes,
 # so a claim that clears, another attempt that starts, or an agent that returns
-# all re-read it instead of inheriting a terminal latch, and within one
-# unchanged generation the first agentless skip is logged once, so a window that
-# stops escalating is visible in the field without a per-poll trace. A retained
-# record with no dispatch sidecar - meta published before the claim that never
-# landed, or removed before the meta on an interrupted teardown - has no
-# recorded state to read and is judged by that projection alone.
+# all re-read it instead of inheriting a terminal latch. The first agentless
+# skip of one unchanged generation is traced once, and re-confirming that
+# generation on the refresh cadence does not trace it again. A retained record
+# with no dispatch sidecar - meta published before the claim that never landed,
+# or removed before the meta on an interrupted teardown - has no recorded state
+# to read and is judged by that projection alone.
 window_is_terminal_and_agentless() {  # <window> <task>
   local w=$1 task=$2 recorded sig attr
   [ -n "$task" ] || return 1
@@ -357,15 +365,12 @@ window_is_terminal_and_agentless() {  # <window> <task>
   sig="$recorded|$attr|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")|$(stat_sig "$(fm_busy_record_path "$STATE" "$task")")|$(stat_sig "$STATE/$task.exec")"
   if terminal_probe_lookup "$task" "$sig"; then
     [ "$_terminal_probe_hit" = terminal ] || return 1
-    if [ "$_terminal_probe_logged" != 1 ]; then
-      terminal_probe_store "$task" "$sig" terminal 1 "$_terminal_probe_age"
-      triage_log "skipped stale supervision (terminal execution, agentless window): $w"
-    fi
     return 0
   fi
   if task_execution_is_terminal "$STATE" "$task" "$recorded"; then
+    [ "$(terminal_probe_traced "$task" "$sig")" = 1 ] \
+      || triage_log "skipped stale supervision (terminal execution, agentless window): $w"
     terminal_probe_store "$task" "$sig" terminal 1
-    triage_log "skipped stale supervision (terminal execution, agentless window): $w"
   else
     terminal_probe_store "$task" "$sig" open 0
     return 1

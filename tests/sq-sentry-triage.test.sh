@@ -3079,10 +3079,10 @@ test_agentless_window_with_unretired_terminal_execution_skips_stale() {
 # it once per window per poll. The sentry memoizes the verdict per task
 # generation, which carries the pane's agent attribution and the busy-record and
 # dispatch evidence the projection consumes, so a live pane is never skipped and
-# never pays for the projection, the incident sequence - a terminal claim
-# memoized while its agent was alive, then the agent dies - still yields its one
-# bounded trace on the first agentless skip, and a changed generation re-reads
-# instead of inheriting a terminal latch.
+# never pays for the projection, the incident sequence - the operator dies on an
+# unretired record whose only claim is a busy pane - yields exactly one bounded
+# trace even when the sentry re-confirms that generation on its refresh cadence,
+# and a changed generation re-reads instead of inheriting a terminal latch.
 test_terminal_projection_is_memoized_per_task_generation() {
   local dir state fakebin window calls verdicts
   dir=$(make_case terminal-probe-memo); state="$dir/state"; fakebin="$dir/fakebin"
@@ -3109,45 +3109,53 @@ SH
     SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_COMMAND_FILE="$dir/command.txt" \
     SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy' \
     bash -c '. "$1" || exit 1
+      poll() { if window_is_terminal_and_agentless "$1" memo; then echo terminal; else echo open; fi; }
       i=0
       while [ "$i" -lt 4 ]; do
-        if window_is_terminal_and_agentless "$2" memo; then echo terminal; else echo open; fi
+        poll "$2"
         i=$((i + 1))
       done
       printf "bash\n" > "$3"
       i=0
       while [ "$i" -lt 4 ]; do
-        if window_is_terminal_and_agentless "$2" memo; then echo terminal; else echo open; fi
+        poll "$2"
         i=$((i + 1))
       done
+      TERMINAL_PROBE_SECS=0
+      i=0
+      while [ "$i" -lt 3 ]; do
+        poll "$2"
+        i=$((i + 1))
+      done
+      TERMINAL_PROBE_SECS=300
       printf "working: run still queued\n" >> "$SQUAD_STATE_OVERRIDE/memo.status"
       SQUAD_FAKE_CREW_STATE="state: parked · source: run-step · parked at review gate"
       export SQUAD_FAKE_CREW_STATE
-      if window_is_terminal_and_agentless "$2" memo; then echo terminal; else echo open; fi
+      poll "$2"
       printf "state=idle source=pi-ext\n" > "$SQUAD_STATE_OVERRIDE/memo.busy-state"
       SQUAD_FAKE_CREW_STATE="state: unknown · source: pane · harness state unavailable"
       export SQUAD_FAKE_CREW_STATE
-      if window_is_terminal_and_agentless "$2" memo; then echo terminal; else echo open; fi
+      poll "$2"
       printf "pi\n" > "$3"
-      if window_is_terminal_and_agentless "$2" memo; then echo terminal; else echo open; fi' \
+      poll "$2"' \
     _ "$WATCH" "$window" "$dir/command.txt") || fail "could not drive the terminal projection"
   [ "$(printf '%s\n' "$verdicts" | sed -n '1,4p' | sort -u)" = open ] \
     || fail "a live agent was skipped by a terminal projection: $verdicts"
-  [ "$(printf '%s\n' "$verdicts" | sed -n '5,8p' | sort -u)" = terminal ] \
+  [ "$(printf '%s\n' "$verdicts" | sed -n '5,11p' | sort -u)" = terminal ] \
     || fail "an agentless terminal window was not read as terminal on every poll: $verdicts"
-  [ "$(printf '%s\n' "$verdicts" | sed -n '9p')" = open ] \
+  [ "$(printf '%s\n' "$verdicts" | sed -n '12p')" = open ] \
     || fail "a started run did not re-read the terminal projection: $verdicts"
-  [ "$(printf '%s\n' "$verdicts" | sed -n '10p')" = open ] \
+  [ "$(printf '%s\n' "$verdicts" | sed -n '13p')" = open ] \
     || fail "a cleared busy claim did not re-read the terminal projection: $verdicts"
-  [ "$(printf '%s\n' "$verdicts" | sed -n '11p')" = open ] \
+  [ "$(printf '%s\n' "$verdicts" | sed -n '14p')" = open ] \
     || fail "a returning agent inherited the memoized verdict: $verdicts"
-  [ "$(wc -l < "$calls" | tr -d ' ')" = 3 ] \
-    || fail "the terminal projection ran $(wc -l < "$calls" | tr -d ' ') times across eleven polls of one task, expected once per generation"
+  [ "$(wc -l < "$calls" | tr -d ' ')" = 6 ] \
+    || fail "the terminal projection ran $(wc -l < "$calls" | tr -d ' ') times across fourteen polls of one task, expected once per generation and once per refresh"
   [ "$(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
     || fail "the first agentless skip of one generation was traced $(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true) times instead of once: $(cat "$state/.sentry-triage.log" 2>/dev/null)"
   grep -F "$window" "$state/.sentry-triage.log" >/dev/null \
     || fail "the bounded skip trace did not name the skipped window: $(cat "$state/.sentry-triage.log" 2>/dev/null)"
-  pass "the terminal projection is read once per task generation, and the skip is traced once for the incident sequence"
+  pass "the terminal projection is read once per task generation, and one generation is traced once across its refreshes"
 }
 
 # A task record can outlive its dispatch sidecar: the meta is published before the
