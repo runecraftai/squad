@@ -1532,6 +1532,7 @@ SQUAD_TUIOS_FAKE_RESPOND_MARK="$TMP_ROOT/respond-mark"
 SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND=prompt-beta
 export SQUAD_TUIOS_FAKE_RESPOND_PROSE SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
 rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
 if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose.out" 2>"$err"; then
   fail 'a prose prompt-changed refusal must not report success'
 fi
@@ -1552,7 +1553,10 @@ printf '%s' "$(cat "$TMP_ROOT/respond-prose.out")" | jq -e '
 unset SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a prose prompt-changed refusal must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a changed-prompt refusal must perform at most one read-only recovery read'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
 SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=unblocked
 export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
 rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
@@ -1570,7 +1574,10 @@ printf '%s' "$(cat "$TMP_ROOT/respond-prose-unblocked.out")" | jq -e '
 ' >/dev/null 2>&1 || fail 'a changed-prompt recovery read that finds no blocked prompt must say so explicitly'
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a cleared changed prompt must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a cleared changed prompt must still perform only one recovery read'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
 SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=fail
 export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
 rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
@@ -1588,7 +1595,10 @@ printf '%s' "$(cat "$TMP_ROOT/respond-prose-readfail.out")" | jq -e '
 ' >/dev/null 2>&1 || fail 'a failed changed-prompt recovery read must be reported explicitly'
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a failed changed-prompt recovery read must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a failed recovery read must not be retried'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
 SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=malformed
 export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
 rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
@@ -1603,7 +1613,10 @@ printf '%s' "$(cat "$TMP_ROOT/respond-prose-malformed.out")" | jq -e '
 ' >/dev/null 2>&1 || fail 'a recovery reply without a boolean blocked state must be an explicit read failure'
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a malformed recovery reply must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a malformed recovery reply must not be re-read'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
 weird_target='owned:w"q\b'
 rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
 if fm_backend_tuios_respond "$weird_target" approve p1 >"$TMP_ROOT/respond-prose-quoted.out" 2>"$err"; then
@@ -1616,6 +1629,8 @@ printf '%s' "$(cat "$TMP_ROOT/respond-prose-quoted.out")" | jq -e --arg target "
 ' >/dev/null 2>&1 || fail 'a recovery payload must escape a target that contains JSON metacharacters'
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a quoted target must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a quoted target must still perform only one recovery read'
 unset SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 unset SQUAD_TUIOS_FAKE_PROMPT_ID

@@ -454,7 +454,9 @@ fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]
 # fm_backend_tuios_respond answers only the exact prompt the supervisor read.
 # The daemon rechecks prompt_id atomically and enforces its respond authority;
 # this call is deliberately never retried because a lost reply may follow a
-# successful answer.
+# successful answer. The recovery reads below are read-only context for a new
+# decision: an unconfirmed write stays unresolved even when they still show the
+# same prompt, and no observation from them ever authorizes a resend.
 fm_backend_tuios_prompt_recovery_payload() {  # <target> <reason> <attempted-id> <attempted-action> <attempted-value> <read-state> [prompt-json] [write] [diagnostic]
   local target=$1 reason=$2 attempted_id=$3 attempted_action=$4 attempted_value=$5 read_state=$6 prompt=${7:-null} write=${8:-} diagnostic=${9:-}
   jq -cn \
