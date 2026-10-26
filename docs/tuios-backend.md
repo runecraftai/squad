@@ -126,10 +126,10 @@ The flow when a dialog blocks an operator:
    Send the decision with `bin/sq-send.sh <id> --respond <action> <prompt-id> [value]`.
    Use `approve` or `deny` for an approval, `choose` with the displayed option number for a numbered question, and `text` with the answer a free-text prompt accepts; an action the current prompt does not accept is refused by name and nothing is answered.
    It re-reads the current prompt, requires the same `prompt_id`, verifies the action and selected option, then lets TUIOS enforce the answering pane's `respond` authority and atomically refuse a changed prompt.
-   A stale id expires the old decision for every action and returns a `tuios_prompt_recovery` JSON snapshot with the target, current id, supported actions, displayed options, and prompt; the supervisor must make a new decision.
-   A daemon-confirmed changed-prompt refusal performs at most one read-only recovery read and returns that snapshot or an explicit read failure.
+   A stale id expires the old decision for every action and returns a `tuios_prompt_recovery` JSON snapshot with the target, current id, supported actions, displayed options, and prompt, alongside the attempted id, action, and value; the supervisor must make a new decision.
+   A daemon-confirmed changed-prompt refusal performs at most one read-only recovery read and returns that snapshot, an explicit nonblocked state, or an explicit read failure.
    `approve_always` and risk-matched approvals are not inferred or automated; a TUIOS risk refusal confirms that nothing was answered.
-   The command invokes `respond` once; an unconfirmed write remains unresolved even if reconciliation still sees the same prompt, and its read-only observation never authorizes a retry.
+   The command invokes `respond` once; an unconfirmed write preserves the attempted id, action, value, and original diagnostic and remains unresolved even if reconciliation still sees the same prompt, and its read-only observation never authorizes a retry.
    Exact-id confirmation is emitted independently of settlement, so an unknown settlement does not erase evidence that the answer was confirmed.
    The older `bin/sq-send.sh <id> --key <key>` path remains available for key-only prompts, but it does not bind the answer to a prompt id.
    Free text through ordinary `sq-send` remains refused while blocked because that would answer without the prompt-specific permission and identity checks.
