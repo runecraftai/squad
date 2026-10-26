@@ -797,7 +797,7 @@ Observed output:
 
 ```text
 respond-lab: tuios=tuios version 0.9.1 [pure-Go backend] lab_session=sq-afk-lab-2397900315-348316-30139 operator_window=sq-afk-lab-2397900315-348316-30139:fa6c7a1f-b21f-4363-b1b3-c16eda37e672
-respond-lab: native_event_wait_rc=0 record=fa6c7a1f-b21f-4363-b1b3-c16eda37e672			blocked	
+respond-lab: native_event_wait_rc=0 record=fa6c7a1f-b21f-4363-b1b3-c16eda37e672			blocked
 respond-lab: supervisor_wake=stale: sq-afk-lab-2397900315-348316-30139:fa6c7a1f-b21f-4363-b1b3-c16eda37e672 (tuios: agent blocked - approval: Do you want to proceed? [1) Yes 2) Yes, and don't ask again for similar commands 3) No, and tell Claude what to do differently (esc)] - waiting on human, escalated immediately, not via wedge timer)
 respond-lab: prompt_id=9f5b19446fb8b12d option_numbers=1 2 3
 respond-lab: unauthorized_answer_rc=1 output=●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
