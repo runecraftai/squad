@@ -1066,10 +1066,13 @@ fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
 }
 
 # fm_backend_tuios_events_capable: the installed daemon's own catalog is the
-# authority for native subscriptions. This is optional so older supported
-# TUIOS versions continue using the ordinary level-reconcile poll.
-fm_backend_tuios_events_capable() {  # <session>
-  local catalog=$1 bin
+# authority for native subscriptions. The catalog describes the binary
+# (`tuios list-verbs` takes no session), so the probe is session-independent and
+# the dispatcher's session argument is deliberately not taken. This is optional
+# so older supported TUIOS versions continue using the ordinary level-reconcile
+# poll.
+fm_backend_tuios_events_capable() {
+  local catalog bin
   bin=$(fm_backend_tuios_bin)
   command -v python3 >/dev/null 2>&1 || return 1
   catalog=$("$bin" list-verbs --json 2>/dev/null) || return 1
@@ -1092,7 +1095,7 @@ fm_backend_tuios_wait_transition() {  # <session> <timeout> <state_dir> <window.
   local windows=("$@") w bin reader=() fifo_dir fifo reader_pid line event_window record hit rc=1 reader_rc=0
   [ "${#windows[@]}" -gt 0 ] || return 2
   if [ "${SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED:-0}" != 1 ]; then
-    fm_backend_tuios_events_capable "$session" || return 2
+    fm_backend_tuios_events_capable || return 2
   fi
   bin=$(fm_backend_tuios_bin)
   reader=(python3 "$SQUAD_BACKEND_TUIOS_ROOT/bin/backends/tuios-eventwait.py" "$bin" "$session" "$timeout")
@@ -1119,7 +1122,12 @@ fm_backend_tuios_wait_transition() {  # <session> <timeout> <state_dir> <window.
     w="$session:$event_window"
     if hit=$(fm_backend_tuios_poll_transition "$state" "$session" "$w"); then printf '%s' "$hit"; rc=0; break; fi
   done
-  [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] && { kill "$reader_pid" 2>/dev/null || true; }
+  if [ "$rc" -eq 0 ]; then
+    kill "$reader_pid" 2>/dev/null || true
+  fi
+  if [ "$rc" -eq 2 ]; then
+    kill "$reader_pid" 2>/dev/null || true
+  fi
   wait "$reader_pid" 2>/dev/null || reader_rc=$?
   exec 9<&-
   rm -rf "$fifo_dir" 2>/dev/null || true
