@@ -137,7 +137,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-verification.sh`     | Registrar o momento de descoberta de um defeito escapado, o PR mesclado afetado e o SHA completo, a reprodução ou um motivo explícito de desconhecido, o cenário de regressão, e o gate pré-merge que não o pegou na issue GitHub existente dele, e reportar todo defeito registrado de um repo |
 | `sq-verification.py`     | Implementação Python dos comandos de registro e relatório de defeitos escapados, lendo e escrevendo corpos de issue verbatim pelo decodificador TOON do `sq-gh` |
 | `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de perfil |
-| `sq-playbook-rule.sh`    | Instalar a regra oxlint autoritativa do playbook, sua checagem colocalizada, sua config exclusiva e seu comando de verificação no diretório `tools/oxlint` de um projeto adotante |
+| `sq-playbook-rule.sh`    | Instalar a regra oxlint autoritativa do playbook, sua checagem colocalizada, sua config exclusiva e seu comando de verificação no diretório `tools/oxlint` de um projeto adotante e conectar o comando aos scripts de pacote e ao CI dele |
 | `sq-promote.sh`          | Promover uma tarefa recon in-place a uma tarefa strike protegida com modo de entrega explícito |
 | `sq-teardown.sh`         | Teardown fail-closed: devolver worktrees ship landadas, exigir entregáveis completos de recon, aposentar bases XO |
 | `sq-harness.sh`          | Detectar o harness em execução e resolver crew ou XO harness, modelo e esforço |

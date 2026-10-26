@@ -58,6 +58,7 @@ make_spawn_case() {
   mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
   printf '%s\n' "$harness" > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
+  printf '{"name":"%s","private":true}\n' "$name" > "$wt/package.json"
   touch "$home/state/.last-sentry-beat"
   for id in "$@"; do
     mkdir -p "$home/data/$id"
@@ -829,10 +830,15 @@ test_react_profile_identity_survives_spawn() {
   assert_grep 'playbook_version=1' "$HOME_DIR/state/$id.meta" 'spawn lost the playbook version'
   assert_grep 'Execution profile: id=react version=1' "$HOME_DIR/data/$id/brief.md" 'React profile block missing from the delivered brief'
   assert_grep 'brief.md' "$LAUNCH_LOG" 'React profile spawn must deliver its materialized brief'
-  for file in no-filesystem-routes.mjs no-filesystem-routes.check.mjs no-filesystem-routes.oxlintrc.json verify-no-filesystem-routes.mjs; do
+  for file in no-filesystem-routes.mjs no-filesystem-routes.node-check.mjs no-filesystem-routes.oxlintrc.json verify-no-filesystem-routes.mjs; do
     cmp -s "$ROOT/.agents/skills/execution-playbooks/rules/$file" "$WT_DIR/tools/oxlint/$file" \
       || fail "React profile spawn did not install the authoritative $file into the task worktree"
   done
+  node -e 'const p = require(process.argv[1]); process.exit(p.scripts?.["verify:routes"] === "node tools/oxlint/verify-no-filesystem-routes.mjs" ? 0 : 1)' \
+    "$WT_DIR/package.json" \
+    || fail "React profile spawn did not wire the verify:routes package script"
+  assert_present "$WT_DIR/.github/workflows/no-filesystem-routes.yml" \
+    "React profile spawn did not add a CI check for the route gate"
   pass 'React profile scaffold launches with its paired playbook'
 }
 

@@ -227,6 +227,72 @@ test("the verification command catches every banned pattern and an uncommitted r
   }
 });
 
+test("the verification command ignores suppression text outside comments and accepts a bare directive in clean code", () => {
+  const dir = makeProject();
+  try {
+    fs.writeFileSync(
+      routeFile(dir),
+      'import { createRootRoute, createRoute } from "@tanstack/react-router";\nexport const note = "prefix /* oxlint-disable */ suffix";\nexport const Route = createRoute({});\n',
+    );
+    const stringResult = runVerifier(dir);
+    assert.equal(stringResult.status, 0, `a string containing a directive token must not fail the command:\n${output(stringResult)}`);
+
+    fs.writeFileSync(
+      routeFile(dir),
+      '// oxlint-disable\nimport { createRootRoute, createRoute } from "@tanstack/react-router";\nexport const Route = createRoute({});\n',
+    );
+    const bareResult = runVerifier(dir);
+    assert.equal(
+      bareResult.status,
+      0,
+      `a bare directive in a file without filesystem routing must not fail the command:\n${output(bareResult)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a named suppression fails even when the file has no filesystem routing", () => {
+  const dir = makeProject();
+  try {
+    fs.writeFileSync(
+      routeFile(dir),
+      '// oxlint-disable squad/no-filesystem-routes\nimport { createRootRoute, createRoute } from "@tanstack/react-router";\nexport const Route = createRoute({});\n',
+    );
+    const result = runVerifier(dir);
+    assert.notEqual(result.status, 0, `a named suppression must fail even without filesystem routing:\n${output(result)}`);
+    assert.match(output(result), /no-filesystem-routes/, `the failure must name the rule:\n${output(result)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the rule does not report a bare directive in code without filesystem routing", () => {
+  const dir = makeProject();
+  try {
+    fs.writeFileSync(
+      routeFile(dir),
+      'import { createRootRoute, createRoute } from "@tanstack/react-router";\nexport const Route = createRoute({}); // oxlint-disable-line\n',
+    );
+    const result = spawnSync(
+      requireOxlint(),
+      [
+        "--config",
+        "tools/oxlint/no-filesystem-routes.oxlintrc.json",
+        "-A",
+        "all",
+        "-D",
+        "squad/no-filesystem-routes",
+        "src/app/routes/index.tsx",
+      ],
+      { cwd: dir, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, `a bare directive must not be reported as a suppression by the rule:\n${output(result)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the rule reports a suppression directive that names it during a direct lint", () => {
   const dir = makeProject();
   try {

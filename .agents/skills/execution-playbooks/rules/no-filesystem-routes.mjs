@@ -10,14 +10,13 @@ function suppressionTargets(comment) {
   if (!match) return null;
   return (match[1] ?? "")
     .split(",")
-    .map((name) => name.trim())
+    .map((name) => name.trim().split(/\s/)[0])
     .filter(Boolean);
 }
 
-function suppressesThisRule(comment) {
+function namesThisRule(comment) {
   const targets = suppressionTargets(comment);
-  if (!targets) return false;
-  return targets.length === 0 || targets.includes(ruleId);
+  return targets !== null && targets.includes(ruleId);
 }
 
 function literalValue(node) {
@@ -113,7 +112,7 @@ const rule = {
     return {
       Program(node) {
         const comments = context.sourceCode?.getAllComments?.() ?? [];
-        if (comments.some(suppressesThisRule)) {
+        if (comments.some(namesThisRule)) {
           context.report({ node, messageId: "suppression" });
         }
       },

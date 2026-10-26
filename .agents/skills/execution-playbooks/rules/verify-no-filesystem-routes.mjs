@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,7 +11,8 @@ const configPath = path.join(scriptDirectory, "no-filesystem-routes.oxlintrc.jso
 const sourceFile = /\.(?:[cm]?[jt]sx?)$/i;
 const skippedDirectories = new Set([".git", "node_modules"]);
 const oxlintBinary = process.platform === "win32" ? "oxlint.cmd" : "oxlint";
-const suppressionDirective = /(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s+([^*/]*))?/;
+const directivePattern = /^(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s+([\s\S]*))?$/;
+const neutralizedDirective = /(?:oxlint|eslint)-disable/g;
 
 function refuse(message) {
   process.stderr.write(`error: ${message}\n`);
@@ -67,18 +69,116 @@ function findOxlint(root) {
   return null;
 }
 
-function suppressionIn(line) {
-  const match = suppressionDirective.exec(line);
-  if (!match) return null;
-  const targets = (match[1] ?? "")
-    .split(",")
-    .map((name) => name.trim())
-    .filter(Boolean);
-  if (targets.length > 0 && !targets.includes(ruleId)) return null;
-  return match[0].trim();
+function commentsIn(text) {
+  const comments = [];
+  const length = text.length;
+  let index = 0;
+  let line = 1;
+  while (index < length) {
+    const character = text[index];
+    const next = text[index + 1];
+    if (character === "/" && next === "/") {
+      const start = index + 2;
+      let end = start;
+      while (end < length && text[end] !== "\n") end++;
+      comments.push({ line, text: text.slice(start, end) });
+      index = end;
+      continue;
+    }
+    if (character === "/" && next === "*") {
+      const startLine = line;
+      let end = index + 2;
+      while (end < length && !(text[end] === "*" && text[end + 1] === "/")) {
+        if (text[end] === "\n") line++;
+        end++;
+      }
+      comments.push({ line: startLine, text: text.slice(index + 2, end) });
+      index = end + 2;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      index++;
+      while (index < length) {
+        if (text[index] === "\\") {
+          index += 2;
+          continue;
+        }
+        if (text[index] === character || text[index] === "\n") {
+          index++;
+          break;
+        }
+        index++;
+      }
+      continue;
+    }
+    if (character === "`") {
+      index++;
+      let depth = 0;
+      while (index < length) {
+        const current = text[index];
+        if (current === "\\") {
+          index += 2;
+          continue;
+        }
+        if (depth === 0 && current === "`") {
+          index++;
+          break;
+        }
+        if (current === "$" && text[index + 1] === "{") {
+          depth++;
+          index += 2;
+          continue;
+        }
+        if (depth > 0 && current === "}") depth--;
+        if (current === "\n") line++;
+        index++;
+      }
+      continue;
+    }
+    if (character === "\n") line++;
+    index++;
+  }
+  return comments;
 }
 
-function suppressionViolations(root, files) {
+function directivesIn(text) {
+  const directives = [];
+  for (const comment of commentsIn(text)) {
+    const match = directivePattern.exec(comment.text.trim());
+    if (!match) continue;
+    const targets = (match[1] ?? "")
+      .split(",")
+      .map((name) => name.trim().split(/\s/)[0])
+      .filter(Boolean);
+    directives.push({ line: comment.line, text: match[0].trim(), targets });
+  }
+  return directives;
+}
+
+function hidesRoutePattern(oxlint, root, file, text) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "squad-route-shadow-"));
+  const extension = path.extname(file) || ".js";
+  const shadow = path.join(directory, `source${extension}`);
+  fs.writeFileSync(shadow, text.replace(neutralizedDirective, "squad-directive-neutralized"));
+  try {
+    const result = spawnSync(
+      oxlint,
+      ["--config", configPath, "--no-ignore", "-A", "all", "-D", ruleId, "--format", "json", shadow],
+      { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    );
+    let diagnostics;
+    try {
+      diagnostics = JSON.parse(result.stdout).diagnostics ?? [];
+    } catch {
+      return result.status !== 0;
+    }
+    return diagnostics.some((diagnostic) => String(diagnostic.code ?? "").includes("no-filesystem-routes"));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function suppressionViolations(root, files, oxlint) {
   const violations = [];
   for (const file of files) {
     let text;
@@ -87,10 +187,20 @@ function suppressionViolations(root, files) {
     } catch {
       continue;
     }
-    text.split(/\r?\n/).forEach((line, index) => {
-      const directive = suppressionIn(line);
-      if (directive) violations.push(`${file}:${index + 1}: ${directive}`);
-    });
+    let bareHidesRoutes;
+    for (const directive of directivesIn(text)) {
+      if (directive.targets.includes(ruleId)) {
+        violations.push(`${file}:${directive.line}: ${directive.text} names ${ruleId}`);
+        continue;
+      }
+      if (directive.targets.length > 0) continue;
+      if (bareHidesRoutes === undefined) {
+        bareHidesRoutes = hidesRoutePattern(oxlint, root, file, text);
+      }
+      if (bareHidesRoutes) {
+        violations.push(`${file}:${directive.line}: ${directive.text} (bare directive in a file with filesystem routing)`);
+      }
+    }
   }
   return violations;
 }
@@ -119,19 +229,19 @@ if (files.length === 0) refuse(`no source files found under ${root}`);
 files = files.filter((file) => !ownedByToolDirectory(root, file));
 if (files.length === 0) refuse(`no project source files found under ${root}`);
 
-const suppressions = suppressionViolations(root, files);
-if (suppressions.length > 0) {
-  for (const violation of suppressions) {
-    process.stderr.write(`error: suppression directive for ${ruleId}: ${violation}\n`);
-  }
-  process.exit(1);
-}
-
 const oxlint = findOxlint(root);
 if (!oxlint) {
   refuse(
     'oxlint is not installed; install it in this project (for example "npm install --save-dev oxlint@1.87.0") or set OXLINT_BIN',
   );
+}
+
+const suppressions = suppressionViolations(root, files, oxlint);
+if (suppressions.length > 0) {
+  for (const violation of suppressions) {
+    process.stderr.write(`error: suppression directive for ${ruleId}: ${violation}\n`);
+  }
+  process.exit(1);
 }
 
 const result = spawnSync(oxlint, ["--config", configPath, "--no-ignore", "-A", "all", "-D", ruleId, ...files], {

@@ -72,11 +72,15 @@ Each row is individually reviewable; record accepted, rejected, or pending decis
 The candidate configuration combines hook correctness, component declarations, reconciliation, JSX correctness, unsafe rendering, refresh boundaries, and code-based routing using oxlint's native `react` plugin plus the Squad custom rule `no-filesystem-routes`.
 Enable these explicit rules rather than every React rule or a Next.js preset.
 The custom rule rejects `createFileRoute`, imports of the TanStack filesystem-route plugin, and imports of generated `routeTree.gen` modules; use `createRoute` in the code-based tree instead.
-Selecting react@1 copies the authoritative rule, its colocated acceptance check, its rule-only oxlint config, and its verification command from the playbook registry into `tools/oxlint/` in the task worktree - commit all four files with the branch so the project owns them.
+Selecting react@1 installs four authoritative files from the playbook registry into `tools/oxlint/` in the task worktree - `no-filesystem-routes.mjs`, its colocated acceptance check `no-filesystem-routes.node-check.mjs`, `no-filesystem-routes.oxlintrc.json`, and `verify-no-filesystem-routes.mjs` - and commits all four with the branch so the project owns them.
+The `.node-check.mjs` suffix keeps Vitest and Jest from collecting that Node check as a project test.
+`bin/sq-playbook-rule.sh install <project-dir>` copies those files and then makes the gate project-enforced: it sets `scripts["verify:routes"]` in `package.json` to `node tools/oxlint/verify-no-filesystem-routes.mjs`, appends that command to `scripts.prebuild` (creating it when absent) so `npm run build` fails before a filesystem route reaches build output, and appends a `filesystem-routes` job that installs the project's dependencies and runs `npm run verify:routes` to the first existing `.github/workflows` file that defines a top-level `jobs` block, or creates `.github/workflows/no-filesystem-routes.yml` when no existing workflow can take a job.
+Commit the package script and CI edits with the branch, and keep the four copied files byte-identical to the playbook registry copies.
 That installed config wires the plugin and rule for the verification command alone, so the route gate needs neither D3 approval nor an edit to the project's existing lint policy.
 The verification command is `node tools/oxlint/verify-no-filesystem-routes.mjs`: it runs the project's installed oxlint with the Squad rule over the project's own source files and fails when any of the three patterns appears.
 It fails closed with an actionable message when oxlint is not installed, so a missing tool can never report a green route check.
-A suppression comment naming the rule, or a bare lint-disable directive, is itself a violation, and the command disables lint-ignore files so an ignore entry cannot exclude the route tree.
+A suppression comment that names `squad/no-filesystem-routes` is always a violation; a bare lint-disable directive is a violation only in a file that also contains a banned route pattern.
+The command disables lint-ignore files so an ignore entry cannot exclude the route tree.
 The adopting task installs oxlint at the version it records with its D3 disposition and commits that dependency with the branch; the verification command never installs it silently.
 Run that command as a mandatory verification command and include its captured output in the completion evidence, including one real filesystem-route source that failed and one code-based source that passed.
 
@@ -161,7 +165,7 @@ The attached playbook owns the completion gate, so a passing `bin/sq-playbook-va
    Write each record as a plain line beginning, after optional whitespace, with `Routing:` or `Queries:`; do not prefix Markdown list markers or emphasize the labels.
    No mechanical gate inspects these records for a paired brief, so the reviewing operator checks that each label appears once with a `changed` or `unchanged` state, a `-` separator, and nonblank free text, then reads the free text for code-based routing, guards, invalidation, wording, case, and word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording.
    Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
-4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, command/results for any approved configuration actually applied, and the `node tools/oxlint/verify-no-filesystem-routes.mjs` output over the project's own sources.
+4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, command/results for any approved configuration actually applied, the committed `package.json` and CI edits that run the route gate, and the `node tools/oxlint/verify-no-filesystem-routes.mjs` output over the project's own sources.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
 
 ## Exit predicate
