@@ -946,6 +946,20 @@ signal_task_has_record() {  # <signal-file>
   [ -e "$STATE/$task.meta" ]
 }
 
+# A terminal execution with no agent behind its recorded pane is not a fresh
+# signal source, even after its dedup signatures are retired. Otherwise the
+# still-present status and turn-end files would re-wake on every poll.
+signal_task_is_terminal_and_agentless() {  # <signal-file>
+  local task=${1##*/} target meta
+  task=${task%.status}
+  task=${task%.turn-ended}
+  meta="$STATE/$task.meta"
+  [ -e "$meta" ] || return 1
+  target=$(fm_backend_target_of_meta "$meta" 2>/dev/null || true)
+  [ -n "$target" ] || return 1
+  window_is_terminal_and_agentless "$target" "$task"
+}
+
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
 # mtime-vs-a-startup-touch, so signals that land while no sentry is running
@@ -966,6 +980,13 @@ scan_signals() {
       rm -f "$sf"
       continue
     fi
+    if signal_task_is_terminal_and_agentless "$f"; then
+      task=${f##*/}
+      task=${task%.status}
+      task=${task%.turn-ended}
+      retire_task_watcher_markers "$STATE" "$task"
+      continue
+    fi
     sig=$(stat_sig "$f") || continue
     if [ "$sig" != "$(cat "$sf" 2>/dev/null)" ]; then
       printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
@@ -981,13 +1002,18 @@ scan_signals() {
 # teardown that lands inside SIGNAL_GRACE must not wake Squad for a task that
 # nothing supervises any more.
 drop_orphan_signal_entries() {  # <pending>...
-  local sf sig f
+  local sf sig f task
   printf '%s\n' "$@" | while IFS=$(printf '\t') read -r sf sig f; do
     [ -n "$sf" ] || continue
-    if signal_task_has_record "$f"; then
-      printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
-    else
+    if ! signal_task_has_record "$f"; then
       rm -f "$sf"
+    elif signal_task_is_terminal_and_agentless "$f"; then
+      task=${f##*/}
+      task=${task%.status}
+      task=${task%.turn-ended}
+      retire_task_watcher_markers "$STATE" "$task"
+    else
+      printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
     fi
   done
 }

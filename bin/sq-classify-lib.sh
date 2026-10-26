@@ -1082,8 +1082,12 @@ retire_task_watcher_markers() {  # <state-dir> <task-id>
   local state=$1 id=${2:-} key
   [ -n "$id" ] || return 0
   key=$(printf '%s' "$id" | tr ':/.' '___')
+  local seen_status seen_turn_ended
+  seen_status=$(printf '%s.status' "$id" | tr '.' '_')
+  seen_turn_ended=$(printf '%s.turn-ended' "$id" | tr '.' '_')
   rm -f "$state/.subsuper-stale-$key" "$state/.subsuper-paused-$key" \
-    "$state/.subsuper-seen-status-$key" "$state/.compaction-notified-$key"
+    "$state/.subsuper-seen-status-$key" "$state/.compaction-notified-$key" \
+    "$state/.seen-$seen_status" "$state/.seen-$seen_turn_ended"
 }
 
 # 0 (actionable) if ANY task referenced by a "signal:" wake is a

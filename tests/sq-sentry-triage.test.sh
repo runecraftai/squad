@@ -2945,8 +2945,9 @@ test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
   printf 'bash\n' > "$command_file"
   printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/released-agentless.meta"
   printf 'working: execution interrupted by outage\n' > "$state/released-agentless.status"
-  sig=$(seen_sig "$state/released-agentless.status")
-  printf '%s' "$sig" > "$state/.seen-released-agentless_status"
+  printf 'stale signature\n' > "$state/.seen-released-agentless_status"
+  printf 'late turn end\n' > "$state/released-agentless.turn-ended"
+  printf 'stale signature\n' > "$state/.seen-released-agentless_turn-ended"
   SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition released-agentless released >/dev/null \
     || fail "could not create released execution fixture"
   key=$(printf '%s' "$window" | tr ':/.' '___')
@@ -2976,14 +2977,18 @@ test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
     [ ! -e "$state/${marker}released-agentless" ] \
       || { reap "$pid"; fail "released agentless pane left $marker task-keyed residue behind"; }
   done
+  [ ! -e "$state/.seen-released-agentless_status" ] \
+    || { reap "$pid"; fail "released agentless pane left its status signal signature behind"; }
+  [ ! -e "$state/.seen-released-agentless_turn-ended" ] \
+    || { reap "$pid"; fail "released agentless pane left its turn-ended signal signature behind"; }
 
   # The execution stays released, but a harness agent appearing in the same
   # window must restore normal stale supervision rather than latch the skip.
   printf 'pi\n' > "$command_file"
   wait_for_exit "$pid" 50 || { reap "$pid"; fail "sentry did not resume supervision when an agent returned"; }
-  grep -Fx "stale: $window" "$out" >/dev/null \
-    || fail "agent return did not follow the ordinary stale path: $(cat "$out")"
-  pass "released agentless windows leave no stale markers, while an agent return resumes normal stale supervision"
+  grep -F 'signal:' "$out" >/dev/null \
+    || fail "agent return did not surface the newly eligible signal: $(cat "$out")"
+  pass "released agentless windows leave no signal or stale markers, while an agent return resumes normal supervision"
 }
 
 # A released dispatch record is immutable for dispatch, not proof that its run
@@ -3021,7 +3026,7 @@ test_released_record_with_live_run_keeps_stale_supervision() {
 # crew's own run is long over. The shared current-state boundary - not the raw
 # dispatch record - is what proves there is nothing left to rescue.
 test_agentless_window_with_unretired_terminal_execution_skips_stale() {
-  local dir state fakebin out capture_file command_file window key pid
+  local dir state fakebin out capture_file command_file window key pid sig
   dir=$(make_case agentless-terminal-running); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
   window="test:sq-agentless-terminal"
@@ -3063,6 +3068,8 @@ test_agentless_window_with_unretired_terminal_execution_skips_stale() {
   # looks like, while an idle pane on its own is still supervised as before.
   : > "$out"
   rm -f "$state/.stand-to-queue"
+  sig=$(seen_sig "$state/agentless-terminal.status")
+  printf '%s' "$sig" > "$state/.seen-agentless-terminal_status"
   watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
     SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
@@ -3194,6 +3201,8 @@ test_agentless_window_without_dispatch_sidecar_uses_terminal_projection() {
 
   : > "$out"
   rm -f "$state/.stand-to-queue"
+  sig=$(seen_sig "$state/noexec.status")
+  printf '%s' "$sig" > "$state/.seen-noexec_status"
   watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
     SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
