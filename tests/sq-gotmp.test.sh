@@ -77,6 +77,9 @@ make_fake_root() {
   ln -s "$ROOT/bin/sq-xo-parent-lib.sh" "$fake/bin/sq-xo-parent-lib.sh"
   # sq-stand-to-lib.sh: teardown sources it for serialized XO lifecycle locks.
   ln -s "$ROOT/bin/sq-stand-to-lib.sh" "$fake/bin/sq-stand-to-lib.sh"
+  # sq-classify-lib.sh: teardown sources it for the shared watcher-marker
+  # retirement (and the open-decision fold, unused by this fixture).
+  ln -s "$ROOT/bin/sq-classify-lib.sh" "$fake/bin/sq-classify-lib.sh"
   # sq-guard.sh: stub (teardown calls it with `|| true`).
   cat > "$fake/bin/sq-guard.sh" <<'SH'
 #!/usr/bin/env bash
@@ -155,6 +158,7 @@ test_teardown_skips_gracefully_without_tasktmp() {
   ln -s "$ROOT/bin/sq-xo-registry-lib.sh" "$fake/bin/sq-xo-registry-lib.sh"
   ln -s "$ROOT/bin/sq-xo-parent-lib.sh" "$fake/bin/sq-xo-parent-lib.sh"
   ln -s "$ROOT/bin/sq-stand-to-lib.sh" "$fake/bin/sq-stand-to-lib.sh"
+  ln -s "$ROOT/bin/sq-classify-lib.sh" "$fake/bin/sq-classify-lib.sh"
   cat > "$fake/bin/sq-guard.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
