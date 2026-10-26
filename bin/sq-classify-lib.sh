@@ -1067,12 +1067,12 @@ operator_compaction_mark_notified() {  # <id>
 # The task-keyed marker set one crew leaves behind: the away-mode daemon's
 # stale/pause/seen-status watcher markers and this file's compaction-notified
 # dedup marker. bin/sq-teardown.sh retires them with the volatile state of a
-# torn-down task, and bin/sq-sentry.sh retires them when it stops supervising a
-# genuinely terminal window that has no agent left to supervise, so both owners
-# remove exactly one set instead of drifting copies. A survivor is not
-# inert: the daemon's stale persistence recheck re-resolves the window and keeps
-# escalating a pane nobody owns, and a surviving seen-status/notified marker
-# silently swallows the first legitimate wake once an agent returns.
+# torn-down task, and bin/sq-sentry.sh plus the away-mode daemon retire them when
+# they stop supervising a genuinely terminal window that has no agent left, so
+# every owner removes exactly one set instead of drifting copies. A survivor is
+# not inert: the daemon's stale persistence recheck re-resolves the window and
+# keeps escalating a pane nobody owns, and a surviving seen-status/notified
+# marker silently swallows the first legitimate wake once an agent returns.
 retire_task_watcher_markers() {  # <state-dir> <task-id>
   local state=$1 id=${2:-} key
   [ -n "$id" ] || return 0

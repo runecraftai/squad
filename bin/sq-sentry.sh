@@ -305,9 +305,9 @@ EOF
 
 # A window whose execution is genuinely terminal and whose recorded pane has no
 # attributable agent has no live work left to wedge, so it must not enter the
-# stale clock at all. The recorded dispatch state is read in place (the same
-# `exec_state=` field bin/sq-stall-detect.sh reads, never a forked
-# sq-exec-state.sh per window per poll), and the shared terminal projection
+# stale clock at all. The recorded dispatch state is read in place through the
+# shared task_recorded_exec_state (bin/sq-classify-lib.sh), never a forked
+# sq-exec-state.sh per window per poll, and the shared terminal projection
 # (task_execution_is_terminal in bin/sq-classify-lib.sh) decides it: a released
 # dispatch record still reports a live or gate-parked run as running, so the
 # release alone never settles the execution side, while every other record is
@@ -324,7 +324,7 @@ EOF
 window_is_terminal_and_agentless() {  # <window> <task>
   local w=$1 task=$2 recorded sig
   [ -n "$task" ] || return 1
-  recorded=$(field exec_state "$task")
+  recorded=$(task_recorded_exec_state "$STATE" "$task")
   sig="$recorded|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")"
   if terminal_probe_lookup "$task" "$sig"; then
     [ "$_terminal_probe_hit" = terminal ] || return 1

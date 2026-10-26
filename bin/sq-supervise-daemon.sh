@@ -542,11 +542,6 @@ reconcile_pause_tracking() {  # <window> <state> <last-status-line>
   key=$(_stale_key "$task")
   marker="$state/.subsuper-paused-$key"
   sentry_key=$(_stale_key "$win")
-  if { status_is_paused "$last" || [ -e "$marker" ] || [ -e "$state/.paused-$sentry_key" ]; } \
-     && task_is_terminal_and_agentless "$state" "$task"; then
-    clear_pause_tracking "$win" "$state"
-    return 0
-  fi
   if status_is_paused "$last"; then
     stale_marker_remove "$win" "$state"
     pause_marker_record "$win" "$state"
@@ -566,13 +561,17 @@ migrate_sentry_pause_markers() {  # <state>
     sentry_key=$(_stale_key "$win")
     last=$(last_status_state_line "$state/$task.status")
     if status_is_paused "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$sentry_key" ]; then
+      if task_is_terminal_and_agentless_cached "$state" "$task"; then
+        clear_pause_tracking "$win" "$state"
+        continue
+      fi
       reconcile_pause_tracking "$win" "$state" "$last"
     fi
   done
 }
 
 sync_pause_markers_from_signal() {  # <state> <signal files>
-  local state=$1 paths=$2 f last task win
+  local state=$1 paths=$2 f last task win key sentry_key
   local -a files
   read -r -a files <<<"$paths"
   for f in "${files[@]}"; do
@@ -582,6 +581,13 @@ sync_pause_markers_from_signal() {  # <state> <signal files>
     task=$(basename "$f"); task=${task%.status}
     win=$(window_for_task "$task" "$state" 2>/dev/null || true)
     [ -n "$win" ] || continue
+    key=$(_stale_key "$task")
+    sentry_key=$(_stale_key "$win")
+    if { status_is_paused "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$sentry_key" ]; } \
+       && task_is_terminal_and_agentless_cached "$state" "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     reconcile_pause_tracking "$win" "$state" "$last"
   done
 }
@@ -747,6 +753,36 @@ task_is_terminal_and_agentless() {  # <state> <task>
   case "$(fm_backend_agent_state "$backend" "$win" 2>/dev/null || true)" in
     dead|missing) return 0 ;;
   esac
+  return 1
+}
+
+# One housekeeping pass checks the same task from pause migration, the stale
+# and pause rechecks, and the catch-all scan. Each evaluation forks
+# sq-crew-state.sh (a bounded drill call when a run is attributed) plus a
+# backend probe, so the pass shares one verdict per task instead of paying it
+# again on every caller. Outside a pass the check is evaluated directly.
+_terminal_agentless_cache=""
+_terminal_agentless_pass=0
+
+task_is_terminal_and_agentless_cached() {  # <state> <task>
+  local key="$1/$2" entry
+  if [ "$_terminal_agentless_pass" -ne 1 ]; then
+    task_is_terminal_and_agentless "$1" "$2"
+    return
+  fi
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    [ "${entry%%$'\t'*}" = "$key" ] || continue
+    [ "${entry#*$'\t'}" = terminal ]
+    return
+  done <<EOF
+$_terminal_agentless_cache
+EOF
+  if task_is_terminal_and_agentless "$1" "$2"; then
+    _terminal_agentless_cache="$_terminal_agentless_cache$key"$'\t'"terminal"$'\n'
+    return 0
+  fi
+  _terminal_agentless_cache="$_terminal_agentless_cache$key"$'\t'"open"$'\n'
   return 1
 }
 
@@ -1192,6 +1228,8 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
 housekeeping() {  # <state>
   local state=$1 now due f key task win marker age last max_defer oldest pause_secs
   now=$(_now)
+  _terminal_agentless_cache=""
+  _terminal_agentless_pass=1
   migrate_sentry_pause_markers "$state"
 
   # (1) batch flush
@@ -1237,7 +1275,7 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
-    if task_is_terminal_and_agentless "$state" "$task"; then
+    if task_is_terminal_and_agentless_cached "$state" "$task"; then
       clear_pause_tracking "$win" "$state"
       continue
     fi
@@ -1288,7 +1326,7 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
-    if task_is_terminal_and_agentless "$state" "$task"; then
+    if task_is_terminal_and_agentless_cached "$state" "$task"; then
       clear_pause_tracking "$win" "$state"
       continue
     fi
@@ -1332,9 +1370,8 @@ housekeeping() {  # <state>
     while IFS="$(printf '\t')" read -r f task last; do
       [ -n "$f" ] || continue
       seen="$state/.subsuper-seen-status-$(_stale_key "$task")"
-      if task_is_terminal_and_agentless "$state" "$task"; then
-        rm -f "$seen" "$state/.subsuper-stale-$(_stale_key "$task")" \
-          "$state/.subsuper-paused-$(_stale_key "$task")"
+      if task_is_terminal_and_agentless_cached "$state" "$task"; then
+        retire_task_watcher_markers "$state" "$task"
         continue
       fi
       [ "$(cat "$seen" 2>/dev/null || true)" = "$last" ] && continue
@@ -1342,6 +1379,7 @@ housekeeping() {  # <state>
       mark_status_seen "$state" "$task" "$last"
     done < <(scan_commander_relevant_statuses "$state")
   fi
+  _terminal_agentless_pass=0
 }
 
 # Find a currently recorded window target whose task id matches the marker key.

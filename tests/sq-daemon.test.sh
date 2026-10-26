@@ -1162,6 +1162,7 @@ test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
   printf 'stale dedup residue\n' > "$state/.subsuper-seen-status-$done_key"
   printf '1\n' > "$state/.subsuper-stale-$done_key"
   printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-$done_key"
+  printf '3 1' > "$state/.compaction-notified-$done_key"
   printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-$paused_key"
   rm -f "$state/.subsuper-last-scan"
 
@@ -1177,6 +1178,8 @@ test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
     || fail "a skipped task kept its stale marker"
   [ ! -e "$state/.subsuper-paused-$done_key" ] \
     || fail "a skipped task kept its pause marker"
+  [ ! -e "$state/.compaction-notified-$done_key" ] \
+    || fail "a skipped task kept its compaction dedup marker"
   [ ! -e "$state/.subsuper-paused-$paused_key" ] \
     || fail "pause migration recreated a skipped declared-pause marker"
 
@@ -1191,6 +1194,42 @@ test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
   grep -F 'scan-gone.status: done: landed' "$state/.subsuper-escalations" >/dev/null \
     || fail "an agent returning left the terminal status unsupervised: $(cat "$state/.subsuper-escalations" 2>/dev/null)"
   pass "away-mode loops stay quiet for a terminal agentless task and resume once an agent returns"
+}
+
+# The terminal+agentless verdict forks sq-crew-state.sh and a backend probe, so
+# one housekeeping pass must not repeat it for a task that pause migration, the
+# stale recheck and the catch-all scan all consult.
+test_housekeeping_projects_terminal_verdict_once_per_pass() {
+  local dir state fakebin crew cmd key calls
+  dir=$(make_case terminal-probe-pass); state="$dir/state"; fakebin="$dir/fakebin"
+  crew="$dir/counting-crew-state.sh"; cmd="$dir/command.txt"
+  : > "$dir/crew.calls"
+  cat > "$crew" <<SH
+#!/usr/bin/env bash
+printf 'read\n' >> '$dir/crew.calls'
+printf '%s\n' "\${SQUAD_FAKE_CREW_STATE:-state: unknown · source: none · fake default}"
+exit 0
+SH
+  chmod +x "$crew"
+  printf 'bash\n' > "$cmd"
+  printf 'window=sess:sq-probe-cache\nkind=strike\nharness=pi\n' > "$state/probe-cache.meta"
+  printf 'done: probe landed\n' > "$state/probe-cache.status"
+  printf 'exec_state=released\n' > "$state/probe-cache.exec"
+  key=$(printf '%s' probe-cache | tr ':/.' '___')
+  printf '1\n' > "$state/.subsuper-stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-$key"
+  rm -f "$state/.subsuper-last-scan"
+
+  SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    SQUAD_CREW_STATE_BIN="$crew" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_PAUSE_RESURFACE_SECS=1 SQUAD_FAKE_TMUX_WINDOW=sess:sq-probe-cache \
+    SQUAD_FAKE_TMUX_COMMAND_FILE="$cmd" PATH="$fakebin:$PATH" housekeeping "$state"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "the memoized terminal task was escalated: $(cat "$state/.subsuper-escalations")"
+  calls=$(wc -l < "$dir/crew.calls" | tr -d ' ')
+  [ "$calls" = 1 ] \
+    || fail "one housekeeping pass projected the same task $calls times instead of once"
+  pass "one housekeeping pass shares one terminal projection per task"
 }
 
 test_handle_wake_routes_self_and_escalate() {
@@ -3354,6 +3393,7 @@ test_escalate_batches_into_one_digest
 test_escalate_batch_age_uses_first_append
 test_heartbeat_scan_dedup
 test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task
+test_housekeeping_projects_terminal_verdict_once_per_pass
 test_handle_wake_routes_self_and_escalate
 test_afk_delivery_classifier_and_non_afk_wake
 test_inject_skip_forces_self
