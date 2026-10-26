@@ -1182,10 +1182,10 @@ pass 'TUIOS backend: the level-reconcile transition producer detects a blocked p
 
 # Native event discovery is optional and based on the daemon's verb catalogue.
 fm_backend_source tuios
-fm_backend_tuios_events_capable owned || fail 'the catalog-listed subscribe verb should enable native TUIOS events'
+fm_backend_tuios_events_capable || fail 'the catalog-listed subscribe verb should enable native TUIOS events'
 SQUAD_TUIOS_FAKE_VERBS_OMIT=subscribe
 export SQUAD_TUIOS_FAKE_VERBS_OMIT
-if fm_backend_tuios_events_capable owned; then fail 'a daemon without subscribe must retain the polling fallback'; fi
+if fm_backend_tuios_events_capable; then fail 'a daemon without subscribe must retain the polling fallback'; fi
 unset SQUAD_TUIOS_FAKE_VERBS_OMIT
 SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground":"","state":"needs_input","harness_id":"pi","confidence":"certain","blocked_by":"approval"}]}')
 export SQUAD_TUIOS_FAKE_AGENTS
