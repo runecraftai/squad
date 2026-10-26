@@ -236,6 +236,19 @@ window_is_busy() {  # <window> <tail40>
   [ "${verdict%% *}" = busy ]
 }
 
+# A released execution with no attributable agent has no live work to wedge.
+# Recheck endpoint attribution every poll: if an agent appears again, ordinary
+# stale supervision resumes immediately rather than inheriting a terminal latch.
+window_is_released_and_agentless() {  # <window> <task>
+  local w=$1 task=$2 exec_state agent_state
+  [ -n "$task" ] && [ -f "$STATE/$task.exec" ] || return 1
+  exec_state=$("$SCRIPT_DIR/sq-exec-state.sh" get-recorded "$task" 2>/dev/null) || return 1
+  [ "$exec_state" = released ] || return 1
+  agent_state=$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)
+  case "$agent_state" in dead|missing) return 0 ;; esac
+  return 1
+}
+
 window_kind() {
   local w=$1 meta kind
   meta=$(fm_backend_meta_for_window "$w" "$STATE" 2>/dev/null || true)
@@ -1372,6 +1385,10 @@ EOF
     fi
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
+    if window_is_released_and_agentless "$w" "$task"; then
+      drop_window_markers "$w"
+      continue
+    fi
     last=$(last_status_state_line "$STATE/$task.status")
     if ! status_is_paused_or_commander_held "$last" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$w"

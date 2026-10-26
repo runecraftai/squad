@@ -2936,6 +2936,46 @@ test_busy_static_unreadable_viewport_logs_limitation_once() {
   pass "a static busy claim with no complete viewport logs its evaluation limit once and never alarms"
 }
 
+test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
+  local dir state fakebin out capture_file command_file window key pid
+  dir=$(make_case released-agentless); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-released-agentless"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/released-agentless.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/released-agentless.status"
+  sig=$(seen_sig "$state/released-agentless.status")
+  printf '%s' "$sig" > "$state/.seen-released-agentless_status"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition released-agentless released >/dev/null \
+    || fail "could not create released execution fixture"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'old pane hash' > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf 'old pane hash' > "$state/.stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "released agentless pane escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "released agentless pane produced repeated stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "released agentless pane enqueued stale wakes"; }
+  for marker in .hash- .count- .stale- .stale-since- .wedge-escalations-; do
+    [ ! -e "$state/$marker$key" ] || { reap "$pid"; fail "released agentless pane left $marker bookkeeping behind"; }
+  done
+
+  # The execution stays released, but a harness agent appearing in the same
+  # window must restore normal stale supervision rather than latch the skip.
+  printf 'pi\n' > "$command_file"
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "sentry did not resume supervision when an agent returned"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "agent return did not follow the ordinary stale path: $(cat "$out")"
+  pass "released agentless windows leave no stale markers, while an agent return resumes normal stale supervision"
+}
+
 test_busy_static_finished_task_is_absorbed_without_alarm() {
   local dir state fakebin out capture_file window key sig pid
   dir=$(make_case busy-static-finished); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4128,6 +4168,7 @@ test_busy_static_pane_defers_while_run_step_active
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_static_pane_without_readable_viewport_never_expires
 test_busy_static_unreadable_viewport_logs_limitation_once
+test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
 test_busy_static_finished_task_is_absorbed_without_alarm
 test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced
