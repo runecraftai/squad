@@ -92,7 +92,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-afk-orca-launch.sh`  | Ciclo de vida exato do terminal daemon Orca para o launcher de modo ausente; não pede flag de foco (comportamento real de foco do host não verificado), pede close somente para o terminal daemon exato que criou e nunca cria worktree, para o runtime nem emite close para a aba de outro terminal (semântica real de criação/limpeza não verificada) |
 | `sq-afk-tuios-launch.sh` | Ciclo de vida exato, sem anexo, de sessão daemon TUIOS dono do launcher de modo ausente        |
 | `sq-afk-pi-handoff.sh`   | Publicar uma solicitação durável de handoff nativa do Pi e observar seu reconhecimento de consumo |
-| `sq-afk-tuios-lab.sh`    | Verificação ao vivo TUIOS/Pi descartável, opt-in e protegida, para entrega em modo ausente              |
+| `sq-afk-tuios-lab.sh`    | Verificação ao vivo TUIOS/Pi descartável, opt-in e protegida, para entrega em modo ausente e o caminho de resposta do operador bloqueado |
 | `sq-afk-return.sh`       | Controlar shutdown determinístico de retorno, evidência de catch-up e o gate de bloqueador acionável pelo Squad |
 | `sq-supervisor-native.sh` | Contrato de entrega nativa neutro de backend do supervisor: vínculo de endpoint, prontidão, submissão de requisição e aposentadoria por reconhecimento consumido |
 | `sq-supervisor-target-lib.sh` | Resolver e validar o alvo e backend compartilhados do supervisor para o daemon e launcher |
@@ -118,7 +118,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-handoff-request.sh`      | Registrar, resolver e listar requests duráveis de handoff de nova sessão em fechamentos de marco (docs/handoff-request.md) |
 | `sq-handoff-surface.sh`      | Marcar requests de handoff pendentes como expostos exatamente uma vez e imprimir o cartão de handoff (docs/handoff-request.md) |
 | `sq-classify-lib.sh`     | Vocabulário compartilhado de classificação de acordos e folds e scans duráveis de decisões chaveadas     |
-| `sq-send.sh`             | Enviar uma linha literal verificada ou tecla suportada pelo backend registrado do alvo |
+| `sq-send.sh`             | Enviar uma linha literal verificada, tecla suportada ou resposta exata a um prompt do TUIOS pelo backend registrado do alvo |
 | `sq-pane-grants.sh`      | Mostrar, conceder ou verificar o único grant de painel TUIOS que a supervisão precisa, com o comando de pessoa pronto para colar |
 | `sq-busy-lib.sh`         | Único dono do contrato semântico de busy-state: vereditos, atribuição de fonte e fontes por harness |
 | `sq-busy-event.sh`       | O único escritor do registro semântico de busy-state de uma tarefa; arma uma encarnação e aplica eventos de ciclo de vida |
