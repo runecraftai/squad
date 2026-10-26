@@ -522,15 +522,16 @@ SQUAD_TUIOS_FAKE_QUEUE_ERROR='queue-prompt failed: the prompt was typed and not 
 export SQUAD_TUIOS_FAKE_QUEUE_ERROR
 [ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = prompt_stalled ] \
   || fail 'a typed-but-untaken prompt must be reported as prompt_stalled'
-# A pane the daemon knows holds no agent keeps the pre-existing literal write,
-# which never claims a delivery.
+# A pane without an attributable agent is refused; it never falls back to
+# typing into the terminal.
 SQUAD_TUIOS_FAKE_QUEUE_ERROR='queue-prompt failed: window w-opaque_7 runs no agent tuios knows of, so nothing would take a queued prompt.'
 export SQUAD_TUIOS_FAKE_QUEUE_ERROR
 : > "$SQUAD_TUIOS_LOG"
-[ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = uncertain-delivery ] \
-  || fail 'a pane with no attributable agent must fall back to an honest uncertain delivery'
-assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'send-text --session owned --window w-opaque_7 -- do work' \
-  'the no-agent fallback must use the literal write'
+[ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = no_agent ] \
+  || fail 'a pane with no attributable agent must be refused without typing'
+if grep -qE '^(send-text|send-keys) ' "$SQUAD_TUIOS_LOG"; then
+  fail 'a pane without an attributable agent must not receive terminal input'
+fi
 SQUAD_TUIOS_FAKE_QUEUE_ERROR='queue-prompt failed: something undocumented'
 export SQUAD_TUIOS_FAKE_QUEUE_ERROR
 [ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = send-failed ] \

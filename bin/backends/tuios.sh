@@ -1239,17 +1239,6 @@ fm_backend_tuios_send_text_queue() {  # <target> <text> [expected-label] -> verd
   printf '%s' "$verdict"
 }
 
-fm_backend_tuios_send_text_raw() {  # <target> <text> [expected-label] -> verdict
-  local target=$1 text=$2 expected=${3:-}
-  # The pre-existing literal write, kept only for a pane the daemon knows holds
-  # no agent (so it can neither be queued for nor hold a classified prompt). It
-  # proves only that bytes reached the terminal, so it never claims a delivery
-  # and never retries.
-  fm_backend_tuios_send_literal "$target" "$text" "$expected" || { printf 'send-failed'; return 0; }
-  fm_backend_tuios_send_key "$target" Enter "$expected" >/dev/null 2>&1 || { printf 'uncertain-delivery'; return 0; }
-  printf 'uncertain-delivery'
-}
-
 fm_backend_tuios_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle> [expected]
   local target=$1 text=$2 expected=${6:-} report state verdict
   # Agent-aware delivery. A pane the daemon reports as blocked is refused
@@ -1267,10 +1256,9 @@ fm_backend_tuios_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
     fi
   fi
   verdict=$(fm_backend_tuios_send_text_queue "$target" "$text" "$expected")
-  if [ "$verdict" = no_agent ]; then
-    fm_backend_tuios_send_text_raw "$target" "$text" "$expected"
-    return 0
-  fi
+  # Agent-targeted delivery is queue-only. A pane without an attributed agent
+  # is not a reason to type into its terminal: refuse rather than switching to
+  # a raw keyboard path whose delivery and prompt safety cannot be established.
   printf '%s' "$verdict"
 }
 
