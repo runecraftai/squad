@@ -32,6 +32,7 @@ Capture and terminal operations address the exact recorded window. Delivery to a
 
 - `tuios queue` (`queue-prompt`) types a message only once the agent has been at rest, never types over a prompt the agent is waiting on, and marks an entry the agent shows no sign of taking as `stalled`.
 - Squad reports success only on an observed postcondition: the queue entry was taken, or the entry waits safely for the agent's next rest (the daemon owns it from there and will not type over a prompt).
+- Queue entries are held in daemon memory, not durably persisted: a daemon restart, pane close, or agent leaving the pane drops them. `list-queued` inspects entries and `cancel-queued` removes one; neither makes the queue durable.
 - Nothing is ever retyped or resent after bytes were typed. A `stalled` result means the text was typed and not taken; inspect the pane before resending.
 
 Distinct delivery verdicts reach the caller:
@@ -43,7 +44,7 @@ Distinct delivery verdicts reach the caller:
 | `queue_full` | The pane's queue holds the configured maximum. Nothing was queued. | non-zero |
 | `stalled` | The entry was typed and the agent showed no sign of taking it. Do not resend. | non-zero |
 | `not_ready`, `prompt_stalled` | Mapped from the daemon's documented refusal codes. The asynchronous queue path does not currently raise them. | non-zero |
-| `uncertain-delivery` | The pane holds no agent TUIOS can attribute, so the pre-existing literal write was used; it proves only that bytes reached the terminal. | non-zero |
+| `no_agent` | TUIOS cannot attribute an agent to the pane; Squad refuses delivery without typing into the terminal. | non-zero |
 | `send-failed` | Any other refusal. | non-zero |
 
 Pi and pi-signed tasks still use Squad's task-private Pi delivery dropbox first, exactly as on every other backend; the TUIOS path is used when that dropbox is unavailable and for every other harness.
