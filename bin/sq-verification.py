@@ -6,15 +6,56 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 MARKER = "<!-- squad-escaped-defect:v1 -->"
 FIELDS = ("discovered_at", "affected_pr", "affected_sha", "reproduction",
           "regression", "pre_merge_gate", "missed_gate")
+TOON_DECODER = Path(__file__).resolve().parent / "sq-factory-collect-toon.mjs"
+BODY_CHUNK = 1500
+PAGE_SIZE = 100
+MAX_PAGES = 100
 
 
-def gh(args, *, input_text=None):
-    return subprocess.run(["sq-gh", *args], input=input_text, text=True,
-                          check=True, capture_output=True).stdout
+def sq_gh(args):
+    return subprocess.run(["sq-gh", *args], text=True, check=True,
+                          capture_output=True).stdout
+
+
+def decode_toon(text):
+    try:
+        decoded = subprocess.run(["node", str(TOON_DECODER)], input=text,
+                                 text=True, check=True, capture_output=True)
+    except FileNotFoundError as exc:
+        raise ValueError("node is required to decode sq-gh output") from exc
+    try:
+        return json.loads(decoded.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"could not decode sq-gh output: {exc}") from exc
+
+
+def sq_gh_json(args):
+    return decode_toon(sq_gh(args))
+
+
+def chunk_expression(value):
+    return (f"(({value}) as $body | [range(0; ($body | length); {BODY_CHUNK}) "
+            f"as $i | $body[$i:$i + {BODY_CHUNK}]])")
+
+
+def joined_body(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("sq-gh did not return an issue object")
+    chunks = payload.get("body_chunks")
+    if not isinstance(chunks, list) or not all(isinstance(chunk, str) for chunk in chunks):
+        raise ValueError("sq-gh did not return the issue body")
+    return "".join(chunks)
+
+
+def read_body(repo, number):
+    payload = sq_gh_json(["api", f"/repos/{repo}/issues/{number}", "--jq",
+                          '{"body_chunks": ' + chunk_expression('.body // ""') + "}"])
+    return joined_body(payload)
 
 
 def repo_issue(url):
@@ -24,69 +65,115 @@ def repo_issue(url):
     return match.group(1), match.group(2)
 
 
-def issue_record(args):
-    repo, number = repo_issue(args.issue)
-    values = {
-        "discovered_at": args.discovered_at,
-        "affected_pr": args.pr,
-        "affected_sha": args.sha,
-        "reproduction": args.reproduction or f"unknown: {args.no_reproduction_reason}",
-        "regression": args.regression or f"unknown: {args.no_regression_reason}",
-        "pre_merge_gate": args.gate,
-        "missed_gate": args.missed_reason,
-    }
-    for key, value in values.items():
-        if not value or value.startswith("unknown:") and not value.partition(":")[2].strip():
-            raise ValueError(f"{key} must have a value or an unknown reason")
-    if not re.fullmatch(r"[0-9a-fA-F]{40,64}", args.sha):
-        raise ValueError("affected SHA must be a full 40- or 64-character hexadecimal SHA")
+def full_sha(value):
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", value):
+        raise ValueError("affected SHA must be a full 40- or 64-character lowercase hexadecimal SHA")
+    return value
+
+
+def discovery_time(value):
     try:
-        parsed = dt.datetime.fromisoformat(args.discovered_at.replace("Z", "+00:00"))
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ValueError("discovery time must be an ISO-8601 timestamp with timezone") from exc
     if parsed.tzinfo is None:
         raise ValueError("discovery time must include a timezone")
-    body = gh(["api", f"/repos/{repo}/issues/{number}", "--jq", ".body // \"\""])
+    return value.strip()
+
+
+def recorded_or_reason(key, value, reason):
+    recorded = (value or "").strip()
+    if recorded:
+        return recorded
+    unknown = (reason or "").strip()
+    if not unknown:
+        raise ValueError(f"{key} must have a value or an explicit unknown reason")
+    return f"unknown: {unknown}"
+
+
+def render_section(values):
+    lines = [MARKER, "### Escaped defect linkage"]
+    for key in FIELDS:
+        first, *continuation = values[key].split("\n")
+        lines.append(f"{key}: {first}")
+        lines.extend(f"  {line}" for line in continuation)
+    return "\n".join(lines) + "\n"
+
+
+def issue_record(args):
+    repo, number = repo_issue(args.issue)
+    values = {
+        "discovered_at": discovery_time(args.discovered_at),
+        "affected_pr": args.pr,
+        "affected_sha": full_sha(args.sha),
+        "reproduction": recorded_or_reason("reproduction", args.reproduction,
+                                           args.no_reproduction_reason),
+        "regression": recorded_or_reason("regression", args.regression,
+                                         args.no_regression_reason),
+        "pre_merge_gate": args.gate,
+        "missed_gate": args.missed_reason,
+    }
+    for key, value in values.items():
+        if not value.strip():
+            raise ValueError(f"{key} must have a value or an explicit unknown reason")
+        if value.startswith("unknown:") and not value.partition(":")[2].strip():
+            raise ValueError(f"{key} must name the reason it is unknown")
+    body = read_body(repo, number)
     if MARKER in body:
         body = body.split(MARKER, 1)[0].rstrip()
-    section = [MARKER, "### Escaped defect linkage"]
-    section.extend(f"{key}: {values[key]}" for key in FIELDS)
-    body = (body.rstrip() + "\n\n" if body.strip() else "") + "\n".join(section) + "\n"
-    gh(["api", "PATCH", f"/repos/{repo}/issues/{number}", "--field", f"body={body}"])
+    prefix = body.rstrip() + "\n\n" if body.strip() else ""
+    sq_gh(["api", "PATCH", f"/repos/{repo}/issues/{number}",
+           "--field", f"body={prefix}{render_section(values)}"])
     print(f"recorded: {args.issue}")
 
 
 def extract(body):
     if MARKER not in body:
         return None
-    section = body.split(MARKER, 1)[1]
-    result = {}
-    for line in section.splitlines():
-        key, sep, value = line.partition(":")
-        if sep and key.strip() in FIELDS:
-            result[key.strip()] = value.strip() or "unknown (recorded without a value)"
-    return {key: result.get(key, "unknown (not recorded)") for key in FIELDS}
+    recorded = {}
+    current = None
+    for line in body.split(MARKER, 1)[1].splitlines():
+        field = re.fullmatch(r"([A-Za-z_]+):[ ]?(.*)", line)
+        if field and field.group(1) in FIELDS:
+            current = field.group(1)
+            recorded[current] = [field.group(2)]
+        elif current is not None and line.startswith("  "):
+            recorded[current].append(line[2:])
+        elif current is not None:
+            break
+    return {
+        key: ("\n".join(recorded[key]).strip() or "unknown (recorded without a value)")
+        if key in recorded else "unknown (not recorded)"
+        for key in FIELDS
+    }
+
+
+def list_issues(repo):
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+        raise ValueError("repo must be OWNER/REPO")
+    listing = ('[.[] | select(type == "object") | select(has("pull_request") | not) | '
+               '{number, title, html_url, body_chunks: '
+               + chunk_expression('.body // ""') + "}]")
+    issues, page = [], 1
+    while page <= MAX_PAGES:
+        batch = sq_gh_json(["api", f"/repos/{repo}/issues?state=all&per_page={PAGE_SIZE}&page={page}",
+                            "--jq", listing])
+        if not isinstance(batch, list):
+            raise ValueError("issue listing did not return a list of issues")
+        for issue in batch:
+            if not isinstance(issue, dict):
+                raise ValueError("issue listing returned an entry that is not an issue object")
+        issues.extend(batch)
+        if len(batch) < PAGE_SIZE:
+            return issues
+        page += 1
+    raise ValueError(f"issue listing for {repo} exceeded {MAX_PAGES} pages")
 
 
 def report(repo):
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
-        raise ValueError("repo must be OWNER/REPO")
-    raw = gh(["api", "--paginate", f"/repos/{repo}/issues?state=all&per_page=100"])
-    decoder, offset, issues = json.JSONDecoder(), 0, []
-    while offset < len(raw):
-        while offset < len(raw) and raw[offset].isspace():
-            offset += 1
-        if offset == len(raw):
-            break
-        page, offset = decoder.raw_decode(raw, offset)
-        if not isinstance(page, list):
-            raise ValueError("issue listing did not return a JSON array")
-        issues.extend(page)
     found = []
-    for issue in issues:
-        if "pull_request" in issue:
-            continue
-        fields = extract(issue.get("body") or "")
+    for issue in list_issues(repo):
+        fields = extract(joined_body(issue))
         if fields is not None:
             found.append((issue, fields))
     if not found:
@@ -121,7 +208,7 @@ def main():
     args = parser.parse_args()
     try:
         issue_record(args) if args.command == "record" else report(args.repo)
-    except (ValueError, subprocess.CalledProcessError) as exc:
+    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
         detail = getattr(exc, "stderr", "")
         print(f"error: {str(exc)}{(': ' + detail.strip()) if detail else ''}", file=sys.stderr)
         return 1
