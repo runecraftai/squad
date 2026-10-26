@@ -69,7 +69,8 @@
 #                          fm_backend_poll_transition on this same per-window loop.
 #                          The reason carries the prompt bin/sq-backend.sh's
 #                          fm_backend_prompt_summary reads (including numbered
-#                          options) when the backend can supply one. Dedup is the
+#                          options, and for TUIOS the exact prompt_id an answer
+#                          must name) when the backend can supply one. Dedup is the
 #                          producer's own per-pane marker (bin/backends/herdr.sh's
 #                          escalation marker, bin/backends/tuios.sh's and
 #                          bin/backends/orca.sh's for the poll producers),

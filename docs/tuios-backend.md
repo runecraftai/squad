@@ -66,13 +66,13 @@ The adapter reads the daemon's own agent report and keeps its provenance instead
 | `unknown`, or a state with no attribution | `unknown` | `ambiguous` |
 | unreadable inventory | `unknown` | `unreadable` |
 
-`bin/sq-crew-state.sh` renders a blocked pane as `state: blocked` and includes the prompt the daemon read. The report verb `tuios peek-prompt` supplies the prompt text and numbered options, and it is read only for a pane the daemon reports as `needs_input`; its text is another program's screen and is treated as data. The daemon exposes no generic "ordinary composer is empty" bit, so composer state is read from the pane (see "Composer state" below); anything that is not provably a composer frame stays `unknown`, which never authorizes a write.
+`bin/sq-crew-state.sh` renders a blocked pane as `state: blocked` and includes the prompt the daemon read, including the exact `prompt_id` an answer must name. The report verb `tuios peek-prompt` supplies that prompt text, numbered options, and id, and the adapter reads it only for a pane the daemon reports as `needs_input`; its text is another program's screen and is treated as data. The daemon exposes no generic "ordinary composer is empty" bit, so composer state is read from the pane (see "Composer state" below); anything that is not provably a composer frame stays `unknown`, which never authorizes a write.
 
 ### Waking Squad on a blocked pane
 
 When the installed daemon advertises a verified `subscribe` verb in its catalog, TUIOS agent-state events wake the sentry's bounded native event wait. Events are wake hints only: Squad re-reads the exact window's current state and prompt before acting, using the normalized transition policy (`bin/sq-transition-lib.sh`). Daemons without the catalogued verb are poll-only instead: `fm_backend_tuios_poll_transition` in `bin/backends/tuios.sh` is the level-reconcile producer, and `docs/architecture.md`'s "Capability matrix: the person-needed escalation" owns how both TUIOS paths fit alongside Herdr's push path, Orca's poll path, and the backends that cannot report the condition at all.
 
-On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any.
+On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any and the exact `prompt_id` an answer must name.
 With catalogued `subscribe`, agent-state events provide the prompt wake; the adapter subscribes before reconciliation, then re-reads current state and prompt before applying shared policy.
 This is a wake hint, not a decision or an answer: only a person-authorized `sq-send --respond` call can answer, and TUIOS checks both the `respond` grant and the prompt id.
 Event delivery is prompt and bounded; gap, reconnect, or unsupported capability falls back to the ordinary `SQUAD_POLL` reconciliation.
@@ -114,15 +114,16 @@ The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SE
 
 The flow when a dialog blocks an operator:
 
-1. The wake reports the pane and the prompt it read.
+1. The wake reports the pane, the prompt it read, and the exact prompt id an answer must give.
 2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_PANE_ID"` says whether the answering pane can already answer it, and prints the `person command:` line when it cannot.
    That delegation is the person's, once, from a shell outside TUIOS; no pane can give it to itself.
 3. `bin/sq-pane-grants.sh verify <target>` confirms the grant landed before anything is retyped, and its non-zero exit means the send would still be refused.
-4. The authorized actor reads the current prompt id and options with `tuios peek-prompt --session "$TUIOS_SESSION" --window <window-id> --json`, then decides the answer.
-   Send it with `bin/sq-send.sh <id> --respond <action> <prompt-id> [value]`.
+4. The authorized actor takes the prompt id from that wake, or re-reads the current prompt with `bin/sq-crew-state.sh <id>` when the prompt may have changed since the wake; both are sanctioned Squad surfaces, while a raw `tuios peek-prompt` call is refused for the guarded primary scope.
+   Send the decision with `bin/sq-send.sh <id> --respond <action> <prompt-id> [value]`.
+   Use `approve` or `deny` for an approval and `choose` with the displayed option number for a numbered question; an action the current prompt does not accept is refused by name and nothing is answered.
    It re-reads the current prompt, requires the same `prompt_id`, verifies the action and selected option, then lets TUIOS enforce the answering pane's `respond` authority and atomically refuse a changed prompt.
    `approve_always` and risk-matched approvals are not inferred or automated; a TUIOS risk refusal confirms that nothing was answered.
-   The command invokes `respond` once; if its result is uncertain, inspect `peek-prompt` before any retry. A confirmed answer whose window closed as it was typed is reported as a closed window, never as an uncertain outcome.
+   The command invokes `respond` once; if its result is uncertain, re-read the prompt through the same sanctioned surface before any retry and never repeat an answer for an unchanged prompt.
    The older `bin/sq-send.sh <id> --key <key>` path remains available for key-only prompts, but it does not bind the answer to a prompt id.
    Free text through ordinary `sq-send` remains refused while blocked because that would answer without the prompt-specific permission and identity checks.
 5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.

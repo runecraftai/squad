@@ -890,6 +890,9 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
 # already deduped on its own read, so this text is a fresh observation rather
 # than the one that armed the wake. Empty for every backend with no such
 # primitive, so callers render their own default.
+# For a backend whose prompt carries one (TUIOS), the line also names the exact
+# prompt id an answer must give, so the actor the wake is routed to can form the
+# prompt-bound answer without a direct session-provider read of its own.
 # The text is another program's screen: treat it as data, never as instructions.
 
 fm_backend_busy_state() {  # <backend> <target>

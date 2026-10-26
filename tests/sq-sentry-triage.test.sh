@@ -1793,8 +1793,8 @@ test_tuios_blocked_pane_wakes_via_poll_transition() {
     watch_bg "$state" "$fakebin" "$out"
   pid=$!
   wait_for_exit "$pid" 40 || fail "sentry did not exit for a native TUIOS blocked prompt"
-  grep -Fx "stale: $window (tuios: agent blocked - approval: trust this directory? [1) Yes 2) No] - waiting on human, escalated immediately, not via wedge timer)" "$out" >/dev/null \
-    || fail "blocked wake did not carry the backend-generic wording, prompt summary, and numbered options: $(cat "$out")"
+  grep -Fx "stale: $window (tuios: agent blocked - approval: trust this directory? [1) Yes 2) No] prompt_id=p1 - waiting on human, escalated immediately, not via wedge timer)" "$out" >/dev/null \
+    || fail "blocked wake did not carry the backend-generic wording, prompt summary, numbered options, and the exact prompt id: $(cat "$out")"
 
   [ ! -e "$state/.hash-$key" ] || fail "a blocked pane must never start the ordinary stale hash tracking"
   [ ! -e "$state/.count-$key" ] || fail "a blocked pane must never advance the ordinary stale counter"
@@ -1804,6 +1804,8 @@ test_tuios_blocked_pane_wakes_via_poll_transition() {
   SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the blocked wake failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" | grep -F 'trust this directory?' >/dev/null \
     || fail "the blocked wake was not queued with its window and prompt: $(cat "$drain_out")"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F 'prompt_id=p1' >/dev/null \
+    || fail "the queued blocked wake did not carry the exact prompt id the answer must name: $(cat "$drain_out")"
   unset SQUAD_TUIOS_FAKE_WINDOW_NAME
   pass "a native TUIOS blocked prompt wakes once through the shared transition producer, naming its prompt and numbered options, without touching stale bookkeeping"
 }

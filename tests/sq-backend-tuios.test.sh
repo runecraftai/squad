@@ -413,6 +413,8 @@ SQUAD_TUIOS_FAKE_AGENTS=$(printf '%s' '{"agents":[{"id":"w-opaque_7","foreground
 export SQUAD_TUIOS_FAKE_AGENTS
 assert_contains "$(fm_backend_prompt_summary tuios owned:w-opaque_7)" 'approval: approve Bash: make' \
   'a classified blocking prompt must be readable through the prompt verb'
+assert_contains "$(fm_backend_prompt_summary tuios owned:w-opaque_7)" 'prompt_id=p1' \
+  'the summary must name the exact prompt id an answer has to carry'
 unset SQUAD_TUIOS_FAKE_AGENTS
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'peek-prompt --session owned --window w-opaque_7 --json' \
   'prompt content must come from the prompt verb'
@@ -452,8 +454,8 @@ unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
 SQUAD_TUIOS_FAKE_PROMPT_OPTIONS='[]'
 export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
 summary=$(fm_backend_prompt_summary tuios owned:w-opaque_7)
-[ "$summary" = 'approval: approve Bash: make' ] \
-  || fail "an empty options array must change nothing: $summary"
+[ "$summary" = 'approval: approve Bash: make prompt_id=p1' ] \
+  || fail "an empty options array must change nothing but the prompt id: $summary"
 unset SQUAD_TUIOS_FAKE_PROMPT_OPTIONS SQUAD_TUIOS_FAKE_AGENTS
 
 # --- delivery: the queue path and its distinct verdicts ----------------

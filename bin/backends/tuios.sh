@@ -483,7 +483,7 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
         return 1
         ;;
     esac
-    echo 'error: TUIOS response outcome may be uncertain; do not retry until peek-prompt confirms the current state' >&2
+    echo 'error: TUIOS response outcome may be uncertain; do not retry until the current prompt is re-read with bin/sq-crew-state.sh <task-id>' >&2
     return 1
   fi
   settled=$(printf '%s' "$out" | jq -r '.settled_by // empty' 2>/dev/null)
@@ -491,7 +491,7 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
     (.success == true) and (.prompt_id == $id)
   ' >/dev/null 2>&1; then confirmed=true; else confirmed=false; fi
   [ "$confirmed" = true ] || {
-    echo 'error: TUIOS did not confirm the exact prompt response; outcome may be uncertain; inspect the prompt before any retry' >&2
+    echo 'error: TUIOS did not confirm the exact prompt response; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
     return 1
   }
   if [ "$settled" = prompt ]; then
@@ -505,7 +505,7 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
     return 1
   fi
   [ "$settled" = state ] || {
-    echo 'error: TUIOS did not confirm the blocked prompt cleared; outcome may be uncertain; inspect the prompt before any retry' >&2
+    echo 'error: TUIOS did not confirm the blocked prompt cleared; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
     return 1
   }
   printf '%s\n' "$out"
@@ -843,12 +843,17 @@ fm_backend_tuios_prompt_option_numbers() {  # <prompt-json>
 }
 
 fm_backend_tuios_prompt_summary() {  # <target>
-  local target=$1 prompt line kind reason options
+  local target=$1 prompt line kind reason options prompt_id summary
   prompt=$(fm_backend_tuios_prompt_json "$target") || return 0
   kind=$(printf '%s' "$prompt" | jq -r '.kind // "needs_input"')
   options=''
+  prompt_id=''
   if [ "$(printf '%s' "$prompt" | jq -r '.found')" = true ]; then
     line=$(printf '%s' "$prompt" | jq -r '(.message // "") | if . != "" then . else (.lines // [] | .[-1] // "") end')
+    # The prompt's own id is the identity an answer must name, and the caller
+    # that receives this line is the actor the question is routed to: carry it
+    # here so answering needs no direct read of the session-provider CLI.
+    prompt_id=$(printf '%s' "$prompt" | jq -r '.prompt_id // empty' 2>/dev/null | tr -d '[:space:]' | cut -c1-64)
     # Numbered options, when the daemon's prompt read carries any: each entry
     # is either a plain string or an object (label/text/name) whose `n` is the
     # number the person actually sees, rendered as "2) <opt> 5) <opt> ...".
@@ -878,13 +883,15 @@ fm_backend_tuios_prompt_summary() {  # <target>
   fi
   if [ -n "$line" ]; then
     if [ -n "$options" ]; then
-      printf '%s: %s [%s]' "$kind" "$line" "$options"
+      summary="$kind: $line [$options]"
     else
-      printf '%s: %s' "$kind" "$line"
+      summary="$kind: $line"
     fi
   else
-    printf '%s (prompt not readable)' "$kind"
+    summary="$kind (prompt not readable)"
   fi
+  [ -z "$prompt_id" ] || summary="$summary prompt_id=$prompt_id"
+  printf '%s' "$summary"
 }
 
 # fm_backend_tuios_prompt_hash: the dedupe identity of the pane's blocking

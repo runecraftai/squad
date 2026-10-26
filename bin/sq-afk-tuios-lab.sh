@@ -459,6 +459,7 @@ LAB_OPERATOR
     prompt_json=$(fm_backend_tuios_prompt_json "$target") || respond_fail 'the adapter could not read the blocking prompt authoritatively'
     prompt_id=$(printf '%s' "$prompt_json" | jq -r '.prompt_id // empty')
     [ -n "$prompt_id" ] || respond_fail 'the daemon did not give the prompt an id'
+    case "$wake_reason" in *"prompt_id=$prompt_id"*) : ;; *) respond_fail "the wake does not carry the exact prompt id the answer must name: $wake_reason" ;; esac
     printf '%s' "$prompt_json" > "$TEMP/prompt.json"
     option_numbers=$(fm_backend_tuios_prompt_option_numbers "$prompt_json" | tr '\n' ' ')
     for n in 1 2 3; do
