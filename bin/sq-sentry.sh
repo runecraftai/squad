@@ -64,8 +64,10 @@
 #                          needed: a dialog, approval, or question) - escalated
 #                          immediately, never via the wedge timer above, and never
 #                          counted as a possible wedge in the first place. Herdr
-#                          reaches this through its event-wait push stream; a
-#                          poll-only producer (TUIOS or Orca) reaches it through
+#                          and a TUIOS daemon whose catalog advertises a verified
+#                          subscribe verb reach this through the event-wait push
+#                          stream; TUIOS without that capability and Orca are poll
+#                          producers, reaching it through
 #                          fm_backend_poll_transition on this same per-window loop.
 #                          The reason carries the prompt bin/sq-backend.sh's
 #                          fm_backend_prompt_summary reads (including numbered
@@ -1011,8 +1013,9 @@ heartbeat_scan_finds_actionable() {
 }
 
 # event_wait_or_sleep: the terminal wait of each supervision cycle. For a base
-# with push-capable windows (herdr), it replaces the blind `sleep POLL` with a
-# bounded wait on the backend's native transition stream, so an operator going
+# with push-capable windows (herdr, or TUIOS on a daemon that advertises a
+# verified subscribe verb), it replaces the blind `sleep POLL` with a bounded
+# wait on the backend's native transition stream, so an operator going
 # `blocked` wakes the supervisor sub-second instead of after the stale-pane
 # wedge timer. For every other base - no push-capable window, backend not
 # capable, or the event path proven unreliable this process - it sleeps POLL,
@@ -1377,10 +1380,11 @@ EOF
       continue
     fi
     backend=$(window_backend "$w")
-    # A poll-capable-but-not-push-capable backend (TUIOS or Orca) has no event
-    # stream to wait on, so it produces its normalized transition record
-    # (bin/sq-transition-lib.sh) right here on the ordinary poll instead of
-    # through the event-wait splice above. A fresh actionable (blocked) record
+    # A backend that can poll-produce a transition record (TUIOS always, and
+    # Orca; TUIOS runs this even when its stream is usable) produces its
+    # normalized transition record (bin/sq-transition-lib.sh) right here on the
+    # ordinary poll instead of through the event-wait splice above. A fresh
+    # actionable (blocked) record
     # hands off to the same handle_push_transition consumer herdr's stream
     # uses, which wakes and never returns; "still blocked, already escalated"
     # (rc=1) and "previously escalated, current read ambiguous" (rc=3) both
@@ -1701,7 +1705,8 @@ EOF
     fi
   fi
 
-  # Terminal wait: a bounded native-event wait for push-capable bases (herdr),
-  # else the blind poll sleep. See event_wait_or_sleep.
+  # Terminal wait: a bounded native-event wait for push-capable bases (herdr,
+  # or TUIOS with a verified subscribe verb), else the blind poll sleep. See
+  # event_wait_or_sleep.
   event_wait_or_sleep
 done

@@ -2904,6 +2904,34 @@ test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer() {
   pass "TUIOS fallback: an empty Pi composer receives the digest exactly once and a draft is never typed over"
 }
 
+# A refusal that typed nothing must not be logged as text possibly parked in the
+# composer, while a genuinely unconfirmed submit must keep that warning.
+# shellcheck disable=SC2030,SC2031,SC2329  # stubs and env are scoped to the subshell on purpose
+test_inject_msg_tuios_nothing_typed_refusal_keeps_the_composer_warning_honest() {
+  local dir state
+  dir=$(make_supercase inject-tuios-nothing-typed)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    LOG="$dir/daemon.log"; : > "$LOG"
+    fm_backend_target_exists() { return 0; }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() { printf 'empty'; }
+    fm_afk_pi_handoff_ready() { return 1; }
+    fm_afk_pi_handoff_evaluate() { printf 'refused no-record'; return 1; }
+    fm_backend_send_text_submit() { printf 'no_agent'; }
+    export SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1
+    if inject_msg "digest" "$state"; then fail "a no-agent refusal must not report delivery"; fi
+    grep -q 'refused before typing' "$LOG" || fail "a nothing-typed refusal must be logged as such: $(cat "$LOG")"
+    grep -q 'text may be in composer' "$LOG" && fail "a nothing-typed refusal must not claim text may be in the composer: $(cat "$LOG")"
+    : > "$LOG"
+    fm_backend_send_text_submit() { printf 'uncertain-delivery'; }
+    if inject_msg "digest" "$state"; then fail "an unconfirmed submit must not report delivery"; fi
+    grep -q 'text may be in composer' "$LOG" || fail "an unconfirmed submit must still warn that text may be in the composer: $(cat "$LOG")"
+  ) || fail "TUIOS nothing-typed refusal subshell failed"
+  pass "TUIOS fallback: a nothing-typed refusal logs no composer claim and an unconfirmed submit keeps the warning"
+}
+
 # Exactly-once between the native followUp queue and the typed fallback. When the
 # live, identity-verified extension still holds an unresolved request for the
 # exact target, a transiently refused native verdict must defer rather than
@@ -3341,6 +3369,7 @@ test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers
 test_pi_handoff_record_must_match_lock_owner
 test_inject_msg_tuios_logs_why_native_handoff_was_not_used
 test_inject_msg_tuios_fallback_delivers_once_with_empty_pi_composer
+test_inject_msg_tuios_nothing_typed_refusal_keeps_the_composer_warning_honest
 test_inject_msg_tuios_defers_while_a_live_request_is_unresolved
 test_inject_msg_tuios_pi_handoff_defers_until_native_ack
 test_pane_is_busy_herdr_native_busy_state

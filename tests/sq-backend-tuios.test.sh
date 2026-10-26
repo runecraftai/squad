@@ -42,11 +42,15 @@ case "${1:-}" in
   list-verbs)
     if [ "${SQUAD_TUIOS_FAKE_VERBS_FAIL:-0}" = 1 ]; then exit 1; fi
     if [ -n "${SQUAD_TUIOS_FAKE_VERBS_MALFORMED:-}" ]; then printf '%s\n' "$SQUAD_TUIOS_FAKE_VERBS_MALFORMED"; exit 0; fi
-    emit_verb_catalogue | jq -c --arg verb "${SQUAD_TUIOS_FAKE_VERBS_OMIT:-}" --arg pair "${SQUAD_TUIOS_FAKE_PARAM_OMIT:-}" '
+    emit_verb_catalogue | jq -c --arg verb "${SQUAD_TUIOS_FAKE_VERBS_OMIT:-}" --arg pair "${SQUAD_TUIOS_FAKE_PARAM_OMIT:-}" --arg ret "${SQUAD_TUIOS_FAKE_RETURN_OMIT:-}" '
       if $verb != "" then .verbs |= map(select(.verb != $verb)) else . end
       | if $pair != "" then
           ($pair | split(":")) as $p
           | .verbs |= map(if .verb == $p[0] then .params |= map(select(.name != $p[1])) else . end)
+        else . end
+      | if $ret != "" then
+          ($ret | split(":")) as $r
+          | .verbs |= map(if .verb == $r[0] then .returns |= map(select(.name != $r[1])) else . end)
         else . end'
     ;;
   subscribe)
@@ -186,6 +190,7 @@ case "${1:-}" in
       printf '{"error":{"code":"%s","message":"simulated response refusal"}}\n' "${SQUAD_TUIOS_FAKE_RESPOND_ERROR:-timeout}" >&2
       exit 1
     fi
+    [ -z "${SQUAD_TUIOS_FAKE_RESPOND_STDERR:-}" ] || printf '%s\n' "$SQUAD_TUIOS_FAKE_RESPOND_STDERR" >&2
     printf '{"success":true,"prompt_id":"%s","settled_by":"%s","state":"%s"}\n' \
       "${SQUAD_TUIOS_FAKE_RESPOND_ID:-p1}" "${SQUAD_TUIOS_FAKE_SETTLED:-state}" "${SQUAD_TUIOS_FAKE_STATE:-working}"
     ;;
@@ -193,12 +198,16 @@ case "${1:-}" in
     if [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ]; then
       printf '{"blocked":false,"found":false,"reason":"the pane is not on needs_input","success":true}\n'
     else
-      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"p1","actions":["approve","deny","choose","text"],"answerable":true,"reason":"%s","success":true}\n' \
+      prompt_actions='"actions":["approve","deny","choose","text"],'
+      [ -z "${SQUAD_TUIOS_FAKE_PROMPT_ACTIONS:-}" ] || prompt_actions=$(printf '"actions":%s,' "$SQUAD_TUIOS_FAKE_PROMPT_ACTIONS")
+      [ "${SQUAD_TUIOS_FAKE_PROMPT_NO_ACTIONS:-0}" = 1 ] && prompt_actions=
+      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"p1",%s"answerable":true,"reason":"%s","success":true}\n' \
         "${SQUAD_TUIOS_FAKE_PROMPT_FOUND:-true}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_KIND:-approval}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_OPTIONS:-[]}" \
+        "$prompt_actions" \
         "${SQUAD_TUIOS_FAKE_PROMPT_REASON:-}"
     fi
     ;;
@@ -1286,6 +1295,35 @@ OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve p1); RC=$?
 assert_contains "$OUT" '"prompt_id":"p1"' 'the response confirmation must identify the prompt answered'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 approve' \
   'the exact answer must use the native prompt-id-bound verb'
+# The answer sends syntax parameters and reads exact-prompt returns, so a catalog
+# missing any of them must refuse before the privileged verb runs.
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG" || true)
+err="$TMP_ROOT/respond-capability.err"
+SQUAD_TUIOS_FAKE_PARAM_OMIT=respond:window
+export SQUAD_TUIOS_FAKE_PARAM_OMIT
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+  fail 'a daemon that does not advertise the respond window parameter must refuse'
+fi
+assert_contains "$(cat "$err")" 'nothing was answered' 'a missing respond capability must be stated as a known no-op'
+unset SQUAD_TUIOS_FAKE_PARAM_OMIT
+SQUAD_TUIOS_FAKE_RETURN_OMIT=respond:settled_by
+export SQUAD_TUIOS_FAKE_RETURN_OMIT
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+  fail 'a daemon that does not advertise the respond settled_by return must refuse'
+fi
+assert_contains "$(cat "$err")" 'nothing was answered' 'an unadvertised respond return must be stated as a known no-op'
+unset SQUAD_TUIOS_FAKE_RETURN_OMIT
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$respond_count" ] \
+  || fail 'an incomplete respond capability must not invoke TUIOS respond'
+# A successful answer may still write a diagnostic out of band; the envelope on
+# stdout is what decides whether the exact prompt was answered.
+SQUAD_TUIOS_FAKE_RESPOND_STDERR='daemon note about this successful answer'
+export SQUAD_TUIOS_FAKE_RESPOND_STDERR
+OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve p1 2>"$err") \
+  || fail 'a diagnostic on stderr must not turn a confirmed answer into an uncertain outcome'
+assert_contains "$OUT" '"settled_by":"state"' 'a confirmed answer must stay confirmed with a stderr diagnostic'
+assert_contains "$(cat "$err")" 'daemon note about this successful answer' 'the out-of-band diagnostic must still be surfaced'
+unset SQUAD_TUIOS_FAKE_RESPOND_STDERR
 if fm_backend_tuios_respond owned:w-opaque_7 approve wrong-id >/dev/null 2>&1; then
   fail 'a response to a prompt id other than the currently read prompt must refuse'
 fi
@@ -1302,8 +1340,30 @@ fi
 if fm_backend_tuios_respond owned:w-opaque_7 approve_always p1 >/dev/null 2>&1; then
   fail 'persistent approval must not be automated'
 fi
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 1 >/dev/null 2>"$err"; then
+  fail 'an action that takes no value must refuse a forwarded value'
+fi
+assert_contains "$(cat "$err")" 'takes no value' 'a value on a valueless action must be a known no-op'
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$respond_count" ] \
   || fail 'an invalid option or persistent approval must not invoke TUIOS respond'
+# A prompt read that carries no actions array, or lacks the requested action, is
+# refused before the privileged verb rather than guessed at.
+SQUAD_TUIOS_FAKE_PROMPT_NO_ACTIONS=1
+export SQUAD_TUIOS_FAKE_PROMPT_NO_ACTIONS
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+  fail 'a prompt read with no actions array must refuse instead of guessing'
+fi
+assert_contains "$(cat "$err")" "does not accept action 'approve'" 'a prompt with no actions array must be a known no-op'
+unset SQUAD_TUIOS_FAKE_PROMPT_NO_ACTIONS
+SQUAD_TUIOS_FAKE_PROMPT_ACTIONS=$(printf '%s' '["approve"]')
+export SQUAD_TUIOS_FAKE_PROMPT_ACTIONS
+if fm_backend_tuios_respond owned:w-opaque_7 deny p1 >/dev/null 2>"$err"; then
+  fail 'an action absent from a present actions list must refuse'
+fi
+assert_contains "$(cat "$err")" "does not accept action 'deny'" 'an action absent from the actions list must be a known no-op'
+unset SQUAD_TUIOS_FAKE_PROMPT_ACTIONS
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$respond_count" ] \
+  || fail 'an unaccepted action must not invoke TUIOS respond'
 OUT=$(fm_backend_tuios_respond owned:w-opaque_7 choose p1 5) || fail 'a displayed option number should be accepted'
 assert_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 choose -- 5' \
   'a choice must preserve the exact displayed option number and prompt id'

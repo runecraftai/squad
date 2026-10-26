@@ -6,9 +6,13 @@
 # TUIOS is never inferred from ambient markers; configure it explicitly.
 #
 # Verified against the installed TUIOS 0.8.0 binary (`tuios --version`,
-# `tuios list-verbs`, `tuios --skill`). Every mechanism used here is
-# version-matched to that binary; docs/tuios-backend.md owns the behavior
-# contract and docs/verification/runtime-backends.md owns the live evidence.
+# `tuios list-verbs`, `tuios --skill`) for the session, prompt, queue, and
+# recovery verbs. The native `subscribe` event stream and the prompt-bound
+# `respond` verb are optional capabilities that a newer daemon advertises
+# (0.9.1 in the live evidence); each is gated on the installed daemon's own
+# catalog, and older builds keep the verified poll path. docs/tuios-backend.md
+# owns the behavior contract and docs/verification/runtime-backends.md owns the
+# live evidence.
 #
 # Delivery is agent-aware. The generic UI submit uses the daemon's queue
 # (`queue-prompt`), which types a message only once the agent is at rest and
@@ -452,20 +456,31 @@ fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]
 # this call is deliberately never retried because a lost reply may follow a
 # successful answer.
 fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
-  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out rc settled confirmed verdict
+  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out err errfile rc settled confirmed verdict
   SQUAD_BACKEND_PANE_GRANT_TARGET=
   fm_backend_tuios_parse_target "$target" || { echo 'error: malformed TUIOS prompt target' >&2; return 1; }
   [ -n "$prompt_id" ] || { echo 'error: TUIOS prompt id is required; nothing was answered' >&2; return 1; }
   case "$action" in approve|deny|choose|text) ;; *) echo "error: unsupported TUIOS prompt action '$action'; persistent approvals are not automated" >&2; return 1 ;; esac
-  case "$action" in choose|text)
-    [ -n "$value" ] || { echo "error: TUIOS action '$action' requires a value; nothing was answered" >&2; return 1; }
-    ;;
+  case "$action" in
+    choose|text)
+      [ -n "$value" ] || { echo "error: TUIOS action '$action' requires a value; nothing was answered" >&2; return 1; }
+      ;;
+    *)
+      [ -z "$value" ] || { echo "error: TUIOS action '$action' takes no value; nothing was answered" >&2; return 1; }
+      ;;
   esac
   catalog=$("$(fm_backend_tuios_bin)" list-verbs --json 2>/dev/null) || { echo 'error: TUIOS capability catalog unavailable; prompt response is unsupported' >&2; return 1; }
-  printf '%s' "$catalog" | jq -e '
-    any(.verbs[]; .verb == "respond" and ([.params[]?.name] | index("action") != null)
-      and ([.params[]?.name] | index("prompt_id") != null))
-  ' >/dev/null 2>&1 || { echo 'error: installed TUIOS daemon has no prompt-specific respond capability' >&2; return 1; }
+  printf '%s' "$catalog" | jq -e --arg action "$action" '
+    any(.verbs[]; .verb == "respond"
+      and ([.params[]?.name] | index("session") != null)
+      and ([.params[]?.name] | index("window") != null)
+      and ([.params[]?.name] | index("action") != null)
+      and ([.params[]?.name] | index("prompt_id") != null)
+      and (($action != "choose" and $action != "text")
+        or ([.params[]?.name] | index("value") != null))
+      and ([.returns[]?.name] | index("prompt_id") != null)
+      and ([.returns[]?.name] | index("settled_by") != null))
+  ' >/dev/null 2>&1 || { echo 'error: installed TUIOS daemon does not advertise the prompt response capability this answer needs; nothing was answered' >&2; return 1; }
   session=$SQUAD_BACKEND_TUIOS_SESSION
   window=$SQUAD_BACKEND_TUIOS_WINDOW
   prompt=$(fm_backend_tuios_prompt_json "$target") || { echo 'error: target is not currently waiting on a readable TUIOS prompt; nothing was answered' >&2; return 1; }
@@ -487,8 +502,12 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   local -a args=(respond --json --session "$session" --window "$window" --prompt-id "$prompt_id" "$action")
   # A free-text answer may begin with `-`, which the CLI would parse as a flag.
   [ -z "$value" ] || args+=(-- "$value")
-  out=$("$(fm_backend_tuios_bin)" "${args[@]}" 2>&1) && rc=0 || rc=$?
+  errfile=$(mktemp "${TMPDIR:-/tmp}/sq-tuios-respond.XXXXXX" 2>/dev/null) || errfile=/dev/null
+  out=$("$(fm_backend_tuios_bin)" "${args[@]}" 2>"$errfile") && rc=0 || rc=$?
+  err=$(cat "$errfile" 2>/dev/null) || err=''
+  [ "$errfile" = /dev/null ] || rm -f "$errfile"
   if [ "$rc" -ne 0 ]; then
+    [ -z "$err" ] || out=${out:+$out$'\n'}$err
     verdict=$(fm_backend_tuios_respond_error_verdict "$out")
     if [ "$verdict" = not_authorized ]; then
       fm_backend_tuios_refusal_line "$out" >&2
@@ -508,6 +527,7 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
     echo 'error: TUIOS response outcome may be uncertain; do not retry until the current prompt is re-read with bin/sq-crew-state.sh <task-id>' >&2
     return 1
   fi
+  [ -z "$err" ] || printf '%s\n' "$err" >&2
   settled=$(printf '%s' "$out" | jq -r '.settled_by // empty' 2>/dev/null)
   if printf '%s' "$out" | jq -e --arg id "$prompt_id" '
     (.success == true) and (.prompt_id == $id)

@@ -489,6 +489,10 @@ LAB_IMPOSTOR
     [ -e "$TEMP/impostor.rc" ] || respond_fail 'the unauthorized answer attempt never returned'
     impostor_rc=$(cat "$TEMP/impostor.rc")
     [ "$impostor_rc" = 1 ] || respond_fail "an agent pane answered the prompt without the respond grant (rc=$impostor_rc)"
+    case "$(cat "$TEMP/impostor.out")" in
+      *'TUIOS refused this caller; nothing was answered'*'respond grant'*) : ;;
+      *) respond_fail "the unauthorized-answer refusal was not the daemon's respond-authority refusal: $(tail -n 1 "$TEMP/impostor.out")" ;;
+    esac
     [ ! -s "$respond_dir/keys" ] || respond_fail 'the refused answer still reached the operator pane'
     if answer=$("$ROOT/bin/sq-send.sh" "$respond_task" --respond approve "$prompt_id" 2> "$TEMP/answer.err"); then answer_rc=0; else answer_rc=$?; fi
     [ "$answer_rc" -eq 0 ] || respond_fail "the authorized answer failed (rc=$answer_rc): $(cat "$TEMP/answer.err")"
