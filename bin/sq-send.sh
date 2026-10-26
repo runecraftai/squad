@@ -15,6 +15,16 @@
 # grant names bin/sq-pane-grants.sh's exact person command: the provider's own
 # remediation advice is dropped and only its refusal sentence is kept.
 #
+# Exact prompt answer instead of text: sq-send.sh <task-id> --respond <action>
+# <prompt-id> [value] answers only the TUIOS prompt that id names. It requires a
+# recorded task selector whose backend is tuios, re-reads the current prompt,
+# demands the same prompt_id plus one of the prompt's own actions (and, for
+# choose, the displayed option number), and invokes the daemon's respond verb
+# exactly once: a lost or unconfirmed reply is never retried, so an uncertain
+# outcome must be re-read through bin/sq-crew-state.sh before any retry. A daemon
+# whose verb catalogue lacks the parameters that answer needs is refused by name
+# rather than degrading to keystrokes.
+#
 # Text submission is verified: the line is typed ONCE, then Enter is sent and
 # retried (Enter only, never retyped) until the target backend confirms a
 # submit or reports an inconclusive send. If a swallowed Enter is positively

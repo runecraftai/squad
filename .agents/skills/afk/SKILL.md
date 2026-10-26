@@ -95,7 +95,8 @@ The operational prefix travels with the message text; it does not rely on harnes
 
 The daemon never injects into an in-use pane.
 Orca is native-only under [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision).
-A TUIOS supervisor pane with the shipped Pi extension is delivered through the native handoff instead of terminal typing (`docs/tuios-backend.md` "Away-mode supervision"), so the guards below and the type-once submit model that follows govern tmux, herdr, and the TUIOS fallback path rather than that native route.
+A TUIOS supervisor pane with the shipped Pi extension is delivered through the native handoff instead of terminal typing (`docs/tuios-backend.md` "Away-mode supervision"), so the guards below govern tmux, herdr, and the TUIOS fallback path rather than that native route, while the type-once submit model that follows applies to tmux and herdr only.
+The TUIOS fallback queues the digest through the supervisor pane's own agent instead of typing it, and refuses a pane with no attributable agent.
 Two checks run before every such injection, dispatched through `bin/sq-backend.sh` for the supervisor's own backend (tmux, herdr, or tuios; see "Auto-discovered supervisor pane" below):
 
 - **Primary-pane busy guard** - `pane_is_busy` trusts Herdr native `busy` when available, otherwise matches rendered output against only the detected primary harness's signature.

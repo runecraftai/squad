@@ -1419,6 +1419,9 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   fi
   case "$verdict" in
     agent_blocked|queue_full|no_agent|not_ready)
+      # These verdicts prove the backend refused before typing anything, so no
+      # byte of the digest can be sitting in the composer: the buffer is kept
+      # for the next tick and no resend is unsafe.
       log "inject failed: the backend refused before typing (verdict=$verdict, nothing is in the composer; digest stays buffered)"
       return 1
       ;;
