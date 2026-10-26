@@ -14,7 +14,9 @@ command -v node >/dev/null 2>&1 || { echo "skip: node not found (required by the
 
 out=$(node --test --test-reporter=tap "$RULE_TEST" 2>&1)
 rc=$?
-expect_code 0 "$rc" "the React filesystem-route rule tests should pass"
+if [ "$rc" -ne 0 ]; then
+  fail "the React filesystem-route rule tests should pass"$'\n'"$out"
+fi
 
 # A node test file with no test cases still exits 0, so require a passing
 # subtest count from the TAP summary instead of trusting the exit code alone.
