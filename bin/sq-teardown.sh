@@ -193,6 +193,8 @@ SUB_HOME_PARENT_MARKER=".sq-xo-parent"
 . "$SCRIPT_DIR/sq-xo-parent-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
 # shellcheck source=bin/sq-drill-run-lib.sh
 . "$SCRIPT_DIR/sq-drill-run-lib.sh"
 # shellcheck source=bin/sq-durable-custody.sh
@@ -246,12 +248,12 @@ remote_teardown_locks_release() {
 # sentry families (.stale-*, .stale-since-*, .wedge-escalations-*) use the
 # same ':/.' -> '_' key transform the sentry applies to the recorded backend
 # target (window=, terminal= for Orca); the .seen-* signatures are keyed by
-# the task status/turn-ended basenames. The daemon's task-keyed markers
-# (.subsuper-stale-*, .subsuper-paused-*, .subsuper-seen-status-*) are retired
-# by task id so the daemon never re-resolves a torn-down window, as is the
-# sentry's own task-keyed .compaction-notified-* dedup marker (bin/sq-classify-lib.sh's
-# compaction-without-status absorb override). A marker can outlive its task
-# record: until the meta is removed the watcher can still poll the released
+# the task status/turn-ended basenames. The task-keyed families
+# (.subsuper-stale-*, .subsuper-paused-*, .subsuper-seen-status-*, and the
+# sentry's own .compaction-notified-*) come from their one owner,
+# sq-classify-lib.sh's retire_task_watcher_markers, so teardown and the
+# sentry's terminal-agentless skip cannot drift apart. A marker can outlive its
+# task record: until the meta is removed the watcher can still poll the released
 # window and re-fire stale for it, so the markers are retired together with the
 # volatile state, and bin/sq-sentry.sh's drop_orphan_window_markers drops any
 # survivor once the record is gone.
@@ -269,10 +271,8 @@ retire_exec_record() {
 }
 
 retire_watcher_markers() {  # <state-dir> <task-id> <window>
-  local state=$1 id=$2 win=$3 key sfx task_key
-  task_key=$(printf '%s' "$id" | tr ':/.' '___')
-  rm -f "$state/.subsuper-stale-$task_key" "$state/.subsuper-paused-$task_key" \
-    "$state/.subsuper-seen-status-$task_key" "$state/.compaction-notified-$task_key"
+  local state=$1 id=$2 win=$3 key sfx
+  retire_task_watcher_markers "$state" "$id"
   [ -n "$win" ] || return 0
   key=$(printf '%s' "$win" | tr ':/.' '___')
   sfx=$(printf '%s' "$id" | tr '.' '_')

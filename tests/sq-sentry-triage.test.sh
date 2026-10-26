@@ -2955,6 +2955,12 @@ test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
   printf 'old pane hash' > "$state/.stale-$key"
   printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
   printf '4\n' > "$state/.wedge-escalations-$key"
+  # Residue from an earlier away-mode episode for this same task: the daemon's
+  # task-keyed watcher markers and the compaction dedup marker.
+  printf '1\n' > "$state/.subsuper-stale-released-agentless"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-released-agentless"
+  printf 'working: stale line\n' > "$state/.subsuper-seen-status-released-agentless"
+  printf '7 2' > "$state/.compaction-notified-released-agentless"
 
   watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
@@ -2966,6 +2972,10 @@ test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
   for marker in .hash- .count- .stale- .stale-since- .wedge-escalations-; do
     [ ! -e "$state/$marker$key" ] || { reap "$pid"; fail "released agentless pane left $marker bookkeeping behind"; }
   done
+  for marker in .subsuper-stale- .subsuper-paused- .subsuper-seen-status- .compaction-notified-; do
+    [ ! -e "$state/${marker}released-agentless" ] \
+      || { reap "$pid"; fail "released agentless pane left $marker task-keyed residue behind"; }
+  done
 
   # The execution stays released, but a harness agent appearing in the same
   # window must restore normal stale supervision rather than latch the skip.
@@ -2974,6 +2984,64 @@ test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
   grep -Fx "stale: $window" "$out" >/dev/null \
     || fail "agent return did not follow the ordinary stale path: $(cat "$out")"
   pass "released agentless windows leave no stale markers, while an agent return resumes normal stale supervision"
+}
+
+# The incident shape the release check alone misses: teardown was refused (the
+# work had not landed), so the dispatch record still says running even though the
+# crew's own run is long over. The shared current-state boundary - not the raw
+# dispatch record - is what proves there is nothing left to rescue.
+test_agentless_window_with_unretired_terminal_execution_skips_stale() {
+  local dir state fakebin out capture_file command_file window key pid
+  dir=$(make_case agentless-terminal-running); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-agentless-terminal"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/agentless-terminal.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/agentless-terminal.status"
+  sig=$(seen_sig "$state/agentless-terminal.status")
+  printf '%s' "$sig" > "$state/.seen-agentless-terminal_status"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" claim agentless-terminal >/dev/null \
+    || fail "could not claim the interrupted execution fixture"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition agentless-terminal running >/dev/null \
+    || fail "could not create the unretired running execution fixture"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'old pane hash' > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf 'old pane hash' > "$state/.stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+  printf '1\n' > "$state/.subsuper-stale-agentless-terminal"
+
+  # The crew's authoritative state is terminal even though its dispatch record
+  # was never retired.
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "terminal unretired execution escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "terminal unretired execution produced stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "terminal unretired execution enqueued stale wakes"; }
+  [ ! -e "$state/.hash-$key" ] || { reap "$pid"; fail "terminal unretired execution left window bookkeeping behind"; }
+  [ ! -e "$state/.subsuper-stale-agentless-terminal" ] \
+    || { reap "$pid"; fail "terminal unretired execution left the daemon stale marker behind"; }
+  reap "$pid"
+
+  # The same agentless running record with a crew that is NOT terminal keeps the
+  # ordinary escalation path: the terminal boundary is required, an idle pane on
+  # its own is still supervised exactly as before.
+  : > "$out"
+  rm -f "$state/.stand-to-queue"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: stopped · source: pane · bare shell' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a non-terminal agentless idle pane stopped escalating"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "a non-terminal agentless idle pane did not follow the ordinary stale path: $(cat "$out")"
+  pass "a terminal execution with an unretired dispatch record skips stale, while a non-terminal agentless pane still escalates"
 }
 
 test_busy_static_finished_task_is_absorbed_without_alarm() {
@@ -4169,6 +4237,7 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_static_pane_without_readable_viewport_never_expires
 test_busy_static_unreadable_viewport_logs_limitation_once
 test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
+test_agentless_window_with_unretired_terminal_execution_skips_stale
 test_busy_static_finished_task_is_absorbed_without_alarm
 test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced

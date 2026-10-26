@@ -58,6 +58,17 @@
 #                          out" once past SQUAD_PAUSE_MAX_SECS per declaration, and
 #                          "pane signature: <name>" for a byte-identical complete
 #                          viewport that keeps showing a stuck signature.
+#                          A window whose execution is released, or whose shared
+#                          current-state projection is otherwise terminal
+#                          (done/failed, including a terminal drill run over a
+#                          dispatch record that was never retired), and whose
+#                          pane has no attributable agent has nothing to rescue:
+#                          it never enters this clock, its per-window and
+#                          task-keyed markers are retired, and it therefore also
+#                          keeps none of the rules below (the bounded declared
+#                          pause re-surface cadence included). Attribution is
+#                          reread on every poll, so an agent reappearing in that
+#                          window resumes ordinary stale supervision at once.
 #   stale: <window> (<backend>: agent blocked - ...)
 #                          a backend's native transition record (bin/sq-transition-lib.sh)
 #                          reports the SAME window as `blocked` (a person is
@@ -236,17 +247,26 @@ window_is_busy() {  # <window> <tail40>
   [ "${verdict%% *}" = busy ]
 }
 
-# A released execution with no attributable agent has no live work to wedge.
-# Recheck endpoint attribution every poll: if an agent appears again, ordinary
-# stale supervision resumes immediately rather than inheriting a terminal latch.
-window_is_released_and_agentless() {  # <window> <task>
-  local w=$1 task=$2 exec_state agent_state
+# A window whose execution is released or otherwise terminal and whose recorded
+# pane has no attributable agent has no live work left to wedge, so it must not
+# enter the stale clock at all. The recorded dispatch state is read in place
+# (the same `exec_state=` field bin/sq-stall-detect.sh reads, never a forked
+# sq-exec-state.sh per window per poll), and only an agentless pane whose record
+# is not already released pays for the shared terminal projection the stale path
+# already trusts: operator_is_finished over sq-crew-state.sh, which reports a
+# terminal drill run as a finished crew. Attribution is rechecked every poll, so
+# an agent that appears again resumes ordinary supervision immediately instead
+# of inheriting a terminal latch.
+window_is_terminal_and_agentless() {  # <window> <task>
+  local w=$1 task=$2 recorded
   [ -n "$task" ] && [ -f "$STATE/$task.exec" ] || return 1
-  exec_state=$("$SCRIPT_DIR/sq-exec-state.sh" get-recorded "$task" 2>/dev/null) || return 1
-  [ "$exec_state" = released ] || return 1
-  agent_state=$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)
-  case "$agent_state" in dead|missing) return 0 ;; esac
-  return 1
+  recorded=$(field exec_state "$task")
+  case "$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)" in
+    dead|missing) ;;
+    *) return 1 ;;
+  esac
+  [ "$recorded" = released ] && return 0
+  operator_is_finished "$task"
 }
 
 window_kind() {
@@ -1385,8 +1405,9 @@ EOF
     fi
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
-    if window_is_released_and_agentless "$w" "$task"; then
+    if window_is_terminal_and_agentless "$w" "$task"; then
       drop_window_markers "$w"
+      retire_task_watcher_markers "$STATE" "$task"
       continue
     fi
     last=$(last_status_state_line "$STATE/$task.status")

@@ -32,8 +32,9 @@
 # gen+seq in a per-task marker so the same compaction never re-fires on every
 # later turn-end touch. The caller writes it only after durably queuing the
 # wake, mirroring this file's own .seen-*/mark_surfaced convention.
-# bin/sq-teardown.sh retires that marker with the other task-keyed sentry
-# markers.
+# retire_task_watcher_markers below is the one owner of that marker and the rest
+# of the task-keyed watcher set, so every retiring consumer removes the same
+# families instead of keeping its own copy.
 
 # Directory of this library, used to locate the sibling sq-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
@@ -1030,6 +1031,23 @@ operator_compaction_mark_notified() {  # <id>
   marker="$state/.compaction-notified-$key"
   printf '%s %s' "$gen" "$r_seq" > "$marker" 2>/dev/null || true
   return 0
+}
+
+# The task-keyed marker set one crew leaves behind: the away-mode daemon's
+# stale/pause/seen-status watcher markers and this file's compaction-notified
+# dedup marker. bin/sq-teardown.sh retires them with the volatile state of a
+# torn-down task, and bin/sq-sentry.sh retires them when it stops supervising a
+# released-or-terminal window that has no agent left to supervise, so both
+# owners remove exactly one set instead of drifting copies. A survivor is not
+# inert: the daemon's stale persistence recheck re-resolves the window and keeps
+# escalating a pane nobody owns, and a surviving seen-status/notified marker
+# silently swallows the first legitimate wake once an agent returns.
+retire_task_watcher_markers() {  # <state-dir> <task-id>
+  local state=$1 id=${2:-} key
+  [ -n "$id" ] || return 0
+  key=$(printf '%s' "$id" | tr ':/.' '___')
+  rm -f "$state/.subsuper-stale-$key" "$state/.subsuper-paused-$key" \
+    "$state/.subsuper-seen-status-$key" "$state/.compaction-notified-$key"
 }
 
 # 0 (actionable) if ANY task referenced by a "signal:" wake is a
