@@ -206,6 +206,9 @@ case "${1:-}" in
     if [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
        && [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND:-}" = fail ]; then
       exit 1
+    elif [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
+       && [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND:-}" = malformed ]; then
+      printf '{"success":true}\n'
     elif [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ] \
        || { [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
             && [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND:-}" = unblocked ]; }; then
@@ -1542,6 +1545,21 @@ printf '%s' "$(cat "$TMP_ROOT/respond-prose-readfail.out")" | jq -e '
 ' >/dev/null 2>&1 || fail 'a failed changed-prompt recovery read must be reported explicitly'
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a failed changed-prompt recovery read must invoke the provider exactly once'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=malformed
+export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose-malformed.out" 2>"$err"; then
+  fail 'a malformed changed-prompt recovery reply must still be a known no-op'
+fi
+printf '%s' "$(cat "$TMP_ROOT/respond-prose-malformed.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "changed_prompt_refusal"
+  and .read == "failed"
+  and has("blocked") | not
+' >/dev/null 2>&1 || fail 'a recovery reply without a boolean blocked state must be an explicit read failure'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a malformed recovery reply must invoke the provider exactly once'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 weird_target='owned:w"q\b'
 rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"

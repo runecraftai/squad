@@ -915,8 +915,15 @@ fm_backend_tuios_prompt_read() {  # <target>; 0 blocked prompt, 3 readable but n
   printf '%s' "$out" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     type == "object" and (terror | not) and (.success != false)
   ' >/dev/null 2>&1 || return 1
-  printf '%s' "$out"
-  printf '%s' "$out" | jq -e '.blocked == true' >/dev/null 2>&1 || return 3
+  if printf '%s' "$out" | jq -e '.blocked == true' >/dev/null 2>&1; then
+    printf '%s' "$out"
+    return 0
+  fi
+  if printf '%s' "$out" | jq -e '.blocked == false' >/dev/null 2>&1; then
+    printf '%s' "$out"
+    return 3
+  fi
+  return 1
 }
 
 fm_backend_tuios_prompt_json() {  # <target>
