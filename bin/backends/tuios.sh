@@ -1210,7 +1210,7 @@ fm_backend_tuios_queue_error_verdict() {  # <error-text>
     # The daemon only queues for a pane it knows holds an agent. Delivery is
     # queue-only, so a harness it cannot attribute is refused outright: nothing
     # is typed into that terminal and nothing is retried.
-    *'runs no agent tuios knows of'*) printf 'no_agent' ;;
+    *no_agent*|*'runs no agent tuios knows of'*) printf 'no_agent' ;;
     *) printf 'send-failed' ;;
   esac
 }

@@ -231,7 +231,13 @@ case "${1:-}" in
       exit 0
     fi
     if [ "${SQUAD_TUIOS_FAKE_QUEUE_FAIL:-0}" = 1 ]; then
-      printf '%s' "${SQUAD_TUIOS_FAKE_QUEUE_ERROR:-queue-prompt failed}" | jq -Rs '{error: ., success: false}'
+      if [ -n "${SQUAD_TUIOS_FAKE_QUEUE_ERROR_CODE:-}" ]; then
+        jq -cn --arg code "$SQUAD_TUIOS_FAKE_QUEUE_ERROR_CODE" \
+          --arg msg "${SQUAD_TUIOS_FAKE_QUEUE_ERROR:-queue-prompt failed}" \
+          '{error: {code: $code, message: $msg}, success: false}'
+      else
+        printf '%s' "${SQUAD_TUIOS_FAKE_QUEUE_ERROR:-queue-prompt failed}" | jq -Rs '{error: ., success: false}'
+      fi
       exit 1
     fi
     printf '{"delivering":%s,"id":"%s","position":1,"queued":1,"success":true}\n' \
@@ -543,6 +549,16 @@ export SQUAD_TUIOS_FAKE_QUEUE_ERROR
 if grep -qE '^(send-text|send-keys) ' "$SQUAD_TUIOS_LOG"; then
   fail 'a pane without an attributable agent must not receive terminal input'
 fi
+# A daemon that reports the refusal as a structured code rather than prose must
+# still reach the same verdict, so the code path is not a generic send failure.
+for pair in queue_full:queue_full agent_blocked:agent_blocked not_ready:not_ready prompt_stalled:prompt_stalled no_agent:no_agent; do
+  code=${pair%%:*} want=${pair#*:}
+  SQUAD_TUIOS_FAKE_QUEUE_ERROR_CODE=$code SQUAD_TUIOS_FAKE_QUEUE_ERROR='queue-prompt refused'
+  export SQUAD_TUIOS_FAKE_QUEUE_ERROR_CODE SQUAD_TUIOS_FAKE_QUEUE_ERROR
+  [ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = "$want" ] \
+    || fail "the structured $code refusal must be reported as $want"
+done
+unset SQUAD_TUIOS_FAKE_QUEUE_ERROR_CODE SQUAD_TUIOS_FAKE_QUEUE_ERROR
 SQUAD_TUIOS_FAKE_QUEUE_ERROR='queue-prompt failed: something undocumented'
 export SQUAD_TUIOS_FAKE_QUEUE_ERROR
 [ "$(fm_backend_tuios_send_text_submit owned:w-opaque_7 'do work' 3 0 0 sq-task-1)" = send-failed ] \
