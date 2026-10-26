@@ -3058,20 +3058,20 @@ test_agentless_window_with_unretired_terminal_execution_skips_stale() {
     || { reap "$pid"; fail "terminal unretired execution left the daemon stale marker behind"; }
   reap "$pid"
 
-  # The same agentless running record with a crew that is NOT terminal keeps the
-  # ordinary escalation path: the terminal boundary is required, an idle pane on
-  # its own is still supervised exactly as before.
+  # The same agentless running record with a gate-parked run keeps the ordinary
+  # escalation path: a live or parked run is never skipped, whatever its pane
+  # looks like, while an idle pane on its own is still supervised as before.
   : > "$out"
   rm -f "$state/.stand-to-queue"
   watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
-    SQUAD_FAKE_CREW_STATE='state: stopped · source: pane · bare shell' \
+    SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
     SQUAD_STALE_ESCALATE_SECS=1
   pid=$!
-  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a non-terminal agentless idle pane stopped escalating"; }
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a gate-parked run on an agentless window stopped escalating"; }
   grep -Fx "stale: $window" "$out" >/dev/null \
-    || fail "a non-terminal agentless idle pane did not follow the ordinary stale path: $(cat "$out")"
-  pass "a terminal execution with an unretired dispatch record skips stale, while a non-terminal agentless pane still escalates"
+    || fail "a gate-parked run did not follow the ordinary stale path: $(cat "$out")"
+  pass "a terminal execution with an unretired dispatch record skips stale, while a gate-parked run still escalates"
 }
 
 # The shared current-state projection forks sq-crew-state.sh, which may make a
@@ -3126,8 +3126,8 @@ SH
 # A task record can outlive its dispatch sidecar: the meta is published before the
 # exec claim (an interrupted spawn) and the exec is removed before the meta (an
 # interrupted teardown). Such a record still must not enter the stale clock when
-# its pane is agentless and its crew projects terminal, while the same record
-# with a non-terminal crew keeps the ordinary escalation path.
+# its pane is agentless and its crew projects terminal, while a gate-parked run
+# keeps the ordinary escalation path.
 test_agentless_window_without_dispatch_sidecar_uses_terminal_projection() {
   local dir state fakebin out capture_file command_file window key sig pid
   dir=$(make_case agentless-no-exec); state="$dir/state"; fakebin="$dir/fakebin"
@@ -3161,13 +3161,62 @@ test_agentless_window_without_dispatch_sidecar_uses_terminal_projection() {
   rm -f "$state/.stand-to-queue"
   watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
-    SQUAD_FAKE_CREW_STATE='state: stopped · source: pane · bare shell' \
+    SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
     SQUAD_STALE_ESCALATE_SECS=1
   pid=$!
-  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a sidecar-less non-terminal idle pane stopped escalating"; }
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a sidecar-less gate-parked run stopped escalating"; }
   grep -Fx "stale: $window" "$out" >/dev/null \
-    || fail "a sidecar-less non-terminal idle pane did not follow the ordinary stale path: $(cat "$out")"
-  pass "a record without a dispatch sidecar is judged by its terminal projection, and a non-terminal crew still escalates"
+    || fail "a sidecar-less gate-parked run did not follow the ordinary stale path: $(cat "$out")"
+  pass "a record without a dispatch sidecar is judged by its terminal projection, and a gate-parked run still escalates"
+}
+
+# The incident shape the released check alone misses: the machine-wide outage
+# killed the operator, teardown was refused because the work had not landed, and
+# the dead operator's last busy claim survived on the sidecar. The crew projection
+# therefore still says `working · pane`, but no agent is in the pane to advance
+# that claim, so nothing is left to rescue: the busy-expired wedge clock must not
+# run at all and must leave no bookkeeping behind.
+test_unretired_running_record_with_stale_busy_claim_skips_stale() {
+  local dir state fakebin out capture_file command_file window key pane_hash pid
+  dir=$(make_case running-stale-busy-claim); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-running-stale-busy-claim"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/running-stale-busy-claim.meta"
+  record_pi_busy "$state" running-stale-busy-claim
+  printf 'working: execution interrupted by outage\n' > "$state/running-stale-busy-claim.status"
+  sig=$(seen_sig "$state/running-stale-busy-claim.status")
+  printf '%s' "$sig" > "$state/.seen-running-stale-busy-claim_status"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" claim running-stale-busy-claim >/dev/null \
+    || fail "could not claim the outage execution fixture"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition running-stale-busy-claim running >/dev/null \
+    || fail "could not create the unretired running execution fixture"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "$(cat "$capture_file")")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+  printf '1\n' > "$state/.subsuper-stale-running-stale-busy-claim"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy (pi-ext)' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 50 \
+    || { reap "$pid"; fail "a stale busy claim on an unretired running record escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a stale busy claim on an unretired running record produced stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "a stale busy claim on an unretired running record enqueued stale wakes"; }
+  for marker in .hash- .count- .stale- .stale-since- .wedge-escalations-; do
+    [ ! -e "$state/$marker$key" ] \
+      || { reap "$pid"; fail "a skipped stale busy claim left $marker bookkeeping behind"; }
+  done
+  [ ! -e "$state/.subsuper-stale-running-stale-busy-claim" ] \
+    || { reap "$pid"; fail "a skipped stale busy claim left the daemon stale marker behind"; }
+  reap "$pid"
+  pass "an unretired running record whose only claim is a busy pane no agent backs is skipped with no residue"
 }
 
 test_busy_static_finished_task_is_absorbed_without_alarm() {
@@ -4367,6 +4416,7 @@ test_released_record_with_live_run_keeps_stale_supervision
 test_agentless_window_with_unretired_terminal_execution_skips_stale
 test_terminal_projection_is_memoized_per_task_generation
 test_agentless_window_without_dispatch_sidecar_uses_terminal_projection
+test_unretired_running_record_with_stale_busy_claim_skips_stale
 test_busy_static_finished_task_is_absorbed_without_alarm
 test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced

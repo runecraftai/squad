@@ -58,20 +58,26 @@
 #                          out" once past SQUAD_PAUSE_MAX_SECS per declaration, and
 #                          "pane signature: <name>" for a byte-identical complete
 #                          viewport that keeps showing a stuck signature.
-#                          A window whose execution is genuinely terminal - a
-#                          released dispatch record with no live or gate-parked
-#                          run over it, or the shared current-state projection
-#                          reporting done/failed, including a terminal drill run
-#                          over a dispatch record that was never retired - and
-#                          whose pane has no attributable agent has nothing to
-#                          rescue: it never enters this clock, its per-window
-#                          and task-keyed markers are retired, and it therefore
-#                          also keeps none of the rules below (the bounded
-#                          declared pause re-surface cadence included). A
-#                          released record that still owns a live run keeps the
-#                          ordinary supervision. Attribution is reread on every
-#                          poll, so an agent reappearing in that window resumes
-#                          ordinary stale supervision at once.
+#                          A window whose execution is genuinely terminal - the
+#                          shared current-state projection reports no live or
+#                          gate-parked run over it, so the dispatch record was
+#                          released, the crew is done/failed (including a
+#                          terminal drill run over a record that was never
+#                          retired), or the only remaining claim is a pane
+#                          busy-signature or status-log progress note no agent
+#                          in that pane can back - and whose pane has no
+#                          attributable agent has nothing to rescue: it never
+#                          enters this clock, its per-window and task-keyed
+#                          markers are retired, and it therefore also keeps none
+#                          of the rules below (the bounded declared pause
+#                          re-surface cadence included). A window that still
+#                          owns an active or gate-parked run keeps the ordinary
+#                          supervision, as does a declared pause or an open keyed
+#                          decision whose dispatch record was never released.
+#                          Attribution is reread on every poll, so an agent
+#                          reappearing in that window resumes ordinary stale
+#                          supervision at once. A fresh terminal verdict is
+#                          recorded once per generation in the triage log.
 #                          The away-mode daemon applies the same terminal-plus-
 #                          agentless boundary to its catch-all scan and pause
 #                          migration, so a skipped task stays quiet there too.
@@ -308,21 +314,23 @@ EOF
 # stale clock at all. The recorded dispatch state is read in place through the
 # shared task_recorded_exec_state (bin/sq-classify-lib.sh), never a forked
 # sq-exec-state.sh per window per poll, and the shared terminal projection
-# (task_execution_is_terminal in bin/sq-classify-lib.sh) decides it: a released
-# dispatch record still reports a live or gate-parked run as running, so the
-# release alone never settles the execution side, while every other record is
-# judged by the same operator_is_finished over sq-crew-state.sh the stale path
-# already trusts. The projection is memoized per task generation so it is not
-# re-read per window per poll, and only a terminal verdict then pays for the
-# pane's agent attribution - the read that costs a backend probe - because a
-# live agent is the one case a terminal execution is still supervised. A
-# retained record with no dispatch sidecar - meta published before the claim
-# that never landed, or removed before the meta on an interrupted teardown - has
-# no recorded state to read and is judged by that projection alone. Attribution
-# is rechecked every poll, so an agent that appears again resumes ordinary
-# supervision immediately instead of inheriting a terminal latch.
+# (task_execution_is_terminal in bin/sq-classify-lib.sh) decides it for every
+# dispatch state: a released record still reports a live or gate-parked run as
+# running, and a record whose teardown was refused keeps exactly the busy claim
+# that outlived its operator, so neither the release alone nor a done/failed
+# check settles the execution side. The projection is memoized per task
+# generation so it is not re-read per window per poll, and only a terminal
+# verdict then pays for the pane's agent attribution - the read that costs a
+# backend probe - because a live agent is the one case a terminal execution is
+# still supervised. A fresh terminal verdict is logged once per generation, so a
+# window that stops escalating is visible in the field. A retained record with
+# no dispatch sidecar - meta published before the claim that never landed, or
+# removed before the meta on an interrupted teardown - has no recorded state to
+# read and is judged by that projection alone. Attribution is rechecked every
+# poll, so an agent that appears again resumes ordinary supervision immediately
+# instead of inheriting a terminal latch.
 window_is_terminal_and_agentless() {  # <window> <task>
-  local w=$1 task=$2 recorded sig
+  local w=$1 task=$2 recorded sig fresh=0
   [ -n "$task" ] || return 1
   recorded=$(task_recorded_exec_state "$STATE" "$task")
   sig="$recorded|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")"
@@ -330,12 +338,15 @@ window_is_terminal_and_agentless() {  # <window> <task>
     [ "$_terminal_probe_hit" = terminal ] || return 1
   elif task_execution_is_terminal "$STATE" "$task" "$recorded"; then
     terminal_probe_remember "$task" "$sig" terminal
+    fresh=1
   else
     terminal_probe_remember "$task" "$sig" open
     return 1
   fi
   case "$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)" in
-    dead|missing) return 0 ;;
+    dead|missing)
+      [ "$fresh" -eq 0 ] || triage_log "skipped stale supervision (terminal execution, agentless window): $w"
+      return 0 ;;
   esac
   return 1
 }

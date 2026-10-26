@@ -852,28 +852,33 @@ task_recorded_exec_state() {  # <state> <id>
 }
 
 # 0 when <id>'s execution side is genuinely terminal for a watcher deciding
-# whether an agentless window still has work to rescue. A released dispatch
-# record is immutable for dispatch, but the shared projection
-# (fm_drill_reported_exec_state in bin/sq-drill-run-lib.sh) reports a live or
-# gate-parked run over it as running, so a raw `released` is not proof of
-# terminal execution. The run verdict is the same single sq-crew-state.sh read
-# operator_is_finished already pays for.
+# whether an agentless window still has work to rescue. The shared current-state
+# projection (bin/sq-crew-state.sh) settles EVERY recorded dispatch state, not
+# just a released one: a released record is immutable for dispatch but still
+# reports a live or gate-parked run over it as running (fm_drill_reported_exec_state
+# in bin/sq-drill-run-lib.sh), and a record whose teardown was correctly refused
+# outlives its operator as a busy claim no agent is behind. Only an actively
+# running step or a run parked at its gate proves work remains, and those are
+# never settled as terminal. A declared external wait, a blocked pane, or an
+# open keyed decision keeps its own bounded handling unless the dispatch record
+# is released, which is what makes the wait impossible to resume; an unreadable
+# verdict is never terminal.
 task_execution_is_terminal() {  # <state> <id> [recorded-state]
   local state=$1 id=$2 recorded=${3:-} line current source
   [ -n "$id" ] || return 1
   [ -n "$recorded" ] || recorded=$(task_recorded_exec_state "$state" "$id")
-  if [ "$recorded" != released ]; then
-    operator_is_finished "$id"
-    return
-  fi
   line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
-  case "$line" in state:*) ;; *) return 0 ;; esac
+  case "$line" in state:*) ;; *) return 1 ;; esac
   current=${line#state: }; current=${current%% *}
   source=${line#*source: }; source=${source%% *}
   case "$current:$source" in
     working:run-step|parked:run-step) return 1 ;;
   esac
-  return 0
+  [ "$recorded" = released ] && return 0
+  case "$current" in
+    done|failed|working) return 0 ;;
+  esac
+  return 1
 }
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (operator_absorb_class

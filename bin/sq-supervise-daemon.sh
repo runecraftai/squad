@@ -743,9 +743,10 @@ window_run_step_active() {  # <window> <state>
 # markers, so the away-mode loops must apply the same boundary: otherwise the
 # catch-all scan re-escalates the unchanged terminal status on every scan
 # cadence, and pause migration recreates the declared-pause marker the sentry
-# just retired. task_execution_is_terminal is the shared projection (a released
-# dispatch record can still own a live or gate-parked run); the agent probe is
-# the same attribution the sentry uses.
+# just retired. task_execution_is_terminal is the shared projection for every
+# dispatch state (a released record can still own a live or gate-parked run, and
+# a record whose teardown was refused can outlive its operator as a busy claim);
+# the agent probe is the same attribution the sentry uses.
 task_is_terminal_and_agentless() {  # <state> <task>
   local state=$1 task=$2 meta win backend
   [ -n "$task" ] || return 1

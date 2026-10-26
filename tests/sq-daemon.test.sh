@@ -1144,8 +1144,10 @@ test_heartbeat_scan_dedup() {
 # pane has no agent, and retires that task's watcher markers. The away-mode
 # loops must apply the same boundary, not just consume the retired dedup state:
 # otherwise the catch-all scan re-escalates the unchanged terminal status on
-# every cadence and pause migration recreates the declared-pause marker. A live
-# agent in the same window keeps the ordinary escalation path.
+# every cadence and pause migration recreates the declared-pause marker. The
+# projection has to settle every dispatch state, so the first task keeps an
+# unretired running record whose only remaining claim is a busy pane no agent
+# backs. A live agent in the same window keeps the ordinary escalation path.
 test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
   local dir state fakebin cmd key done_key paused_key
   dir=$(make_case scan-terminal-agentless); state="$dir/state"; fakebin="$dir/fakebin"
@@ -1153,7 +1155,7 @@ test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
   printf 'bash\n' > "$cmd"
   printf 'window=sess:sq-scan-gone\nkind=strike\nharness=pi\n' > "$state/scan-gone.meta"
   printf 'done: landed\n' > "$state/scan-gone.status"
-  printf 'exec_state=released\n' > "$state/scan-gone.exec"
+  printf 'exec_state=running\n' > "$state/scan-gone.exec"
   printf 'window=sess:sq-scan-hold\nkind=strike\nharness=pi\n' > "$state/scan-hold.meta"
   printf 'paused: waiting for vendor\n' > "$state/scan-hold.status"
   printf 'exec_state=released\n' > "$state/scan-hold.exec"
@@ -1166,7 +1168,8 @@ test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
   printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-$paused_key"
   rm -f "$state/.subsuper-last-scan"
 
-  SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+  SQUAD_FAKE_CREW_STATE_scan_gone='state: working · source: pane · harness busy (pi-ext)' \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
     SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STATE_OVERRIDE="$state" \
     SQUAD_PAUSE_RESURFACE_SECS=1 SQUAD_FAKE_TMUX_WINDOW=sess:sq-scan-gone \
     SQUAD_FAKE_TMUX_COMMAND_FILE="$cmd" PATH="$fakebin:$PATH" housekeeping "$state"
@@ -1187,7 +1190,8 @@ test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
   # path must observe the still-unchanged terminal status exactly once.
   printf 'pi\n' > "$cmd"
   rm -f "$state/.subsuper-last-scan"
-  SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+  SQUAD_FAKE_CREW_STATE_scan_gone='state: working · source: pane · harness busy (pi-ext)' \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
     SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STATE_OVERRIDE="$state" \
     SQUAD_FAKE_TMUX_WINDOW=sess:sq-scan-gone SQUAD_FAKE_TMUX_COMMAND_FILE="$cmd" \
     PATH="$fakebin:$PATH" housekeeping "$state"
