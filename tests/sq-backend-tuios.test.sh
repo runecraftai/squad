@@ -192,7 +192,7 @@ case "${1:-}" in
     fi
     [ -z "${SQUAD_TUIOS_FAKE_RESPOND_STDERR:-}" ] || printf '%s\n' "$SQUAD_TUIOS_FAKE_RESPOND_STDERR" >&2
     printf '{"success":true,"prompt_id":"%s","settled_by":"%s","state":"%s"}\n' \
-      "${SQUAD_TUIOS_FAKE_RESPOND_ID:-p1}" "${SQUAD_TUIOS_FAKE_SETTLED:-state}" "${SQUAD_TUIOS_FAKE_STATE:-working}"
+      "${SQUAD_TUIOS_FAKE_RESPOND_ID:-${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}}" "${SQUAD_TUIOS_FAKE_SETTLED:-state}" "${SQUAD_TUIOS_FAKE_STATE:-working}"
     ;;
   peek-prompt)
     if [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ]; then
@@ -201,12 +201,13 @@ case "${1:-}" in
       prompt_actions='"actions":["approve","deny","choose","text"],'
       [ -z "${SQUAD_TUIOS_FAKE_PROMPT_ACTIONS:-}" ] || prompt_actions=$(printf '"actions":%s,' "$SQUAD_TUIOS_FAKE_PROMPT_ACTIONS")
       [ "${SQUAD_TUIOS_FAKE_PROMPT_NO_ACTIONS:-0}" = 1 ] && prompt_actions=
-      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"p1",%s"answerable":true,"reason":"%s","success":true}\n' \
+      printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"%s",%s"answerable":true,"reason":"%s","success":true}\n' \
         "${SQUAD_TUIOS_FAKE_PROMPT_FOUND:-true}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_KIND:-approval}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_OPTIONS:-[]}" \
+        "${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}" \
         "$prompt_actions" \
         "${SQUAD_TUIOS_FAKE_PROMPT_REASON:-}"
     fi
@@ -1303,14 +1304,14 @@ pass 'TUIOS backend: the native event reader keeps its full budget and terminate
 
 # The answer path requires the exact current prompt id and action, then invokes
 # TUIOS's one-shot respond verb; a changed prompt is refused before any write.
-SQUAD_TUIOS_FAKE_PROMPT_ID=p1
+SQUAD_TUIOS_FAKE_PROMPT_ID=prompt-alpha
 export SQUAD_TUIOS_FAKE_PROMPT_ID
-# The fixture's default peek-prompt identity is p1.
-OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve p1); RC=$?
+OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve prompt-alpha); RC=$?
 [ "$RC" -eq 0 ] || fail "a current supported prompt should answer through TUIOS respond (rc=$RC, out=$OUT)"
-assert_contains "$OUT" '"prompt_id":"p1"' 'the response confirmation must identify the prompt answered'
-assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id p1 approve' \
+assert_contains "$OUT" '"prompt_id":"prompt-alpha"' 'the response confirmation must identify the prompt answered'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id prompt-alpha approve' \
   'the exact answer must use the native prompt-id-bound verb'
+unset SQUAD_TUIOS_FAKE_PROMPT_ID
 # The answer sends syntax parameters and reads exact-prompt returns, so a catalog
 # missing any of them must refuse before the privileged verb runs.
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG" || true)
