@@ -2919,13 +2919,17 @@ test_inject_msg_tuios_nothing_typed_refusal_keeps_the_composer_warning_honest() 
     fm_backend_composer_state() { printf 'empty'; }
     fm_afk_pi_handoff_ready() { return 1; }
     fm_afk_pi_handoff_evaluate() { printf 'refused no-record'; return 1; }
-    fm_backend_send_text_submit() { printf 'no_agent'; }
+    submit_verdict=no_agent
+    fm_backend_send_text_submit() { printf '%s' "$submit_verdict"; }
     export SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_SUPERVISOR_TARGET=primary:window-1
-    if inject_msg "digest" "$state"; then fail "a no-agent refusal must not report delivery"; fi
-    grep -q 'refused before typing' "$LOG" || fail "a nothing-typed refusal must be logged as such: $(cat "$LOG")"
-    grep -q 'text may be in composer' "$LOG" && fail "a nothing-typed refusal must not claim text may be in the composer: $(cat "$LOG")"
+    for submit_verdict in agent_blocked queue_full no_agent not_ready; do
+      : > "$LOG"
+      if inject_msg "digest" "$state"; then fail "a $submit_verdict refusal must not report delivery"; fi
+      grep -q 'refused before typing' "$LOG" || fail "a $submit_verdict refusal must be logged as nothing typed: $(cat "$LOG")"
+      grep -q 'text may be in composer' "$LOG" && fail "a $submit_verdict refusal must not claim text may be in the composer: $(cat "$LOG")"
+    done
     : > "$LOG"
-    fm_backend_send_text_submit() { printf 'uncertain-delivery'; }
+    submit_verdict=uncertain-delivery
     if inject_msg "digest" "$state"; then fail "an unconfirmed submit must not report delivery"; fi
     grep -q 'text may be in composer' "$LOG" || fail "an unconfirmed submit must still warn that text may be in the composer: $(cat "$LOG")"
   ) || fail "TUIOS nothing-typed refusal subshell failed"
