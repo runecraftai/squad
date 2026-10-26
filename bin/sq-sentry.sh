@@ -353,8 +353,8 @@ EOF
 # with no dispatch sidecar - meta published before the claim that never landed,
 # or removed before the meta on an interrupted teardown - has no recorded state
 # to read and is judged by that projection alone.
-window_is_terminal_and_agentless() {  # <window> <task>
-  local w=$1 task=$2 recorded sig attr
+window_is_terminal_and_agentless() {  # <window> <task> [quiet]
+  local w=$1 task=$2 quiet=${3:-0} recorded sig attr
   [ -n "$task" ] || return 1
   attr=$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)
   case "$attr" in
@@ -365,12 +365,21 @@ window_is_terminal_and_agentless() {  # <window> <task>
   sig="$recorded|$attr|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")|$(stat_sig "$(fm_busy_record_path "$STATE" "$task")")|$(stat_sig "$STATE/$task.exec")"
   if terminal_probe_lookup "$task" "$sig"; then
     [ "$_terminal_probe_hit" = terminal ] || return 1
+    if [ "$quiet" != 1 ] && [ "$(terminal_probe_traced "$task" "$sig")" != 1 ]; then
+      triage_log "skipped stale supervision (terminal execution, agentless window): $w"
+      terminal_probe_store "$task" "$sig" terminal 1
+    fi
     return 0
   fi
   if task_execution_is_terminal "$STATE" "$task" "$recorded"; then
-    [ "$(terminal_probe_traced "$task" "$sig")" = 1 ] \
-      || triage_log "skipped stale supervision (terminal execution, agentless window): $w"
-    terminal_probe_store "$task" "$sig" terminal 1
+    if [ "$quiet" = 1 ]; then
+      terminal_probe_store "$task" "$sig" terminal 0
+    elif [ "$(terminal_probe_traced "$task" "$sig")" != 1 ]; then
+      triage_log "skipped stale supervision (terminal execution, agentless window): $w"
+      terminal_probe_store "$task" "$sig" terminal 1
+    else
+      terminal_probe_store "$task" "$sig" terminal 1
+    fi
   else
     terminal_probe_store "$task" "$sig" open 0
     return 1
@@ -957,7 +966,7 @@ signal_task_is_terminal_and_agentless() {  # <signal-file>
   [ -e "$meta" ] || return 1
   target=$(fm_backend_target_of_meta "$meta" 2>/dev/null || true)
   [ -n "$target" ] || return 1
-  window_is_terminal_and_agentless "$target" "$task"
+  window_is_terminal_and_agentless "$target" "$task" 1
 }
 
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
