@@ -3093,6 +3093,53 @@ SH
   pass "the terminal projection is read once per task generation, not once per agentless window per poll"
 }
 
+# A task record can outlive its dispatch sidecar: the meta is published before the
+# exec claim (an interrupted spawn) and the exec is removed before the meta (an
+# interrupted teardown). Such a record still must not enter the stale clock when
+# its pane is agentless and its crew projects terminal, while the same record
+# with a non-terminal crew keeps the ordinary escalation path.
+test_agentless_window_without_dispatch_sidecar_uses_terminal_projection() {
+  local dir state fakebin out capture_file command_file window key sig pid
+  dir=$(make_case agentless-no-exec); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-agentless-no-exec"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/noexec.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/noexec.status"
+  sig=$(seen_sig "$state/noexec.status")
+  printf '%s' "$sig" > "$state/.seen-noexec_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'old pane hash' > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf 'old pane hash' > "$state/.stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "a sidecar-less terminal record escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a sidecar-less terminal record produced stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "a sidecar-less terminal record enqueued stale wakes"; }
+  [ ! -e "$state/.hash-$key" ] || { reap "$pid"; fail "a sidecar-less terminal record left window bookkeeping behind"; }
+  reap "$pid"
+
+  : > "$out"
+  rm -f "$state/.stand-to-queue"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: stopped · source: pane · bare shell' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a sidecar-less non-terminal idle pane stopped escalating"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "a sidecar-less non-terminal idle pane did not follow the ordinary stale path: $(cat "$out")"
+  pass "a record without a dispatch sidecar is judged by its terminal projection, and a non-terminal crew still escalates"
+}
+
 test_busy_static_finished_task_is_absorbed_without_alarm() {
   local dir state fakebin out capture_file window key sig pid
   dir=$(make_case busy-static-finished); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4288,6 +4335,7 @@ test_busy_static_unreadable_viewport_logs_limitation_once
 test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
 test_agentless_window_with_unretired_terminal_execution_skips_stale
 test_terminal_projection_is_memoized_per_task_generation
+test_agentless_window_without_dispatch_sidecar_uses_terminal_projection
 test_busy_static_finished_task_is_absorbed_without_alarm
 test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced

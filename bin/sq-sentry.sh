@@ -301,13 +301,16 @@ EOF
 # sq-exec-state.sh per window per poll), and only an agentless pane whose record
 # is not already released pays for the shared terminal projection the stale path
 # already trusts: operator_is_finished over sq-crew-state.sh, which reports a
-# terminal drill run as a finished crew. That projection is memoized per task
+# terminal drill run as a finished crew. A retained record with no dispatch
+# sidecar - meta published before the claim that never landed, or removed before
+# the meta on an interrupted teardown - has no recorded state to read and is
+# judged by that projection alone. That projection is memoized per task
 # generation, and attribution is rechecked every poll, so an agent that appears
 # again resumes ordinary supervision immediately instead of inheriting a
 # terminal latch.
 window_is_terminal_and_agentless() {  # <window> <task>
   local w=$1 task=$2 recorded sig
-  [ -n "$task" ] && [ -f "$STATE/$task.exec" ] || return 1
+  [ -n "$task" ] || return 1
   recorded=$(field exec_state "$task")
   case "$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)" in
     dead|missing) ;;
