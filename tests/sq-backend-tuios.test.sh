@@ -191,8 +191,15 @@ case "${1:-}" in
       exit 1
     fi
     [ -z "${SQUAD_TUIOS_FAKE_RESPOND_STDERR:-}" ] || printf '%s\n' "$SQUAD_TUIOS_FAKE_RESPOND_STDERR" >&2
+    respond_prompt_id=
+    respond_prev=
+    for respond_arg in "$@"; do
+      if [ "$respond_prev" = --prompt-id ]; then respond_prompt_id=$respond_arg; break; fi
+      respond_prev=$respond_arg
+    done
+    [ -n "$respond_prompt_id" ] || respond_prompt_id=${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}
     printf '{"success":true,"prompt_id":"%s","settled_by":"%s","state":"%s"}\n' \
-      "${SQUAD_TUIOS_FAKE_RESPOND_ID:-${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}}" "${SQUAD_TUIOS_FAKE_SETTLED:-state}" "${SQUAD_TUIOS_FAKE_STATE:-working}"
+      "${SQUAD_TUIOS_FAKE_RESPOND_ID:-$respond_prompt_id}" "${SQUAD_TUIOS_FAKE_SETTLED:-state}" "${SQUAD_TUIOS_FAKE_STATE:-working}"
     ;;
   peek-prompt)
     if [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ]; then
@@ -1311,6 +1318,17 @@ OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve prompt-alpha); RC=$?
 assert_contains "$OUT" '"prompt_id":"prompt-alpha"' 'the response confirmation must identify the prompt answered'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --window w-opaque_7 --prompt-id prompt-alpha approve' \
   'the exact answer must use the native prompt-id-bound verb'
+SQUAD_TUIOS_FAKE_RESPOND_ID=prompt-beta
+export SQUAD_TUIOS_FAKE_RESPOND_ID
+err="$TMP_ROOT/respond-unconfirmed.err"
+if fm_backend_tuios_respond owned:w-opaque_7 approve prompt-alpha >/dev/null 2>"$err"; then
+  fail 'a response that does not confirm the exact prompt id must not report success'
+fi
+assert_contains "$(cat "$err")" 'did not confirm the exact prompt response' \
+  'a mismatched response prompt id must be an uncertain outcome, not a confirmed answer'
+assert_contains "$(cat "$err")" 'outcome may be uncertain' \
+  'a mismatched response prompt id must warn against retrying'
+unset SQUAD_TUIOS_FAKE_RESPOND_ID
 unset SQUAD_TUIOS_FAKE_PROMPT_ID
 # The answer sends syntax parameters and reads exact-prompt returns, so a catalog
 # missing any of them must refuse before the privileged verb runs.
