@@ -374,10 +374,9 @@ window_is_terminal_and_agentless() {  # <window> <task> [quiet]
   if task_execution_is_terminal "$STATE" "$task" "$recorded"; then
     if [ "$quiet" = 1 ]; then
       terminal_probe_store "$task" "$sig" terminal 0
-    elif [ "$(terminal_probe_traced "$task" "$sig")" != 1 ]; then
-      triage_log "skipped stale supervision (terminal execution, agentless window): $w"
-      terminal_probe_store "$task" "$sig" terminal 1
     else
+      [ "$(terminal_probe_traced "$task" "$sig")" = 1 ] \
+        || triage_log "skipped stale supervision (terminal execution, agentless window): $w"
       terminal_probe_store "$task" "$sig" terminal 1
     fi
   else
