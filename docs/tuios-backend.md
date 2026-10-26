@@ -127,10 +127,12 @@ The flow when a dialog blocks an operator:
    Use `approve` or `deny` for an approval, `choose` with the displayed option number for a numbered question, and `text` with the answer a free-text prompt accepts; an action the current prompt does not accept is refused by name and nothing is answered.
    It re-reads the current prompt, requires the same `prompt_id`, verifies the action and selected option, then lets TUIOS enforce the answering pane's `respond` authority and atomically refuse a changed prompt.
    A stale id expires the old decision for every action and returns a `tuios_prompt_recovery` JSON snapshot with the target, current id, supported actions, displayed options, and prompt, alongside the attempted id, action, and value; the supervisor must make a new decision.
+   When that read finds no blocked prompt, the snapshot reports the explicit nonblocked read or read failure instead of implying a prompt exists, and nothing is answered.
    A daemon-confirmed changed-prompt refusal performs at most one read-only recovery read and returns that snapshot, an explicit nonblocked state, or an explicit read failure.
    `approve_always` and risk-matched approvals are not inferred or automated; a TUIOS risk refusal confirms that nothing was answered.
    The command invokes `respond` once; an unconfirmed write preserves the attempted id, action, value, and original diagnostic and remains unresolved even if reconciliation still sees the same prompt, and its read-only observation never authorizes a retry.
    Exact-id confirmation is emitted independently of settlement, so an unknown settlement does not erase evidence that the answer was confirmed.
+   When the daemon reports `settled_by: prompt`, the confirmed reply is followed by a `tuios_prompt_recovery` snapshot of the next prompt (reason `next_prompt`) with its target, id, actions, options, and prompt, so the supervisor can make a fresh decision without another discovery read.
    The older `bin/sq-send.sh <id> --key <key>` path remains available for key-only prompts, but it does not bind the answer to a prompt id.
    Free text through ordinary `sq-send` remains refused while blocked because that would answer without the prompt-specific permission and identity checks.
 5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.

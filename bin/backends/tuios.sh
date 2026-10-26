@@ -495,7 +495,7 @@ fm_backend_tuios_prompt_recovery_read() {  # <target> <reason> <attempted-id> <a
 }
 
 fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
-  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out err errfile rc settled confirmed verdict
+  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out err errfile rc prompt_rc settled confirmed verdict
   SQUAD_BACKEND_PANE_GRANT_TARGET=
   fm_backend_tuios_parse_target "$target" || { echo 'error: malformed TUIOS prompt target' >&2; return 1; }
   [ -n "$prompt_id" ] || { echo 'error: TUIOS prompt id is required; nothing was answered' >&2; return 1; }
@@ -522,7 +522,20 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   ' >/dev/null 2>&1 || { echo 'error: installed TUIOS daemon does not advertise the prompt response capability this answer needs; nothing was answered' >&2; return 1; }
   session=$SQUAD_BACKEND_TUIOS_SESSION
   window=$SQUAD_BACKEND_TUIOS_WINDOW
-  prompt=$(fm_backend_tuios_prompt_json "$target") || { echo 'error: target is not currently waiting on a readable TUIOS prompt; nothing was answered' >&2; return 1; }
+  prompt=$(fm_backend_tuios_prompt_read "$target") && prompt_rc=0 || prompt_rc=$?
+  case "$prompt_rc" in
+    0) ;;
+    3)
+      echo 'error: the target is not currently waiting on a TUIOS prompt; nothing was answered' >&2
+      fm_backend_tuios_prompt_recovery_payload "$target" stale_decision "$prompt_id" "$action" "$value" not_blocked null
+      return 1
+      ;;
+    *)
+      echo 'error: the current TUIOS prompt could not be read; nothing was answered' >&2
+      fm_backend_tuios_prompt_recovery_payload "$target" stale_decision "$prompt_id" "$action" "$value" failed null
+      return 1
+      ;;
+  esac
   [ "$(printf '%s' "$prompt" | jq -r '.prompt_id // empty')" = "$prompt_id" ] || {
     echo 'error: TUIOS prompt changed since it was read; the old decision expired and nothing was answered' >&2
     fm_backend_tuios_prompt_recovery_payload "$target" stale_decision "$prompt_id" "$action" "$value" blocked "$prompt"
@@ -585,7 +598,8 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   }
   printf '%s\n' "$out"
   if [ "$settled" = prompt ]; then
-    echo 'error: the exact prompt was answered, but another prompt appeared; inspect it instead of retrying' >&2
+    echo 'error: the exact prompt was answered, but another prompt appeared; decide on that prompt instead of retrying' >&2
+    fm_backend_tuios_prompt_recovery_read "$target" next_prompt "$prompt_id" "$action" "$value"
     return 1
   fi
   if [ "$settled" = gone ]; then
