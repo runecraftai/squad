@@ -455,6 +455,14 @@ fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]
 # The daemon rechecks prompt_id atomically and enforces its respond authority;
 # this call is deliberately never retried because a lost reply may follow a
 # successful answer.
+fm_backend_tuios_prompt_evidence() {  # <target> <prompt-json> <reason>
+  local target=$1 prompt=$2 reason=$3
+  printf '%s' "$prompt" | jq -c --arg target "$target" --arg reason "$reason" '
+    {type:"tuios_prompt_recovery",reason:$reason,target:$target,
+     prompt_id:(.prompt_id // null),actions:(.actions // []),options:(.options // []),prompt:.}
+  '
+}
+
 fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out err errfile rc settled confirmed verdict
   SQUAD_BACKEND_PANE_GRANT_TARGET=
@@ -485,7 +493,8 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   window=$SQUAD_BACKEND_TUIOS_WINDOW
   prompt=$(fm_backend_tuios_prompt_json "$target") || { echo 'error: target is not currently waiting on a readable TUIOS prompt; nothing was answered' >&2; return 1; }
   [ "$(printf '%s' "$prompt" | jq -r '.prompt_id // empty')" = "$prompt_id" ] || {
-    echo 'error: TUIOS prompt changed since it was read; nothing was answered; read the current prompt before deciding again' >&2
+    echo 'error: TUIOS prompt changed since it was read; the old decision expired and nothing was answered' >&2
+    fm_backend_tuios_prompt_evidence "$target" "$prompt" stale_decision
     return 1
   }
   printf '%s' "$prompt" | jq -e --arg action "$action" '(.actions // []) | index($action) != null' >/dev/null 2>&1 || {
@@ -515,7 +524,15 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
       [ -z "$out" ] || printf '%s\n' "$out" >&2
     fi
     case "$verdict" in
-      prompt_changed) echo 'error: TUIOS confirmed nothing was answered because the prompt changed; read the new prompt before deciding again' >&2; return 1 ;;
+      prompt_changed)
+        echo 'error: TUIOS confirmed nothing was answered because the prompt changed; the old decision expired' >&2
+        if prompt=$(fm_backend_tuios_prompt_json "$target"); then
+          fm_backend_tuios_prompt_evidence "$target" "$prompt" changed_prompt_refusal
+        else
+          printf '{"type":"tuios_prompt_recovery","reason":"changed_prompt_refusal","target":"%s","read":"failed"}\n' "$target"
+        fi
+        return 1
+        ;;
       risk_matched) echo 'error: TUIOS refused this risk-matched approval; nothing was answered and no risk acknowledgement was inferred' >&2; return 1 ;;
       not_authorized)
         # shellcheck disable=SC2034 # Set for the sourcing caller to print the sanctioned grant remedy.
@@ -524,7 +541,12 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
         return 1
         ;;
     esac
-    echo 'error: TUIOS response outcome may be uncertain; do not retry until the current prompt is re-read with bin/sq-crew-state.sh <task-id>' >&2
+    echo 'error: TUIOS response outcome is unresolved; do not retry; reconciling read-only' >&2
+    if prompt=$(fm_backend_tuios_prompt_json "$target"); then
+      fm_backend_tuios_prompt_evidence "$target" "$prompt" unconfirmed_write_reconciliation
+    else
+      printf '{"type":"tuios_prompt_recovery","reason":"unconfirmed_write_reconciliation","target":"%s","read":"failed","write":"unresolved"}\n' "$target"
+    fi
     return 1
   fi
   [ -z "$err" ] || printf '%s\n' "$err" >&2
@@ -536,21 +558,19 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
     echo 'error: TUIOS did not confirm the exact prompt response; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
     return 1
   }
+  printf '%s\n' "$out"
   if [ "$settled" = prompt ]; then
-    printf '%s\n' "$out"
     echo 'error: the exact prompt was answered, but another prompt appeared; inspect it instead of retrying' >&2
     return 1
   fi
   if [ "$settled" = gone ]; then
-    printf '%s\n' "$out"
     echo 'error: the exact prompt was answered, but the operator window closed as it was typed; do not retry; inspect the task instead' >&2
     return 1
   fi
   [ "$settled" = state ] || {
-    echo 'error: TUIOS did not confirm the blocked prompt cleared; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
+    echo 'error: the exact answer was confirmed, but settlement outcome may be uncertain; do not retry' >&2
     return 1
   }
-  printf '%s\n' "$out"
 }
 
 fm_backend_tuios_current_path() {  # <target>

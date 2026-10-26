@@ -1359,9 +1359,13 @@ OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve p1 2>"$err") \
 assert_contains "$OUT" '"settled_by":"state"' 'a confirmed answer must stay confirmed with a stderr diagnostic'
 assert_contains "$(cat "$err")" 'daemon note about this successful answer' 'the out-of-band diagnostic must still be surfaced'
 unset SQUAD_TUIOS_FAKE_RESPOND_STDERR
-if fm_backend_tuios_respond owned:w-opaque_7 approve wrong-id >/dev/null 2>&1; then
-  fail 'a response to a prompt id other than the currently read prompt must refuse'
-fi
+for action in approve deny choose text; do
+  case "$action" in choose) value=5 ;; text) value=answer ;; *) value= ;; esac
+  snapshot=$(SQUAD_TUIOS_FAKE_PROMPT_ID=prompt-beta fm_backend_tuios_respond owned:w-opaque_7 "$action" wrong-id "$value" 2>/dev/null) &&
+    fail "a stale $action decision must refuse"
+  assert_contains "$snapshot" 'tuios_prompt_recovery' "a stale $action decision must return recovery context"
+  assert_contains "$snapshot" 'prompt-beta' "a stale $action decision must return the current prompt id"
+done
 assert_not_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond ' 'a changed prompt must not invoke TUIOS respond'
 SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '[{"n":2,"label":"first"},{"n":5,"label":"second"}]')
 export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
@@ -1410,11 +1414,15 @@ respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 SQUAD_TUIOS_FAKE_RESPOND_FAIL=1
 export SQUAD_TUIOS_FAKE_RESPOND_FAIL
 err="$TMP_ROOT/respond-uncertain.err"
-if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-uncertain.out" 2>"$err"; then
   fail 'an uncertain native response must not report success'
 fi
-assert_contains "$(cat "$err")" 'outcome may be uncertain' \
-  'an unrecognized refusal must stay an uncertain outcome, never a known no-op'
+assert_contains "$(cat "$err")" 'outcome is unresolved' \
+  'an unrecognized refusal must stay unresolved, never a known no-op'
+assert_contains "$(cat "$err")" 'do not retry' \
+  'a read-only reconciliation must not authorize resending'
+assert_contains "$(cat "$TMP_ROOT/respond-uncertain.out")" 'tuios_prompt_recovery' \
+  'an unconfirmed write must return its reconciliation separately from the send result'
 unset SQUAD_TUIOS_FAKE_RESPOND_FAIL
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'an uncertain native response must invoke respond exactly once'
@@ -1443,6 +1451,7 @@ assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a prose prompt-c
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a prose prompt-changed refusal must invoke the provider exactly once'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+unset SQUAD_TUIOS_FAKE_PROMPT_ID
 SQUAD_TUIOS_FAKE_RESPOND_PROSE='An allow for an approval that matches a risk rule was refused because risk_ack did not name exactly the rules it matched. Nothing was answered. Read the rules with get-approval, or answer in the pane.'
 export SQUAD_TUIOS_FAKE_RESPOND_PROSE
 if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
