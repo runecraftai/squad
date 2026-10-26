@@ -97,7 +97,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-observation-pack.py` | Python implementation of observation packs: create --task ID --source PATH, card PACK, and read PACK --offset N --limit M [--receipt] |
 | `sq-factory-collect.sh` | On-demand collection and triage of inputs into verifiable backlog candidates, with no execution authority (`docs/factory-collect.md`) |
 | `sq-factory-collect.py` | Python implementation of factory collection: read the configured sources, apply the verifiability test, queue candidates, and write the human digest |
-| `sq-factory-collect-toon.mjs` | Decode `sq-gh`'s TOON output into JSON for the factory collector, using the vendored `@toon-format/toon` decoder |
+| `sq-factory-collect-toon.mjs` | Decode `sq-gh`'s TOON output into JSON for Squad's `sq-gh` readers, using the vendored `@toon-format/toon` decoder |
 | `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata including evidence receipt summaries and observation pack aggregates; sq-cost, .meta, .exec, and status remain owners of truth |
 | `sq-dispatch-tune.sh`  | Report dispatch counts, chosen models, and success and fallback rates per profile and lane from dispatch logs |
 | `sq-jev-call.py`       | Shadow-only Jev recommendation client that records a labelled event and never resolves dispatch (`docs/configuration.md`) |
