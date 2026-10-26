@@ -996,6 +996,13 @@ families_for_changed_path() {
     .agents/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit
       ;;
+    .agents/skills/execution-playbooks/rules/*)
+      printf '%s\n' "__script__:sq-playbook-rule.test.sh"
+      ;;
+    .agents/skills/execution-playbooks/references/*)
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:sq-playbook-validator.test.sh"
+      ;;
     .github/workflows/ci.yml|.drill.yaml)
       printf '%s\n' pure-contract-unit
       printf '%s\n' real-herdr-gated

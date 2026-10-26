@@ -110,6 +110,7 @@ init_changed_fixture_repo() {
     sq-backend-cmux.test.sh \
     sq-backend-zellij.test.sh \
     sq-backend-orca.test.sh \
+    sq-playbook-rule.test.sh \
     sq-afk-orca.test.sh; do
     printf '#!/usr/bin/env bash\n# tests/lib.sh\n' >"$repo/tests/$script"
     chmod +x "$repo/tests/$script"
@@ -121,8 +122,12 @@ init_changed_fixture_repo() {
   printf '# .claude/settings.json\n# .pi/extensions/sq-primary-turnend-guard.ts\n' \
     >>"$repo/tests/sq-cd-pretool-check.test.sh"
   printf '# .pi/extensions/sq-primary-pi-watch.ts\n' >>"$repo/tests/sq-pi-watch-extension.test.sh"
-  mkdir -p "$repo/.agents/skills/example" "$repo/.claude" "$repo/.pi/extensions/lib" "$repo/src"
+  mkdir -p "$repo/.agents/skills/example" "$repo/.agents/skills/execution-playbooks/rules" \
+    "$repo/.agents/skills/execution-playbooks/references" \
+    "$repo/.claude" "$repo/.pi/extensions/lib" "$repo/src"
   : >"$repo/.agents/skills/example/SKILL.md"
+  : >"$repo/.agents/skills/execution-playbooks/rules/no-filesystem-routes.mjs"
+  : >"$repo/.agents/skills/execution-playbooks/references/react-v1.md"
   : >"$repo/.claude/settings.json"
   : >"$repo/.pi/extensions/sq-primary-pi-watch.ts"
   : >"$repo/.pi/extensions/sq-primary-turnend-guard.ts"
@@ -183,6 +188,18 @@ test_changed_dependency_selection_and_unmapped_failure() {
   assert_contains "$listed" "tests/sq-pi-watch-extension.test.sh" "Pi source selects sentry coverage"
   git -C "$repo" add .agents .claude .pi
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm non-bin-source-change
+
+  printf '\n' >>"$repo/.agents/skills/execution-playbooks/rules/no-filesystem-routes.mjs"
+  listed=$(cd "$repo" && bin/sq-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/sq-playbook-rule.test.sh" "playbook rule source selects its node test wrapper"
+  git -C "$repo" add .agents
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm playbook-rule-change
+
+  printf '\n' >>"$repo/.agents/skills/execution-playbooks/references/react-v1.md"
+  listed=$(cd "$repo" && bin/sq-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/sq-brief.test.sh" "playbook reference selects profile materialization coverage"
+  git -C "$repo" add .agents
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm playbook-reference-change
 
   printf '\n' >>"$repo/src/unmapped.ts"
   set +e

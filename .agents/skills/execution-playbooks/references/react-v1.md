@@ -15,7 +15,7 @@ Selection is explicit; this contract does not automatically classify or dispatch
 2. Map changed modules to the D1 layers and identify import boundaries, hooks, pure functions, and component responsibilities before editing.
 3. Implement one vertical slice using the architecture, naming, routing, query, and state rules below.
 4. Record the D3 proposal's approval disposition; implement only approved lint changes within the task's scope, retaining existing architecture enforcement.
-5. Run focused behavior tests, type checking, and the applicable lint commands; exercise the affected user flow on the real surface, including rejected and error paths.
+5. Run focused behavior tests, type checking, the filesystem-route verification command, and the applicable lint commands; exercise the affected user flow on the real surface, including rejected and error paths.
 6. Record completion evidence outside the project repository and leave review, fixes, delivery, approval, and merge to the existing strike lifecycle and drill owner.
 
 ## D1: classic FSD layers
@@ -67,10 +67,23 @@ Do not move unrelated business logic into `shared` merely to empty a component.
 
 ## D3: proposed amalgamated oxlint rules
 
-This is a proposal for commander deliberation, not an approved configuration or permission to install or replace project tooling.
+This is a proposal for commander deliberation, not an approved configuration or permission to install or replace project tooling beyond the route gate below.
 Each row is individually reviewable; record accepted, rejected, or pending decisions rather than silently adopting another repository's preset.
-The candidate configuration combines hook correctness, component declarations, reconciliation, JSX correctness, unsafe rendering, and refresh boundaries using oxlint's native `react` plugin.
+The candidate configuration combines hook correctness, component declarations, reconciliation, JSX correctness, unsafe rendering, refresh boundaries, and code-based routing using oxlint's native `react` plugin plus the Squad custom rule `no-filesystem-routes`.
 Enable these explicit rules rather than every React rule or a Next.js preset.
+The custom rule rejects `createFileRoute`, imports of the TanStack filesystem-route plugin, and imports of generated `routeTree.gen` modules; use `createRoute` in the code-based tree instead.
+Selecting react@1 installs four authoritative files from the playbook registry into `tools/oxlint/` in the task worktree - `no-filesystem-routes.mjs`, its colocated acceptance check `no-filesystem-routes.node-check.mjs`, `no-filesystem-routes.oxlintrc.json`, and `verify-no-filesystem-routes.mjs` - and commits all four with the branch so the project owns them.
+The `.node-check.mjs` suffix keeps Vitest and Jest from collecting that Node check as a project test.
+`bin/sq-playbook-rule.sh install <project-dir>` copies those files and then makes the gate project-enforced: it sets `scripts["verify:routes"]` in `package.json` to `node tools/oxlint/verify-no-filesystem-routes.mjs`, appends that command to `scripts.prebuild` (creating it when absent) so `npm run build` fails before a filesystem route reaches build output, and appends a `filesystem-routes` job that installs the project's dependencies and runs `npm run verify:routes` to the first existing `.github/workflows` file that defines a top-level `jobs` block and runs on `push` or `pull_request`, or creates `.github/workflows/no-filesystem-routes.yml` when no existing workflow can take a job.
+The installer refuses to overwrite a different project-owned `scripts["verify:routes"]` command and preserves the existing `package.json` indentation and trailing newline when it edits the file.
+Commit the package script and CI edits with the branch, and keep the four copied files byte-identical to the playbook registry copies.
+That installed config wires the plugin and rule for the verification command alone, so the route gate needs neither D3 approval nor an edit to the project's existing lint policy.
+The verification command is `node tools/oxlint/verify-no-filesystem-routes.mjs`: it runs the project's installed oxlint with the Squad rule over the project's own source files and fails when any of the three patterns appears.
+It fails closed with an actionable message when oxlint is not installed, so a missing tool can never report a green route check.
+A suppression comment that names `squad/no-filesystem-routes` is always a violation; a bare lint-disable directive is a violation only in a file that also contains a banned route pattern.
+The command disables lint-ignore files so an ignore entry cannot exclude the route tree.
+The adopting task installs oxlint at the version it records with its D3 disposition and commits that dependency with the branch; the verification command never installs it silently.
+Run that command as a mandatory verification command and include its captured output in the completion evidence, including one real filesystem-route source that failed and one code-based source that passed.
 
 | Candidate rule | Proposed severity/options | Why it exists |
 | --- | --- | --- |
@@ -88,12 +101,14 @@ Enable these explicit rules rather than every React rule or a Next.js preset.
 | `react/jsx-no-script-url` | `error` | Reject executable JavaScript URLs in JSX. |
 | `react/jsx-no-target-blank` | `error` | Guard external new-tab links against unsafe opener access. |
 | `react/only-export-components` | `warn`, `allowConstantExport: true` | Keep refresh boundaries reliable while retaining the source's constant-export allowance. |
+| `squad/no-filesystem-routes` | `error` | Require code-based TanStack routes and reject filesystem route declarations, plugin configuration, and generated `routeTree.gen` imports. |
 
 Candidate `.oxlintrc.json` rule block, to merge only after approval and compatibility checks:
 
 ```json
 {
   "plugins": ["react"],
+  "jsPlugins": ["./tools/oxlint/no-filesystem-routes.mjs"],
   "rules": {
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "error",
@@ -108,11 +123,13 @@ Candidate `.oxlintrc.json` rule block, to merge only after approval and compatib
     "react/no-danger-with-children": "error",
     "react/jsx-no-script-url": "error",
     "react/jsx-no-target-blank": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "squad/no-filesystem-routes": "error"
   }
 }
 ```
 
+This candidate block belongs to the project's main lint config after approval, while the route rule wiring installed under `tools/oxlint/` already carries the route checks the verification command runs.
 Check rule IDs and options against the project's installed oxlint version before enabling them; unsupported rules are a named gap, not a reason to drop checks silently.
 Do not erase existing plugins, overrides, or ignore patterns when merging approved rules.
 Keep ESLint boundaries and any other checks without equivalent oxlint coverage.
@@ -149,7 +166,7 @@ The attached playbook owns the completion gate, so a passing `bin/sq-playbook-va
    Write each record as a plain line beginning, after optional whitespace, with `Routing:` or `Queries:`; do not prefix Markdown list markers or emphasize the labels.
    No mechanical gate inspects these records for a paired brief, so the reviewing operator checks that each label appears once with a `changed` or `unchanged` state, a `-` separator, and nonblank free text, then reads the free text for code-based routing, guards, invalidation, wording, case, and word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording.
    Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
-4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, and command/results for any approved configuration actually applied.
+4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, command/results for any approved configuration actually applied, the committed `package.json` and CI edits that run the route gate, and the `node tools/oxlint/verify-no-filesystem-routes.mjs` output over the project's own sources.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
 
 ## Exit predicate
