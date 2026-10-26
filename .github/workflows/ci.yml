@@ -65,6 +65,11 @@ jobs:
           ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
           sq-tasks --version
+      - name: Install pinned oxlint
+        run: |
+          set -eu
+          bin/sq-install-oxlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Run portable parallel shard 1
         run: |
           set -eu
@@ -105,6 +110,11 @@ jobs:
           ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
           sq-tasks --version
+      - name: Install pinned oxlint
+        run: |
+          set -eu
+          bin/sq-install-oxlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Run portable parallel shard 2
         run: |
           set -eu
@@ -162,6 +172,11 @@ jobs:
           ln -s "$(command -v sq-tasks)" "$(dirname "$(command -v sq-tasks)")/tasks-axi"
           tasks-axi --version
           sq-tasks --version
+      - name: Install pinned oxlint
+        run: |
+          set -eu
+          bin/sq-install-oxlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Run portable serial shard ${{ matrix.shard }}
         env:
           # job-total rather than a literal, so shrinking or growing the matrix

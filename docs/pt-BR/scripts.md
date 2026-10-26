@@ -37,6 +37,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-drill-drive.sh`      | Conduzir chamadas AXI com recuperação limitada de custódia de runs falhos; o cabeçalho do script é dono do contrato de retry e parada |
 | `sq-herdr-lab.sh`        | Provisionar e operar protegidamente uma sessão de lab Herdr isolada, nunca padrão         |
 | `sq-install-herdr.sh`    | Instalar o pin exato de versão do Herdr usado pelo CI com URL oficial de asset, SHA-256 e checagens de protocolo |
+| `sq-install-oxlint.sh`   | Instalar o oxlint de versão exata usado pelo CI com URL de tarball npm, pin SHA-256 e binding de plataforma |
 | `sq-learn.sh`            | Capturar um aprendizado operacional limitado e filtrado por quase-duplicatas em `data/learnings.md` |
 | `sq-install-fob.sh`| Compilar e instalar o packages/fob vendado da fonte para E2E real-Herdr que precise de worktrees de spawn |
 | `sq-herdr-ci-cleanup.sh` | Snapshotar e derrubar apenas sessões `sq-lab-*` de propriedade do job na lane CI do Herdr       |
@@ -136,7 +137,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-verification.sh`     | Registrar o momento de descoberta de um defeito escapado, o PR mesclado afetado e o SHA completo, a reprodução ou um motivo explícito de desconhecido, o cenário de regressão, e o gate pré-merge que não o pegou na issue GitHub existente dele, e reportar todo defeito registrado de um repo |
 | `sq-verification.py`     | Implementação Python dos comandos de registro e relatório de defeitos escapados, lendo e escrevendo corpos de issue verbatim pelo decodificador TOON do `sq-gh` |
 | `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de perfil |
-| `sq-playbook-rule.sh`    | Instalar a regra oxlint autoritativa do playbook e seu teste colocalizado no diretório `tools/oxlint` de um projeto adotante |
+| `sq-playbook-rule.sh`    | Instalar a regra oxlint autoritativa do playbook, sua checagem colocalizada, sua config exclusiva e seu comando de verificação no diretório `tools/oxlint` de um projeto adotante |
 | `sq-promote.sh`          | Promover uma tarefa recon in-place a uma tarefa strike protegida com modo de entrega explícito |
 | `sq-teardown.sh`         | Teardown fail-closed: devolver worktrees ship landadas, exigir entregáveis completos de recon, aposentar bases XO |
 | `sq-harness.sh`          | Detectar o harness em execução e resolver crew ou XO harness, modelo e esforço |

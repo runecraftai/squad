@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Install the react@1 filesystem-route lint rule into an adopting project.
 # The Squad copy under the playbook registry stays authoritative: this copies the
-# oxlint plugin and its colocated test into the project's tools/oxlint/ directory
-# so the project's lint config and mandatory verification command load real files
-# instead of a path that only exists in the Squad base.
+# oxlint plugin, its colocated acceptance check, the rule-only oxlint config, and
+# the verification command into the project's tools/oxlint/ directory so the
+# project's mandatory verification command runs the real rule over its own source
+# files instead of a path that only exists in the Squad base.
 # Usage: sq-playbook-rule.sh install <project-dir>
 set -eu
 
@@ -41,5 +42,8 @@ install_one() {  # <file>
 }
 
 install_one no-filesystem-routes.mjs
-install_one no-filesystem-routes.test.mjs
+install_one no-filesystem-routes.check.mjs
+install_one no-filesystem-routes.oxlintrc.json
+install_one verify-no-filesystem-routes.mjs
 printf 'playbook rule installed: %s\n' "$DEST"
+printf 'verification command: node tools/oxlint/verify-no-filesystem-routes.mjs\n'

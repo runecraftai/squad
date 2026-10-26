@@ -829,7 +829,7 @@ test_react_profile_identity_survives_spawn() {
   assert_grep 'playbook_version=1' "$HOME_DIR/state/$id.meta" 'spawn lost the playbook version'
   assert_grep 'Execution profile: id=react version=1' "$HOME_DIR/data/$id/brief.md" 'React profile block missing from the delivered brief'
   assert_grep 'brief.md' "$LAUNCH_LOG" 'React profile spawn must deliver its materialized brief'
-  for file in no-filesystem-routes.mjs no-filesystem-routes.test.mjs; do
+  for file in no-filesystem-routes.mjs no-filesystem-routes.check.mjs no-filesystem-routes.oxlintrc.json verify-no-filesystem-routes.mjs; do
     cmp -s "$ROOT/.agents/skills/execution-playbooks/rules/$file" "$WT_DIR/tools/oxlint/$file" \
       || fail "React profile spawn did not install the authoritative $file into the task worktree"
   done

@@ -8,8 +8,13 @@ import { fileURLToPath } from "node:url";
 import plugin from "./no-filesystem-routes.mjs";
 
 const rule = plugin.rules["no-filesystem-routes"];
-const rulePath = fileURLToPath(new URL("./no-filesystem-routes.mjs", import.meta.url));
+const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const routerPackage = "@tanstack/react-router";
+const verifierFiles = ["no-filesystem-routes.mjs", "no-filesystem-routes.oxlintrc.json", "verify-no-filesystem-routes.mjs"];
+const badCreateFileRoute =
+  'import { createFileRoute } from "@tanstack/react-router";\nexport const Route = createFileRoute("/bad")({ component: () => null });\n';
+const goodCodeRoute =
+  'import { createRootRoute, createRoute } from "@tanstack/react-router";\nconst rootRoute = createRootRoute();\nexport const Route = createRoute({ getParentRoute: () => rootRoute, path: "/good" });\n';
 
 const identifier = (name) => ({ type: "Identifier", name });
 const literal = (value) => ({ type: "Literal", value });
@@ -55,7 +60,7 @@ function lint(nodes) {
 function findOxlint() {
   if (process.env.OXLINT_BIN) return process.env.OXLINT_BIN;
   const names = ["oxlint", "oxlint.exe", "oxlint.cmd"];
-  let dir = path.dirname(rulePath);
+  let dir = scriptDirectory;
   while (true) {
     for (const name of names) {
       const candidate = path.join(dir, "node_modules", ".bin", name);
@@ -73,6 +78,43 @@ function findOxlint() {
     }
   }
   return null;
+}
+
+const oxlint = findOxlint();
+
+function requireOxlint() {
+  assert.ok(
+    oxlint,
+    "oxlint is required for the filesystem-route proof; run bin/sq-install-oxlint.sh <directory> and set OXLINT_BIN",
+  );
+  return oxlint;
+}
+
+function makeProject() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "squad-route-project-"));
+  fs.mkdirSync(path.join(dir, "tools", "oxlint"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "src", "app", "routes"), { recursive: true });
+  for (const file of verifierFiles) {
+    fs.copyFileSync(path.join(scriptDirectory, file), path.join(dir, "tools", "oxlint", file));
+  }
+  spawnSync("git", ["init", "-q", dir], { encoding: "utf8" });
+  return dir;
+}
+
+function runVerifier(dir, env = {}) {
+  return spawnSync(process.execPath, ["tools/oxlint/verify-no-filesystem-routes.mjs"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, OXLINT_BIN: requireOxlint(), ...env },
+  });
+}
+
+function routeFile(dir, name = "index.tsx") {
+  return path.join(dir, "src", "app", "routes", name);
+}
+
+function output(result) {
+  return `${result.stdout}${result.stderr}`;
 }
 
 test("code-based route tree passes", () => {
@@ -134,101 +176,65 @@ test("handwritten routeTree modules pass", () => {
   assert.deepEqual(lint([requireCall("./routeTree")]), []);
 });
 
-const oxlint = findOxlint();
+test("the verification command fails on a project's own filesystem-routing source and passes its code-based source", () => {
+  const dir = makeProject();
+  try {
+    fs.writeFileSync(routeFile(dir), badCreateFileRoute);
+    const failed = runVerifier(dir);
+    assert.notEqual(failed.status, 0, `a project file using createFileRoute must fail the command:\n${output(failed)}`);
+    assert.match(output(failed), /no-filesystem-routes/, `the failure must name the rule:\n${output(failed)}`);
 
-test(
-  "oxlint fails the build for filesystem routing and passes the code-based tree",
-  { skip: oxlint ? false : "oxlint is not installed" },
-  () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "squad-route-rule-"));
-    try {
-      fs.copyFileSync(rulePath, path.join(dir, "no-filesystem-routes.mjs"));
-      fs.writeFileSync(
-        path.join(dir, ".oxlintrc.json"),
-        `${JSON.stringify(
-          {
-            jsPlugins: ["./no-filesystem-routes.mjs"],
-            rules: { "squad/no-filesystem-routes": "error" },
-          },
-          null,
-          2,
-        )}\n`,
-      );
-      const fixtures = [
-        {
-          file: "bad-create-file-route.tsx",
-          source: 'import { createFileRoute } from "@tanstack/react-router";\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
-          fails: true,
-        },
-        {
-          file: "bad-aliased-create-file-route.tsx",
-          source: 'import { createFileRoute as cfr } from "@tanstack/react-router";\nexport const Route = cfr("/bad")({ component: () => null });\n',
-          fails: true,
-        },
-        {
-          file: "bad-member-create-file-route.ts",
-          source: 'import * as router from "@tanstack/react-router";\nexport const Route = router.createFileRoute("/bad", { component: () => null });\n',
-          fails: true,
-        },
-        {
-          file: "bad-required-create-file-route.cjs",
-          source: 'const { createFileRoute: cfr } = require("@tanstack/react-router");\nmodule.exports = cfr("/bad", { component: () => null });\n',
-          fails: true,
-        },
-        {
-          file: "bad-filesystem-plugin.ts",
-          source: 'import { tanstackRouter } from "@tanstack/router-plugin/vite";\nexport const plugin = tanstackRouter();\n',
-          fails: true,
-        },
-        {
-          file: "bad-router-generator.ts",
-          source: 'export { generate } from "@tanstack/router-generator";\n',
-          fails: true,
-        },
-        {
-          file: "bad-generated-tree.ts",
-          source: 'import { routeTree } from "./routeTree.gen";\nexport const tree = routeTree;\n',
-          fails: true,
-        },
-        {
-          file: "bad-required-generated-tree.cjs",
-          source: 'const { routeTree } = require("./routeTree.gen");\nmodule.exports = routeTree;\n',
-          fails: true,
-        },
-        {
-          file: "bad-dynamic-generated-tree.ts",
-          source: 'export async function loadTree() {\n  const { routeTree } = await import("./routeTree.gen");\n  return routeTree;\n}\n',
-          fails: true,
-        },
-        {
-          file: "bad-reexported-generated-tree.ts",
-          source: 'export * from "./routeTree.gen";\n',
-          fails: true,
-        },
-        {
-          file: "good-handwritten-tree.ts",
-          source: 'import { routeTree } from "./routeTree";\nexport const tree = routeTree;\n',
-          fails: false,
-        },
-        {
-          file: "good-code-route.tsx",
-          source: 'import { createRootRoute, createRoute } from "@tanstack/react-router";\nconst rootRoute = createRootRoute();\nexport const Route = createRoute({ getParentRoute: () => rootRoute, path: "/good" });\n',
-          fails: false,
-        },
-      ];
-      for (const { file, source, fails } of fixtures) {
-        fs.writeFileSync(path.join(dir, file), source);
-        const result = spawnSync(oxlint, [file], { cwd: dir, encoding: "utf8" });
-        const output = `${result.stdout}${result.stderr}`;
-        if (fails) {
-          assert.notEqual(result.status, 0, `${file} should fail the lint, got:\n${output}`);
-          assert.match(output, /no-filesystem-routes/, `${file} did not report the rule:\n${output}`);
-        } else {
-          assert.equal(result.status, 0, `${file} should pass the lint, got:\n${output}`);
-        }
-      }
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+    fs.writeFileSync(routeFile(dir), goodCodeRoute);
+    const passed = runVerifier(dir);
+    assert.equal(passed.status, 0, `a code-based project file must pass the command:\n${output(passed)}`);
+    assert.match(passed.stdout, /no-filesystem-routes: checked \d+ source files; no filesystem routing found/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the verification command catches every banned pattern and an uncommitted route file", () => {
+  const dir = makeProject();
+  try {
+    fs.writeFileSync(routeFile(dir), goodCodeRoute);
+    spawnSync("git", ["-C", dir, "add", "src/app/routes/index.tsx"], { encoding: "utf8" });
+    assert.equal(runVerifier(dir).status, 0, "a committed code-based route tree must pass before the new file exists");
+
+    const violations = {
+      "aliased createFileRoute":
+        'import { createFileRoute as cfr } from "@tanstack/react-router";\nexport const Route = cfr("/bad")({ component: () => null });\n',
+      "filesystem route plugin":
+        'import { tanstackRouter } from "@tanstack/router-plugin/vite";\nexport const plugin = tanstackRouter();\n',
+      "generated routeTree import": 'import { routeTree } from "./routeTree.gen";\nexport const tree = routeTree;\n',
+      "generated routeTree require": 'const { routeTree } = require("./routeTree.gen");\nmodule.exports = routeTree;\n',
+      "generated routeTree dynamic import":
+        'export async function loadTree() {\n  const { routeTree } = await import("./routeTree.gen");\n  return routeTree;\n}\n',
+    };
+    for (const [label, source] of Object.entries(violations)) {
+      const file = routeFile(dir, "uncommitted.tsx");
+      fs.writeFileSync(file, source);
+      const result = runVerifier(dir);
+      fs.rmSync(file);
+      assert.notEqual(result.status, 0, `${label} in an uncommitted project file must fail the command:\n${output(result)}`);
+      assert.match(output(result), /no-filesystem-routes/, `${label} must be reported by the rule:\n${output(result)}`);
     }
-  },
-);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the verification command fails closed when oxlint is unavailable", () => {
+  const dir = makeProject();
+  try {
+    fs.writeFileSync(routeFile(dir), goodCodeRoute);
+    const result = spawnSync(process.execPath, ["tools/oxlint/verify-no-filesystem-routes.mjs"], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { ...process.env, OXLINT_BIN: path.join(dir, "missing-oxlint"), PATH: "" },
+    });
+    assert.notEqual(result.status, 0, "a project without oxlint must not report a green route check");
+    assert.match(output(result), /oxlint/, `the refusal must name oxlint:\n${output(result)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

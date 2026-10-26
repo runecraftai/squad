@@ -1,0 +1,6 @@
+{
+  "jsPlugins": ["./no-filesystem-routes.mjs"],
+  "rules": {
+    "squad/no-filesystem-routes": "error"
+  }
+}

@@ -15,7 +15,7 @@ Selection is explicit; this contract does not automatically classify or dispatch
 2. Map changed modules to the D1 layers and identify import boundaries, hooks, pure functions, and component responsibilities before editing.
 3. Implement one vertical slice using the architecture, naming, routing, query, and state rules below.
 4. Record the D3 proposal's approval disposition; implement only approved lint changes within the task's scope, retaining existing architecture enforcement.
-5. Run focused behavior tests, type checking, and the applicable lint commands; exercise the affected user flow on the real surface, including rejected and error paths.
+5. Run focused behavior tests, type checking, the filesystem-route verification command, and the applicable lint commands; exercise the affected user flow on the real surface, including rejected and error paths.
 6. Record completion evidence outside the project repository and leave review, fixes, delivery, approval, and merge to the existing strike lifecycle and drill owner.
 
 ## D1: classic FSD layers
@@ -72,9 +72,12 @@ Each row is individually reviewable; record accepted, rejected, or pending decis
 The candidate configuration combines hook correctness, component declarations, reconciliation, JSX correctness, unsafe rendering, refresh boundaries, and code-based routing using oxlint's native `react` plugin plus the Squad custom rule `no-filesystem-routes`.
 Enable these explicit rules rather than every React rule or a Next.js preset.
 The custom rule rejects `createFileRoute`, imports of the TanStack filesystem-route plugin, and imports of generated `routeTree.gen` modules; use `createRoute` in the code-based tree instead.
-Selecting react@1 copies the authoritative rule and its colocated test from the playbook registry into `tools/oxlint/` in the task worktree - commit both files with the branch so the project owns them - and the candidate block and verification command below use those project-relative paths.
-The copied test also drives oxlint itself when it is installed, so plugin loading and a non-zero lint exit are proven instead of assumed.
-Run `node --test tools/oxlint/no-filesystem-routes.test.mjs` as a mandatory verification command, and include its captured output in the completion evidence.
+Selecting react@1 copies the authoritative rule, its colocated acceptance check, its rule-only oxlint config, and its verification command from the playbook registry into `tools/oxlint/` in the task worktree - commit all four files with the branch so the project owns them.
+That installed config wires the plugin and rule for the verification command alone, so the route gate needs neither D3 approval nor an edit to the project's existing lint policy.
+The verification command is `node tools/oxlint/verify-no-filesystem-routes.mjs`: it runs the project's installed oxlint with the Squad rule over the project's own source files and fails when any of the three patterns appears.
+It fails closed with an actionable message when oxlint is not installed, so a missing tool can never report a green route check.
+The adopting task installs oxlint at the version it records with its D3 disposition and commits that dependency with the branch; the verification command never installs it silently.
+Run that command as a mandatory verification command and include its captured output in the completion evidence, including one real filesystem-route source that failed and one code-based source that passed.
 
 | Candidate rule | Proposed severity/options | Why it exists |
 | --- | --- | --- |
@@ -120,6 +123,7 @@ Candidate `.oxlintrc.json` rule block, to merge only after approval and compatib
 }
 ```
 
+This candidate block belongs to the project's main lint config after approval, while the route rule wiring installed under `tools/oxlint/` already carries the route checks the verification command runs.
 Check rule IDs and options against the project's installed oxlint version before enabling them; unsupported rules are a named gap, not a reason to drop checks silently.
 Do not erase existing plugins, overrides, or ignore patterns when merging approved rules.
 Keep ESLint boundaries and any other checks without equivalent oxlint coverage.
@@ -156,7 +160,7 @@ The attached playbook owns the completion gate, so a passing `bin/sq-playbook-va
    Write each record as a plain line beginning, after optional whitespace, with `Routing:` or `Queries:`; do not prefix Markdown list markers or emphasize the labels.
    No mechanical gate inspects these records for a paired brief, so the reviewing operator checks that each label appears once with a `changed` or `unchanged` state, a `-` separator, and nonblank free text, then reads the free text for code-based routing, guards, invalidation, wording, case, and word order, so changed read-only queries pass on their own terms without a fabricated `unchanged` claim or mandatory invalidation wording.
    Put the concrete path, command, and result in the free text; justify an unchanged dimension there rather than asserting it without evidence.
-4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, and command/results for any approved configuration actually applied.
+4. **lint**: the proposal's per-rule rationale and approval disposition, pending deliberations, retained checks, command/results for any approved configuration actually applied, and the `node tools/oxlint/verify-no-filesystem-routes.mjs` output over the project's own sources.
 5. **behavior**: focused test command/results plus the real user surface exercised, including loading, error, and rejected paths applicable to the task.
 
 ## Exit predicate

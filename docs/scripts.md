@@ -33,6 +33,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-drill-drive.sh`      | Drive AXI calls with bounded failed-run custody recovery; its header owns the retry and stop contract |
 | `sq-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `sq-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
+| `sq-install-oxlint.sh`   | Install CI's exact-version oxlint with npm tarball URL, SHA-256 pin, and platform binding |
 | `sq-install-fob.sh`| Build and install the vendored packages/fob from source for real-Herdr E2E that needs spawn worktrees |
 | `sq-herdr-ci-cleanup.sh` | Snapshot and tear down only job-owned `sq-lab-*` sessions in the Herdr CI lane       |
 | `sq-test-run.sh`         | Behavior-test runner: selection, portable lanes, proven-isolated `--jobs`, coverage guard, timing/JSON |
@@ -135,7 +136,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-verification.sh`     | Record one escaped defect's discovery time, affected merged PR and full SHA, reproduction or explicit unknown reason, regression scenario, and missed pre-merge gate on its existing GitHub issue, and report every recorded defect for one repo |
 | `sq-verification.py`     | Python implementation of the escaped-defect record and report commands, reading and writing issue bodies verbatim through the `sq-gh` TOON decoder |
 | `sq-playbook-validate.sh` | Validate structural completion evidence for a materialized execution playbook; `bin/sq-brief.sh` owns the selectable playbook and profile identities |
-| `sq-playbook-rule.sh`    | Install the playbook's authoritative oxlint rule and its colocated test into an adopting project's `tools/oxlint` directory |
+| `sq-playbook-rule.sh`    | Install the playbook's authoritative oxlint rule, colocated check, rule-only config, and verification command into an adopting project's `tools/oxlint` directory |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |
