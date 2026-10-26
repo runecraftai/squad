@@ -6,7 +6,9 @@ Every mechanism below was validated against an installed TUIOS binary and its ow
 
 ## Setup
 
-Install TUIOS 0.8.0 or newer, `jq`, and `flock`, and ensure `fob` is available as required by the normal session-provider contract. Select it explicitly with local `config/backend` containing `tuios` or `SQUAD_BACKEND=tuios`. TUIOS is never auto-detected from `TUIOS_*` ambient markers, and the adapter never creates, adopts, restarts, or deletes a session.
+Install TUIOS 0.8.0 or newer, `jq`, and `flock`, and ensure `fob` is available as required by the normal session-provider contract.
+`python3` is needed only for the optional native agent-state event subscription; without it the backend is supervised by the ordinary `SQUAD_POLL` reconcile instead.
+Select it explicitly with local `config/backend` containing `tuios` or `SQUAD_BACKEND=tuios`. TUIOS is never auto-detected from `TUIOS_*` ambient markers, and the adapter never creates, adopts, restarts, or deletes a session.
 
 Set `SQUAD_TUIOS_SESSION` explicitly to a TUIOS session that the Squad base is authorized to use. The adapter only validates and uses that existing session. Task windows are created without requesting focus, each task target is `<session-name>:<opaque-window-id>`, and the exact session and opaque window id are recorded in the task metadata.
 
@@ -122,7 +124,7 @@ The flow when a dialog blocks an operator:
 3. `bin/sq-pane-grants.sh verify <target>` confirms the grant landed before anything is retyped, and its non-zero exit means the send would still be refused.
 4. The authorized actor takes the prompt id from that wake, or re-reads the current prompt with `bin/sq-crew-state.sh <id>` when the prompt may have changed since the wake; both are sanctioned Squad surfaces, while a raw `tuios peek-prompt` call is refused for the guarded primary scope.
    Send the decision with `bin/sq-send.sh <id> --respond <action> <prompt-id> [value]`.
-   Use `approve` or `deny` for an approval and `choose` with the displayed option number for a numbered question; an action the current prompt does not accept is refused by name and nothing is answered.
+   Use `approve` or `deny` for an approval, `choose` with the displayed option number for a numbered question, and `text` with the answer a free-text prompt accepts; an action the current prompt does not accept is refused by name and nothing is answered.
    It re-reads the current prompt, requires the same `prompt_id`, verifies the action and selected option, then lets TUIOS enforce the answering pane's `respond` authority and atomically refuse a changed prompt.
    `approve_always` and risk-matched approvals are not inferred or automated; a TUIOS risk refusal confirms that nothing was answered.
    The command invokes `respond` once; if its result is uncertain, re-read the prompt through the same sanctioned surface before any retry and never repeat an answer for an unchanged prompt.
@@ -189,7 +191,7 @@ Delivery is idempotent across batches.
 A published request records how many buffered escalations it covers, and once Pi acknowledges consuming it the daemon retires exactly that buffer prefix, so a later digest that also carries a newer escalation never re-sends the one Pi already handled.
 A request is republished only when replacing it cannot duplicate delivery: Pi consumed it, or the extension's send never reached Pi (`uncertain`), or a `submitting` record has aged past the bound while the live, identity-verified extension reports no in-flight send, or a `queued` record was written by a process that is no longer the live extension - that followUp queue died with its writer, so republishing it under a new id is the only way the digest is ever delivered.
 A `submitting` or `queued` record owned by the live extension is never replaced, because that send or queue can still deliver, and the wedge alarm still covers a request that stays undelivered.
-When the native verdict is transiently refused while that live, identity-verified extension still holds an unresolved request for the exact target, the daemon defers instead of retyping the digest through the composer path, so an escalation Pi already holds is not delivered twice once its event loop unblocks.
+When the native verdict is transiently refused while that live, identity-verified extension still holds an unresolved request for the exact target, the daemon defers instead of delivering the digest again through the composer path, so an escalation Pi already holds is not delivered twice once its event loop unblocks.
 The deferral is bounded: a request whose result entry is older than `SQUAD_PI_HANDOFF_STALE_SECS`, names another target, or was written by a dead or foreign process does not block the composer path, so a stuck request can never wedge delivery.
 
 `bin/sq-afk-launch.sh` starts the away daemon in its own exact, newly created, detached TUIOS session.
