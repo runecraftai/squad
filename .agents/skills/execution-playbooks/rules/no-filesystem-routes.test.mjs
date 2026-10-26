@@ -9,18 +9,46 @@ import plugin from "./no-filesystem-routes.mjs";
 
 const rule = plugin.rules["no-filesystem-routes"];
 const rulePath = fileURLToPath(new URL("./no-filesystem-routes.mjs", import.meta.url));
+const routerPackage = "@tanstack/react-router";
 
-function runImport(source) {
+const identifier = (name) => ({ type: "Identifier", name });
+const literal = (value) => ({ type: "Literal", value });
+const member = (object, property, computed = false) => ({
+  type: "MemberExpression",
+  object,
+  property: computed ? literal(property) : identifier(property),
+  computed,
+});
+const importSpecifier = (name, local = name) => ({
+  type: "ImportSpecifier",
+  imported: identifier(name),
+  local: identifier(local),
+});
+const importDeclaration = (source, specifiers = []) => ({
+  type: "ImportDeclaration",
+  source: literal(source),
+  specifiers,
+});
+const callExpression = (callee, args = []) => ({ type: "CallExpression", callee, arguments: args });
+const requireCall = (source) => callExpression(identifier("require"), [literal(source)]);
+const dynamicImport = (source) => ({ type: "ImportExpression", source: literal(source) });
+const destructuredRequire = (source, imported, local) => {
+  const node = requireCall(source);
+  node.parent = {
+    type: "VariableDeclarator",
+    id: {
+      type: "ObjectPattern",
+      properties: [{ type: "Property", key: identifier(imported), value: identifier(local), computed: false }],
+    },
+    init: node,
+  };
+  return node;
+};
+
+function lint(nodes) {
   const reports = [];
   const visitor = rule.create({ report: (report) => reports.push(report) });
-  visitor.ImportDeclaration({ source: { value: source } });
-  return reports.map(({ messageId }) => messageId);
-}
-
-function runCall(name) {
-  const reports = [];
-  const visitor = rule.create({ report: (report) => reports.push(report) });
-  visitor.CallExpression({ callee: { type: "Identifier", name } });
+  for (const node of nodes) visitor[node.type]?.(node);
   return reports.map(({ messageId }) => messageId);
 }
 
@@ -48,26 +76,62 @@ function findOxlint() {
 }
 
 test("code-based route tree passes", () => {
-  assert.deepEqual(runImport("@tanstack/react-router"), []);
-  assert.deepEqual(runCall("createRoute"), []);
+  assert.deepEqual(lint([importDeclaration(routerPackage, [importSpecifier("createRootRoute"), importSpecifier("createRoute")])]), []);
+  assert.deepEqual(lint([callExpression(identifier("createRoute"))]), []);
+  assert.deepEqual(lint([callExpression(identifier("createRootRoute"))]), []);
 });
 
 test("createFileRoute fails for the filesystem route pattern", () => {
-  assert.deepEqual(runCall("createFileRoute"), ["fileRoute"]);
+  assert.deepEqual(lint([callExpression(identifier("createFileRoute"))]), ["fileRoute"]);
 });
 
-test("filesystem route plugin import fails for the plugin pattern", () => {
-  assert.deepEqual(runImport("@tanstack/router-plugin/vite"), ["filesystemPlugin"]);
+test("an aliased createFileRoute import fails instead of bypassing the rule", () => {
+  assert.deepEqual(
+    lint([importDeclaration(routerPackage, [importSpecifier("createFileRoute", "cfr")]), callExpression(identifier("cfr"))]),
+    ["fileRoute"],
+  );
+  assert.deepEqual(
+    lint([importDeclaration(routerPackage, [importSpecifier("createFileRoute", "makeFileRoute")]), callExpression(identifier("makeFileRoute"))]),
+    ["fileRoute"],
+  );
 });
 
-test("generated routeTree import fails for the generated-tree pattern", () => {
-  assert.deepEqual(runImport("./routeTree.gen"), ["generatedTree"]);
-  assert.deepEqual(runImport("./routeTree.gen.ts"), ["generatedTree"]);
+test("member access to createFileRoute fails instead of bypassing the rule", () => {
+  assert.deepEqual(lint([callExpression(member(identifier("router"), "createFileRoute"))]), ["fileRoute"]);
+  assert.deepEqual(lint([callExpression(member(identifier("router"), "createFileRoute", true))]), ["fileRoute"]);
+});
+
+test("a destructured require alias for createFileRoute fails", () => {
+  assert.deepEqual(
+    lint([destructuredRequire(routerPackage, "createFileRoute", "cfr"), callExpression(identifier("cfr"))]),
+    ["fileRoute"],
+  );
+});
+
+test("filesystem route plugin imports fail for the plugin pattern", () => {
+  assert.deepEqual(lint([importDeclaration("@tanstack/router-plugin/vite")]), ["filesystemPlugin"]);
+  assert.deepEqual(lint([importDeclaration("@tanstack/router-vite-plugin")]), ["filesystemPlugin"]);
+  assert.deepEqual(lint([importDeclaration("@tanstack/router-generator")]), ["filesystemPlugin"]);
+  assert.deepEqual(lint([importDeclaration("@tanstack/router-cli")]), ["filesystemPlugin"]);
+});
+
+test("generated routeTree imports fail for the generated-tree pattern", () => {
+  assert.deepEqual(lint([importDeclaration("./routeTree.gen")]), ["generatedTree"]);
+  assert.deepEqual(lint([importDeclaration("./routeTree.gen.ts")]), ["generatedTree"]);
+  assert.deepEqual(lint([importDeclaration("./routeTree.gen?raw")]), ["generatedTree"]);
+  assert.deepEqual(lint([dynamicImport("./routeTree.gen")]), ["generatedTree"]);
+  assert.deepEqual(lint([callExpression({ type: "Import" }, [literal("./routeTree.gen")])]), ["generatedTree"]);
+  assert.deepEqual(lint([requireCall("./routeTree.gen")]), ["generatedTree"]);
+  assert.deepEqual(lint([{ type: "ExportAllDeclaration", source: literal("./routeTree.gen"), exported: null }]), ["generatedTree"]);
+  assert.deepEqual(lint([{ type: "ExportNamedDeclaration", source: literal("./routeTree.gen"), specifiers: [] }]), [
+    "generatedTree",
+  ]);
 });
 
 test("handwritten routeTree modules pass", () => {
-  assert.deepEqual(runImport("./routeTree"), []);
-  assert.deepEqual(runImport("./routeTree.tsx"), []);
+  assert.deepEqual(lint([importDeclaration("./routeTree")]), []);
+  assert.deepEqual(lint([importDeclaration("./routeTree.tsx")]), []);
+  assert.deepEqual(lint([requireCall("./routeTree")]), []);
 });
 
 const oxlint = findOxlint();
@@ -97,13 +161,48 @@ test(
           fails: true,
         },
         {
+          file: "bad-aliased-create-file-route.tsx",
+          source: 'import { createFileRoute as cfr } from "@tanstack/react-router";\nexport const Route = cfr("/bad")({ component: () => null });\n',
+          fails: true,
+        },
+        {
+          file: "bad-member-create-file-route.ts",
+          source: 'import * as router from "@tanstack/react-router";\nexport const Route = router.createFileRoute("/bad", { component: () => null });\n',
+          fails: true,
+        },
+        {
+          file: "bad-required-create-file-route.cjs",
+          source: 'const { createFileRoute: cfr } = require("@tanstack/react-router");\nmodule.exports = cfr("/bad", { component: () => null });\n',
+          fails: true,
+        },
+        {
           file: "bad-filesystem-plugin.ts",
           source: 'import { tanstackRouter } from "@tanstack/router-plugin/vite";\nexport const plugin = tanstackRouter();\n',
           fails: true,
         },
         {
+          file: "bad-router-generator.ts",
+          source: 'export { generate } from "@tanstack/router-generator";\n',
+          fails: true,
+        },
+        {
           file: "bad-generated-tree.ts",
           source: 'import { routeTree } from "./routeTree.gen";\nexport const tree = routeTree;\n',
+          fails: true,
+        },
+        {
+          file: "bad-required-generated-tree.cjs",
+          source: 'const { routeTree } = require("./routeTree.gen");\nmodule.exports = routeTree;\n',
+          fails: true,
+        },
+        {
+          file: "bad-dynamic-generated-tree.ts",
+          source: 'export async function loadTree() {\n  const { routeTree } = await import("./routeTree.gen");\n  return routeTree;\n}\n',
+          fails: true,
+        },
+        {
+          file: "bad-reexported-generated-tree.ts",
+          source: 'export * from "./routeTree.gen";\n',
           fails: true,
         },
         {
