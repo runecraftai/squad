@@ -65,17 +65,18 @@
 #                          immediately, never via the wedge timer above, and never
 #                          counted as a possible wedge in the first place. Herdr
 #                          reaches this through its event-wait push stream; a
-#                          poll-only producer (TUIOS) reaches it through
+#                          poll-only producer (TUIOS or Orca) reaches it through
 #                          fm_backend_poll_transition on this same per-window loop.
 #                          The reason carries the prompt bin/sq-backend.sh's
 #                          fm_backend_prompt_summary reads (including numbered
 #                          options) when the backend can supply one. Dedup is the
 #                          producer's own per-pane marker (bin/backends/herdr.sh's
-#                          escalation marker, bin/backends/tuios.sh's for TUIOS),
+#                          escalation marker, bin/backends/tuios.sh's and
+#                          bin/backends/orca.sh's for the poll producers),
 #                          cleared on a non-blocked edge so a later `->blocked`
-#                          re-escalates; TUIOS additionally clears it on a changed
-#                          prompt while still blocked, so a new or changed prompt
-#                          always wakes even with no such edge in between. A
+#                          re-escalates; TUIOS and Orca additionally clear it on a
+#                          changed prompt while still blocked, so a new or changed
+#                          prompt always wakes even with no such edge in between. A
 #                          backend with no native blocked signal (tmux) never
 #                          raises this - it is never guessed from pane text.
 #   check: <script>: <out> authenticated check output, always actionable
@@ -1375,7 +1376,7 @@ EOF
       continue
     fi
     backend=$(window_backend "$w")
-    # A poll-capable-but-not-push-capable backend (TUIOS today) has no event
+    # A poll-capable-but-not-push-capable backend (TUIOS or Orca) has no event
     # stream to wait on, so it produces its normalized transition record
     # (bin/sq-transition-lib.sh) right here on the ordinary poll instead of
     # through the event-wait splice above. A fresh actionable (blocked) record

@@ -12,6 +12,13 @@
 # shellcheck source=bin/sq-composer-lib.sh
 . "$(dirname -- "${BASH_SOURCE[0]}")/../sq-composer-lib.sh"
 
+# Shared normalized-transition shape and status->action policy table
+# (bin/sq-transition-lib.sh). Orca's poll producer normalizes its own vocabulary
+# into that shape, so the adapter loads the library itself instead of relying on
+# whichever consumer happened to source it first.
+# shellcheck source=bin/sq-transition-lib.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/../sq-transition-lib.sh"
+
 fm_backend_orca_tool_check() {
   command -v orca >/dev/null 2>&1 || { echo "error: backend=orca selected but the 'orca' CLI is not installed" >&2; return 1; }
 }
@@ -208,6 +215,41 @@ fm_backend_orca_capture_rendered() {  # <terminal-id>
   return 1
 }
 
+# Orca's terminal/worker observations can expose an exact agentWait record.
+# An absent field is unsupported or unobservable, never evidence of no prompt.
+# ONE read serves the poll: the wait verdict, the stable prompt identity used
+# for dedupe, and the prompt text this line returns to its caller. The operator
+# notification is NOT taken from that read: the shared consumer asks
+# fm_backend_prompt_summary at wake time, which re-reads the terminal here (as
+# TUIOS also does), so the notified text can be a later observation than the
+# identity the poll deduped on and may have changed or cleared by then.
+# The identity deliberately covers only the source kind and the message-ish text
+# - never the raw record - because any volatile per-read field (timestamp, id,
+# cursor, attempt counter) would turn one standing prompt into a fresh
+# escalation on every poll.
+fm_backend_orca_agent_read() {  # <terminal-id> -> <verdict>\t<identity>\t<text>
+  local out
+  fm_backend_orca_tool_check || { printf 'unknown'; return 0; }
+  out=$(orca terminal show --terminal "$1" --json 2>/dev/null) || { printf 'unknown'; return 0; }
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+const crypto = require("crypto");
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.stdout.write("unknown"); process.exit(0); }
+if (data.ok === false) { process.stdout.write("unknown"); process.exit(0); }
+const r = data.result || {};
+const candidates = [r.observation?.agentWait, r.agentWait, r.terminal?.agentWait];
+const wait = candidates.find(v => v !== undefined);
+if (wait === undefined) { process.stdout.write("unknown"); process.exit(0); }
+if (wait === null || wait === false) { process.stdout.write("clear"); process.exit(0); }
+const text = v => (typeof v === "string" || typeof v === "number") ? String(v) : "";
+const kind = text(wait.kind);
+const prompt = text(wait.question) || text(wait.prompt) || text(wait.title) || text(wait.message);
+const identity = crypto.createHash("md5").update(JSON.stringify([kind, prompt])).digest("hex");
+process.stdout.write(["waiting", identity, prompt].join("\t"));
+'
+}
+
 fm_backend_orca_json_text() {  # <json>
   printf '%s' "$1" | node -e '
 const fs = require("fs");
@@ -298,6 +340,89 @@ fm_backend_orca_composer_state() {  # <terminal-id> -> empty|pending|unknown
   # genuine composer box - delegate to the shared owner with bordered=1. A bare
   # dead-shell prompt has no bordered row and already returned 'unknown' above.
   fm_composer_classify_content 1 "$stripped" "$SQUAD_BACKEND_ORCA_IDLE_RE"
+}
+
+# --- backend-neutral blocked-agent transition (level-reconcile poll) --------
+SQUAD_BACKEND_ORCA_ESCALATED_PREFIX=".orca-escalated-"
+SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX=".orca-prompt-"
+
+fm_backend_orca_transition_marker() {  # <state-dir> <prefix> <terminal>
+  local key
+  key=$(printf '%s' "$3" | tr ':/.' '___')
+  printf '%s/%s%s' "$1" "$2" "$key"
+}
+
+# Translate Orca's own wait vocabulary into the shared transition vocabulary
+# (bin/sq-transition-lib.sh) so the shared policy table owns which action every
+# verdict triggers; this adapter never re-encodes that mapping.
+fm_backend_orca_normalize_status() {  # <agent-wait-verdict>
+  case "$1" in
+    waiting) printf 'blocked' ;;
+    clear) printf 'idle' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
+# One bounded line: the wait record is another program's text and must not break
+# the caller's one-line state contract, so control characters are scrubbed here
+# rather than by a regex inside the parser.
+fm_backend_orca_prompt_summary() {  # <terminal-id>
+  local snapshot verdict line
+  snapshot=$(fm_backend_orca_agent_read "$1")
+  verdict=${snapshot%%$'\t'*}
+  [ "$verdict" = waiting ] || return 0
+  line=${snapshot#*$'\t'}
+  line=${line#*$'\t'}
+  line=$(printf '%s' "$line" | LC_ALL=C tr '\t\r\n' '   ')
+  line=$(printf '%s' "$line" | sed -E 's/  +/ /g; s/^ +//; s/ +$//')
+  line=$(printf '%s' "$line" | cut -c1-300)
+  [ -n "$line" ] || line='agent is waiting for human input'
+  printf '%s' "$line"
+}
+
+fm_backend_orca_poll_transition() {  # <state-dir> <session> <terminal>
+  local state=$1 terminal=$3 snapshot status action hash_marker esc_marker stored wait_hash record
+  [ -n "$terminal" ] || return 2
+  snapshot=$(fm_backend_orca_agent_read "$terminal")
+  status=$(fm_backend_orca_normalize_status "${snapshot%%$'\t'*}")
+  action=$(fm_transition_policy "$status")
+  esc_marker=$(fm_backend_orca_transition_marker "$state" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" "$terminal")
+  hash_marker=$(fm_backend_orca_transition_marker "$state" "$SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX" "$terminal")
+  if [ "$action" = fallback ]; then
+    [ -e "$esc_marker" ] && return 3
+    return 2
+  fi
+  if [ "$action" != actionable ]; then
+    rm -f "$esc_marker" "$hash_marker"
+    return 2
+  fi
+  wait_hash=${snapshot#*$'\t'}
+  wait_hash=${wait_hash%%$'\t'*}
+  if [ -z "$wait_hash" ]; then
+    [ -e "$esc_marker" ] && return 3
+    return 2
+  fi
+  stored=$(cat "$hash_marker" 2>/dev/null || true)
+  [ -z "$stored" ] || [ "$stored" = "$wait_hash" ] || rm -f "$esc_marker"
+  printf '%s' "$wait_hash" > "$hash_marker"
+  [ ! -e "$esc_marker" ] || return 1
+  record=$(fm_transition_record "$terminal" "" "" blocked "")
+  printf '%s' "$record"
+  return 0
+}
+
+fm_backend_orca_commit_transition() {  # <state-dir> <session> <record>
+  local terminal
+  terminal=$(fm_transition_pane_id "$3")
+  [ -n "$terminal" ] || return 1
+  : > "$(fm_backend_orca_transition_marker "$1" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" "$terminal")"
+}
+
+fm_backend_orca_clear_transition() {  # <state-dir> <window>
+  local terminal=$2
+  [ -n "$terminal" ] || return 0
+  rm -f "$(fm_backend_orca_transition_marker "$1" "$SQUAD_BACKEND_ORCA_ESCALATED_PREFIX" "$terminal")" \
+    "$(fm_backend_orca_transition_marker "$1" "$SQUAD_BACKEND_ORCA_PROMPT_HASH_PREFIX" "$terminal")"
 }
 
 fm_backend_orca_send_key() {  # <terminal-id> <key>

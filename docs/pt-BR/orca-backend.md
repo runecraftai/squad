@@ -59,7 +59,10 @@ Uma linha de shell puro é `unknown`, não um composer vazio do agente.
 Operadores Pi lançados a partir de um brief posicional completam seu turno e saem para o shell em vez de ficarem ociosos num composer, então no Linux eles nunca renderizam a linha de composer com borda contra a qual o classificador de clearance verifica.
 Quando a entrega nativa do Pi está indisponível, um steer enviado enquanto tal operador está no meio do turno é entregue e colocado na fila - verificado ao vivo na v1.4.188, o terminal mostra a mensagem na fila e o operador depois age sobre ela - mas a verificação ainda devolve `unknown` e o `sq-send.sh` sai reportando entrega não confirmada.
 Esse veredito fica genuinamente não confirmado nos dois casos: dê peek no terminal antes de agir sobre ele, e nunca reenvie às cegas, porque o mesmo `unknown` também cobre texto estacionado no prompt de shell puro de um operador que já saiu.
-A sentinela não tem sinal nativo de ocupado do Orca, então o ciclo de vida semântico de cada adaptador de harness fornece o estado do worker.
+A sentinela não tem sinal nativo de ocupado/ocioso do Orca, então o ciclo de vida semântico de cada adaptador de harness fornece o estado do worker; um operador ocioso ou desconhecido sem nenhuma execução ativa é exposto pelo caminho existente da sentinela em vez de ser tratado como conclusão de tarefa.
+Prompts bloqueados usam a observação `agentWait` do terminal exato do Orca através da política compartilhada de transição normalizada, com deduplicação de prompt alterado e o caminho existente de resposta `sq-send` no alvo exato.
+Quando aquela observação está ausente ou ilegível, o Orca nunca é lido como clear: um terminal sem escalada cai na supervisão existente, enquanto um já escalado mantém seus marcadores e é deliberadamente mantido fora da supervisão ordinária até que uma leitura legível prove que a espera acabou.
+Ele nunca é adivinhado clear nem reexecutado como uma resposta nativa.
 Apenas o Grok mantém seu fallback isolado de cauda renderizada.
 
 A limpeza mantém todas as checagens compartilhadas de segurança do Squad.
@@ -133,15 +136,20 @@ Uma sonda real descartável no host exige, portanto, um perfil/runtime Orca comp
 - Spawns de XO não são suportados.
 - Escape não é suportado.
 - O Orca expõe nenhum marcador estável de versão de CLI ou protocolo, então a prontidão é o gate de compatibilidade em vez de um piso de versão.
-- Apenas os campos verificados de resultado de terminal-handle e worktree são aceitos; formatos especulativos de resposta são rejeitados.
+- Para a identidade de spawn e limpeza, apenas os campos verificados de resultado de terminal-handle e worktree são aceitos e formatos especulativos de resposta são rejeitados ali; a leitura de `agentWait` para prompt bloqueado abaixo é a única exceção documentada, e toda posição que ela sonda é tratada como não verificada.
 - A resposta de `orca terminal list` filtrada por worktree (`truncated`, `hostScope`, `terminals[]`) e as flags da ajuda instalada de `orca terminal create --help` foram observadas somente-leitura em 2026-10-25, e essa observação está retida em [`verification/runtime-backends.md`](../verification/runtime-backends.md#orca).
   A semântica de filtro, a criação/limpeza real, o comportamento de foco e todo caminho real de ciclo de vida seguem não comprovados, então qualquer formato inesperado é um resultado incerto que preserva o registro pendente em vez de recuperar.
 - Expiração de busy não pode ser avaliada: a leitura completa da viewport não foi verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
+- O Orca não expõe o stream de eventos usado pelo Herdr; a detecção de prompt bloqueado faz polling de `agentWait` e degrada para o fallback existente da sentinela quando aquela observação não está disponível.
+  A forma e o significado do registro `agentWait` não-nulo são **não verificados**: apenas o valor ausente (`agentWait=null`) foi observado em um terminal real, então é desconhecido se todo registro não-nulo significa que um humano precisa responder ou se ele também pode descrever um operador parado no composer entre turnos.
+  A leitura procura o registro em `result.observation.agentWait` e mantém duas posições de fallback especulativas (`result.agentWait`, `result.terminal.agentWait`) por robustez; nenhuma delas é uma forma verificada, e um campo ausente é lido como desconhecido em vez de como nenhum prompt.
+  Este caminho é exercitado apenas pela suíte de CLI falsa, que estabelece o formato das chamadas e o comportamento do próprio adaptador, nunca o comportamento end-to-end do Orca; trate uma escalada de bloqueio como não comprovada até que uma observação real isolada e segura confirme a semântica do registro.
 
 ## Pontos de entrada de regressão
 
 ```sh
 tests/sq-backend-orca.test.sh
+tests/sq-sentry-triage.test.sh
 tests/sq-afk-orca.test.sh
 tests/sq-afk-orca-live-optin.test.sh
 tests/sq-backend.test.sh

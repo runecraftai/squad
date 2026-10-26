@@ -616,6 +616,7 @@ orca status --json | jq -c '{version:.result.runtime.appVersion,ready:(.result.r
 ```
 
 An existing shell endpoint's `terminal show --terminal <handle> --json` also supplied handle, incarnation, worktree/path, connected/writable and local-host fields, with `agentWait=null`.
+No non-null `agentWait` record has been observed, so the blocked-prompt poll's record shape, its semantics, and whether presence alone means a human must answer remain UNVERIFIED and are covered only by `tests/sq-backend-orca.test.sh` and `tests/sq-sentry-triage.test.sh` against a fake CLI, which establish call shape and this repository's own behavior rather than end-to-end Orca behavior.
 That identity schema is not proof of draft/modal safety or message consumption.
 Two read-only shapes the Orca launcher and its lost-create reconciliation depend on - the worktree-filtered `orca terminal list --worktree id:<worktree> --json` response including `result.truncated`, `result.hostScope.omittedHostIds` and `result.terminals[].title/worktreeId/worktreePath`, and the `orca terminal create --worktree/--command` flags - were observed read-only on 2026-10-25 and are recorded in the [read-only host observation](#2026-10-25---read-only-orca-host-observation) below.
 That single shape observation leaves their worktree-filter and recovery semantics UNVERIFIED and claims no real create or cleanup path; an unexpected or unreadable inventory still keeps the recorded creation intent uncertain instead of recovering an endpoint.

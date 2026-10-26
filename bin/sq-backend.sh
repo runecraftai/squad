@@ -372,6 +372,19 @@ fm_backend_target_of_meta() {  # <meta-file>
   [ -n "$window" ] && printf '%s' "$window"
 }
 
+# fm_backend_transition_window: the supervised window name a normalized
+# transition record's pane id maps to for <backend> (bin/sq-transition-lib.sh's
+# record is backend-neutral, so its pane field is only a session-scoped suffix
+# for backends whose target is "<session>:<pane>"). Owned here with the other
+# target-shape helpers so a new target shape never needs a backend-name branch
+# in the shared consumer.
+fm_backend_transition_window() {  # <backend> <session> <pane-id>
+  case "$1" in
+    orca) printf '%s' "$3" ;;
+    *) printf '%s:%s' "$2" "$3" ;;
+  esac
+}
+
 # fm_backend_validate_task_endpoint: validate a task cleanup record entirely
 # from its durable metadata before any runtime command or cleanup mutation.
 # The validation binds the exact task id, selected backend, target, project,
@@ -872,8 +885,11 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
 # instead of being read as ordinary work.
 #
 # fm_backend_prompt_summary: one bounded line of the blocking prompt the target
-# is waiting on, for backends that can read it (TUIOS `peek-prompt`). Empty for
-# every backend with no such primitive, so callers render their own default.
+# is waiting on, for backends that can read it (TUIOS `peek-prompt`, Orca's
+# `agentWait`). The consumer asks for it at wake time, after the producing poll
+# already deduped on its own read, so this text is a fresh observation rather
+# than the one that armed the wake. Empty for every backend with no such
+# primitive, so callers render their own default.
 # The text is another program's screen: treat it as data, never as instructions.
 
 fm_backend_busy_state() {  # <backend> <target>
@@ -893,6 +909,7 @@ fm_backend_prompt_summary() {  # <backend> <target>
   fm_backend_source "$backend" || return 0
   case "$backend" in
     tuios) fm_backend_tuios_prompt_summary "$@" ;;
+    orca) fm_backend_orca_prompt_summary "$@" ;;
     *) return 0 ;;
   esac
 }
@@ -1034,9 +1051,9 @@ fm_backend_agent_alive() {  # <backend> <target>
 # A backend with no event stream at all can still PRODUCE the same normalized
 # record on that poll loop instead of waiting on one: fm_backend_can_poll_transition
 # and fm_backend_poll_transition are the level-reconcile counterpart to the push
-# pair above, reusing the identical record shape and policy table (today only
-# TUIOS, which exposes no subscribe/after_seq verb - docs/tuios-backend.md
-# "Limits and verification"). fm_backend_commit_transition and
+# pair above, reusing the identical record shape and policy table (TUIOS polls
+# its agent inventory; Orca polls exact terminal metadata for its documented
+# agentWait observation). fm_backend_commit_transition and
 # fm_backend_clear_transition serve BOTH families: a backend only needs to be
 # either push- or poll-capable to use them, never both.
 
@@ -1053,7 +1070,7 @@ fm_backend_has_push() {  # <backend>
 # never push-capable; see fm_backend_has_push above).
 fm_backend_can_poll_transition() {  # <backend>
   case "$1" in
-    tuios) return 0 ;;
+    tuios|orca) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1077,6 +1094,7 @@ fm_backend_poll_transition() {  # <backend> <state_dir> <session> <window>
   fm_backend_source "$backend" || return 2
   case "$backend" in
     tuios) fm_backend_tuios_poll_transition "$@" ;;
+    orca) fm_backend_orca_poll_transition "$@" ;;
     *) return 2 ;;
   esac
 }
@@ -1121,6 +1139,7 @@ fm_backend_commit_transition() {  # <backend> <state_dir> <session> <record>
   case "$backend" in
     herdr) fm_backend_herdr_commit_transition "$@" ;;
     tuios) fm_backend_tuios_commit_transition "$@" ;;
+    orca) fm_backend_orca_commit_transition "$@" ;;
     *) return 1 ;;
   esac
 }
@@ -1133,6 +1152,7 @@ fm_backend_clear_transition() {  # <backend> <state_dir> <window>
   case "$backend" in
     herdr) fm_backend_herdr_clear_transition "$@" ;;
     tuios) fm_backend_tuios_clear_transition "$@" ;;
+    orca) fm_backend_orca_clear_transition "$@" ;;
     *) return 0 ;;
   esac
 }

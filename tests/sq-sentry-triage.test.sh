@@ -192,6 +192,25 @@ SH
   chmod +x "$fakebin/tuios"
 }
 
+install_fake_orca() {  # <fakebin>
+  local fakebin=$1
+  cat > "$fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  'terminal show')
+    [ "${SQUAD_FAKE_ORCA_SHOW_FAIL:-0}" = 1 ] && exit 1
+    printf '{"ok":true,"result":{"observation":{"agentWait":%s}}}\n' "${SQUAD_FAKE_ORCA_AGENT_WAIT:-null}"
+    ;;
+  'terminal read')
+    printf '{"ok":true,"result":{"terminal":{"tail":["idle shell prompt"]}}}\n'
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/orca"
+}
+
 # --- pure classifier predicates (sq-classify-lib.sh) ------------------------
 
 test_signal_reason_is_actionable_classifier() {
@@ -1906,6 +1925,79 @@ test_tuios_ambiguous_read_after_escalation_skips_stale() {
   [ "$wakes" -eq 1 ] || fail "an ambiguous read over a blocked pane added a duplicate wake (now $wakes)"
   unset SQUAD_TUIOS_FAKE_WINDOW_NAME
   pass "an ambiguous native read after escalation skips the stale/wedge path instead of reclassifying a blocked pane"
+}
+
+test_orca_blocked_prompt_wakes_exact_terminal_then_dedupes() {
+  local dir state fakebin out drain_out terminal key pid wakes blocked i
+  dir=$(make_case orca-blocked-wake); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  install_fake_orca "$fakebin"
+  terminal="term-oki"
+  key=$terminal
+  printf 'window=sq-orca-task\nterminal=%s\nkind=strike\nbackend=orca\n' "$terminal" > "$state/orca-task.meta"
+  printf 'working: starting up\n' > "$state/orca-task.status"
+  printf '%s' "$(seen_sig "$state/orca-task.status")" > "$state/.seen-orca-task_status"
+  blocked='{"kind":"permission","message":"Allow this directory?"}'
+
+  # Phase 1: the shared consumer must name the EXACT terminal - Orca's target is
+  # the terminal id, not a "<session>:<pane>" window - and carry the prompt.
+  SQUAD_BASE="$dir" SQUAD_FAKE_ORCA_AGENT_WAIT="$blocked" \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  wait_for_exit "$pid" 40 || fail "sentry did not exit for a native Orca blocked prompt"
+  grep -Fx "stale: $terminal (orca: agent blocked - Allow this directory? - waiting on human, escalated immediately, not via wedge timer)" "$out" >/dev/null \
+    || fail "the Orca blocked wake did not name the exact terminal and prompt: $(cat "$out")"
+  [ -e "$state/.orca-escalated-$key" ] || fail "the Orca producer's dedupe marker was not committed"
+  [ -e "$state/.orca-prompt-$key" ] || fail "the Orca producer's prompt identity marker was not written"
+  [ ! -e "$state/.hash-$key" ] || fail "a blocked Orca terminal must never start ordinary stale hash tracking"
+  [ ! -e "$state/.stale-$key" ] || fail "a blocked Orca terminal must never be recorded as a possible wedge"
+  wakes=$(awk -F '\t' -v w="$terminal" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 1 ] || fail "expected exactly 1 queued wake after the blocked read, got $wakes"
+  SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the blocked wake failed"
+  wakes=$(awk -F '\t' -v w="$terminal" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$terminal" | grep -F 'Allow this directory?' >/dev/null \
+    || fail "the blocked wake was not queued against the exact terminal: $(cat "$drain_out")"
+  grep -F "$terminal:$terminal" "$drain_out" >/dev/null && fail "the Orca wake invented a session:pane window instead of the exact terminal"
+
+  # Phase 2: the same standing prompt must not wake again.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_FAKE_ORCA_AGENT_WAIT="$blocked" \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "an unchanged Orca prompt re-woke Squad: $(cat "$out")"
+  fi
+  reap "$pid"
+  wakes=$(awk -F '\t' -v w="$terminal" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 0 ] || fail "an unchanged Orca prompt added a duplicate queued wake (now $wakes)"
+
+  # Phase 3: an unreadable observation after escalation is ambiguous, so the
+  # still-blocked terminal must skip the stale/wedge machinery entirely.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_FAKE_ORCA_SHOW_FAIL=1 \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  if ! wait_live "$pid" 20; then
+    reap "$pid"; fail "an ambiguous Orca read over a still-escalated prompt woke Squad: $(cat "$out")"
+  fi
+  reap "$pid"
+  [ -e "$state/.orca-escalated-$key" ] || fail "an ambiguous Orca read cleared the escalation marker"
+  [ ! -e "$state/.hash-$key" ] || fail "an ambiguous Orca read started ordinary stale hash tracking"
+  wakes=$(awk -F '\t' -v w="$terminal" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue" 2>/dev/null || printf 0)
+  [ "$wakes" -eq 0 ] || fail "an ambiguous Orca read added a duplicate queued wake (now $wakes)"
+
+  # Phase 4: a positively-read clear record clears both dedupe markers and hands
+  # the terminal back to ordinary supervision.
+  : > "$out"
+  SQUAD_BASE="$dir" SQUAD_FAKE_ORCA_AGENT_WAIT=null \
+    watch_bg "$state" "$fakebin" "$out"
+  pid=$!
+  i=0
+  while [ -e "$state/.orca-escalated-$key" ] && [ "$i" -lt 40 ]; do sleep 0.1; i=$((i + 1)); done
+  reap "$pid"
+  [ ! -e "$state/.orca-escalated-$key" ] || fail "a clear Orca record did not clear the escalation marker"
+  [ ! -e "$state/.orca-prompt-$key" ] || fail "a clear Orca record did not clear the prompt identity marker"
+  pass "an Orca blocked prompt wakes once against the exact terminal, dedupes, survives an ambiguous read, and clears on unblock"
 }
 
 test_tmux_pane_with_prompt_like_text_never_fakes_a_blocked_wake() {
@@ -4070,4 +4162,5 @@ test_paused_churning_pane_throttle_refreshes_marker
 test_tuios_blocked_pane_wakes_via_poll_transition
 test_tuios_blocked_pane_dedupes_then_rearms_on_change_or_unblock
 test_tuios_ambiguous_read_after_escalation_skips_stale
+test_orca_blocked_prompt_wakes_exact_terminal_then_dedupes
 test_tmux_pane_with_prompt_like_text_never_fakes_a_blocked_wake
