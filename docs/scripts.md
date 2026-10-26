@@ -97,7 +97,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-observation-pack.py` | Python implementation of observation packs: create --task ID --source PATH, card PACK, and read PACK --offset N --limit M [--receipt] |
 | `sq-factory-collect.sh` | On-demand collection and triage of inputs into verifiable backlog candidates, with no execution authority (`docs/factory-collect.md`) |
 | `sq-factory-collect.py` | Python implementation of factory collection: read the configured sources, apply the verifiability test, queue candidates, and write the human digest |
-| `sq-factory-collect-toon.mjs` | Decode `sq-gh`'s TOON output into JSON for the factory collector, using the vendored `@toon-format/toon` decoder |
+| `sq-factory-collect-toon.mjs` | Decode `sq-gh`'s TOON output into JSON for Squad's `sq-gh` readers, using the vendored `@toon-format/toon` decoder |
 | `sq-trajectory.sh`     | Private regenerable projection of per-task execution metadata including evidence receipt summaries and observation pack aggregates; sq-cost, .meta, .exec, and status remain owners of truth |
 | `sq-dispatch-tune.sh`  | Report dispatch counts, chosen models, and success and fallback rates per profile and lane from dispatch logs |
 | `sq-jev-call.py`       | Shadow-only Jev recommendation client that records a labelled event and never resolves dispatch (`docs/configuration.md`) |
@@ -132,6 +132,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-artifact-guard.sh` | Warn when a PR changed-file list names this task's own Squad-base artifact paths      |
 | `sq-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
+| `sq-verification.sh`     | Record one escaped defect's discovery time, affected merged PR and full SHA, reproduction or explicit unknown reason, regression scenario, and missed pre-merge gate on its existing GitHub issue, and report every recorded defect for one repo |
+| `sq-verification.py`     | Python implementation of the escaped-defect record and report commands, reading and writing issue bodies verbatim through the `sq-gh` TOON decoder |
 | `sq-playbook-validate.sh` | Validate structural completion evidence for a materialized execution playbook; `bin/sq-brief.sh` owns the selectable playbook and profile identities |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
