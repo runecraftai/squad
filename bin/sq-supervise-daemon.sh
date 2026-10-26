@@ -1417,6 +1417,12 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   if [ "$verdict" = empty ]; then
     return 0  # Backend confirmed the submit.
   fi
+  case "$verdict" in
+    agent_blocked|queue_full|no_agent)
+      log "inject failed: the backend refused before typing (verdict=$verdict, nothing is in the composer; digest stays buffered)"
+      return 1
+      ;;
+  esac
   log "inject failed: submit unconfirmed after $retries retries (verdict=$verdict, text may be in composer)"
   return 1
 }

@@ -162,7 +162,8 @@ Cleanup verifies both the exact opaque window id and the recorded task label bef
 ## Away-mode supervision
 
 A TUIOS-hosted Squad primary can be supervised in away mode without any terminal typing: the preferred path delivers through Pi's own message queue via `.pi/extensions/sq-primary-away-handoff.ts` and `bin/sq-afk-pi-handoff.sh`, and the daemon never types while that path is available.
-When the native path refuses, delivery falls back to the guarded composer path, which types the digest into the supervisor pane's composer (a queue submit when the pane has an agent, send-text plus Enter otherwise) only after that composer is positively read as empty for a daemon-attributed live agent, as described in "Composer state" and "Limits and verification" below.
+When the native path refuses, delivery falls back to the guarded composer path, which queues the digest through the supervisor pane's own agent (TUIOS delivery is queue-only) only after that composer is positively read as empty for a daemon-attributed live agent, as described in "Composer state" and "Limits and verification" below.
+A pane TUIOS cannot attribute a live agent to is refused as `no_agent` and nothing is typed into its terminal.
 
 - The extension binds to the exact `TUIOS_SESSION` and `TUIOS_PANE_ID`, publishes its own `state/.pi-away-handoff/ready.<session>.<window>.json` with its process identity and a one-second heartbeat, and accepts a request only when it names that exact target.
 - Only the Pi that holds the base's session lock publishes or accepts anything, and only the exact lock owner counts: `bin/sq-lock.sh` records the innermost harness pid, so a Pi started from the primary's own shell - which inherits `SQUAD_BASE` and the TUIOS pane variables - is a worker even though the lock holder is its ancestor.
