@@ -2986,6 +2986,36 @@ test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
   pass "released agentless windows leave no stale markers, while an agent return resumes normal stale supervision"
 }
 
+# A released dispatch record is immutable for dispatch, not proof that its run
+# is over: the shared projection reports a gate-parked run over it as running.
+# Such a window must keep ordinary supervision instead of being latched into the
+# terminal-agentless skip.
+test_released_record_with_live_run_keeps_stale_supervision() {
+  local dir state fakebin out capture_file command_file window sig pid
+  dir=$(make_case released-live-run); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-released-live-run"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/released-live-run.meta"
+  printf 'working: run still active\n' > "$state/released-live-run.status"
+  sig=$(seen_sig "$state/released-live-run.status")
+  printf '%s' "$sig" > "$state/.seen-released-live-run_status"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition released-live-run released >/dev/null \
+    || fail "could not create the released execution fixture"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 \
+    || { reap "$pid"; fail "a released record owning a parked run was skipped as terminal: $(cat "$out")"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "a released record with a live run did not keep ordinary stale supervision: $(cat "$out")"
+  pass "a released record that still owns a live run keeps ordinary stale supervision"
+}
+
 # The incident shape the release check alone misses: teardown was refused (the
 # work had not landed), so the dispatch record still says running even though the
 # crew's own run is long over. The shared current-state boundary - not the raw
@@ -4333,6 +4363,7 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_static_pane_without_readable_viewport_never_expires
 test_busy_static_unreadable_viewport_logs_limitation_once
 test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
+test_released_record_with_live_run_keeps_stale_supervision
 test_agentless_window_with_unretired_terminal_execution_skips_stale
 test_terminal_projection_is_memoized_per_task_generation
 test_agentless_window_without_dispatch_sidecar_uses_terminal_projection

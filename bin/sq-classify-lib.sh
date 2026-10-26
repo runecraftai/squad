@@ -845,6 +845,37 @@ operator_is_finished() {  # <id>
   esac
 }
 
+# Recorded dispatch state from the task's execution sidecar, read in place so a
+# watcher poll or scan never forks sq-exec-state.sh for it.
+task_recorded_exec_state() {  # <state> <id>
+  grep '^exec_state=' "$1/$2.exec" 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+# 0 when <id>'s execution side is genuinely terminal for a watcher deciding
+# whether an agentless window still has work to rescue. A released dispatch
+# record is immutable for dispatch, but the shared projection
+# (fm_drill_reported_exec_state in bin/sq-drill-run-lib.sh) reports a live or
+# gate-parked run over it as running, so a raw `released` is not proof of
+# terminal execution. The run verdict is the same single sq-crew-state.sh read
+# operator_is_finished already pays for.
+task_execution_is_terminal() {  # <state> <id> [recorded-state]
+  local state=$1 id=$2 recorded=${3:-} line current source
+  [ -n "$id" ] || return 1
+  [ -n "$recorded" ] || recorded=$(task_recorded_exec_state "$state" "$id")
+  if [ "$recorded" != released ]; then
+    operator_is_finished "$id"
+    return
+  fi
+  line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  case "$line" in state:*) ;; *) return 0 ;; esac
+  current=${line#state: }; current=${current%% *}
+  source=${line#*source: }; source=${source%% *}
+  case "$current:$source" in
+    working:run-step|parked:run-step) return 1 ;;
+  esac
+  return 0
+}
+
 # 0 if crew <id> shows POSITIVE evidence it is still working (operator_absorb_class
 # reports `working`). This is the "provably working" predicate at the heart of
 # absorb-only-when-provably-working: a no-verb turn-end or stale wake is absorbed
@@ -1037,8 +1068,8 @@ operator_compaction_mark_notified() {  # <id>
 # stale/pause/seen-status watcher markers and this file's compaction-notified
 # dedup marker. bin/sq-teardown.sh retires them with the volatile state of a
 # torn-down task, and bin/sq-sentry.sh retires them when it stops supervising a
-# released-or-terminal window that has no agent left to supervise, so both
-# owners remove exactly one set instead of drifting copies. A survivor is not
+# genuinely terminal window that has no agent left to supervise, so both owners
+# remove exactly one set instead of drifting copies. A survivor is not
 # inert: the daemon's stale persistence recheck re-resolves the window and keeps
 # escalating a pane nobody owns, and a surviving seen-status/notified marker
 # silently swallows the first legitimate wake once an agent returns.

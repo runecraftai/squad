@@ -542,6 +542,11 @@ reconcile_pause_tracking() {  # <window> <state> <last-status-line>
   key=$(_stale_key "$task")
   marker="$state/.subsuper-paused-$key"
   sentry_key=$(_stale_key "$win")
+  if { status_is_paused "$last" || [ -e "$marker" ] || [ -e "$state/.paused-$sentry_key" ]; } \
+     && task_is_terminal_and_agentless "$state" "$task"; then
+    clear_pause_tracking "$win" "$state"
+    return 0
+  fi
   if status_is_paused "$last"; then
     stale_marker_remove "$win" "$state"
     pause_marker_record "$win" "$state"
@@ -718,6 +723,31 @@ stale_window_is_busy() {  # <window> <state>
 
 window_run_step_active() {  # <window> <state>
   [ "$(operator_absorb_verdict "$(window_to_task "$1" "$2")")" = "working run-step" ]
+}
+
+# A task whose execution is genuinely terminal and whose recorded window has no
+# attributable agent has nothing left to rescue. The always-on sentry already
+# excludes that window from its stale clock and retires the task-keyed watcher
+# markers, so the away-mode loops must apply the same boundary: otherwise the
+# catch-all scan re-escalates the unchanged terminal status on every scan
+# cadence, and pause migration recreates the declared-pause marker the sentry
+# just retired. task_execution_is_terminal is the shared projection (a released
+# dispatch record can still own a live or gate-parked run); the agent probe is
+# the same attribution the sentry uses.
+task_is_terminal_and_agentless() {  # <state> <task>
+  local state=$1 task=$2 meta win backend
+  [ -n "$task" ] || return 1
+  meta="$state/$task.meta"
+  [ -e "$meta" ] || return 1
+  task_execution_is_terminal "$state" "$task" || return 1
+  win=$(fm_backend_target_of_meta "$meta" 2>/dev/null || true)
+  [ -n "$win" ] || return 1
+  backend=$(fm_backend_of_meta "$meta" 2>/dev/null || true)
+  [ -n "$backend" ] || backend=tmux
+  case "$(fm_backend_agent_state "$backend" "$win" 2>/dev/null || true)" in
+    dead|missing) return 0 ;;
+  esac
+  return 1
 }
 
 # A busy verdict on a stale marker is not proof of life once the sentry has handed
@@ -1207,6 +1237,10 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
+    if task_is_terminal_and_agentless "$state" "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     if operator_is_finished "$task"; then
       clear_pause_tracking "$win" "$state"
       continue
@@ -1254,6 +1288,10 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
+    if task_is_terminal_and_agentless "$state" "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     if operator_is_finished "$task"; then
       clear_pause_tracking "$win" "$state"
       continue
@@ -1282,15 +1320,23 @@ housekeeping() {  # <state>
   done
 
   # (3) heartbeat scan (catch-all for a commander-relevant status the per-wake
-  #     classifier may have missed). Cheap: status files only, no tmux. The
-  #     commander-relevant filtering is the shared classifier's
-  #     scan_commander_relevant_statuses; the daemon layers its digest dedup on top.
+  #     classifier may have missed). Status files only for every ordinary record;
+  #     the commander-relevant filtering is the shared classifier's
+  #     scan_commander_relevant_statuses, and the daemon layers its digest dedup on
+  #     top. A terminal execution with an agentless window has nothing to rescue
+  #     and is skipped quietly here and in the sentry alike, so a skipped task's
+  #     retired dedup marker is never re-created into a per-cadence escalation.
   if [ "$(_file_age "$state/.subsuper-last-scan")" -ge "${SQUAD_HEARTBEAT_SCAN_SECS:-$HEARTBEAT_SCAN_SECS_DEFAULT}" ]; then
     _now > "$state/.subsuper-last-scan"
     local seen
     while IFS="$(printf '\t')" read -r f task last; do
       [ -n "$f" ] || continue
       seen="$state/.subsuper-seen-status-$(_stale_key "$task")"
+      if task_is_terminal_and_agentless "$state" "$task"; then
+        rm -f "$seen" "$state/.subsuper-stale-$(_stale_key "$task")" \
+          "$state/.subsuper-paused-$(_stale_key "$task")"
+        continue
+      fi
       [ "$(cat "$seen" 2>/dev/null || true)" = "$last" ] && continue
       escalate_add "$state" "$(basename "$f"): $last (catch-all scan)"
       mark_status_seen "$state" "$task" "$last"

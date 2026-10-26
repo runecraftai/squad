@@ -1140,6 +1140,59 @@ test_heartbeat_scan_dedup() {
   pass "catch-all scan escalates a missed terminal once, not twice"
 }
 
+# The sentry stops supervising a window whose execution is terminal and whose
+# pane has no agent, and retires that task's watcher markers. The away-mode
+# loops must apply the same boundary, not just consume the retired dedup state:
+# otherwise the catch-all scan re-escalates the unchanged terminal status on
+# every cadence and pause migration recreates the declared-pause marker. A live
+# agent in the same window keeps the ordinary escalation path.
+test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task() {
+  local dir state fakebin cmd key done_key paused_key
+  dir=$(make_case scan-terminal-agentless); state="$dir/state"; fakebin="$dir/fakebin"
+  cmd="$dir/command.txt"
+  printf 'bash\n' > "$cmd"
+  printf 'window=sess:sq-scan-gone\nkind=strike\nharness=pi\n' > "$state/scan-gone.meta"
+  printf 'done: landed\n' > "$state/scan-gone.status"
+  printf 'exec_state=released\n' > "$state/scan-gone.exec"
+  printf 'window=sess:sq-scan-hold\nkind=strike\nharness=pi\n' > "$state/scan-hold.meta"
+  printf 'paused: waiting for vendor\n' > "$state/scan-hold.status"
+  printf 'exec_state=released\n' > "$state/scan-hold.exec"
+  done_key=$(printf '%s' scan-gone | tr ':/.' '___')
+  paused_key=$(printf '%s' scan-hold | tr ':/.' '___')
+  printf 'stale dedup residue\n' > "$state/.subsuper-seen-status-$done_key"
+  printf '1\n' > "$state/.subsuper-stale-$done_key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-$done_key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-$paused_key"
+  rm -f "$state/.subsuper-last-scan"
+
+  SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_PAUSE_RESURFACE_SECS=1 SQUAD_FAKE_TMUX_WINDOW=sess:sq-scan-gone \
+    SQUAD_FAKE_TMUX_COMMAND_FILE="$cmd" PATH="$fakebin:$PATH" housekeeping "$state"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "a terminal agentless task was escalated by the away-mode loops: $(cat "$state/.subsuper-escalations")"
+  [ ! -e "$state/.subsuper-seen-status-$done_key" ] \
+    || fail "a skipped task kept its seen-status dedup marker"
+  [ ! -e "$state/.subsuper-stale-$done_key" ] \
+    || fail "a skipped task kept its stale marker"
+  [ ! -e "$state/.subsuper-paused-$done_key" ] \
+    || fail "a skipped task kept its pause marker"
+  [ ! -e "$state/.subsuper-paused-$paused_key" ] \
+    || fail "pause migration recreated a skipped declared-pause marker"
+
+  # The agent returns to the same window: the ordinary catch-all escalation
+  # path must observe the still-unchanged terminal status exactly once.
+  printf 'pi\n' > "$cmd"
+  rm -f "$state/.subsuper-last-scan"
+  SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_FAKE_TMUX_WINDOW=sess:sq-scan-gone SQUAD_FAKE_TMUX_COMMAND_FILE="$cmd" \
+    PATH="$fakebin:$PATH" housekeeping "$state"
+  grep -F 'scan-gone.status: done: landed' "$state/.subsuper-escalations" >/dev/null \
+    || fail "an agent returning left the terminal status unsupervised: $(cat "$state/.subsuper-escalations" 2>/dev/null)"
+  pass "away-mode loops stay quiet for a terminal agentless task and resume once an agent returns"
+}
+
 test_handle_wake_routes_self_and_escalate() {
   local dir state
   dir=$(make_supercase handle)
@@ -3300,6 +3353,7 @@ test_housekeeping_orca_persistent_stale_resolves_terminal
 test_escalate_batches_into_one_digest
 test_escalate_batch_age_uses_first_append
 test_heartbeat_scan_dedup
+test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task
 test_handle_wake_routes_self_and_escalate
 test_afk_delivery_classifier_and_non_afk_wake
 test_inject_skip_forces_self
