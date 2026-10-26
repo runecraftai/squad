@@ -1359,13 +1359,14 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
     return $?
   fi
   fm_backend_target_exists "$backend" "$target" || return 1
-  # Pi's native follow-up queue is the only safe route for its TUIOS composer:
-  # it preserves pending human input and queues without terminal typing. Its
-  # extension binds the handoff to the exact target and acknowledges consumption.
+  # Pi's native follow-up queue preserves pending human input and queues
+  # without terminal typing. Its extension binds the handoff to the exact target
+  # and acknowledges consumption.
   if [ "$backend" = tuios ]; then
     verdict=$(fm_afk_pi_handoff_evaluate "$state" "$target") || {
-      # A request the live extension still holds must never be retyped through
-      # the composer path, or the digest arrives twice once Pi's queue drains.
+      # A request the live extension still holds must never be delivered again
+      # through the composer path, or the digest arrives twice once Pi's queue
+      # drains.
       if pending_id=$(fm_afk_pi_handoff_unresolved_request "$state" "$target"); then
         [ "$pending_id" = "$fm_pi_handoff_unresolved_id" ] || {
           fm_pi_handoff_unresolved_id=$pending_id
@@ -1417,6 +1418,15 @@ inject_msg() {  # <message> [state] [handoff-covered-lines]
   if [ "$verdict" = empty ]; then
     return 0  # Backend confirmed the submit.
   fi
+  case "$verdict" in
+    agent_blocked|queue_full|no_agent|not_ready)
+      # These verdicts prove the backend refused before typing anything, so no
+      # byte of the digest can be sitting in the composer: the buffer is kept
+      # for the next tick and no resend is unsafe.
+      log "inject failed: the backend refused before typing (verdict=$verdict, nothing is in the composer; digest stays buffered)"
+      return 1
+      ;;
+  esac
   log "inject failed: submit unconfirmed after $retries retries (verdict=$verdict, text may be in composer)"
   return 1
 }

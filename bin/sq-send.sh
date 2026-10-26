@@ -7,12 +7,23 @@
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
 # Special keys instead of text: sq-send.sh <target> --key Enter
+# Exact TUIOS prompt response: sq-send.sh <task-id> --respond <action> <prompt-id> [value]
 # A call with no arguments, or a resolvable target with --key and no key value, prints this usage to stderr and exits 2.
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
 # A TUIOS key refused because the pane that types the answer lacks the respond
 # grant names bin/sq-pane-grants.sh's exact person command: the provider's own
 # remediation advice is dropped and only its refusal sentence is kept.
+#
+# Exact prompt answer instead of text: sq-send.sh <task-id> --respond <action>
+# <prompt-id> [value] answers only the TUIOS prompt that id names. It requires a
+# recorded task selector whose backend is tuios, re-reads the current prompt,
+# demands the same prompt_id plus one of the prompt's own actions (and, for
+# choose, the displayed option number), and invokes the daemon's respond verb
+# exactly once: a lost or unconfirmed reply is never retried, so an uncertain
+# outcome must be re-read through bin/sq-crew-state.sh before any retry. A daemon
+# whose verb catalogue lacks the parameters that answer needs is refused by name
+# rather than degrading to keystrokes.
 #
 # Text submission is verified: the line is typed ONCE, then Enter is sent and
 # retried (Enter only, never retyped) until the target backend confirms a
@@ -85,6 +96,7 @@ set -eu
 fm_send_usage() {
   echo "Usage: sq-send.sh <target> [--resolve-key <key>]... <text...>" >&2
   echo "       sq-send.sh <target> --key Enter" >&2
+  echo "       sq-send.sh <task-id> --respond <action> <prompt-id> [value]" >&2
 }
 
 if [ "$#" -eq 0 ]; then
@@ -532,7 +544,20 @@ fm_send_close_resolved_keys() {  # <answer-text>
 # send implementation. A failed backend send is still surfaced below as a hard
 # error with the attempted resolution attached.
 
-if [ "${1:-}" = "--key" ]; then
+if [ "${1:-}" = "--respond" ]; then
+  [ -z "$RESOLVE_KEYS" ] || { echo 'error: --respond cannot accompany --resolve-key; nothing was answered' >&2; exit 1; }
+  [ "$TARGET_SELECTOR" = 1 ] && [ -n "$TARGET_META" ] || { echo 'error: --respond requires a recorded task selector, not an explicit backend target' >&2; exit 1; }
+  [ "$TARGET_BACKEND" = tuios ] || { echo "error: --respond requires backend=tuios; found ${TARGET_BACKEND:-unknown}" >&2; exit 1; }
+  [ "$#" -ge 3 ] && [ "$#" -le 4 ] || { fm_send_usage; exit 2; }
+  action=$2
+  prompt_id=$3
+  value=${4:-}
+  fm_backend_source tuios || exit 1
+  if ! fm_backend_tuios_respond "$T" "$action" "$prompt_id" "$value"; then
+    fm_send_pane_grant_hint
+    exit 1
+  fi
+elif [ "${1:-}" = "--key" ]; then
   case "$*" in
     *--resolve-key*)
       echo "error: --resolve-key cannot accompany --key; answering a decision requires a text answer" >&2
@@ -677,9 +702,10 @@ else
       echo "error: text was typed into $T but the agent showed no sign of taking it (verdict=${verdict:-unknown}; tried $RESOLUTION_TRIED); inspect the pane before resending" >&2
       exit 1
       ;;
-    agent_blocked|queue_full|not_ready)
-      # The target declined before anything was typed, or its agent queue is
-      # full. The distinct verdict names which; nothing is retried.
+    agent_blocked|queue_full|not_ready|no_agent)
+      # The target declined before anything was typed, its agent queue is full,
+      # or no agent could be attributed to the pane. The distinct verdict names
+      # which; nothing is retried.
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       fi

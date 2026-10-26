@@ -277,7 +277,7 @@ There is still one sentry process; the event reader is a bounded child of that s
 The away daemon supports tmux, Herdr, and TUIOS supervisor panes, plus an explicit-only Orca primary whose Pi receiver publishes native readiness ([`orca-backend.md`](orca-backend.md#away-mode-supervision)).
 It refuses Zellij and cmux as supervisor backends rather than applying the wrong transport.
 For Herdr, target existence, native state, capture, composer state, and verified submit all route through the shared backend dispatcher and the explicit named-session CLI owner.
-A TUIOS supervisor pane prefers the Pi-native follow-up handoff and types only into a composer read as empty; [`tuios-backend.md`](tuios-backend.md#away-mode-supervision) owns that contract.
+A TUIOS supervisor pane prefers the Pi-native follow-up handoff, and [`tuios-backend.md`](tuios-backend.md#away-mode-supervision) owns that fallback delivery contract.
 The pane-independent max-defer alert is configured in [`wedge-alarm.md`](wedge-alarm.md).
 
 Harnesses with native tracked background execution can run the daemon in their terminal.

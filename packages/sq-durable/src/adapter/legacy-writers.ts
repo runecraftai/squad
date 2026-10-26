@@ -123,6 +123,16 @@ const guard = (path: string, consults: readonly SquadResponsibility[], note: str
  * code: the custody inventory suite fails on any drift.
  */
 export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
+	{
+		path: "bin/sq-afk-tuios-lab.sh",
+		consults: [],
+		exempt: {
+			reason:
+				"writes the meta of its own synthetic `respond-lab` task inside the private, disposable lab base it creates with mktemp and removes again; the base is never a Squad base, so this line never writes a real mission's record",
+			lines: ['"$SESSION" "$operator_window" "$target" > "$respond_state/$respond_task.meta"'],
+		},
+		note: "guarded live TUIOS lab; every run makes its own mktemp base, session and daemon, then retires them",
+	},
 	guard("bin/sq-backlog-handoff.sh", ["xo-routing"], "moves backlog items to an XO; refuses the XO and every item key before any move"),
 	guard("bin/sq-backlog-receive.sh", ["xo-routing"], "XO side of a handoff; refuses every received key before the destination backlog is touched"),
 	guard("bin/sq-brief.sh", ["admission"], "writes data/<id>/brief.md; a durable mission needs its admission confirmed"),

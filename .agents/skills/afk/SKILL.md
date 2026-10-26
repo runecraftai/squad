@@ -95,7 +95,8 @@ The operational prefix travels with the message text; it does not rely on harnes
 
 The daemon never injects into an in-use pane.
 Orca is native-only under [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision).
-A TUIOS supervisor pane with the shipped Pi extension is delivered through the native handoff instead of terminal typing (`docs/tuios-backend.md` "Away-mode supervision"), so the guards below and the type-once submit model that follows govern tmux, herdr, and the TUIOS fallback path rather than that native route.
+A TUIOS supervisor pane with the shipped Pi extension is delivered through the native handoff instead of terminal typing (`docs/tuios-backend.md` "Away-mode supervision"), so the guards below govern tmux, herdr, and the TUIOS fallback path rather than that native route, while the type-once submit model that follows applies to tmux and herdr only.
+The TUIOS fallback queues the digest through the supervisor pane's own agent instead of typing it, and refuses a pane with no attributable agent.
 Two checks run before every such injection, dispatched through `bin/sq-backend.sh` for the supervisor's own backend (tmux, herdr, or tuios; see "Auto-discovered supervisor pane" below):
 
 - **Primary-pane busy guard** - `pane_is_busy` trusts Herdr native `busy` when available, otherwise matches rendered output against only the detected primary harness's signature.
@@ -189,7 +190,7 @@ the operational prefix lets Squad distinguish it from a real commander message.
 - **Single-line digest** - embedded newlines are collapsed to a literal
   separator before injection, so submission is unambiguous regardless of
   harness.
-- **Busy and composer guards on the supervisor pane** - before injecting on the terminal-typing route (tmux, herdr, or a TUIOS pane without the native handoff), the daemon runs the detected-primary-harness rendered busy guard and reads `fm_backend_composer_state` directly.
+- **Busy and composer guards on the supervisor pane** - before any supervised injection (tmux, herdr, or the TUIOS fallback path), the daemon runs the detected-primary-harness rendered busy guard and reads `fm_backend_composer_state` directly.
   Only `empty` permits injection; `pending` protects half-typed or swallowed input, and `unknown` protects unreadable panes and bare dead-shell prompts.
   Every other result preserves the buffer for retry, so the daemon never merges its digest into the commander's half-typed line or types it into a shell.
 - The shared composer classifier receives a candidate row only after the active backend performs its own capture and structural row recognition.

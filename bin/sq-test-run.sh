@@ -183,6 +183,7 @@ family_for_basename() {
       printf '%s\n' session-bootstrap
       ;;
     sq-afk-pi-herdr-return-e2e.test.sh|sq-afk-tuios-live-optin.test.sh|sq-afk-orca-live-optin.test.sh|\
+    sq-tuios-respond-live-optin.test.sh|\
     sq-claude-account-live-e2e.test.sh|\
     sq-codex-continuity-live-e2e.test.sh|sq-grok-continuity-live-e2e.test.sh|\
     sq-grok-stop-live-e2e.test.sh|sq-harness-liveness-drift-live-e2e.test.sh|\

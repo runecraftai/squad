@@ -6,13 +6,17 @@ Every mechanism below was validated against an installed TUIOS binary and its ow
 
 ## Setup
 
-Install TUIOS 0.8.0 or newer, `jq`, and `flock`, and ensure `fob` is available as required by the normal session-provider contract. Select it explicitly with local `config/backend` containing `tuios` or `SQUAD_BACKEND=tuios`. TUIOS is never auto-detected from `TUIOS_*` ambient markers, and the adapter never creates, adopts, restarts, or deletes a session.
+Install TUIOS 0.8.0 or newer, `jq`, and `flock`, and ensure `fob` is available as required by the normal session-provider contract.
+`python3` is needed only for the optional native agent-state event subscription; without it the backend is supervised by the ordinary `SQUAD_POLL` reconcile instead.
+Select it explicitly with local `config/backend` containing `tuios` or `SQUAD_BACKEND=tuios`. TUIOS is never auto-detected from `TUIOS_*` ambient markers, and the adapter never creates, adopts, restarts, or deletes a session.
 
 Set `SQUAD_TUIOS_SESSION` explicitly to a TUIOS session that the Squad base is authorized to use. The adapter only validates and uses that existing session. Task windows are created without requesting focus, each task target is `<session-name>:<opaque-window-id>`, and the exact session and opaque window id are recorded in the task metadata.
 
 Each task uses its own existing empty, unnamed workspace in the configured session. The adapter prefers the available workspace number in local `config/tuios-workspace`; without that preference it chooses the lowest eligible number. A preferred workspace that is occupied, named, or leased is skipped, while a configured number absent from the session is an error. Allocations are serialized per session with an exclusive kernel `flock` on a stable lock file under the user's `XDG_RUNTIME_DIR` (or the effective config directory when unset) and rechecked against live inventory. The lock file is never removed, so waiters cannot switch to a replacement inode and kernel process-exit handling releases abandoned locks. The adapter temporarily names the selected workspace for the task, creates the window there without requesting focus, and verifies the exact window ID's placement. It never creates or renumbers workspaces, changes an existing name, or moves an existing window.
 
 At detection the adapter validates the daemon's own verb catalogue (`tuios list-verbs --json`) for every verb and parameter it uses, and refuses to drive a daemon that is narrower or older than this adapter. Per-task placement requires `list-workspaces`, `set-workspace-name`, and the `new-window` workspace parameter. A missing verb or parameter fails loudly and names it.
+Two capabilities are optional rather than detection requirements: the native `subscribe` stream is used only when the catalogue advertises its parameters, and the prompt-bound `respond` verb only when it advertises the parameters an answer needs.
+A daemon lacking the capability an operation needs refuses that operation by name instead of substituting keystrokes, so an older daemon keeps the poll path and a prompt answer refuses rather than degrading.
 
 ## Worktree acquisition
 
@@ -32,6 +36,7 @@ Capture and terminal operations address the exact recorded window. Delivery to a
 
 - `tuios queue` (`queue-prompt`) types a message only once the agent has been at rest, never types over a prompt the agent is waiting on, and marks an entry the agent shows no sign of taking as `stalled`.
 - Squad reports success only on an observed postcondition: the queue entry was taken, or the entry waits safely for the agent's next rest (the daemon owns it from there and will not type over a prompt).
+- Queue entries are held in daemon memory, not durably persisted: a daemon restart, pane close, or agent leaving the pane drops them. `list-queued` inspects entries and `cancel-queued` removes one; neither makes the queue durable.
 - Nothing is ever retyped or resent after bytes were typed. A `stalled` result means the text was typed and not taken; inspect the pane before resending.
 
 Distinct delivery verdicts reach the caller:
@@ -43,7 +48,8 @@ Distinct delivery verdicts reach the caller:
 | `queue_full` | The pane's queue holds the configured maximum. Nothing was queued. | non-zero |
 | `stalled` | The entry was typed and the agent showed no sign of taking it. Do not resend. | non-zero |
 | `not_ready`, `prompt_stalled` | Mapped from the daemon's documented refusal codes. The asynchronous queue path does not currently raise them. | non-zero |
-| `uncertain-delivery` | The pane holds no agent TUIOS can attribute, so the pre-existing literal write was used; it proves only that bytes reached the terminal. | non-zero |
+| `no_agent` | TUIOS cannot attribute an agent to the pane; Squad refuses delivery without typing into the terminal. | non-zero |
+| `uncertain-delivery` | The daemon's queue reply carried no unambiguous entry id, so bytes may already have been queued. Never retype; inspect the queue and the pane. | non-zero |
 | `send-failed` | Any other refusal. | non-zero |
 
 Pi and pi-signed tasks still use Squad's task-private Pi delivery dropbox first, exactly as on every other backend; the TUIOS path is used when that dropbox is unavailable and for every other harness.
@@ -64,14 +70,16 @@ The adapter reads the daemon's own agent report and keeps its provenance instead
 | `unknown`, or a state with no attribution | `unknown` | `ambiguous` |
 | unreadable inventory | `unknown` | `unreadable` |
 
-`bin/sq-crew-state.sh` renders a blocked pane as `state: blocked` and includes the prompt the daemon read. The report verb `tuios peek-prompt` supplies the prompt text and numbered options, and it is read only for a pane the daemon reports as `needs_input`; its text is another program's screen and is treated as data. The daemon exposes no generic "ordinary composer is empty" bit, so composer state is read from the pane (see "Composer state" below); anything that is not provably a composer frame stays `unknown`, which never authorizes a write.
+`bin/sq-crew-state.sh` renders a blocked pane as `state: blocked` and includes the prompt the daemon read, including the exact `prompt_id` an answer must name. The report verb `tuios peek-prompt` supplies that prompt text, numbered options, and id, and the adapter reads it only for a pane the daemon reports as `needs_input`; its text is another program's screen and is treated as data. The daemon exposes no generic "ordinary composer is empty" bit, so composer state is read from the pane (see "Composer state" below); anything that is not provably a composer frame stays `unknown`, which never authorizes a write.
 
 ### Waking Squad on a blocked pane
 
-TUIOS has no event subscription to wait on (see "Limits and verification" below), so it produces Squad's backend-neutral normalized transition record (`bin/sq-transition-lib.sh`) on the sentry's ordinary per-window poll instead of through an event stream: `fm_backend_tuios_poll_transition` in `bin/backends/tuios.sh` is the level-reconcile producer, and `docs/architecture.md`'s "Capability matrix: the person-needed escalation" owns how this fits alongside Herdr's push path, Orca's poll path, and the backends that cannot report the condition at all.
+When the installed daemon advertises a verified `subscribe` verb in its catalog, TUIOS agent-state events wake the sentry's bounded native event wait. Events are wake hints only: Squad re-reads the exact window's current state and prompt before acting, using the normalized transition policy (`bin/sq-transition-lib.sh`). Daemons without the catalogued verb are poll-only instead: `fm_backend_tuios_poll_transition` in `bin/backends/tuios.sh` is the level-reconcile producer, and `docs/architecture.md`'s "Capability matrix: the person-needed escalation" owns how both TUIOS paths fit alongside Herdr's push path, Orca's poll path, and the backends that cannot report the condition at all.
 
-On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any, instead of leaving the pane unanswered until a manual inspection.
-Latency is bounded by the supervision poll interval (`SQUAD_POLL`), since no event subscription is used.
+On a native `blocked` verdict (`needs_input` or `errored`), Squad wakes with the task's window and the prompt `fm_backend_prompt_summary` read, including the numbered options above when the daemon supplied any and the exact `prompt_id` an answer must name.
+With catalogued `subscribe`, agent-state events provide the prompt wake; the adapter subscribes before reconciliation, then re-reads current state and prompt before applying shared policy.
+This is a wake hint, not a decision or an answer: only a person-authorized `sq-send --respond` call can answer, and TUIOS checks both the `respond` grant and the prompt id.
+Event delivery is prompt and bounded; gap, reconnect, or unsupported capability falls back to the ordinary `SQUAD_POLL` reconciliation.
 The wake fires exactly once per distinct pending prompt, keyed on the prompt's own identity rather than the `needs_input` status alone; [`architecture.md`](architecture.md#capability-matrix-the-person-needed-escalation) owns that identity's exact contents and its numbered-options exclusion.
 A status-only dedupe would miss a pane that shows one prompt, has it dismissed, and immediately shows a different one while never leaving `needs_input`.
 A new or changed prompt always wakes again, the identical standing prompt never repeats one, and a blocked pane is never folded into the ordinary stale/wedge detection, so it is never misread as a possible wedge.
@@ -110,13 +118,18 @@ The supervisor's own pane is not a task, so address it explicitly as `"$TUIOS_SE
 
 The flow when a dialog blocks an operator:
 
-1. The wake reports the pane and the prompt it read.
+1. The wake reports the pane, the prompt it read, and the exact prompt id an answer must give.
 2. `bin/sq-pane-grants.sh show "$TUIOS_SESSION:$TUIOS_PANE_ID"` says whether the answering pane can already answer it, and prints the `person command:` line when it cannot.
    That delegation is the person's, once, from a shell outside TUIOS; no pane can give it to itself.
 3. `bin/sq-pane-grants.sh verify <target>` confirms the grant landed before anything is retyped, and its non-zero exit means the send would still be refused.
-4. With `respond` on the answering pane, the supervisor answers the prompt with keys through `bin/sq-send.sh <id> --key Enter` (or the key the prompt asks for).
-   Only key sends become possible: `bin/sq-send.sh` still refuses free text into a pane whose agent is blocked, because text typed there would answer the prompt without the grant check Squad does not own.
-   A dialog that demands a typed answer is therefore out of scope here and needs its own decision, not a wider grant.
+4. The authorized actor takes the prompt id from that wake, or re-reads the current prompt with `bin/sq-crew-state.sh <id>` when the prompt may have changed since the wake; both are sanctioned Squad surfaces, while a raw `tuios peek-prompt` call is refused for the guarded primary scope.
+   Send the decision with `bin/sq-send.sh <id> --respond <action> <prompt-id> [value]`.
+   Use `approve` or `deny` for an approval, `choose` with the displayed option number for a numbered question, and `text` with the answer a free-text prompt accepts; an action the current prompt does not accept is refused by name and nothing is answered.
+   It re-reads the current prompt, requires the same `prompt_id`, verifies the action and selected option, then lets TUIOS enforce the answering pane's `respond` authority and atomically refuse a changed prompt.
+   `approve_always` and risk-matched approvals are not inferred or automated; a TUIOS risk refusal confirms that nothing was answered.
+   The command invokes `respond` once; if its result is uncertain, re-read the prompt through the same sanctioned surface before any retry and never repeat an answer for an unchanged prompt.
+   The older `bin/sq-send.sh <id> --key <key>` path remains available for key-only prompts, but it does not bind the answer to a prompt id.
+   Free text through ordinary `sq-send` remains refused while blocked because that would answer without the prompt-specific permission and identity checks.
 5. The grant is a delegation, not standing practice: it stays on the one pane that answers, is never given to operators, and the person removes it with `tuios set-pane-grants -w <pane> --reset` from outside TUIOS when the delegation ends.
 
 One delegation is enough after that: a pane that already holds `respond` can pass it on, so a supervisor holding it can grant it to a task pane that supervises its own operators, such as an XO primary.
@@ -151,11 +164,12 @@ Cleanup verifies both the exact opaque window id and the recorded task label bef
 ## Away-mode supervision
 
 A TUIOS-hosted Squad primary can be supervised in away mode without any terminal typing: the preferred path delivers through Pi's own message queue via `.pi/extensions/sq-primary-away-handoff.ts` and `bin/sq-afk-pi-handoff.sh`, and the daemon never types while that path is available.
-When the native path refuses, delivery falls back to the guarded composer path, which types the digest into the supervisor pane's composer (a queue submit when the pane has an agent, send-text plus Enter otherwise) only after that composer is positively read as empty for a daemon-attributed live agent, as described in "Composer state" and "Limits and verification" below.
+When the native path refuses, delivery falls back to the guarded composer path, which queues the digest through the supervisor pane's own agent (TUIOS delivery is queue-only) only after that composer is positively read as empty for a daemon-attributed live agent, as described in "Composer state" and "Limits and verification" below.
+A pane TUIOS cannot attribute a live agent to is refused as `no_agent` and nothing is typed into its terminal.
 
 - The extension binds to the exact `TUIOS_SESSION` and `TUIOS_PANE_ID`, publishes its own `state/.pi-away-handoff/ready.<session>.<window>.json` with its process identity and a one-second heartbeat, and accepts a request only when it names that exact target.
 - Only the Pi that holds the base's session lock publishes or accepts anything, and only the exact lock owner counts: `bin/sq-lock.sh` records the innermost harness pid, so a Pi started from the primary's own shell - which inherits `SQUAD_BASE` and the TUIOS pane variables - is a worker even though the lock holder is its ancestor.
-  A worker's Pi inherits `SQUAD_BASE` and the TUIOS pane variables, and its Squad worktree carries this same project extension, so a single shared record used to be overwritten by whichever worker wrote last and the daemon fell back to terminal typing; readiness is therefore keyed by target and a record naming another window never satisfies the supervised pane.
+  A worker's Pi inherits `SQUAD_BASE` and the TUIOS pane variables, and its Squad worktree carries this same project extension, so a single shared record used to be overwritten by whichever worker wrote last and the daemon fell back to the guarded composer path; readiness is therefore keyed by target and a record naming another window never satisfies the supervised pane.
 - `bin/sq-afk-pi-handoff.sh` publishes one durable `request.json` and observes `result.json`; it never retypes an unresolved escalation and reports success only on a consumption acknowledgement.
 - The extension queues the digest with `sendUserMessage(..., { deliverAs: "followUp" })`, which never touches the composer or an open dialog, and acknowledges consumption when Pi's own `before_agent_start` prompt carries the handoff marker.
   The acknowledgement is written only by the lock-owning Pi and only for a request naming its own exact target, so a worker or nested Pi can never retire a buffer prefix for a digest the primary never received.
@@ -177,7 +191,7 @@ Delivery is idempotent across batches.
 A published request records how many buffered escalations it covers, and once Pi acknowledges consuming it the daemon retires exactly that buffer prefix, so a later digest that also carries a newer escalation never re-sends the one Pi already handled.
 A request is republished only when replacing it cannot duplicate delivery: Pi consumed it, or the extension's send never reached Pi (`uncertain`), or a `submitting` record has aged past the bound while the live, identity-verified extension reports no in-flight send, or a `queued` record was written by a process that is no longer the live extension - that followUp queue died with its writer, so republishing it under a new id is the only way the digest is ever delivered.
 A `submitting` or `queued` record owned by the live extension is never replaced, because that send or queue can still deliver, and the wedge alarm still covers a request that stays undelivered.
-When the native verdict is transiently refused while that live, identity-verified extension still holds an unresolved request for the exact target, the daemon defers instead of retyping the digest through the composer path, so an escalation Pi already holds is not delivered twice once its event loop unblocks.
+When the native verdict is transiently refused while that live, identity-verified extension still holds an unresolved request for the exact target, the daemon defers instead of delivering the digest again through the composer path, so an escalation Pi already holds is not delivered twice once its event loop unblocks.
 The deferral is bounded: a request whose result entry is older than `SQUAD_PI_HANDOFF_STALE_SECS`, names another target, or was written by a dead or foreign process does not block the composer path, so a stuck request can never wedge delivery.
 
 `bin/sq-afk-launch.sh` starts the away daemon in its own exact, newly created, detached TUIOS session.
@@ -196,7 +210,7 @@ Every row between the borders is judged together, so a multi-line draft is `pend
 The frame must sit at the bottom of the pane above a short footer, so tool-output boxes and markdown rules in the scrollback are never mistaken for the composer.
 A frame whose rows are all blank is `empty`, any content is `pending`, and everything else is `unknown`, which still never authorizes a write.
 `empty` additionally requires the daemon to attribute a live agent to that pane: a crashed Pi can leave its last composer frame on screen above the shell prompt, and the frame alone cannot tell that apart from an idle agent.
-A dead, missing, ambiguous, or unreadable agent report therefore turns an otherwise empty frame into `unknown`, so the typed fallback is never handed a pane whose agent is gone.
+A dead, missing, ambiguous, or unreadable agent report therefore turns an otherwise empty frame into `unknown`, so the composer fallback is never handed a pane whose agent is gone.
 The frame read is tunable for a harness or theme that draws it differently: `SQUAD_BACKEND_TUIOS_COMPOSER_LINES` sets the pane tail captured, `SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX` how many footer rows are tolerated below the frame, `SQUAD_BACKEND_TUIOS_COMPOSER_ROWS_MAX` how many editor rows are admitted between the two borders, and `SQUAD_BACKEND_TUIOS_IDLE_RE` matches an empty-composer placeholder; their defaults are listed in [`configuration.md`](configuration.md).
 This is a rendered-surface signal, so it is a harness-dependent check: `tests/sq-backend-tuios.test.sh` pins the portable logic against the captured frame shapes and the dead-agent case, and the guarded live lab (`bin/sq-afk-tuios-lab.sh lifecycle`, reachable from the `live-harness-optin` lane through `tests/sq-afk-tuios-live-optin.test.sh`) proves it against a real Pi, reading `empty` when idle and `pending` once a draft is typed.
 Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redraws the frame would otherwise degrade quietly to `unknown` and defer every escalation.
@@ -204,10 +218,11 @@ Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redra
 ## Limits and verification
 
 - Native away-mode delivery to a TUIOS supervisor pane requires the shipped Pi extension on the primary, loaded at Pi startup; a primary started before the extension existed keeps using the composer path until restarted.
-  The composer path types only into a composer positively read as empty, and defers on a draft, a busy or blocked pane, or any frame it cannot identify.
+  The composer path delivers only into a composer positively read as empty, and defers on a draft, a busy or blocked pane, or any frame it cannot identify.
 - The open-prompt guard depends on Pi's `ui_prompt_start`/`ui_prompt_end` events, which were verified live on Pi 0.99.0 by opening a real dialog while the primary was idle and confirming the escalation was held until it closed.
   A future Pi release that stopped emitting those events would silently reduce the guard to idle plus draft, so that event contract must be re-verified on a Pi upgrade.
-- Supervision stays poll-based. No event subscription (`subscribe` / `after_seq`) is used, so a stream gap cannot be replayed and a state change is observed on the next poll rather than immediately. The blocked-pane wake above shares this bound exactly: it fires on the next supervision poll after the daemon reports `needs_input`/`errored`, never sub-second, and that bound is covered by `tests/sq-sentry-triage.test.sh`'s fake-CLI suite rather than a live daemon.
+- Native agent-state events are used when the daemon's verb catalogue confirms `subscribe` and its required parameters: a stream gap or reader failure falls back to ordinary reconciliation, an event that is not a fresh actionable edge does not end the wait early, and the caller's SIGTERM stops the reader with its subscription instead of leaving it connected to the daemon.
+  The reader starts a fresh subscription rather than requesting sequence replay, so recovery after reconnect depends on the baseline read and bounded poll, while older daemons remain poll-supervised with latency bounded by `SQUAD_POLL`.
 - The daemon's queue, mail, activity, and agent state live in daemon memory and die with it; a restart is reconciled from the inventory and the durable Squad task record, never from a replayed event.
 - `not_ready` and `prompt_stalled` mappings exist and are tested against the daemon's documented codes, but the asynchronous queue path does not raise them, so they were not observed live.
 - The durable lease on a failed spawn is returned by the adapter; a lease whose spawn succeeded is returned by Squad teardown.
@@ -216,3 +231,6 @@ Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redra
 - The fake-CLI suite covers preferred-workspace selection, occupied/named/leased exclusions, exact-ID placement verification, abort cleanup, and guarded workspace release. A focused check on the existing isolated nine-workspace private TUIOS session created two tasks in distinct non-current workspaces, confirmed the original focused window and current workspace were unchanged, then closed both probe windows and restored both names to empty. The shared daemon and every non-lab session were untouched.
 
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns the commands and output behind each claim above, and the honest list of what is not yet established. The portable contract is covered by `tests/sq-backend-tuios.test.sh` and `tests/sq-spawn-tuios-worktree.test.sh` using fake CLIs; those tests never contact or change a live TUIOS session.
+The blocked-operator answer path also has an opt-in isolated lab (`bin/sq-afk-tuios-lab.sh respond`, driven by `tests/sq-tuios-respond-live-optin.test.sh`) that runs against a private daemon it creates and destroys.
+It proves, live, the daemon's own prompt read, the native blocked event, the supervisor wake carrying the question and numbered options, the refusal of an in-pane answer, the exact prompt id answered from the person's shell, the observed resume, and the absence of a duplicate answer or replayed wake.
+Its operator process draws the approval screen itself instead of a vendor harness drawing it, so a vendor CLI's own dialog and a model turn are not part of that evidence.

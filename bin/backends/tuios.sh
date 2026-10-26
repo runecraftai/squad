@@ -6,9 +6,13 @@
 # TUIOS is never inferred from ambient markers; configure it explicitly.
 #
 # Verified against the installed TUIOS 0.8.0 binary (`tuios --version`,
-# `tuios list-verbs`, `tuios --skill`). Every mechanism used here is
-# version-matched to that binary; docs/tuios-backend.md owns the behavior
-# contract and docs/verification/runtime-backends.md owns the live evidence.
+# `tuios list-verbs`, `tuios --skill`) for the session, prompt, queue, and
+# recovery verbs. The native `subscribe` event stream and the prompt-bound
+# `respond` verb are optional capabilities that a newer daemon advertises
+# (0.9.1 in the live evidence); each is gated on the installed daemon's own
+# catalog, and older builds keep the verified poll path. docs/tuios-backend.md
+# owns the behavior contract and docs/verification/runtime-backends.md owns the
+# live evidence.
 #
 # Delivery is agent-aware. The generic UI submit uses the daemon's queue
 # (`queue-prompt`), which types a message only once the agent is at rest and
@@ -25,12 +29,10 @@
 # never ordinary work.
 #
 # Shared, backend-neutral normalized-transition shape and the single-owner
-# status->action policy table (bin/sq-transition-lib.sh). TUIOS exposes no
-# subscribe/after_seq verb (docs/tuios-backend.md "Limits and verification"),
-# so unlike herdr's event subscriber this adapter produces the same normalized
-# record on the sentry's ordinary poll loop instead (fm_backend_tuios_poll_transition,
-# the "state, prompts, and provenance" section below) - it never re-encodes the
-# policy mapping either.
+# status->action policy table (bin/sq-transition-lib.sh). TUIOS versions with
+# subscribe support use its native agent-state stream for prompt wakes. Older
+# supported versions retain level-reconcile polling through
+# fm_backend_tuios_poll_transition; both paths share the same transition policy.
 SQUAD_BACKEND_TUIOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=bin/sq-transition-lib.sh
 . "$SQUAD_BACKEND_TUIOS_ROOT/bin/sq-transition-lib.sh"
@@ -380,6 +382,40 @@ fm_backend_tuios_grant_refusal() {  # <refusal-output>
   return 1
 }
 
+# fm_backend_tuios_respond_error_verdict: classify a refused respond call. The
+# installed CLI renders the documented stable codes as prose, so the
+# live-verified refusal sentences are matched alongside the code tokens;
+# anything unrecognized stays uncertain because a lost reply may follow an
+# answer that did land.
+fm_backend_tuios_respond_error_verdict() {  # <refusal-output>
+  case "$1" in
+    *prompt_changed*|*'respond pressed nothing'*|*'not the one prompt_id names'*|*'is asking something else now, so nothing was answered'*)
+      printf 'prompt_changed' ;;
+    *risk_unacknowledged*|*'matches a risk rule'*|*'may deny a risky call and never allow one'*)
+      printf 'risk_matched' ;;
+    *not_human*|*forbidden*|*'respond grant'*|*'is for the person at an attached client'*)
+      printf 'not_authorized' ;;
+    *) printf 'uncertain' ;;
+  esac
+}
+
+# fm_backend_tuios_refusal_line: only the provider's own refusal sentence from
+# a captured grant or caller refusal. Its remaining lines are remediation
+# advice naming a raw verb Squad's guard denies, so a caller that forwards such
+# a refusal keeps this line. A JSON envelope packs the sentence and its advice
+# into one escaped string, so decode it before taking the first line; plain
+# output is already line-shaped.
+fm_backend_tuios_refusal_line() {  # <captured-output>
+  local out=$1 text
+  [ -n "$out" ] || return 0
+  text=$(printf '%s' "$out" | jq -r '
+    (.error // empty)
+    | if type == "object" then (.message // .detail // .code // empty) else . end
+    | select(type == "string")' 2>/dev/null) || text=''
+  [ -n "$text" ] || text=$out
+  printf '%s\n' "$text" | head -n 1
+}
+
 fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
   local target=$1 key=$2 expected=${3:-} out rc
   # Only a refusal sets this, and only to the pane whose grant is missing, so a
@@ -394,7 +430,7 @@ fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
       # Squad has a sanctioned remedy for this refusal, so forward only the
       # daemon's own refusal sentence: its remaining lines are the provider's
       # remediation advice, which names the raw verb Squad's guard denies.
-      [ -z "$out" ] || printf '%s\n' "$(printf '%s' "$out" | head -n 1)" >&2
+      fm_backend_tuios_refusal_line "$out" >&2
       # TUIOS requires respond on the pane that TYPES the answer, never on the
       # blocked pane, so name that pane rather than the target.
       # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
@@ -413,6 +449,108 @@ fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]
   # Keep the shell line in one write instead of risking a stranded partial line.
   fm_backend_tuios_send_literal "$target" "$text
 " "$expected"
+}
+
+# fm_backend_tuios_respond answers only the exact prompt the supervisor read.
+# The daemon rechecks prompt_id atomically and enforces its respond authority;
+# this call is deliberately never retried because a lost reply may follow a
+# successful answer.
+fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
+  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out err errfile rc settled confirmed verdict
+  SQUAD_BACKEND_PANE_GRANT_TARGET=
+  fm_backend_tuios_parse_target "$target" || { echo 'error: malformed TUIOS prompt target' >&2; return 1; }
+  [ -n "$prompt_id" ] || { echo 'error: TUIOS prompt id is required; nothing was answered' >&2; return 1; }
+  case "$action" in approve|deny|choose|text) ;; *) echo "error: unsupported TUIOS prompt action '$action'; persistent approvals are not automated" >&2; return 1 ;; esac
+  case "$action" in
+    choose|text)
+      [ -n "$value" ] || { echo "error: TUIOS action '$action' requires a value; nothing was answered" >&2; return 1; }
+      ;;
+    *)
+      [ -z "$value" ] || { echo "error: TUIOS action '$action' takes no value; nothing was answered" >&2; return 1; }
+      ;;
+  esac
+  catalog=$("$(fm_backend_tuios_bin)" list-verbs --json 2>/dev/null) || { echo 'error: TUIOS capability catalog unavailable; prompt response is unsupported' >&2; return 1; }
+  printf '%s' "$catalog" | jq -e --arg action "$action" '
+    any(.verbs[]; .verb == "respond"
+      and ([.params[]?.name] | index("session") != null)
+      and ([.params[]?.name] | index("window") != null)
+      and ([.params[]?.name] | index("action") != null)
+      and ([.params[]?.name] | index("prompt_id") != null)
+      and (($action != "choose" and $action != "text")
+        or ([.params[]?.name] | index("value") != null))
+      and ([.returns[]?.name] | index("prompt_id") != null)
+      and ([.returns[]?.name] | index("settled_by") != null))
+  ' >/dev/null 2>&1 || { echo 'error: installed TUIOS daemon does not advertise the prompt response capability this answer needs; nothing was answered' >&2; return 1; }
+  session=$SQUAD_BACKEND_TUIOS_SESSION
+  window=$SQUAD_BACKEND_TUIOS_WINDOW
+  prompt=$(fm_backend_tuios_prompt_json "$target") || { echo 'error: target is not currently waiting on a readable TUIOS prompt; nothing was answered' >&2; return 1; }
+  [ "$(printf '%s' "$prompt" | jq -r '.prompt_id // empty')" = "$prompt_id" ] || {
+    echo 'error: TUIOS prompt changed since it was read; nothing was answered; read the current prompt before deciding again' >&2
+    return 1
+  }
+  printf '%s' "$prompt" | jq -e --arg action "$action" '(.actions // []) | index($action) != null' >/dev/null 2>&1 || {
+    echo "error: current TUIOS prompt does not accept action '$action'; nothing was answered" >&2
+    return 1
+  }
+  if [ "$action" = choose ]; then
+    case "$value" in ''|*[!0-9]*|0) echo 'error: choose requires a positive option number; nothing was answered' >&2; return 1 ;; esac
+    fm_backend_tuios_prompt_option_numbers "$prompt" | grep -qx -- "$value" || {
+      echo 'error: chosen option is not present in the current prompt; nothing was answered' >&2
+      return 1
+    }
+  fi
+  local -a args=(respond --json --session "$session" --window "$window" --prompt-id "$prompt_id" "$action")
+  # A free-text answer may begin with `-`, which the CLI would parse as a flag.
+  [ -z "$value" ] || args+=(-- "$value")
+  errfile=$(mktemp "${TMPDIR:-/tmp}/sq-tuios-respond.XXXXXX" 2>/dev/null) || errfile=/dev/null
+  out=$("$(fm_backend_tuios_bin)" "${args[@]}" 2>"$errfile") && rc=0 || rc=$?
+  err=$(cat "$errfile" 2>/dev/null) || err=''
+  [ "$errfile" = /dev/null ] || rm -f "$errfile"
+  if [ "$rc" -ne 0 ]; then
+    [ -z "$err" ] || out=${out:+$out$'\n'}$err
+    verdict=$(fm_backend_tuios_respond_error_verdict "$out")
+    if [ "$verdict" = not_authorized ]; then
+      fm_backend_tuios_refusal_line "$out" >&2
+    else
+      [ -z "$out" ] || printf '%s\n' "$out" >&2
+    fi
+    case "$verdict" in
+      prompt_changed) echo 'error: TUIOS confirmed nothing was answered because the prompt changed; read the new prompt before deciding again' >&2; return 1 ;;
+      risk_matched) echo 'error: TUIOS refused this risk-matched approval; nothing was answered and no risk acknowledgement was inferred' >&2; return 1 ;;
+      not_authorized)
+        # shellcheck disable=SC2034 # Set for the sourcing caller to print the sanctioned grant remedy.
+        SQUAD_BACKEND_PANE_GRANT_TARGET=$(fm_backend_tuios_caller_pane || true)
+        echo 'error: TUIOS refused this caller; nothing was answered; use an authorized person or pane with the respond grant' >&2
+        return 1
+        ;;
+    esac
+    echo 'error: TUIOS response outcome may be uncertain; do not retry until the current prompt is re-read with bin/sq-crew-state.sh <task-id>' >&2
+    return 1
+  fi
+  [ -z "$err" ] || printf '%s\n' "$err" >&2
+  settled=$(printf '%s' "$out" | jq -r '.settled_by // empty' 2>/dev/null)
+  if printf '%s' "$out" | jq -e --arg id "$prompt_id" '
+    (.success == true) and (.prompt_id == $id)
+  ' >/dev/null 2>&1; then confirmed=true; else confirmed=false; fi
+  [ "$confirmed" = true ] || {
+    echo 'error: TUIOS did not confirm the exact prompt response; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
+    return 1
+  }
+  if [ "$settled" = prompt ]; then
+    printf '%s\n' "$out"
+    echo 'error: the exact prompt was answered, but another prompt appeared; inspect it instead of retrying' >&2
+    return 1
+  fi
+  if [ "$settled" = gone ]; then
+    printf '%s\n' "$out"
+    echo 'error: the exact prompt was answered, but the operator window closed as it was typed; do not retry; inspect the task instead' >&2
+    return 1
+  fi
+  [ "$settled" = state ] || {
+    echo 'error: TUIOS did not confirm the blocked prompt cleared; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
+    return 1
+  }
+  printf '%s\n' "$out"
 }
 
 fm_backend_tuios_current_path() {  # <target>
@@ -735,21 +873,42 @@ fm_backend_tuios_prompt_json() {  # <target>
   printf '%s' "$out"
 }
 
+# fm_backend_tuios_prompt_option_numbers: the numbers a person presses for the
+# prompt's options. The daemon's peek-prompt carries each option's authoritative
+# on-screen number in `n`; a daemon that reports plain strings has only their
+# positions, which is the same numbering for that shape.
+fm_backend_tuios_prompt_option_numbers() {  # <prompt-json>
+  printf '%s' "$1" | jq -r '
+    (.options // []) | to_entries[]
+    | if (.value | type) == "object" and ((.value.n | type) == "number")
+      then .value.n else (.key + 1) end' 2>/dev/null
+}
+
 fm_backend_tuios_prompt_summary() {  # <target>
-  local target=$1 prompt line kind reason options
+  local target=$1 prompt line kind reason options prompt_id summary
   prompt=$(fm_backend_tuios_prompt_json "$target") || return 0
   kind=$(printf '%s' "$prompt" | jq -r '.kind // "needs_input"')
   options=''
+  prompt_id=''
   if [ "$(printf '%s' "$prompt" | jq -r '.found')" = true ]; then
     line=$(printf '%s' "$prompt" | jq -r '(.message // "") | if . != "" then . else (.lines // [] | .[-1] // "") end')
+    # The prompt's own id is the identity an answer must name, and the caller
+    # that receives this line is the actor the question is routed to: carry it
+    # here so answering needs no direct read of the session-provider CLI.
+    prompt_id=$(printf '%s' "$prompt" | jq -r '.prompt_id // empty' 2>/dev/null | tr -d '[:space:]' | cut -c1-64)
     # Numbered options, when the daemon's prompt read carries any: each entry
-    # is either a plain string or an object (label/text/name), rendered as
-    # "1) <opt> 2) <opt> ...". Absent or empty stays "" so an older daemon
-    # with no options field changes nothing below.
+    # is either a plain string or an object (label/text/name) whose `n` is the
+    # number the person actually sees, rendered as "2) <opt> 5) <opt> ...".
+    # Absent or empty stays "" so an older daemon with no options field changes
+    # nothing below.
     options=$(printf '%s' "$prompt" | jq -r '
       (.options // []) as $o
       | if ($o | length) > 0 then
-          [$o | to_entries[] | "\(.key + 1)) " + (.value | if type == "string" then . else (.label // .text // .name // tostring) end)]
+          [$o | to_entries[]
+           | ((if (.value | type) == "object" and ((.value.n | type) == "number")
+               then .value.n else (.key + 1) end) | tostring)
+             + ") "
+             + (.value | if type == "string" then . else (.label // .text // .name // tostring) end)]
           | join(" ")
         else "" end' 2>/dev/null)
   else
@@ -766,13 +925,15 @@ fm_backend_tuios_prompt_summary() {  # <target>
   fi
   if [ -n "$line" ]; then
     if [ -n "$options" ]; then
-      printf '%s: %s [%s]' "$kind" "$line" "$options"
+      summary="$kind: $line [$options]"
     else
-      printf '%s: %s' "$kind" "$line"
+      summary="$kind: $line"
     fi
   else
-    printf '%s (prompt not readable)' "$kind"
+    summary="$kind (prompt not readable)"
   fi
+  [ -z "$prompt_id" ] || summary="$summary prompt_id=$prompt_id"
+  printf '%s' "$summary"
 }
 
 # fm_backend_tuios_prompt_hash: the dedupe identity of the pane's blocking
@@ -797,12 +958,12 @@ fm_backend_tuios_prompt_hash() {  # <target>
 }
 
 # --- backend-neutral transition producer (level-reconcile / poll path) ------
-# TUIOS exposes no event subscription, so it never satisfies fm_backend_has_push
-# and is never offered to the sentry's event-wait splice (bin/sq-sentry.sh
-# event_wait_or_sleep). It still produces the SAME normalized transition record
-# (bin/sq-transition-lib.sh) on the sentry's ordinary per-window poll instead:
-# fm_backend_tuios_poll_transition reads the daemon's current level
-# (fm_backend_tuios_busy_state), translates it into the shared
+# TUIOS versions with subscribe support satisfy fm_backend_has_push and use the
+# sentry's event-wait splice. The native stream is only a wake signal; the
+# authoritative per-window level is re-read before action. Older versions still
+# produce the SAME normalized transition record (bin/sq-transition-lib.sh) on
+# the ordinary poll instead: fm_backend_tuios_poll_transition reads current
+# state (fm_backend_tuios_busy_state), translates it into the shared
 # idle|working|blocked|done|unknown vocabulary, and routes it through the same
 # policy table and per-pane dedupe shape herdr's event stream uses
 # (fm_backend_tuios_apply_transition mirrors fm_backend_herdr_apply_transition
@@ -905,10 +1066,10 @@ fm_backend_tuios_clear_transition() {  # <state_dir> <window>
   rm -f "$(fm_backend_tuios_prompt_hash_marker "$state" "$window")" 2>/dev/null || true
 }
 
-# fm_backend_tuios_poll_transition: the level-reconcile producer called on the
-# sentry's ordinary per-window poll cycle (TUIOS has no event stream to wait
-# on). Prints the normalized record and returns 0 on a fresh actionable edge
-# for the caller to hand to handle_push_transition; returns 1 when the pane is
+# fm_backend_tuios_poll_transition: level-reconcile producer called on the
+# ordinary per-window poll cycle and on native-event reconnect/edges. Prints the
+# normalized record and returns 0 on a fresh actionable edge for the caller to
+# hand to handle_push_transition; returns 1 when the pane is
 # STILL blocked but already escalated for its current prompt (the caller must
 # still skip the ordinary stale/wedge machinery, just without a fresh wake);
 # returns 2 when the pane is not currently blocked (the caller falls through to
@@ -953,6 +1114,78 @@ fm_backend_tuios_poll_transition() {  # <state_dir> <session> <window>
   printf '%s' "$hit"
 }
 
+# fm_backend_tuios_events_capable: the installed daemon's own catalog is the
+# authority for native subscriptions. The catalog describes the binary
+# (`tuios list-verbs` takes no session), so the probe is session-independent and
+# the dispatcher's session argument is deliberately not taken. This is optional
+# so older supported TUIOS versions continue using the ordinary level-reconcile
+# poll.
+fm_backend_tuios_events_capable() {
+  local catalog bin
+  bin=$(fm_backend_tuios_bin)
+  command -v python3 >/dev/null 2>&1 || return 1
+  catalog=$("$bin" list-verbs --json 2>/dev/null) || return 1
+  printf '%s' "$catalog" | jq -e '
+    (.verbs | type) == "array"
+    and any(.verbs[]; (.verb == "subscribe")
+      and ([.params[]?.name] | index("session") != null)
+      and ([.params[]?.name] | index("types") != null)
+      and ([.returns[]?.name] | index("seq") != null)
+      and ([.returns[]?.name] | index("boot_id") != null))
+  ' >/dev/null 2>&1
+}
+
+# fm_backend_tuios_wait_transition: subscribe before reconciling, then treat each
+# event only as a prompt to re-read the exact task window. The per-prompt marker
+# makes reconnect/replay duplicates harmless; gaps and reader failures return 2
+# so the sentry falls back to bounded polling.
+fm_backend_tuios_wait_transition() {  # <session> <timeout> <state_dir> <window...>
+  local session=$1 timeout=$2 state=$3; shift 3
+  local windows=("$@") w bin reader=() fifo_dir fifo reader_pid line event_window record hit rc=1 reader_rc=0
+  [ "${#windows[@]}" -gt 0 ] || return 2
+  if [ "${SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED:-0}" != 1 ]; then
+    fm_backend_tuios_events_capable || return 2
+  fi
+  bin=$(fm_backend_tuios_bin)
+  reader=(python3 "$SQUAD_BACKEND_TUIOS_ROOT/bin/backends/tuios-eventwait.py" "$bin" "$session" "$timeout")
+  for w in "${windows[@]}"; do reader+=("${w#*:}"); done
+  fifo_dir=$(mktemp -d "${TMPDIR:-/tmp}/sq-tuios-eventwait.XXXXXX") || return 2
+  fifo="$fifo_dir/events"
+  if ! mkfifo "$fifo" 2>/dev/null; then rm -rf "$fifo_dir"; return 2; fi
+  "${reader[@]}" > "$fifo" 2>/dev/null &
+  reader_pid=$!
+  if ! exec 9< "$fifo"; then kill "$reader_pid" 2>/dev/null || true; wait "$reader_pid" 2>/dev/null || true; rm -rf "$fifo_dir"; return 2; fi
+  if ! IFS= read -r -u 9 line || [ "$line" != "@subscribed" ]; then
+    rc=2
+  else
+    # Reconcile after subscription is live: an already blocked prompt is not
+    # lost between the sentry's previous poll and the stream connection.
+    for w in "${windows[@]}"; do
+      if hit=$(fm_backend_tuios_poll_transition "$state" "$session" "$w"); then printf '%s' "$hit"; rc=0; break; fi
+    done
+  fi
+  while [ "$rc" -eq 1 ] && IFS= read -r -u 9 line; do
+    [ -n "$line" ] || continue
+    event_window=$(printf '%s' "$line" | cut -f1)
+    [ -n "$event_window" ] || continue
+    w="$session:$event_window"
+    if hit=$(fm_backend_tuios_poll_transition "$state" "$session" "$w"); then printf '%s' "$hit"; rc=0; break; fi
+  done
+  if [ "$rc" -eq 0 ]; then
+    kill "$reader_pid" 2>/dev/null || true
+  fi
+  if [ "$rc" -eq 2 ]; then
+    kill "$reader_pid" 2>/dev/null || true
+  fi
+  wait "$reader_pid" 2>/dev/null || reader_rc=$?
+  exec 9<&-
+  rm -rf "$fifo_dir" 2>/dev/null || true
+  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 2 ] && return 2
+  [ "$reader_rc" -eq 0 ] && return 1
+  return 2
+}
+
 # --- delivery ----------------------------------------------------------
 fm_backend_tuios_error_text() {  # <json-envelope>
   printf '%s' "$1" | jq -r '
@@ -974,10 +1207,10 @@ fm_backend_tuios_queue_error_verdict() {  # <error-text>
     *agent_blocked*|*'on needs_input'*) printf 'agent_blocked' ;;
     *prompt_stalled*|*'no sign of taking'*|*'did not turn working'*) printf 'prompt_stalled' ;;
     *not_ready*|*'not ready'*|*'mid-turn'*) printf 'not_ready' ;;
-    # The daemon only queues for a pane it knows holds an agent. A harness it
-    # cannot attribute gets the pre-existing literal write instead, and that
-    # path never claims success.
-    *'runs no agent tuios knows of'*) printf 'no_agent' ;;
+    # The daemon only queues for a pane it knows holds an agent. Delivery is
+    # queue-only, so a harness it cannot attribute is refused outright: nothing
+    # is typed into that terminal and nothing is retried.
+    *no_agent*|*'runs no agent tuios knows of'*) printf 'no_agent' ;;
     *) printf 'send-failed' ;;
   esac
 }
@@ -1055,17 +1288,6 @@ fm_backend_tuios_send_text_queue() {  # <target> <text> [expected-label] -> verd
   printf '%s' "$verdict"
 }
 
-fm_backend_tuios_send_text_raw() {  # <target> <text> [expected-label] -> verdict
-  local target=$1 text=$2 expected=${3:-}
-  # The pre-existing literal write, kept only for a pane the daemon knows holds
-  # no agent (so it can neither be queued for nor hold a classified prompt). It
-  # proves only that bytes reached the terminal, so it never claims a delivery
-  # and never retries.
-  fm_backend_tuios_send_literal "$target" "$text" "$expected" || { printf 'send-failed'; return 0; }
-  fm_backend_tuios_send_key "$target" Enter "$expected" >/dev/null 2>&1 || { printf 'uncertain-delivery'; return 0; }
-  printf 'uncertain-delivery'
-}
-
 fm_backend_tuios_send_text_submit() {  # <target> <text> <retries> <enter-sleep> <settle> [expected]
   local target=$1 text=$2 expected=${6:-} report state verdict
   # Agent-aware delivery. A pane the daemon reports as blocked is refused
@@ -1083,10 +1305,9 @@ fm_backend_tuios_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
     fi
   fi
   verdict=$(fm_backend_tuios_send_text_queue "$target" "$text" "$expected")
-  if [ "$verdict" = no_agent ]; then
-    fm_backend_tuios_send_text_raw "$target" "$text" "$expected"
-    return 0
-  fi
+  # Agent-targeted delivery is queue-only. A pane without an attributed agent
+  # is not a reason to type into its terminal: refuse rather than switching to
+  # a raw keyboard path whose delivery and prompt safety cannot be established.
   printf '%s' "$verdict"
 }
 

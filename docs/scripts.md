@@ -82,7 +82,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-afk-orca-launch.sh`  | Exact Orca daemon-terminal lifecycle for the away-mode launcher; requests no focus flag (real host focus behaviour is unverified), requests close only for the exact daemon terminal it created, and never creates a worktree, stops the runtime, or issues close for another terminal's tab (real create/cleanup semantics unverified) |
 | `sq-afk-tuios-launch.sh` | Exact, unattached TUIOS daemon-session lifecycle owned by the away-mode launcher        |
 | `sq-afk-pi-handoff.sh`   | Publish a durable Pi-native away-mode handoff request and observe its consumption acknowledgement |
-| `sq-afk-tuios-lab.sh`    | Guarded opt-in disposable TUIOS/Pi live verification for away-mode delivery             |
+| `sq-afk-tuios-lab.sh`    | Guarded opt-in disposable TUIOS/Pi live verification for away-mode delivery and the blocked-operator answer path |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
 | `sq-supervisor-native.sh` | Backend-neutral native supervisor delivery contract: endpoint binding, readiness, request submission, and consumed-ack retirement |
 | `sq-supervisor-target-lib.sh` | Resolve and validate the shared supervisor target and backend for the daemon and launcher |
@@ -118,7 +118,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-handoff-request.sh`      | Record, resolve, and list durable new-session handoff requests at milestone closes (docs/handoff-request.md) |
 | `sq-handoff-surface.sh`      | Mark pending handoff requests surfaced exactly once and print the handoff card (docs/handoff-request.md) |
 | `sq-classify-lib.sh`     | Shared wake-classification vocabulary and durable keyed-decision folds and scans     |
-| `sq-send.sh`             | Send one verified literal line or supported key through the target's recorded backend |
+| `sq-send.sh`             | Send one verified literal line, supported key, or exact TUIOS prompt answer through the target's recorded backend |
 | `sq-pane-grants.sh`      | Show, grant, or verify the one TUIOS pane grant supervision needs, with the copy-paste person command |
 | `sq-busy-lib.sh`         | Single owner of the semantic busy-state contract: verdicts, source attribution, and per-harness sources |
 | `sq-busy-event.sh`       | The only writer of a task's semantic busy-state record; arms an incarnation and applies lifecycle events |

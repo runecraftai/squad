@@ -890,6 +890,9 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
 # already deduped on its own read, so this text is a fresh observation rather
 # than the one that armed the wake. Empty for every backend with no such
 # primitive, so callers render their own default.
+# For a backend whose prompt carries one (TUIOS), the line also names the exact
+# prompt id an answer must give, so the actor the wake is routed to can form the
+# prompt-bound answer without a direct session-provider read of its own.
 # The text is another program's screen: treat it as data, never as instructions.
 
 fm_backend_busy_state() {  # <backend> <target>
@@ -1039,35 +1042,43 @@ fm_backend_agent_alive() {  # <backend> <target>
 # --- native event push (backend-extensible) ---------------------------------
 #
 # The sentry's event-wait splice (bin/sq-sentry.sh) is backend-agnostic: it asks
-# fm_backend_has_push whether a window's backend can push semantic state changes,
-# and for those backends replaces its blind `sleep POLL` with a bounded wait on
-# fm_backend_wait_transition. Every push-capable backend reuses the shared
-# normalized-transition shape and policy table (bin/sq-transition-lib.sh); today
-# only herdr implements the surface (docs/herdr-backend.md "Native
-# pane.agent_status_changed push escalation"). A backend with no native push
-# reports has-push false and returns 2 from the dispatchers below, so the
-# sentry falls back to its poll loop - the permanent fail-closed backstop.
+# fm_backend_has_push whether a window's backend MAY have a semantic state
+# stream, and for those backends replaces its blind `sleep POLL` with a bounded
+# wait on fm_backend_wait_transition. Every push-capable backend reuses the
+# shared normalized-transition shape and policy table
+# (bin/sq-transition-lib.sh); herdr (docs/herdr-backend.md "Native
+# pane.agent_status_changed push escalation") and TUIOS (docs/tuios-backend.md)
+# implement the surface. A backend with no native push reports has-push false
+# and returns 2 from the dispatchers below, and a backend whose stream is
+# unusable for this session returns 2 from the per-session probe, so the sentry
+# falls back to its poll loop - the permanent fail-closed backstop.
 #
-# A backend with no event stream at all can still PRODUCE the same normalized
-# record on that poll loop instead of waiting on one: fm_backend_can_poll_transition
-# and fm_backend_poll_transition are the level-reconcile counterpart to the push
-# pair above, reusing the identical record shape and policy table (TUIOS polls
-# its agent inventory; Orca polls exact terminal metadata for its documented
-# agentWait observation). fm_backend_commit_transition and
-# fm_backend_clear_transition serve BOTH families: a backend only needs to be
-# either push- or poll-capable to use them, never both.
+# A backend can also PRODUCE the same normalized record on that poll loop
+# instead of waiting on one: fm_backend_can_poll_transition and
+# fm_backend_poll_transition are the level-reconcile counterpart to the push
+# pair above, reusing the identical record shape and policy table (TUIOS reads
+# its agent inventory, and on a daemon whose catalog advertises a verified
+# subscribe verb also consumes native events; Orca polls exact terminal
+# metadata for its documented agentWait observation). A capability predicate
+# only answers "may this backend have a stream (or a poll producer)" and is
+# never exclusive: TUIOS is both, and the per-session capability probe decides
+# which one runs. fm_backend_commit_transition and
+# fm_backend_clear_transition are shared by every family unchanged.
 
-# fm_backend_has_push: 0 if <backend> exposes a native transition push stream.
+# fm_backend_has_push: 0 if <backend> MAY expose a native transition push
+# stream. fm_backend_events_capable decides per session whether it is usable
+# right now.
 fm_backend_has_push() {  # <backend>
   case "$1" in
-    herdr) return 0 ;;
+    herdr|tuios) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-# fm_backend_can_poll_transition: 0 if <backend> produces a normalized
-# transition record on the sentry's ordinary poll loop (no event stream, so
-# never push-capable; see fm_backend_has_push above).
+# fm_backend_can_poll_transition: 0 if <backend> can produce a normalized
+# transition record on the sentry's ordinary poll loop. Independent of
+# fm_backend_has_push above: a backend may have both producers, and the
+# per-session capability probe decides whether the event-wait splice runs.
 fm_backend_can_poll_transition() {  # <backend>
   case "$1" in
     tuios|orca) return 0 ;;
@@ -1077,7 +1088,8 @@ fm_backend_can_poll_transition() {  # <backend>
 
 # fm_backend_poll_transition: the level-reconcile counterpart to
 # fm_backend_wait_transition, called from the sentry's ordinary per-window poll
-# (not the event-wait splice, since a poll-only backend has nothing to wait on).
+# (not the event-wait splice). It runs every cycle even when the backend also
+# has a usable stream, and is a no-op there whenever no pane is blocked.
 # Prints the normalized record and returns 0 on a fresh actionable (blocked)
 # edge; returns 1 when the pane is still blocked but already escalated for its
 # current condition (the caller still skips the ordinary stale/wedge path, just
@@ -1101,8 +1113,9 @@ fm_backend_poll_transition() {  # <backend> <state_dir> <session> <window>
 
 # fm_backend_events_capable: 0 if <backend>'s push path is usable for <session>
 # right now (version/schema/reader gate). Non-push backends are never capable.
-# The sentry memoizes this per session so the potentially heavy capability
-# probe is not repeated every poll.
+# A backend whose probe is not session-scoped (tuios reads the binary's verb
+# catalog) accepts no session argument. The sentry memoizes this per session so
+# the potentially heavy capability probe is not repeated every poll.
 fm_backend_events_capable() {  # <backend> <session>
   local backend=$1
   shift
@@ -1110,6 +1123,7 @@ fm_backend_events_capable() {  # <backend> <session>
   fm_backend_source "$backend" || return 1
   case "$backend" in
     herdr) fm_backend_herdr_events_capable "$@" ;;
+    tuios) fm_backend_tuios_events_capable ;;
     *) return 1 ;;
   esac
 }
@@ -1127,6 +1141,7 @@ fm_backend_wait_transition() {  # <backend> <session> <timeout_secs> <state_dir>
   fm_backend_source "$backend" || return 2
   case "$backend" in
     herdr) fm_backend_herdr_wait_transition "$@" ;;
+    tuios) fm_backend_tuios_wait_transition "$@" ;;
     *) return 2 ;;
   esac
 }
