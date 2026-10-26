@@ -34,7 +34,7 @@ The registry inventory command is:
 find .agents/skills/execution-playbooks -maxdepth 2 -type f -print | sort
 ```
 
-Its expected output contains `SKILL.md` and the reference files for all thirteen selectable execution playbook contracts plus the React profile.
+Its expected output contains `SKILL.md`, the reference files for all thirteen selectable execution playbook contracts plus the React profile, and the four gate files under `.agents/skills/execution-playbooks/rules/`.
 
 ## Deferred and auxiliary policy
 

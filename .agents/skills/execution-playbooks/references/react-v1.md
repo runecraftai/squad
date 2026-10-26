@@ -67,7 +67,7 @@ Do not move unrelated business logic into `shared` merely to empty a component.
 
 ## D3: proposed amalgamated oxlint rules
 
-This is a proposal for commander deliberation, not an approved configuration or permission to install or replace project tooling.
+This is a proposal for commander deliberation, not an approved configuration or permission to install or replace project tooling beyond the route gate below.
 Each row is individually reviewable; record accepted, rejected, or pending decisions rather than silently adopting another repository's preset.
 The candidate configuration combines hook correctness, component declarations, reconciliation, JSX correctness, unsafe rendering, refresh boundaries, and code-based routing using oxlint's native `react` plugin plus the Squad custom rule `no-filesystem-routes`.
 Enable these explicit rules rather than every React rule or a Next.js preset.
