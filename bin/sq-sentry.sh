@@ -216,6 +216,16 @@ EVENT_CAP_FAIL_MAX=${SQUAD_EVENT_CAP_FAIL_MAX:-3}
 _event_cap_key=""
 _event_cap_ok=0
 _event_cap_fails=0
+# The shared current-state projection behind window_is_terminal_and_agentless
+# forks sq-crew-state.sh, which may make a bounded drill call. The sentry keeps
+# its verdict per task for one generation instead of re-reading it for every
+# agentless window on every poll: a generation is the recorded dispatch state
+# plus the live meta/status signatures that projection consumes, refreshed at
+# most once per TERMINAL_PROBE_SECS so an external transition (a drill run that
+# reaches a terminal step) is still picked up while the pane stays agentless.
+TERMINAL_PROBE_SECS=300
+_terminal_probe_memo=""
+_terminal_probe_hit=""
 
 # afk_present: 0 while the away-mode flag exists. When set, the daemon wraps this
 # sentry and owns triage, so the sentry must behave one-shot (enqueue + exit on
@@ -247,6 +257,43 @@ window_is_busy() {  # <window> <tail40>
   [ "${verdict%% *}" = busy ]
 }
 
+# terminal_probe_lookup: 0 when a memoized verdict for <task> at <signature> is
+# still within TERMINAL_PROBE_SECS, leaving it in _terminal_probe_hit.
+terminal_probe_lookup() {  # <task> <signature>
+  local task=$1 sig=$2 line age verdict now=
+  _terminal_probe_hit=""
+  while IFS= read -r line; do
+    [ "${line%%$'\t'*}" = "$task" ] || continue
+    line=${line#*$'\t'}
+    [ "${line%%$'\t'*}" = "$sig" ] || continue
+    line=${line#*$'\t'}
+    age=${line%%$'\t'*}
+    verdict=${line#*$'\t'}
+    case "$age" in ''|*[!0-9]*) return 1 ;; esac
+    [ -n "$now" ] || now=$(date +%s)
+    [ $(( now - age )) -lt "$TERMINAL_PROBE_SECS" ] || return 1
+    _terminal_probe_hit=$verdict
+    return 0
+  done <<EOF
+$_terminal_probe_memo
+EOF
+  return 1
+}
+
+# terminal_probe_remember: store <verdict> for <task> at <signature>, replacing
+# that task's previous generation.
+terminal_probe_remember() {  # <task> <signature> <verdict>
+  local task=$1 sig=$2 verdict=$3 kept="" line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [ "${line%%$'\t'*}" = "$task" ] && continue
+    kept="$kept$line"$'\n'
+  done <<EOF
+$_terminal_probe_memo
+EOF
+  _terminal_probe_memo="$kept$task"$'\t'"$sig"$'\t'"$(date +%s)"$'\t'"$verdict"$'\n'
+}
+
 # A window whose execution is released or otherwise terminal and whose recorded
 # pane has no attributable agent has no live work left to wedge, so it must not
 # enter the stale clock at all. The recorded dispatch state is read in place
@@ -254,11 +301,12 @@ window_is_busy() {  # <window> <tail40>
 # sq-exec-state.sh per window per poll), and only an agentless pane whose record
 # is not already released pays for the shared terminal projection the stale path
 # already trusts: operator_is_finished over sq-crew-state.sh, which reports a
-# terminal drill run as a finished crew. Attribution is rechecked every poll, so
-# an agent that appears again resumes ordinary supervision immediately instead
-# of inheriting a terminal latch.
+# terminal drill run as a finished crew. That projection is memoized per task
+# generation, and attribution is rechecked every poll, so an agent that appears
+# again resumes ordinary supervision immediately instead of inheriting a
+# terminal latch.
 window_is_terminal_and_agentless() {  # <window> <task>
-  local w=$1 task=$2 recorded
+  local w=$1 task=$2 recorded sig
   [ -n "$task" ] && [ -f "$STATE/$task.exec" ] || return 1
   recorded=$(field exec_state "$task")
   case "$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)" in
@@ -266,7 +314,17 @@ window_is_terminal_and_agentless() {  # <window> <task>
     *) return 1 ;;
   esac
   [ "$recorded" = released ] && return 0
-  operator_is_finished "$task"
+  sig="$recorded|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")"
+  if terminal_probe_lookup "$task" "$sig"; then
+    [ "$_terminal_probe_hit" = terminal ]
+    return
+  fi
+  if operator_is_finished "$task"; then
+    terminal_probe_remember "$task" "$sig" terminal
+    return 0
+  fi
+  terminal_probe_remember "$task" "$sig" open
+  return 1
 }
 
 window_kind() {

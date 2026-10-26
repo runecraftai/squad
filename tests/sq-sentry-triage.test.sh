@@ -3044,6 +3044,55 @@ test_agentless_window_with_unretired_terminal_execution_skips_stale() {
   pass "a terminal execution with an unretired dispatch record skips stale, while a non-terminal agentless pane still escalates"
 }
 
+# The shared current-state projection forks sq-crew-state.sh, which may make a
+# bounded drill call, so an outage population of agentless panes must not pay for
+# it once per window per poll. The sentry memoizes the verdict per task
+# generation and re-reads it when that generation changes.
+test_terminal_projection_is_memoized_per_task_generation() {
+  local dir state fakebin window calls verdicts
+  dir=$(make_case terminal-probe-memo); state="$dir/state"; fakebin="$dir/fakebin"
+  window="test:sq-terminal-probe-memo"
+  calls="$dir/crew-state.calls"
+  : > "$calls"
+  cat > "$fakebin/sq-crew-state.sh" <<SH
+#!/usr/bin/env bash
+printf 'read\n' >> '$calls'
+printf '%s\n' "\${SQUAD_FAKE_CREW_STATE:-state: unknown · source: none · fake default}"
+exit 0
+SH
+  chmod +x "$fakebin/sq-crew-state.sh"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/memo.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/memo.status"
+  printf 'bash\n' > "$dir/command.txt"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" claim memo >/dev/null \
+    || fail "could not claim the memo fixture"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition memo running >/dev/null \
+    || fail "could not create the running memo fixture"
+
+  verdicts=$(PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_ROOT_OVERRIDE="$ROOT" \
+    SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_COMMAND_FILE="$dir/command.txt" \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    bash -c '. "$1" || exit 1
+      i=0
+      while [ "$i" -lt 5 ]; do
+        if window_is_terminal_and_agentless "$2" memo; then echo terminal; else echo open; fi
+        i=$((i + 1))
+      done
+      printf "working: resumed\n" >> "$SQUAD_STATE_OVERRIDE/memo.status"
+      SQUAD_FAKE_CREW_STATE="state: stopped · source: pane · bare shell"
+      export SQUAD_FAKE_CREW_STATE
+      if window_is_terminal_and_agentless "$2" memo; then echo terminal; else echo open; fi' \
+    _ "$WATCH" "$window") || fail "could not drive the terminal projection"
+  [ "$(printf '%s\n' "$verdicts" | sed -n '1,5p' | sort -u)" = terminal ] \
+    || fail "an agentless terminal window was not read as terminal on every poll: $verdicts"
+  [ "$(printf '%s\n' "$verdicts" | tail -1)" = open ] \
+    || fail "a changed generation did not re-read the terminal projection: $verdicts"
+  [ "$(wc -l < "$calls" | tr -d ' ')" = 2 ] \
+    || fail "the terminal projection ran $(wc -l < "$calls" | tr -d ' ') times across six polls of one task, expected once per generation"
+  pass "the terminal projection is read once per task generation, not once per agentless window per poll"
+}
+
 test_busy_static_finished_task_is_absorbed_without_alarm() {
   local dir state fakebin out capture_file window key sig pid
   dir=$(make_case busy-static-finished); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4238,6 +4287,7 @@ test_busy_static_pane_without_readable_viewport_never_expires
 test_busy_static_unreadable_viewport_logs_limitation_once
 test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
 test_agentless_window_with_unretired_terminal_execution_skips_stale
+test_terminal_projection_is_memoized_per_task_generation
 test_busy_static_finished_task_is_absorbed_without_alarm
 test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced
