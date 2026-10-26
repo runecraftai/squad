@@ -211,6 +211,10 @@ test("the verification command catches every banned pattern and an uncommitted r
         'export async function loadTree() {\n  const { routeTree } = await import("./routeTree.gen");\n  return routeTree;\n}\n',
       "suppressed createFileRoute":
         'import { createFileRoute } from "@tanstack/react-router";\n// oxlint-disable-next-line squad/no-filesystem-routes\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
+      "named suppression after a regex literal":
+        'import { createFileRoute } from "@tanstack/react-router";\nconst scheme = /^https?:\\/\\//; /* oxlint-disable squad/no-filesystem-routes */\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
+      "bare suppression after a regex literal":
+        'import { createFileRoute } from "@tanstack/react-router";\nconst scheme = /^https?:\\/\\//; /* oxlint-disable */\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
       "bare suppression directive":
         '// oxlint-disable\nimport { createFileRoute } from "@tanstack/react-router";\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
     };
@@ -232,10 +236,14 @@ test("the verification command ignores suppression text outside comments and acc
   try {
     fs.writeFileSync(
       routeFile(dir),
-      'import { createRootRoute, createRoute } from "@tanstack/react-router";\nexport const note = "prefix /* oxlint-disable */ suffix";\nexport const Route = createRoute({});\n',
+      'import { createRootRoute, createRoute } from "@tanstack/react-router";\nexport const scheme = /^https?:\\/\\//;\nexport const note = "prefix /* oxlint-disable */ suffix";\nexport const Route = createRoute({});\n',
     );
     const stringResult = runVerifier(dir);
-    assert.equal(stringResult.status, 0, `a string containing a directive token must not fail the command:\n${output(stringResult)}`);
+    assert.equal(
+      stringResult.status,
+      0,
+      `a regex literal and a string containing directive text must not fail the command:\n${output(stringResult)}`,
+    );
 
     fs.writeFileSync(
       routeFile(dir),

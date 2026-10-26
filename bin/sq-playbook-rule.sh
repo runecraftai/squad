@@ -56,8 +56,14 @@ install_package_scripts() {
   node - "$PACKAGE" "$RULE_COMMAND" <<'NODE'
 const fs = require("node:fs");
 const [file, command] = process.argv.slice(2);
-const packageJson = JSON.parse(fs.readFileSync(file, "utf8"));
+const text = fs.readFileSync(file, "utf8");
+const packageJson = JSON.parse(text);
 packageJson.scripts = packageJson.scripts ?? {};
+const existing = packageJson.scripts["verify:routes"];
+if (typeof existing === "string" && existing !== command) {
+  console.error(`error: ${file} already defines scripts.verify:routes as "${existing}"; rename it or point it at ${command}`);
+  process.exit(1);
+}
 const previous = JSON.stringify(packageJson.scripts);
 packageJson.scripts["verify:routes"] = command;
 const prebuild = packageJson.scripts.prebuild;
@@ -69,7 +75,10 @@ if (typeof prebuild !== "string") {
 if (JSON.stringify(packageJson.scripts) === previous) {
   console.log("unchanged: package.json scripts.verify:routes and scripts.prebuild");
 } else {
-  fs.writeFileSync(file, `${JSON.stringify(packageJson, null, 2)}\n`);
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const indentation = (text.match(/^([ \t]+)"/m) ?? [])[1] ?? "  ";
+  const trailing = /\r?\n$/.test(text) ? eol : "";
+  fs.writeFileSync(file, JSON.stringify(packageJson, null, indentation).replace(/\n/g, eol) + trailing);
   console.log("updated: package.json scripts.verify:routes and scripts.prebuild");
 }
 NODE
@@ -115,21 +124,34 @@ workflow_takes_job() {  # <file>
   ' "$1"
 }
 
+workflow_runs_on_changes() {  # <file>
+  awk '
+    /^on:[[:space:]]*\[/ { if ($0 ~ /(push|pull_request)/) found = 1 }
+    /^on:[[:space:]]+(push|pull_request)[[:space:]]*$/ { found = 1 }
+    /^on:[[:space:]]*$/ { inside = 1; next }
+    inside && /^[^[:space:]#]/ { inside = 0 }
+    inside && /^[[:space:]]+(push|pull_request):/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' "$1"
+}
+
 install_ci_check() {
   local candidate
   mkdir -p "$WORKFLOW_DIR"
   for candidate in "$WORKFLOW_DIR"/*.yml "$WORKFLOW_DIR"/*.yaml; do
     [ -f "$candidate" ] || continue
     if grep -q '^  filesystem-routes:[[:space:]]*$' "$candidate"; then
+      workflow_runs_on_changes "$candidate" || continue
       printf 'unchanged: %s filesystem-routes job\n' "${candidate#"$TARGET"/}"
       return 0
     fi
     workflow_takes_job "$candidate" || continue
+    workflow_runs_on_changes "$candidate" || continue
     {
       printf '\n'
       workflow_job
     } >>"$candidate"
-    printf 'updated: %s filesystem-routes job\n' "${candidate#"$TARGET"/}"
+    printf 'updated: %s filesystem-routes job (push or pull_request triggers)\n' "${candidate#"$TARGET"/}"
     return 0
   done
   if [ -f "$WORKFLOW_FILE" ] && grep -q '^  filesystem-routes:[[:space:]]*$' "$WORKFLOW_FILE"; then

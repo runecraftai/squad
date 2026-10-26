@@ -74,9 +74,9 @@ run_rule_check() {  # <check-file> <failure-label>
   fi
 }
 
-package_script() {  # <name>
+package_script() {  # <directory> <name>
   node -e 'const p = require(process.argv[1]); process.stdout.write(p.scripts?.[process.argv[2]] ?? "")' \
-    "$PROJECT/package.json" "$1"
+    "$1/package.json" "$2"
 }
 
 # workflow_jobs <file>: the job keys defined under jobs:, one per line.
@@ -149,9 +149,9 @@ assert_contains "$(workflow_jobs "$PROJECT/.github/workflows/ci.yml")" "test" \
   "the installer must preserve the project's existing CI job"
 assert_contains "$workflow_runs" "npm run verify:routes" \
   "the added CI job must run the project's verification script"
-[ "$(package_script verify:routes)" = "node tools/oxlint/verify-no-filesystem-routes.mjs" ] \
+[ "$(package_script "$PROJECT" verify:routes)" = "node tools/oxlint/verify-no-filesystem-routes.mjs" ] \
   || fail "the installer did not add the verify:routes package script"
-assert_contains "$(package_script prebuild)" "node tools/oxlint/verify-no-filesystem-routes.mjs" \
+assert_contains "$(package_script "$PROJECT" prebuild)" "node tools/oxlint/verify-no-filesystem-routes.mjs" \
   "the installer did not connect the verifier to the build script"
 
 install_out=$("$RULE_INSTALL" install "$PROJECT" 2>&1); status=$?
@@ -169,7 +169,7 @@ for file in $RULE_FILES; do
   printf 'stale copy\n' > "$PROJECT/tools/oxlint/$file"
 done
 printf 'stale copy\n' > "$PROJECT/tools/oxlint/no-filesystem-routes.check.mjs"
-node -e 'const fs = require("node:fs"); const file = process.argv[1]; const p = JSON.parse(fs.readFileSync(file, "utf8")); p.scripts["verify:routes"] = "echo stale"; p.scripts.prebuild = "echo stale"; fs.writeFileSync(file, JSON.stringify(p, null, 2) + "\n");' \
+node -e 'const fs = require("node:fs"); const file = process.argv[1]; const p = JSON.parse(fs.readFileSync(file, "utf8")); p.scripts.prebuild = "echo stale"; fs.writeFileSync(file, JSON.stringify(p, null, 2) + "\n");' \
   "$PROJECT/package.json"
 install_out=$("$RULE_INSTALL" install "$PROJECT" 2>&1); status=$?
 expect_code 0 "$status" "restoring stale project copies should succeed"
@@ -181,9 +181,9 @@ for file in $RULE_FILES; do
   cmp -s "$RULES_DIR/$file" "$PROJECT/tools/oxlint/$file" \
     || fail "the installer did not restore the authoritative $file over a stale copy"
 done
-[ "$(package_script verify:routes)" = "node tools/oxlint/verify-no-filesystem-routes.mjs" ] \
+[ "$(package_script "$PROJECT" verify:routes)" = "node tools/oxlint/verify-no-filesystem-routes.mjs" ] \
   || fail "the installer did not restore the verify:routes package script"
-assert_contains "$(package_script prebuild)" "node tools/oxlint/verify-no-filesystem-routes.mjs" \
+assert_contains "$(package_script "$PROJECT" prebuild)" "node tools/oxlint/verify-no-filesystem-routes.mjs" \
   "the installer did not restore the verifier in the build script"
 
 run_rule_check "$PROJECT/tools/oxlint/no-filesystem-routes.node-check.mjs" \
@@ -246,6 +246,67 @@ assert_contains "$install_out" "created: .github/workflows/no-filesystem-routes.
   "the installer did not report its dedicated workflow"
 assert_contains "$(workflow_job_runs "$TMP_ROOT/no-workflow/.github/workflows/no-filesystem-routes.yml" filesystem-routes)" \
   "npm run verify:routes" "the created workflow must run the project's verification script"
+
+mkdir -p "$TMP_ROOT/deploy-only/.github/workflows"
+cat >"$TMP_ROOT/deploy-only/package.json" <<'JSON'
+{ "name": "deploy-only", "private": true }
+JSON
+cat >"$TMP_ROOT/deploy-only/.github/workflows/deploy.yml" <<'YAML'
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo deploy
+YAML
+install_out=$("$RULE_INSTALL" install "$TMP_ROOT/deploy-only" 2>&1); status=$?
+expect_code 0 "$status" "installing into a project with only a manual workflow should succeed"
+assert_contains "$install_out" "created: .github/workflows/no-filesystem-routes.yml" \
+  "the installer must not append the gate to a workflow that never runs on push or pull_request"
+assert_not_contains "$(workflow_jobs "$TMP_ROOT/deploy-only/.github/workflows/deploy.yml")" "filesystem-routes" \
+  "a manual-only workflow must not receive the route gate job"
+assert_contains "$(workflow_job_runs "$TMP_ROOT/deploy-only/.github/workflows/no-filesystem-routes.yml" filesystem-routes)" \
+  "npm run verify:routes" "the dedicated workflow must run the project's verification script"
+
+mkdir -p "$TMP_ROOT/wide-package"
+cat >"$TMP_ROOT/wide-package/package.json" <<'JSON'
+{
+    "name": "wide-package",
+    "private": true,
+    "scripts": {
+        "build": "echo build"
+    }
+}
+JSON
+"$RULE_INSTALL" install "$TMP_ROOT/wide-package" >/dev/null 2>&1 \
+  || fail "installing into a four-space-indented package.json should succeed"
+assert_grep '    "name": "wide-package",' "$TMP_ROOT/wide-package/package.json" \
+  "the installer must preserve the project's four-space indentation"
+[ "$(tail -c 1 "$TMP_ROOT/wide-package/package.json" | od -An -tx1 | tr -d ' \n')" = "0a" ] \
+  || fail "the installer must preserve the package.json trailing newline"
+[ "$(package_script "$TMP_ROOT/wide-package" verify:routes)" = "node tools/oxlint/verify-no-filesystem-routes.mjs" ] \
+  || fail "the installer did not add verify:routes to the four-space package.json"
+
+mkdir -p "$TMP_ROOT/conflict"
+cat >"$TMP_ROOT/conflict/package.json" <<'JSON'
+{
+  "name": "conflict",
+  "private": true,
+  "scripts": {
+    "verify:routes": "tsx tools/check-routes.ts"
+  }
+}
+JSON
+out=$("$RULE_INSTALL" install "$TMP_ROOT/conflict" 2>&1); status=$?
+[ "$status" -ne 0 ] || fail "installing over a different project verify:routes script must fail"
+assert_contains "$out" "already defines scripts.verify:routes" \
+  "the conflicting-script refusal must name the existing script"
+[ "$(package_script "$TMP_ROOT/conflict" verify:routes)" = "tsx tools/check-routes.ts" ] \
+  || fail "the installer must not overwrite the project's existing verify:routes command"
 
 out=$("$RULE_INSTALL" install "$TMP_ROOT/missing" 2>&1); status=$?
 [ "$status" -ne 0 ] || fail "installing into a missing project directory must fail"
