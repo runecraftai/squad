@@ -76,8 +76,9 @@
 #                          decision whose dispatch record was never released.
 #                          Attribution is reread on every poll, so an agent
 #                          reappearing in that window resumes ordinary stale
-#                          supervision at once. A fresh terminal verdict is
-#                          recorded once per generation in the triage log.
+#                          supervision at once, and the first agentless skip of
+#                          one unchanged generation is recorded once in the triage
+#                          log.
 #                          The away-mode daemon applies the same terminal-plus-
 #                          agentless boundary to its catch-all scan and pause
 #                          migration, so a skipped task stays quiet there too.
@@ -230,14 +231,17 @@ _event_cap_ok=0
 _event_cap_fails=0
 # The shared current-state projection behind window_is_terminal_and_agentless
 # forks sq-crew-state.sh, which may make a bounded drill call. The sentry keeps
-# its verdict per task for one generation instead of re-reading it for every
-# agentless window on every poll: a generation is the recorded dispatch state
-# plus the live meta/status signatures that projection consumes, refreshed at
-# most once per TERMINAL_PROBE_SECS so an external transition (a drill run that
-# reaches a terminal step) is still picked up while the pane stays agentless.
+# its verdict per task generation instead of re-reading it for every agentless
+# window on every poll: a generation is the recorded dispatch state, the pane's
+# agent attribution, and the live meta/status/busy-record/dispatch signatures
+# that projection consumes, refreshed at most once per TERMINAL_PROBE_SECS so an
+# external transition (a drill run that reaches a terminal step) is still picked
+# up while the pane stays agentless.
 TERMINAL_PROBE_SECS=300
 _terminal_probe_memo=""
 _terminal_probe_hit=""
+_terminal_probe_logged=""
+_terminal_probe_age=""
 
 # afk_present: 0 while the away-mode flag exists. When set, the daemon wraps this
 # sentry and owns triage, so the sentry must behave one-shot (enqueue + exit on
@@ -270,21 +274,30 @@ window_is_busy() {  # <window> <tail40>
 }
 
 # terminal_probe_lookup: 0 when a memoized verdict for <task> at <signature> is
-# still within TERMINAL_PROBE_SECS, leaving it in _terminal_probe_hit.
+# still within TERMINAL_PROBE_SECS, leaving it in _terminal_probe_hit, with its
+# bounded-trace state in _terminal_probe_logged and its record time in
+# _terminal_probe_age.
 terminal_probe_lookup() {  # <task> <signature>
-  local task=$1 sig=$2 line age verdict now=
+  local task=$1 sig=$2 line age verdict logged now=
   _terminal_probe_hit=""
+  _terminal_probe_logged=""
+  _terminal_probe_age=""
   while IFS= read -r line; do
     [ "${line%%$'\t'*}" = "$task" ] || continue
     line=${line#*$'\t'}
     [ "${line%%$'\t'*}" = "$sig" ] || continue
     line=${line#*$'\t'}
     age=${line%%$'\t'*}
-    verdict=${line#*$'\t'}
+    line=${line#*$'\t'}
+    verdict=${line%%$'\t'*}
+    logged=${line#*$'\t'}
     case "$age" in ''|*[!0-9]*) return 1 ;; esac
     [ -n "$now" ] || now=$(date +%s)
     [ $(( now - age )) -lt "$TERMINAL_PROBE_SECS" ] || return 1
+    case "$logged" in 0|1) ;; *) logged=0 ;; esac
     _terminal_probe_hit=$verdict
+    _terminal_probe_logged=$logged
+    _terminal_probe_age=$age
     return 0
   done <<EOF
 $_terminal_probe_memo
@@ -292,12 +305,14 @@ EOF
   return 1
 }
 
-# terminal_probe_remember: store <verdict> for <task> at <signature>, replacing
-# that task's previous generation and dropping the generations of tasks whose
-# metadata is gone, so a long-lived sentry's memo stays bounded by the live
-# supervision set.
-terminal_probe_remember() {  # <task> <signature> <verdict>
-  local task=$1 sig=$2 verdict=$3 kept="" line
+# terminal_probe_store: replace <task>'s memo entry with <signature> <verdict>
+# <logged>, recorded at <recorded-at> (default now) so marking an existing
+# generation as traced does not extend its own refresh, and dropping the
+# generations of tasks whose metadata is gone so a long-lived sentry's memo
+# stays bounded by the live supervision set.
+terminal_probe_store() {  # <task> <signature> <verdict> <logged> [recorded-at]
+  local task=$1 sig=$2 verdict=$3 logged=$4 at=${5:-} kept="" line
+  [ -n "$at" ] || at=$(date +%s)
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     [ "${line%%$'\t'*}" = "$task" ] && continue
@@ -306,49 +321,56 @@ terminal_probe_remember() {  # <task> <signature> <verdict>
   done <<EOF
 $_terminal_probe_memo
 EOF
-  _terminal_probe_memo="$kept$task"$'\t'"$sig"$'\t'"$(date +%s)"$'\t'"$verdict"$'\n'
+  _terminal_probe_memo="$kept$task"$'\t'"$sig"$'\t'"$at"$'\t'"$verdict"$'\t'"$logged"$'\n'
 }
 
 # A window whose execution is genuinely terminal and whose recorded pane has no
 # attributable agent has no live work left to wedge, so it must not enter the
-# stale clock at all. The recorded dispatch state is read in place through the
-# shared task_recorded_exec_state (bin/sq-classify-lib.sh), never a forked
-# sq-exec-state.sh per window per poll, and the shared terminal projection
-# (task_execution_is_terminal in bin/sq-classify-lib.sh) decides it for every
-# dispatch state: a released record still reports a live or gate-parked run as
-# running, and a record whose teardown was refused keeps exactly the busy claim
-# that outlived its operator, so neither the release alone nor a done/failed
-# check settles the execution side. The projection is memoized per task
-# generation so it is not re-read per window per poll, and only a terminal
-# verdict then pays for the pane's agent attribution - the read that costs a
-# backend probe - because a live agent is the one case a terminal execution is
-# still supervised. A fresh terminal verdict is logged once per generation, so a
-# window that stops escalating is visible in the field. A retained record with
-# no dispatch sidecar - meta published before the claim that never landed, or
-# removed before the meta on an interrupted teardown - has no recorded state to
-# read and is judged by that projection alone. Attribution is rechecked every
-# poll, so an agent that appears again resumes ordinary supervision immediately
-# instead of inheriting a terminal latch.
+# stale clock at all. Attribution is read first, so a live or ambiguously read
+# pane keeps ordinary supervision (and never inherits, or pays for, a projection
+# verdict), and only a confidently agentless pane can be skipped. The recorded
+# dispatch state is read in place through the shared task_recorded_exec_state
+# (bin/sq-classify-lib.sh), never a forked sq-exec-state.sh per window per poll,
+# and the shared terminal projection (task_execution_is_terminal in
+# bin/sq-classify-lib.sh) decides it for every dispatch state: a released record
+# still reports a live or gate-parked run as running, and a record whose
+# teardown was refused keeps exactly the busy claim that outlived its operator,
+# so neither the release alone nor a done/failed check settles the execution
+# side. The verdict is memoized per task generation, which carries the
+# attribution and the busy-record/dispatch signatures the projection consumes,
+# so a claim that clears, another attempt that starts, or an agent that returns
+# all re-read it instead of inheriting a terminal latch, and within one
+# unchanged generation the first agentless skip is logged once, so a window that
+# stops escalating is visible in the field without a per-poll trace. A retained
+# record with no dispatch sidecar - meta published before the claim that never
+# landed, or removed before the meta on an interrupted teardown - has no
+# recorded state to read and is judged by that projection alone.
 window_is_terminal_and_agentless() {  # <window> <task>
-  local w=$1 task=$2 recorded sig fresh=0
+  local w=$1 task=$2 recorded sig attr
   [ -n "$task" ] || return 1
+  attr=$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)
+  case "$attr" in
+    dead|missing) ;;
+    *) return 1 ;;
+  esac
   recorded=$(task_recorded_exec_state "$STATE" "$task")
-  sig="$recorded|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")"
+  sig="$recorded|$attr|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")|$(stat_sig "$(fm_busy_record_path "$STATE" "$task")")|$(stat_sig "$STATE/$task.exec")"
   if terminal_probe_lookup "$task" "$sig"; then
     [ "$_terminal_probe_hit" = terminal ] || return 1
-  elif task_execution_is_terminal "$STATE" "$task" "$recorded"; then
-    terminal_probe_remember "$task" "$sig" terminal
-    fresh=1
+    if [ "$_terminal_probe_logged" != 1 ]; then
+      terminal_probe_store "$task" "$sig" terminal 1 "$_terminal_probe_age"
+      triage_log "skipped stale supervision (terminal execution, agentless window): $w"
+    fi
+    return 0
+  fi
+  if task_execution_is_terminal "$STATE" "$task" "$recorded"; then
+    terminal_probe_store "$task" "$sig" terminal 1
+    triage_log "skipped stale supervision (terminal execution, agentless window): $w"
   else
-    terminal_probe_remember "$task" "$sig" open
+    terminal_probe_store "$task" "$sig" open 0
     return 1
   fi
-  case "$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)" in
-    dead|missing)
-      [ "$fresh" -eq 0 ] || triage_log "skipped stale supervision (terminal execution, agentless window): $w"
-      return 0 ;;
-  esac
-  return 1
+  return 0
 }
 
 window_kind() {
