@@ -281,12 +281,15 @@ EOF
 }
 
 # terminal_probe_remember: store <verdict> for <task> at <signature>, replacing
-# that task's previous generation.
+# that task's previous generation and dropping the generations of tasks whose
+# metadata is gone, so a long-lived sentry's memo stays bounded by the live
+# supervision set.
 terminal_probe_remember() {  # <task> <signature> <verdict>
   local task=$1 sig=$2 verdict=$3 kept="" line
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     [ "${line%%$'\t'*}" = "$task" ] && continue
+    [ -e "$STATE/${line%%$'\t'*}.meta" ] || continue
     kept="$kept$line"$'\n'
   done <<EOF
 $_terminal_probe_memo
@@ -298,35 +301,37 @@ EOF
 # pane has no attributable agent has no live work left to wedge, so it must not
 # enter the stale clock at all. The recorded dispatch state is read in place
 # (the same `exec_state=` field bin/sq-stall-detect.sh reads, never a forked
-# sq-exec-state.sh per window per poll), and only an agentless pane whose record
-# is not already released pays for the shared terminal projection the stale path
-# already trusts: operator_is_finished over sq-crew-state.sh, which reports a
-# terminal drill run as a finished crew. A retained record with no dispatch
-# sidecar - meta published before the claim that never landed, or removed before
-# the meta on an interrupted teardown - has no recorded state to read and is
-# judged by that projection alone. That projection is memoized per task
-# generation, and attribution is rechecked every poll, so an agent that appears
-# again resumes ordinary supervision immediately instead of inheriting a
-# terminal latch.
+# sq-exec-state.sh per window per poll). A release settles the execution side on
+# its own; every other record is first judged by the shared terminal projection
+# the stale path already trusts (operator_is_finished over sq-crew-state.sh,
+# which reports a terminal drill run as a finished crew), memoized per task
+# generation so it is not re-read per window per poll, and only a terminal
+# verdict then pays for the pane's agent attribution - the read that costs a
+# backend probe - because a live agent is the one case a terminal execution is
+# still supervised. A retained record with no dispatch sidecar - meta published
+# before the claim that never landed, or removed before the meta on an
+# interrupted teardown - has no recorded state to read and is judged by that
+# projection alone. Attribution is rechecked every poll, so an agent that
+# appears again resumes ordinary supervision immediately instead of inheriting
+# a terminal latch.
 window_is_terminal_and_agentless() {  # <window> <task>
   local w=$1 task=$2 recorded sig
   [ -n "$task" ] || return 1
   recorded=$(field exec_state "$task")
+  if [ "$recorded" != released ]; then
+    sig="$recorded|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")"
+    if terminal_probe_lookup "$task" "$sig"; then
+      [ "$_terminal_probe_hit" = terminal ] || return 1
+    elif operator_is_finished "$task"; then
+      terminal_probe_remember "$task" "$sig" terminal
+    else
+      terminal_probe_remember "$task" "$sig" open
+      return 1
+    fi
+  fi
   case "$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)" in
-    dead|missing) ;;
-    *) return 1 ;;
+    dead|missing) return 0 ;;
   esac
-  [ "$recorded" = released ] && return 0
-  sig="$recorded|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")"
-  if terminal_probe_lookup "$task" "$sig"; then
-    [ "$_terminal_probe_hit" = terminal ]
-    return
-  fi
-  if operator_is_finished "$task"; then
-    terminal_probe_remember "$task" "$sig" terminal
-    return 0
-  fi
-  terminal_probe_remember "$task" "$sig" open
   return 1
 }
 
