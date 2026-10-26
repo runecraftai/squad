@@ -50,7 +50,11 @@
 #     gets its own longer PAUSE_RESURFACE_SECS recheck rather than a wedge
 #     escalation, but a pause cannot hide unfinished work: the sentry's named
 #     pause-era evidence (idle dirty worktree, aged-out declared pause, stuck
-#     pane signature) escalates through the normal digest instead.
+#     pane signature) escalates through the normal digest. A window whose
+#     execution is genuinely terminal and whose pane has no attributable agent
+#     is the exception: the sentry and this daemon exclude it from the stale
+#     clock and retire its task-keyed watcher markers, so none of that evidence
+#     applies to it.
 #     Operators are autonomous, so a delayed stale response does not stall a
 #     healthy operator's own progress.
 #     Buffered escalation delivery also has a max-defer alarm: if a digest stays
@@ -59,7 +63,9 @@
 #     alert if submit still cannot be confirmed.
 #   - Cheap heartbeat catch-all: every HEARTBEAT_SCAN_SECS the daemon greps all
 #     state/*.status for a commander-relevant line the per-wake classifier might
-#     have missed (e.g. a status verb outside COMMANDER_RE) and escalates it.
+#     have missed (e.g. a status verb outside COMMANDER_RE) and escalates it,
+#     leaving a terminal window with no attributable agent quiet and free of its
+#     task-keyed dedup markers.
 #
 # The robustness shell from the prior always-inject version is preserved:
 # single-instance lock (portable helper, no flock dependency), crash-loop
