@@ -127,6 +127,8 @@ test_no_profile_keeps_claude_profile_defaults() {
   expect_code 0 "$status" "claude spawn without profile flags should succeed"
   assert_contains "$out" "spawned $id harness=claude" "spawn did not report claude"
   assert_meta_profile "$HOME_DIR/state/$id.meta" claude default default
+  assert_absent "$WT_DIR/tools/oxlint/no-filesystem-routes.mjs" \
+    "a spawn without the react@1 profile must not install the React filesystem-route rule"
 
   launch=$(cat "$LAUNCH_LOG")
   expected="CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions \"\$('${ROOT}/bin/sq-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/brief.md')\""
@@ -827,6 +829,10 @@ test_react_profile_identity_survives_spawn() {
   assert_grep 'playbook_version=1' "$HOME_DIR/state/$id.meta" 'spawn lost the playbook version'
   assert_grep 'Execution profile: id=react version=1' "$HOME_DIR/data/$id/brief.md" 'React profile block missing from the delivered brief'
   assert_grep 'brief.md' "$LAUNCH_LOG" 'React profile spawn must deliver its materialized brief'
+  for file in no-filesystem-routes.mjs no-filesystem-routes.test.mjs; do
+    cmp -s "$ROOT/.agents/skills/execution-playbooks/rules/$file" "$WT_DIR/tools/oxlint/$file" \
+      || fail "React profile spawn did not install the authoritative $file into the task worktree"
+  done
   pass 'React profile scaffold launches with its paired playbook'
 }
 

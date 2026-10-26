@@ -1,5 +1,5 @@
 const filesystemPlugin = /^(?:@tanstack\/router-plugin(?:\/.*)?|@tanstack\/router-vite-plugin)$/;
-const generatedRouteTree = /(?:^|\/)routeTree(?:\.gen)?(?:\.[cm]?[jt]sx?)?$/i;
+const generatedRouteTree = /(?:^|\/)routeTree\.gen(?:\.[cm]?[jt]sx?)?$/i;
 
 const rule = {
   meta: {

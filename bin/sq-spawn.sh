@@ -2998,6 +2998,18 @@ if ! run_workspace_hook before_run; then
 fi
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
+# A react@1 task adopts the Squad-authoritative filesystem-route lint rule: copy
+# the plugin and its colocated test into the task worktree after workspace
+# preparation, so the mandatory verification command runs the real rule and the
+# branch carries it into the project. A react@1 spawn never launches without it.
+if [ "$KIND" = strike ] && [ "${PROFILE_META:-}" = react ]; then
+  "$SCRIPT_DIR/sq-playbook-rule.sh" install "$WT" || {
+    "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null 2>&1 || true
+    echo "error: could not install the react@1 filesystem-route rule into $WT" >&2
+    exit 1
+  }
+fi
+
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")

@@ -71,8 +71,10 @@ This is a proposal for commander deliberation, not an approved configuration or 
 Each row is individually reviewable; record accepted, rejected, or pending decisions rather than silently adopting another repository's preset.
 The candidate configuration combines hook correctness, component declarations, reconciliation, JSX correctness, unsafe rendering, refresh boundaries, and code-based routing using oxlint's native `react` plugin plus the Squad custom rule `no-filesystem-routes`.
 Enable these explicit rules rather than every React rule or a Next.js preset.
-The custom rule rejects `createFileRoute`, imports of the TanStack filesystem-route plugin, and imports of generated `routeTree` modules; use `createRoute` in the code-based tree instead.
-Run `node --test .agents/skills/execution-playbooks/rules/no-filesystem-routes.test.mjs` as a mandatory verification command, and include its captured output in the completion evidence.
+The custom rule rejects `createFileRoute`, imports of the TanStack filesystem-route plugin, and imports of generated `routeTree.gen` modules; use `createRoute` in the code-based tree instead.
+Selecting react@1 copies the authoritative rule and its colocated test from the playbook registry into `tools/oxlint/` in the task worktree - commit both files with the branch so the project owns them - and the candidate block and verification command below use those project-relative paths.
+The copied test also drives oxlint itself when it is installed, so plugin loading and a non-zero lint exit are proven instead of assumed.
+Run `node --test tools/oxlint/no-filesystem-routes.test.mjs` as a mandatory verification command, and include its captured output in the completion evidence.
 
 | Candidate rule | Proposed severity/options | Why it exists |
 | --- | --- | --- |
@@ -90,14 +92,14 @@ Run `node --test .agents/skills/execution-playbooks/rules/no-filesystem-routes.t
 | `react/jsx-no-script-url` | `error` | Reject executable JavaScript URLs in JSX. |
 | `react/jsx-no-target-blank` | `error` | Guard external new-tab links against unsafe opener access. |
 | `react/only-export-components` | `warn`, `allowConstantExport: true` | Keep refresh boundaries reliable while retaining the source's constant-export allowance. |
-| `squad/no-filesystem-routes` | `error` | Require code-based TanStack routes and reject filesystem route declarations, plugin configuration, and generated route-tree imports. |
+| `squad/no-filesystem-routes` | `error` | Require code-based TanStack routes and reject filesystem route declarations, plugin configuration, and generated `routeTree.gen` imports. |
 
 Candidate `.oxlintrc.json` rule block, to merge only after approval and compatibility checks:
 
 ```json
 {
   "plugins": ["react"],
-  "jsPlugins": ["./.agents/skills/execution-playbooks/rules/no-filesystem-routes.mjs"],
+  "jsPlugins": ["./tools/oxlint/no-filesystem-routes.mjs"],
   "rules": {
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "error",
