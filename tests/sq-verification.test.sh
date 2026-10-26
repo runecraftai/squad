@@ -25,6 +25,7 @@ command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found"; exit 0; 
 SHA=0123456789abcdef0123456789abcdef01234567
 SHA64=$(python3 -c 'print("0123456789abcdef" * 4)')
 LONG_LINE=$(python3 -c 'print("x" * 2600)')
+ASTRAL_RUN=$(python3 -c 'print("\U0001F642" * 1400)')
 
 mkdir -p "$TMP/bin"
 CALL_LOG="$TMP/calls"
@@ -144,6 +145,12 @@ issues = [
         "body": section + "\nA human note about the defect\nregression: not-a-field-here\n",
     },
     {
+        "number": 21,
+        "title": "Recorded defect behind astral text",
+        "html_url": "https://github.com/acme/app/issues/21",
+        "body": ("\U0001F642" * 1400) + ("x" * 200) + "\n\n" + section + "\n",
+    },
+    {
         "number": 99,
         "title": "A pull request, not a defect",
         "html_url": "https://github.com/acme/app/pull/99",
@@ -191,6 +198,9 @@ assert_contains "$out" "  discovered_at: unknown (not recorded)" "a genuinely ab
 assert_contains "$out" "  reproduction: unknown (not recorded)" "a genuinely absent reproduction must read as unknown"
 assert_contains "$out" "  regression: unknown (not recorded)" "a genuinely absent regression must read as unknown"
 assert_contains "$out" "Defect #20: Recorded then annotated by a human" "report omits the annotated record"
+expected_astral_record=$'Defect #21: Recorded defect behind astral text\nIssue: https://github.com/acme/app/issues/21\n  discovered_at: 2026-10-25T12:00:00Z\n  affected_pr: https://github.com/acme/app/pull/8\n  affected_sha: '"$SHA"$'\n  reproduction: run test\n  regression: TestBrokenOutput\n  pre_merge_gate: unit tests\n  missed_gate: missing case'
+assert_contains "$out" "$expected_astral_record" \
+  "report lost the recorded section behind non-BMP body text"
 assert_not_contains "$out" "not-a-field-here" "report consumed human prose after the recorded section"
 assert_not_contains "$out" "A pull request, not a defect" "report listed a pull request as an escaped defect"
 assert_not_contains "$out" "Unrelated defect with no linkage" "report listed an issue with no linkage"
@@ -317,5 +327,19 @@ pass "record rejects empty values, empty reasons, and non-full SHAs without patc
   || fail "record rejected a full 64-character SHA"
 assert_grep "affected_sha: $SHA64" "$PATCH_BODY" "record did not write a 64-character SHA"
 pass "record accepts a full 64-character SHA"
+
+: > "$CALL_LOG"
+"$VERIFY" record https://github.com/acme/app/issues/21 \
+  --discovered-at 2026-11-04T00:00:00Z --pr https://github.com/acme/app/pull/9 \
+  --sha "$SHA" --reproduction 'run astral case' --regression 'tests/output.test.sh' \
+  --gate 'Drill CI' --missed-reason 'case missing' >/dev/null \
+  || fail "record failed on an issue whose body contains non-BMP text"
+assert_grep "PATCH /repos/acme/app/issues/21" "$CALL_LOG" "record did not patch the astral-body issue"
+written=$(cat "$PATCH_BODY")
+assert_contains "$written" "$ASTRAL_RUN" \
+  "record truncated a pre-existing body that contains non-BMP text"
+assert_contains "$written" "reproduction: run astral case" \
+  "record omitted the astral-body issue's reproduction"
+pass "record preserves a body containing non-BMP text"
 
 printf 'sq-verification tests passed\n'

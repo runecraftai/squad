@@ -12,20 +12,23 @@ MARKER = "<!-- squad-escaped-defect:v1 -->"
 FIELDS = ("discovered_at", "affected_pr", "affected_sha", "reproduction",
           "regression", "pre_merge_gate", "missed_gate")
 TOON_DECODER = Path(__file__).resolve().parent / "sq-factory-collect-toon.mjs"
-BODY_CHUNK = 1500
+BODY_CHUNK_CODEPOINTS = 500
+SQ_GH_TIMEOUT_SECONDS = 60
+DECODE_TIMEOUT_SECONDS = 30
 PAGE_SIZE = 100
 MAX_PAGES = 100
 
 
 def sq_gh(args):
     return subprocess.run(["sq-gh", *args], text=True, check=True,
-                          capture_output=True).stdout
+                          capture_output=True, timeout=SQ_GH_TIMEOUT_SECONDS).stdout
 
 
 def decode_toon(text):
     try:
-        decoded = subprocess.run(["node", str(TOON_DECODER)], input=text,
-                                 text=True, check=True, capture_output=True)
+        decoded = subprocess.run(["node", str(TOON_DECODER)], input=text, text=True,
+                                 check=True, capture_output=True,
+                                 timeout=DECODE_TIMEOUT_SECONDS)
     except FileNotFoundError as exc:
         raise ValueError("node is required to decode sq-gh output") from exc
     try:
@@ -38,9 +41,10 @@ def sq_gh_json(args):
     return decode_toon(sq_gh(args))
 
 
-def chunk_expression(value):
-    return (f"(({value}) as $body | [range(0; ($body | length); {BODY_CHUNK}) "
-            f"as $i | $body[$i:$i + {BODY_CHUNK}]])")
+def body_fields(value):
+    return (f"body_chunks: (({value}) as $body | [range(0; ($body | length); "
+            f"{BODY_CHUNK_CODEPOINTS}) as $i | $body[$i:$i + {BODY_CHUNK_CODEPOINTS}]]), "
+            f"body_length: ({value} | length)")
 
 
 def joined_body(payload):
@@ -49,12 +53,15 @@ def joined_body(payload):
     chunks = payload.get("body_chunks")
     if not isinstance(chunks, list) or not all(isinstance(chunk, str) for chunk in chunks):
         raise ValueError("sq-gh did not return the issue body")
-    return "".join(chunks)
+    body = "".join(chunks)
+    if payload.get("body_length") != len(body):
+        raise ValueError("sq-gh returned a truncated issue body")
+    return body
 
 
 def read_body(repo, number):
     payload = sq_gh_json(["api", f"/repos/{repo}/issues/{number}", "--jq",
-                          '{"body_chunks": ' + chunk_expression('.body // ""') + "}"])
+                          "{" + body_fields('.body // ""') + "}"])
     return joined_body(payload)
 
 
@@ -152,8 +159,7 @@ def list_issues(repo):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         raise ValueError("repo must be OWNER/REPO")
     listing = ('[.[] | select(type == "object") | select(has("pull_request") | not) | '
-               '{number, title, html_url, body_chunks: '
-               + chunk_expression('.body // ""') + "}]")
+               '{number, title, html_url, ' + body_fields('.body // ""') + "}]")
     issues, page = [], 1
     while page <= MAX_PAGES:
         batch = sq_gh_json(["api", f"/repos/{repo}/issues?state=all&per_page={PAGE_SIZE}&page={page}",
@@ -208,7 +214,7 @@ def main():
     args = parser.parse_args()
     try:
         issue_record(args) if args.command == "record" else report(args.repo)
-    except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
         detail = getattr(exc, "stderr", "")
         print(f"error: {str(exc)}{(': ' + detail.strip()) if detail else ''}", file=sys.stderr)
         return 1
