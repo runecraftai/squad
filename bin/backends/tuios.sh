@@ -395,6 +395,23 @@ fm_backend_tuios_respond_error_verdict() {  # <refusal-output>
   esac
 }
 
+# fm_backend_tuios_refusal_line: only the provider's own refusal sentence from
+# a captured grant or caller refusal. Its remaining lines are remediation
+# advice naming a raw verb Squad's guard denies, so a caller that forwards such
+# a refusal keeps this line. A JSON envelope packs the sentence and its advice
+# into one escaped string, so decode it before taking the first line; plain
+# output is already line-shaped.
+fm_backend_tuios_refusal_line() {  # <captured-output>
+  local out=$1 text
+  [ -n "$out" ] || return 0
+  text=$(printf '%s' "$out" | jq -r '
+    (.error // empty)
+    | if type == "object" then (.message // .detail // .code // empty) else . end
+    | select(type == "string")' 2>/dev/null) || text=''
+  [ -n "$text" ] || text=$out
+  printf '%s\n' "$text" | head -n 1
+}
+
 fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
   local target=$1 key=$2 expected=${3:-} out rc
   # Only a refusal sets this, and only to the pane whose grant is missing, so a
@@ -409,7 +426,7 @@ fm_backend_tuios_send_key() {  # <target> <key> [expected-label]
       # Squad has a sanctioned remedy for this refusal, so forward only the
       # daemon's own refusal sentence: its remaining lines are the provider's
       # remediation advice, which names the raw verb Squad's guard denies.
-      [ -z "$out" ] || printf '%s\n' "$(printf '%s' "$out" | head -n 1)" >&2
+      fm_backend_tuios_refusal_line "$out" >&2
       # TUIOS requires respond on the pane that TYPES the answer, never on the
       # blocked pane, so name that pane rather than the target.
       # shellcheck disable=SC2034 # Set for the sourcing caller; this adapter never reads it.
@@ -435,7 +452,7 @@ fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]
 # this call is deliberately never retried because a lost reply may follow a
 # successful answer.
 fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
-  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out rc settled confirmed
+  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out rc settled confirmed verdict
   SQUAD_BACKEND_PANE_GRANT_TARGET=
   fm_backend_tuios_parse_target "$target" || { echo 'error: malformed TUIOS prompt target' >&2; return 1; }
   [ -n "$prompt_id" ] || { echo 'error: TUIOS prompt id is required; nothing was answered' >&2; return 1; }
@@ -472,8 +489,13 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   [ -z "$value" ] || args+=(-- "$value")
   out=$("$(fm_backend_tuios_bin)" "${args[@]}" 2>&1) && rc=0 || rc=$?
   if [ "$rc" -ne 0 ]; then
-    printf '%s\n' "$out" >&2
-    case "$(fm_backend_tuios_respond_error_verdict "$out")" in
+    verdict=$(fm_backend_tuios_respond_error_verdict "$out")
+    if [ "$verdict" = not_authorized ]; then
+      fm_backend_tuios_refusal_line "$out" >&2
+    else
+      [ -z "$out" ] || printf '%s\n' "$out" >&2
+    fi
+    case "$verdict" in
       prompt_changed) echo 'error: TUIOS confirmed nothing was answered because the prompt changed; read the new prompt before deciding again' >&2; return 1 ;;
       risk_matched) echo 'error: TUIOS refused this risk-matched approval; nothing was answered and no risk acknowledgement was inferred' >&2; return 1 ;;
       not_authorized)

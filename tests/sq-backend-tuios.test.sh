@@ -1358,12 +1358,15 @@ assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a prose risk ref
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a prose risk refusal must invoke the provider exactly once'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
-SQUAD_TUIOS_FAKE_RESPOND_PROSE='respond failed: respond is for the person at an attached client. Only the person may call it: a client attached right now passing its attach nonce, or a pane the person gave the respond grant may also call it.'
+SQUAD_TUIOS_FAKE_RESPOND_PROSE='respond failed: respond is for the person at an attached client. Only the person may call it: a client attached right now passing its attach nonce, or a pane the person gave the respond grant may also call it.
+Most likely cause: this pane holds admin. The person can give this pane more with tuios set-pane-grants -w w-supervisor --grants respond.'
 export SQUAD_TUIOS_FAKE_RESPOND_PROSE
 TUIOS_SESSION=owned TUIOS_PANE_ID=w-supervisor \
   fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err" \
   && fail 'a prose caller refusal must not report success'
 assert_contains "$(cat "$err")" 'respond grant' 'a prose caller refusal must name the sanctioned grant remedy'
+assert_not_contains "$(cat "$err")" 'set-pane-grants' \
+  'a caller refusal must not forward the provider advice naming the raw grant verb'
 assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a caller refusal must not be misreported as uncertain'
 [ "${SQUAD_BACKEND_PANE_GRANT_TARGET:-}" = 'owned:w-supervisor' ] \
   || fail 'a caller refusal must name the pane that needs the respond grant'
