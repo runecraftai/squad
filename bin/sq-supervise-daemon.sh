@@ -746,21 +746,23 @@ window_run_step_active() {  # <window> <state>
 # just retired. task_execution_is_terminal is the shared projection for every
 # dispatch state (a released record can still own a live or gate-parked run, and
 # a record whose teardown was refused can outlive its operator as a busy claim);
-# the agent probe is the same attribution the sentry uses.
+# the agent probe is the same attribution the sentry uses, and it is read first
+# so a live or ambiguously read pane keeps ordinary supervision without paying
+# for the projection that only an agentless pane can turn into a skip.
 task_is_terminal_and_agentless() {  # <state> <task>
   local state=$1 task=$2 meta win backend
   [ -n "$task" ] || return 1
   meta="$state/$task.meta"
   [ -e "$meta" ] || return 1
-  task_execution_is_terminal "$state" "$task" || return 1
   win=$(fm_backend_target_of_meta "$meta" 2>/dev/null || true)
   [ -n "$win" ] || return 1
   backend=$(fm_backend_of_meta "$meta" 2>/dev/null || true)
   [ -n "$backend" ] || backend=tmux
   case "$(fm_backend_agent_state "$backend" "$win" 2>/dev/null || true)" in
-    dead|missing) return 0 ;;
+    dead|missing) ;;
+    *) return 1 ;;
   esac
-  return 1
+  task_execution_is_terminal "$state" "$task"
 }
 
 # One housekeeping pass checks the same task from pause migration, the stale

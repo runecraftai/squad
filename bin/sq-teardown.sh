@@ -249,8 +249,9 @@ remote_teardown_locks_release() {
 # same ':/.' -> '_' key transform the sentry applies to the recorded backend
 # target (window=, terminal= for Orca); the .seen-* signatures are keyed by
 # the task status/turn-ended basenames. The task-keyed families
-# (.subsuper-stale-*, .subsuper-paused-*, .subsuper-seen-status-*, and the
-# sentry's own .compaction-notified-*) come from their one owner,
+# (.subsuper-stale-*, .subsuper-paused-*, .subsuper-seen-status-*, the sentry's
+# own .compaction-notified-*, and those .seen-<task>_status/.seen-<task>_turn-ended
+# signatures) come from their one owner,
 # sq-classify-lib.sh's retire_task_watcher_markers, so teardown and the
 # sentry's terminal-agentless skip cannot drift apart. A marker can outlive its
 # task record: until the meta is removed the watcher can still poll the released
@@ -271,18 +272,16 @@ retire_exec_record() {
 }
 
 retire_watcher_markers() {  # <state-dir> <task-id> <window>
-  local state=$1 id=$2 win=$3 key sfx
+  local state=$1 id=$2 win=$3 key
   retire_task_watcher_markers "$state" "$id"
   [ -n "$win" ] || return 0
   key=$(printf '%s' "$win" | tr ':/.' '___')
-  sfx=$(printf '%s' "$id" | tr '.' '_')
   rm -f "$state/.hash-$key" "$state/.count-$key" "$state/.stale-$key" \
     "$state/.stale-since-$key" "$state/.wedge-escalations-$key" "$state/.paused-$key" \
     "$state/.dirty-since-$key" "$state/.dirty-unreadable-$key" "$state/.pause-episode-$key" \
     "$state/.deferred-log-$key" \
     "$state/.sig-hash-$key" "$state/.sig-since-$key" "$state/.sig-reported-$key" "$state/.sig-unreadable-$key" \
-    "$state/.sig-deferred-log-$key" \
-    "$state/.seen-${sfx}_status" "$state/.seen-${sfx}_turn-ended"
+    "$state/.sig-deferred-log-$key"
 }
 
 remote_recovery_paths_validate() {
