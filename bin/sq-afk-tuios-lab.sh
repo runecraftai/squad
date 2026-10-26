@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Guarded live TUIOS verification in a uniquely named, private disposable lab.
-# Usage: SQUAD_TUIOS_AFK_LIVE=1 bin/sq-afk-tuios-lab.sh probe-env|lifecycle
+# Usage: SQUAD_TUIOS_AFK_LIVE=1 bin/sq-afk-tuios-lab.sh probe-env|lifecycle|respond
 set -u
 LAB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [ "${SQUAD_TUIOS_AFK_LIVE:-}" = 1 ] || { echo 'error: explicit live-test authorization required' >&2; exit 2; }
@@ -20,6 +20,13 @@ chmod 700 "$TEMP" || exit 2
 mkdir -m 700 "$TEMP/base" "$TEMP/base/state" "$TEMP/runtime" "$TEMP/config" "$TEMP/state" || exit 2
 export XDG_RUNTIME_DIR="$TEMP/runtime" XDG_CONFIG_HOME="$TEMP/config" XDG_STATE_HOME="$TEMP/state"
 export SQUAD_POLL="${SQUAD_POLL:-1}" SQUAD_WEDGE_ALARM_EXEC=discard
+# The answer path is a caller outside every pane - the person's own shell - which
+# this private daemon only accepts with respond_from_shell. Only the lab's own
+# disposable config is written; the shared daemon's config is never touched.
+if [ "${1:-}" = respond ]; then
+  mkdir -p "$TEMP/config/tuios" || exit 2
+  printf '[daemon]\nrespond_from_shell = true\n' > "$TEMP/config/tuios/config.toml" || exit 2
+fi
 DAEMON_PID=
 MOCK_PID=
 SESSION="sq-afk-lab-$(printf '%s' "$TEMP" | cksum | cut -d' ' -f1)-$$-${RANDOM:-0}"
@@ -371,5 +378,147 @@ PI_LAUNCH
     printf '%s' "$inventory" | jq -e --arg n "$SESSION" --arg id "$SESSION_ID" --argjson ids "$(printf '%s\n' "${WINDOWS[@]}" | jq -Rsc 'split("\n")[:-1]')" '[.[]|select(.name==$n and .id==$id and .attached==false)] as $s|($s|length)==1 and ([$s[0].windows[].id]|sort)==($ids|sort)' >/dev/null 2>&1 || { echo 'error: guarded lifecycle changed the exact test-owned target session' >&2; exit 1; }
     printf '{"tuios_version":"%s","lab_session":"%s","target":"%s","start":"%s","status":"%s","modal":"held-until-closed","composer":"empty-then-pending","readiness":"per-target","stop":"clean"}\n' "$VERSION" "$SESSION" "$target" "${start//\"/\\\"}" "${status//\"/\\\"}"
     ;;
-  *) echo 'usage: SQUAD_TUIOS_AFK_LIVE=1 bin/sq-afk-tuios-lab.sh probe-env|lifecycle' >&2; exit 2 ;;
+  respond)
+    respond_dir="$TEMP/respond"
+    respond_state="$TEMP/base/state"
+    respond_task=respond-lab
+    mkdir -m 700 "$respond_dir" || { echo "error: cannot create the respond evidence dir; evidence=$TEMP" >&2; KEEP_TEMP=1; exit 1; }
+    operator_script="$TEMP/lab-operator.sh"
+    cat > "$operator_script" <<'LAB_OPERATOR'
+#!/usr/bin/env bash
+set -u
+[ "${TUIOS_ENV-}" = 1 ] || { echo 'TUIOS did not provide its environment marker' >&2; exit 1; }
+session=${TUIOS_SESSION:?TUIOS did not provide a session identity}
+pane=${TUIOS_PANE_ID:?TUIOS did not provide a pane identity}
+tuios_bin=${SQUAD_LAB_TUIOS_BIN:?the lab did not name its private tuios binary}
+dir=${SQUAD_LAB_RESPOND_DIR:?the lab did not name its respond evidence dir}
+: > "$dir/armed"
+for _ in $(seq 1 600); do [ -e "$dir/trigger" ] && break; sleep 0.05; done
+[ -e "$dir/trigger" ] || { echo 'the lab never triggered the approval prompt' >&2; exit 1; }
+printf 'Bash command\n  make -C /tmp/lab hello\n\nDo you want to proceed?\n\n  1. Yes\n  2. Yes, and don'\''t ask again for similar commands\n  3. No, and tell Claude what to do differently (esc)\n'
+"$tuios_bin" set-agent-state needs_input -s "$session" -w "$pane" --harness claude-code --kind approval -m 'approve Bash: make -C /tmp/lab hello' \
+  || { echo 'the operator pane could not report needs_input' >&2; exit 1; }
+: > "$dir/blocked"
+stty -echo -icanon min 1 time 0 2>/dev/null || true
+key=$(dd bs=1 count=1 2>/dev/null || true)
+stty sane 2>/dev/null || true
+printf '%s' "$key" >> "$dir/keys"
+"$tuios_bin" set-agent-state working -s "$session" -w "$pane" --harness claude-code -m 'approved; running the command' || true
+printf '\nApproval received for the exact prompt; resuming the tool call.\n'
+: > "$dir/resumed"
+while :; do sleep 5; done
+LAB_OPERATOR
+    chmod 700 "$operator_script"
+    operator_out=$("$BIN" new-window --json --session "$SESSION" --no-focus --cwd "$TEMP" "sq-respond-lab-$$" -- \
+      env "SQUAD_LAB_RESPOND_DIR=$respond_dir" "SQUAD_LAB_TUIOS_BIN=$BIN" /bin/bash "$operator_script" 2>/dev/null) \
+      || { echo "error: could not create the operator window; evidence=$TEMP" >&2; KEEP_TEMP=1; exit 1; }
+    operator_window=$(printf '%s' "$operator_out" | jq -r '.window_id // .result.window_id // empty')
+    [ -n "$operator_window" ] || { echo "error: operator window identity missing; evidence=$TEMP" >&2; KEEP_TEMP=1; exit 1; }
+    WINDOWS+=("$operator_window")
+    target="$SESSION:$operator_window"
+    printf 'backend=tuios\ntuios_session=%s\ntuios_window_id=%s\nwindow=%s\nharness=claude-code\nkind=recon\n' \
+      "$SESSION" "$operator_window" "$target" > "$respond_state/$respond_task.meta"
+    export SQUAD_BASE="$TEMP/base" SQUAD_STATE_OVERRIDE="$respond_state" SQUAD_ROOT_OVERRIDE="$ROOT" \
+      SQUAD_TUIOS_BIN="$BIN" SQUAD_SUPERVISOR_BACKEND=tuios SQUAD_GUARD_GRACE=86400 SQUAD_GATE_REFUSE_BYPASS=1
+    # shellcheck source=bin/sq-push-transition-lib.sh
+    . "$ROOT/bin/sq-push-transition-lib.sh"
+    respond_evidence() {
+      fm_backend_tuios_capture "$target" 100 > "$TEMP/operator-pane.txt" 2>/dev/null || true
+      "$BIN" peek-prompt --json -s "$SESSION" -w "$operator_window" > "$TEMP/peek-prompt.json" 2>/dev/null || true
+      "$BIN" explain-agent-screen --json -s "$SESSION" -w "$operator_window" > "$TEMP/screen.json" 2>/dev/null || true
+      "$BIN" list-agents --all --json -s "$SESSION" > "$TEMP/agents.json" 2>/dev/null || true
+    }
+    respond_fail() { respond_evidence; echo "error: $1; evidence=$TEMP" >&2; KEEP_TEMP=1; exit 1; }
+    for _ in $(seq 1 100); do [ -e "$respond_dir/armed" ] && break; sleep 0.1; done
+    [ -e "$respond_dir/armed" ] || respond_fail 'the operator pane never reached its approval prompt'
+    # Subscribe before the prompt exists: a returned record can then only come
+    # from the pane's own event on the live stream, never from the baseline
+    # reconcile that follows the handshake.
+    (
+      unset SQUAD_BACKEND_EVENTS_CAPABILITY_CONFIRMED
+      fm_backend_tuios_wait_transition "$SESSION" 30 "$respond_state" "$target" > "$TEMP/event-wait.out" 2> "$TEMP/event-wait.err"
+      printf '%s' "$?" > "$TEMP/event-wait.rc"
+    ) &
+    sleep 2
+    [ ! -e "$TEMP/event-wait.rc" ] || respond_fail 'the native event wait returned before any prompt existed'
+    : > "$respond_dir/trigger"
+    for _ in $(seq 1 600); do [ -e "$TEMP/event-wait.rc" ] && break; sleep 0.05; done
+    [ -e "$TEMP/event-wait.rc" ] || respond_fail 'the native event wait did not return after the pane reported needs_input'
+    event_wait_rc=$(cat "$TEMP/event-wait.rc")
+    [ "$event_wait_rc" = 0 ] || respond_fail "the native event wait returned rc=$event_wait_rc instead of a blocked record"
+    record=$(cat "$TEMP/event-wait.out")
+    [ "$(fm_transition_to_status "$record")" = blocked ] || respond_fail "the event wake is not a blocked transition: $record"
+    for _ in $(seq 1 100); do [ -e "$respond_dir/blocked" ] && break; sleep 0.05; done
+    [ -e "$respond_dir/blocked" ] || respond_fail 'the operator pane never recorded its needs_input report'
+    wake_reason=$(handle_push_transition tuios "$SESSION" "$record" 2> "$TEMP/wake.err" || true)
+    [ -n "$wake_reason" ] || respond_fail 'the production transition handler produced no supervisor wake'
+    case "$wake_reason" in *"$target"*) : ;; *) respond_fail "the wake does not name the blocked window: $wake_reason" ;; esac
+    case "$wake_reason" in *'Do you want to proceed?'*) : ;; *) respond_fail "the wake does not carry the operator's question: $wake_reason" ;; esac
+    case "$wake_reason" in *'1) Yes'*'2) Yes'*'3) No'*) : ;; *) respond_fail "the wake does not carry the numbered options: $wake_reason" ;; esac
+    grep -qF 'stale' "$respond_state/.stand-to-queue" 2>/dev/null || respond_fail 'the wake was not durably enqueued for the supervisor'
+    prompt_json=$(fm_backend_tuios_prompt_json "$target") || respond_fail 'the adapter could not read the blocking prompt authoritatively'
+    prompt_id=$(printf '%s' "$prompt_json" | jq -r '.prompt_id // empty')
+    [ -n "$prompt_id" ] || respond_fail 'the daemon did not give the prompt an id'
+    printf '%s' "$prompt_json" > "$TEMP/prompt.json"
+    option_numbers=$(fm_backend_tuios_prompt_option_numbers "$prompt_json" | tr '\n' ' ')
+    for n in 1 2 3; do
+      printf '%s' "$option_numbers" | tr ' ' '\n' | grep -qx "$n" || respond_fail "the prompt does not display option $n: $option_numbers"
+    done
+    impostor_script="$TEMP/lab-impostor.sh"
+    cat > "$impostor_script" <<'LAB_IMPOSTOR'
+#!/usr/bin/env bash
+set -u
+[ "${TUIOS_ENV-}" = 1 ] || { echo 'TUIOS did not provide its environment marker' >&2; exit 1; }
+"$SQUAD_LAB_ROOT/bin/sq-send.sh" "$SQUAD_LAB_TASK" --respond approve "$SQUAD_LAB_PROMPT_ID" > "$SQUAD_LAB_IMPOSTOR_OUT" 2>&1
+printf '%s' "$?" > "$SQUAD_LAB_IMPOSTOR_RC"
+while :; do sleep 5; done
+LAB_IMPOSTOR
+    chmod 700 "$impostor_script"
+    impostor_out=$("$BIN" new-window --json --session "$SESSION" --no-focus --cwd "$TEMP" "sq-respond-impostor-$$" -- \
+      env "SQUAD_LAB_ROOT=$ROOT" "SQUAD_LAB_TASK=$respond_task" "SQUAD_LAB_PROMPT_ID=$prompt_id" \
+      "SQUAD_LAB_IMPOSTOR_OUT=$TEMP/impostor.out" "SQUAD_LAB_IMPOSTOR_RC=$TEMP/impostor.rc" \
+      "SQUAD_BASE=$TEMP/base" "SQUAD_STATE_OVERRIDE=$respond_state" "SQUAD_ROOT_OVERRIDE=$ROOT" \
+      "SQUAD_TUIOS_BIN=$BIN" "SQUAD_GATE_REFUSE_BYPASS=1" "SQUAD_GUARD_GRACE=86400" \
+      /bin/bash "$impostor_script" 2>/dev/null) \
+      || respond_fail 'could not create the unauthorized-answer window'
+    impostor_window=$(printf '%s' "$impostor_out" | jq -r '.window_id // .result.window_id // empty')
+    [ -n "$impostor_window" ] || respond_fail 'the unauthorized-answer window identity is missing'
+    WINDOWS+=("$impostor_window")
+    for _ in $(seq 1 300); do [ -e "$TEMP/impostor.rc" ] && break; sleep 0.1; done
+    [ -e "$TEMP/impostor.rc" ] || respond_fail 'the unauthorized answer attempt never returned'
+    impostor_rc=$(cat "$TEMP/impostor.rc")
+    [ "$impostor_rc" = 1 ] || respond_fail "an agent pane answered the prompt without the respond grant (rc=$impostor_rc)"
+    [ ! -s "$respond_dir/keys" ] || respond_fail 'the refused answer still reached the operator pane'
+    if answer=$("$ROOT/bin/sq-send.sh" "$respond_task" --respond approve "$prompt_id" 2> "$TEMP/answer.err"); then answer_rc=0; else answer_rc=$?; fi
+    [ "$answer_rc" -eq 0 ] || respond_fail "the authorized answer failed (rc=$answer_rc): $(cat "$TEMP/answer.err")"
+    [ "$(printf '%s' "$answer" | jq -r '.prompt_id // empty')" = "$prompt_id" ] || respond_fail "the answer confirmation names another prompt: $answer"
+    [ "$(printf '%s' "$answer" | jq -r '.settled_by // empty')" = state ] || respond_fail "the answer was not settled by the pane leaving needs_input: $answer"
+    for _ in $(seq 1 100); do [ -e "$respond_dir/resumed" ] && break; sleep 0.1; done
+    [ -e "$respond_dir/resumed" ] || respond_fail 'the operator pane never resumed after the exact answer'
+    resume_key=$(cat "$respond_dir/keys")
+    [ "$resume_key" = 1 ] || respond_fail "the operator pane received '$resume_key' instead of the prompt's option 1"
+    capture=$(fm_backend_tuios_capture "$target" 40) || respond_fail 'the operator pane could not be captured after the answer'
+    case "$capture" in *'Approval received for the exact prompt; resuming the tool call.'*) : ;; *) respond_fail 'the operator pane did not print its resume line' ;; esac
+    busy_after=$(fm_backend_tuios_busy_state "$target")
+    [ "$busy_after" != blocked ] || respond_fail 'the pane still reads blocked after the exact answer'
+    if prompt_after=$(fm_backend_tuios_prompt_json "$target" 2>/dev/null); then respond_fail "the pane still has a readable blocking prompt: $prompt_after"; fi
+    if "$ROOT/bin/sq-send.sh" "$respond_task" --respond approve "$prompt_id" > "$TEMP/duplicate.out" 2> "$TEMP/duplicate.err"; then duplicate_rc=0; else duplicate_rc=$?; fi
+    [ "$duplicate_rc" -ne 0 ] || respond_fail 'a second answer to the same prompt reported success'
+    [ "$resume_key" = 1 ] || respond_fail 'the refused duplicate answer pressed a second key'
+    grep -qF 'nothing was answered' "$TEMP/duplicate.err" || respond_fail "the duplicate refusal does not say nothing was answered: $(head -n 1 "$TEMP/duplicate.err")"
+    replay_out=$(fm_backend_tuios_wait_transition "$SESSION" 3 "$respond_state" "$target" 2>/dev/null); replay_rc=$?
+    [ "$replay_rc" -ne 0 ] || respond_fail 'a settled prompt produced a fresh event wake on reconnect'
+    [ -z "$replay_out" ] || respond_fail "a settled prompt replayed a transition record: $replay_out"
+    if poll_out=$(fm_backend_tuios_poll_transition "$respond_state" "$SESSION" "$target" 2>/dev/null); then respond_fail "the settled prompt re-escalated on the poll loop: $poll_out"; fi
+    printf 'respond-lab: tuios=%s lab_session=%s operator_window=%s\n' "$VERSION" "$SESSION" "$target"
+    printf 'respond-lab: native_event_wait_rc=%s record=%s\n' "$event_wait_rc" "$record"
+    printf 'respond-lab: supervisor_wake=%s\n' "$wake_reason"
+    printf 'respond-lab: prompt_id=%s option_numbers=%s\n' "$prompt_id" "$(printf '%s' "$option_numbers" | tr -s ' ')"
+    printf 'respond-lab: unauthorized_answer_rc=%s refusal=%s\n' "$impostor_rc" "$(tail -n 1 "$TEMP/impostor.out")"
+    printf 'respond-lab: authorized_answer_rc=%s answer=%s\n' "$answer_rc" "$answer"
+    printf 'respond-lab: resume_key=%s resume_line=%s\n' "$resume_key" 'Approval received for the exact prompt; resuming the tool call.'
+    printf 'respond-lab: pane_busy_after=%s duplicate_answer_rc=%s duplicate_refusal=%s\n' "$busy_after" "$duplicate_rc" "$(grep -m1 'nothing was answered' "$TEMP/duplicate.err")"
+    printf 'respond-lab: replay_event_wait_rc=%s replay_record=%s\n' "$replay_rc" "$replay_out"
+    ;;
+  *) echo 'usage: SQUAD_TUIOS_AFK_LIVE=1 bin/sq-afk-tuios-lab.sh probe-env|lifecycle|respond' >&2; exit 2 ;;
 esac

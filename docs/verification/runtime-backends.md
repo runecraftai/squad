@@ -782,16 +782,67 @@ reader_rc=0
 {"verb":"subscribe","params":["session","window","types","queue","after_seq","boot_id","hosts"],"returns":["seq","boot_id","replayed"]}
 ```
 
-This proves the current CLI can establish a session-scoped event stream; it does not prove a blocked-agent event, supervisor wake, answer, or resume end to end.
+This proves the current CLI can establish a session-scoped event stream.
+On its own it does not prove a blocked-agent event, supervisor wake, answer, or resume; the isolated lab below does.
 `tests/sq-backend-tuios.test.sh` pins what the fake CLI can prove: the baseline reconcile alone does not satisfy the wait, the consumed event line triggers its own authoritative re-read, the reader keeps its full budget after a non-actionable event, and SIGTERM terminates the subscription child. None of that is a substitute for the isolated real-runtime scenario below.
+
+### The blocked-operator answer path in an isolated lab (2026-10-25)
+
+`SQUAD_TUIOS_AFK_LIVE=1 bin/sq-afk-tuios-lab.sh respond` (driven by `tests/sq-tuios-respond-live-optin.test.sh`) ran the whole answer path against a private TUIOS 0.9.1 daemon: `tuios daemon --no-restore` with fresh `XDG_RUNTIME_DIR`, `XDG_CONFIG_HOME`, and `XDG_STATE_HOME` under `/tmp`, one disposable session (its boot window plus the operator and unauthorized-answer windows), all removed at the end. The private `config.toml` carried `[daemon] respond_from_shell = true`, so the caller outside every pane - the person's own shell - is an authorized actor on that daemon. The shared daemon, its sessions, its config, the pane grants, and the installed TUIOS binary were not touched, and no watched session was addressed.
+
+The operator pane is a scripted harness, not a vendor CLI: it draws the Claude Code approval form the daemon's own bundled `claude-code` manifest reads, reports `needs_input --harness claude-code --kind approval` the way an installed hook reports, then consumes the pressed digit and reports `working`.
+Everything else in the cycle is the production path: the daemon's own screen rule and `peek-prompt` read, the adapter's `subscribe`-based native event wait, `handle_push_transition`'s wake, `bin/sq-send.sh --respond`, and the adapter's `fm_backend_tuios_respond`.
+
+Observed output:
+
+```text
+respond-lab: tuios=tuios version 0.9.1 [pure-Go backend] lab_session=sq-afk-lab-2397900315-348316-30139 operator_window=sq-afk-lab-2397900315-348316-30139:fa6c7a1f-b21f-4363-b1b3-c16eda37e672
+respond-lab: native_event_wait_rc=0 record=fa6c7a1f-b21f-4363-b1b3-c16eda37e672			blocked	
+respond-lab: supervisor_wake=stale: sq-afk-lab-2397900315-348316-30139:fa6c7a1f-b21f-4363-b1b3-c16eda37e672 (tuios: agent blocked - approval: Do you want to proceed? [1) Yes 2) Yes, and don't ask again for similar commands 3) No, and tell Claude what to do differently (esc)] - waiting on human, escalated immediately, not via wedge timer)
+respond-lab: prompt_id=9f5b19446fb8b12d option_numbers=1 2 3
+respond-lab: unauthorized_answer_rc=1 output=●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+respond-lab: authorized_answer_rc=0 answer={
+  "action": "approve",
+  "message": "approved; running the command",
+  "prompt_id": "9f5b19446fb8b12d",
+  "sent": "1",
+  "session": "sq-afk-lab-2397900315-348316-30139",
+  "settled_by": "state",
+  "state": "working",
+  "success": true,
+  "window": "fa6c7a1f-b21f-4363-b1b3-c16eda37e672"
+}
+respond-lab: resume_key=1 resume_line=Approval received for the exact prompt; resuming the tool call.
+respond-lab: pane_busy_after=busy duplicate_answer_rc=1 duplicate_output=WARNING: sentry still down (same stale episode; last beat: never, grace 86400s) - full banner already printed this episode.
+respond-lab: replay_event_wait_rc=1 replay_record=
+```
+
+Both refusals were produced by `sq-send`, which prints its supervisor-guard banner first; the run echoed the first captured line of the in-pane attempt and the first line of the duplicate's stderr, so those two excerpts are the banner rather than the refusal itself.
+The evidence for those steps is the exit codes and the untouched key file, and the lab now echoes the in-pane attempt's last captured line and the duplicate's `nothing was answered` line instead.
+
+The runner asserted each step and exited 0. Step by step:
+
+- **The blocked prompt is detected natively.** The adapter subscribed before the prompt existed, its baseline reconcile saw no prompt (the wait had not returned), and the record it returned after the pane reported `needs_input` was a `blocked` transition - so it came from the daemon's agent-state event, not from the post-handshake reconcile.
+- **The question reaches the authorized actor.** `handle_push_transition` produced the supervisor wake naming the exact window, the operator's question, and all three numbered options, and durably enqueued it in `.stand-to-queue` for the supervisor.
+- **Only an authorized actor can answer.** `sq-send --respond approve <prompt-id>` run from an ordinary agent pane (the daemon's default `admin` grant, no `respond`) exited 1 and pressed nothing: the operator pane's key file stayed empty. The daemon answers `respond` only for an attached client, a pane holding `respond`, or, with `respond_from_shell`, a caller outside every pane.
+- **The exact prompt is answered and the operator resumes.** The same command from the lab's own shell (outside every pane) answered prompt `9f5b19446fb8b12d`, the daemon confirmed `sent: "1"` for that prompt id and `settled_by: state` after the pane left `needs_input`, the operator pane recorded exactly the digit `1` and printed its resume line, its busy state read `busy`, and `peek-prompt` no longer reported a blocking prompt.
+- **No duplicate after an uncertain or reconnected state.** A second `--respond` for the same prompt id was refused (`rc=1`, `nothing was answered`) and pressed no second key; a second native wait on reconnect returned `rc=1` with no record; and the poll producer returned no fresh blocked edge for the settled pane.
+
+The daemon's own `peek-prompt` payload from that run (preserved by the lab's first attempt, same binary and scenario, before a transcript-assertion fix) is the shape the adapter reads:
+
+```json
+{"blocked":true,"found":true,"kind":"approval","message":"Do you want to proceed?","options":[{"label":"Yes","n":1},{"label":"Yes, and don't ask again for similar commands","n":2},{"label":"No, and tell Claude what to do differently (esc)","n":3}],"prompt_id":"0fa61f2c552b7108","actions":["approve","approve_always","deny","choose"],"reason":""}
+```
+
+The scenario was started twice in total. The first start reached the native event and the wake but the lab's transcript assertion expected the pane's reported `-m` text instead of the question the daemon's screen rule read; that is a defect in the assertion, not in the path, and its preserved evidence supplies the payload above. The second start passed every assertion. No third start was attempted.
 
 Not established:
 
 - `not_ready` and `prompt_stalled` were not observed live. They are mapped from the daemon's documented refusal codes and covered by the fake-CLI test, but the asynchronous queue path does not raise them; they belong to the synchronous ask path, which Squad does not currently call.
 - A live `queue-prompt` refusal reason other than `queue_full` and the no-attributed-agent refusal was not produced.
 - The bounded queue observation window (10s by default) proved wide enough for the observed 5s stall gate; a slower daemon configuration could close the window while an entry is still being typed, in which case the adapter reports the entry as safely queued and the daemon's Inbox question is the durable signal.
-- An isolated real-runtime blocked-event-to-supervisor-wake, prompt-specific answer, and operator-resume scenario has not been proven; the new portable test uses a fake CLI and proves call shape only.
-  Until that scenario is run in a private TUIOS daemon with a real harness, the live end-to-end guarantee is unverified.
+- An isolated real-runtime run in which a vendor harness (Claude Code, Codex, or Pi) drives its own approval dialog and resumes after `respond` has not been run; the isolated lab above draws that dialog's screen from a scripted operator process and reports the state the way an installed hook reports it.
+  The lab therefore proves the daemon's prompt parsing, the native blocked event, the production wake, the authorization boundary, the exact-prompt answer, and the observed resume - not a vendor CLI's rendering or a model turn, and not the Inbox hold path.
 - Simultaneous allocations across separate Squad bases sharing one TUIOS session have not been exercised live. The adapter uses one per-session lock under the user's shared `XDG_RUNTIME_DIR` when available, then rechecks authoritative session inventory before each creation.
 - The finished-and-foreground-less recovery rule is derived from one daemon build (TUIOS 0.8.0): every live agent observed reported a `foreground` program, and the one exited agent reported none. A build or harness that reports `state=done` without a `foreground` program while its agent is still running has not been observed; `docs/tuios-backend.md` "Finished-agent recovery" names that as the unproven case.
 - The away-mode live path was verified against one Pi version (0.99.0) and one TUIOS build (0.8.0). Its open-prompt guard reads Pi's `ui_prompt_start`/`ui_prompt_end` events, which are not a documented public API, so a Pi upgrade must re-verify that they are still emitted before the guard is trusted.
