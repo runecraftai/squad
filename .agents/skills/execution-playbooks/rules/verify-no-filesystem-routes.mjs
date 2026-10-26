@@ -10,6 +10,7 @@ const configPath = path.join(scriptDirectory, "no-filesystem-routes.oxlintrc.jso
 const sourceFile = /\.(?:[cm]?[jt]sx?)$/i;
 const skippedDirectories = new Set([".git", "node_modules"]);
 const oxlintBinary = process.platform === "win32" ? "oxlint.cmd" : "oxlint";
+const suppressionDirective = /(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s+([^*/]*))?/;
 
 function refuse(message) {
   process.stderr.write(`error: ${message}\n`);
@@ -66,6 +67,39 @@ function findOxlint(root) {
   return null;
 }
 
+function suppressionIn(line) {
+  const match = suppressionDirective.exec(line);
+  if (!match) return null;
+  const targets = (match[1] ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (targets.length > 0 && !targets.includes(ruleId)) return null;
+  return match[0].trim();
+}
+
+function suppressionViolations(root, files) {
+  const violations = [];
+  for (const file of files) {
+    let text;
+    try {
+      text = fs.readFileSync(path.resolve(root, file), "utf8");
+    } catch {
+      continue;
+    }
+    text.split(/\r?\n/).forEach((line, index) => {
+      const directive = suppressionIn(line);
+      if (directive) violations.push(`${file}:${index + 1}: ${directive}`);
+    });
+  }
+  return violations;
+}
+
+function ownedByToolDirectory(root, file) {
+  const absolute = path.resolve(root, file);
+  return absolute === scriptDirectory || absolute.startsWith(`${scriptDirectory}${path.sep}`);
+}
+
 const root = projectRoot();
 if (!fs.existsSync(configPath)) refuse(`missing rule config: ${configPath}`);
 
@@ -82,6 +116,16 @@ if (requested.length > 0) {
   );
 }
 if (files.length === 0) refuse(`no source files found under ${root}`);
+files = files.filter((file) => !ownedByToolDirectory(root, file));
+if (files.length === 0) refuse(`no project source files found under ${root}`);
+
+const suppressions = suppressionViolations(root, files);
+if (suppressions.length > 0) {
+  for (const violation of suppressions) {
+    process.stderr.write(`error: suppression directive for ${ruleId}: ${violation}\n`);
+  }
+  process.exit(1);
+}
 
 const oxlint = findOxlint(root);
 if (!oxlint) {
@@ -90,7 +134,7 @@ if (!oxlint) {
   );
 }
 
-const result = spawnSync(oxlint, ["--config", configPath, "-A", "all", "-D", ruleId, ...files], {
+const result = spawnSync(oxlint, ["--config", configPath, "--no-ignore", "-A", "all", "-D", ruleId, ...files], {
   cwd: root,
   stdio: "inherit",
 });

@@ -1,7 +1,24 @@
 const routerPackage = "@tanstack/react-router";
+const ruleId = "squad/no-filesystem-routes";
 const filesystemPlugin =
   /^@tanstack\/(?:router-plugin(?:\/.*)?|router-vite-plugin|router-cli(?:\/.*)?|router-generator(?:\/.*)?|fs-routes(?:\/.*)?)$/;
 const generatedRouteTree = /(?:^|\/)routeTree\.gen(?:\.[cm]?[jt]sx?)?$/i;
+const disableDirective = /^(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s+([\s\S]*))?$/;
+
+function suppressionTargets(comment) {
+  const match = disableDirective.exec(String(comment?.value ?? "").trim());
+  if (!match) return null;
+  return (match[1] ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function suppressesThisRule(comment) {
+  const targets = suppressionTargets(comment);
+  if (!targets) return false;
+  return targets.length === 0 || targets.includes(ruleId);
+}
 
 function literalValue(node) {
   if (!node) return null;
@@ -53,6 +70,7 @@ const rule = {
       fileRoute: "Use createRoute in the code-based route tree; createFileRoute is not allowed.",
       filesystemPlugin: "Use the code-based route tree; the TanStack filesystem-route plugin is not allowed.",
       generatedTree: "Import the code-based route tree; generated routeTree modules are not allowed.",
+      suppression: "Do not suppress squad/no-filesystem-routes; remove the filesystem-routing usage instead.",
     },
     schema: [],
   },
@@ -93,6 +111,12 @@ const rule = {
     }
 
     return {
+      Program(node) {
+        const comments = context.sourceCode?.getAllComments?.() ?? [];
+        if (comments.some(suppressesThisRule)) {
+          context.report({ node, messageId: "suppression" });
+        }
+      },
       ImportDeclaration(node) {
         recordImport(node);
         reportSource(node, importSource(node));

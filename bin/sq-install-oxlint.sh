@@ -9,9 +9,16 @@
 #
 # Usage:
 #   sq-install-oxlint.sh <destination-directory>
+#   sq-install-oxlint.sh --required-version
 set -eu
 
 VERSION=1.87.0
+case "${1:-}" in
+  --required-version)
+    printf '%s\n' "$VERSION"
+    exit 0
+    ;;
+esac
 CLI_SHA256=04441961a07abc710dda63f798550b37169d7ad527acbe6e880785987b6116d4
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) BINDING=linux-x64-gnu; BINDING_SHA256=107eb7c1fc059c961dea25f4d8bdb6f8c0bba78b958e81c5c1b81033a71fcfdb ;;

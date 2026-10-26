@@ -76,6 +76,7 @@ Selecting react@1 copies the authoritative rule, its colocated acceptance check,
 That installed config wires the plugin and rule for the verification command alone, so the route gate needs neither D3 approval nor an edit to the project's existing lint policy.
 The verification command is `node tools/oxlint/verify-no-filesystem-routes.mjs`: it runs the project's installed oxlint with the Squad rule over the project's own source files and fails when any of the three patterns appears.
 It fails closed with an actionable message when oxlint is not installed, so a missing tool can never report a green route check.
+A suppression comment naming the rule, or a bare lint-disable directive, is itself a violation, and the command disables lint-ignore files so an ignore entry cannot exclude the route tree.
 The adopting task installs oxlint at the version it records with its D3 disposition and commits that dependency with the branch; the verification command never installs it silently.
 Run that command as a mandatory verification command and include its captured output in the completion evidence, including one real filesystem-route source that failed and one code-based source that passed.
 

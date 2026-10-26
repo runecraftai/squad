@@ -18,16 +18,28 @@ TMP_ROOT=$(fm_test_tmproot sq-playbook-rule)
 
 command -v node >/dev/null 2>&1 || { echo "skip: node not found (required by the React filesystem-route rule test)"; exit 0; }
 
+REQUIRED_OXLINT_VERSION=$("$OXLINT_INSTALL" --required-version)
+
+oxlint_matches_pin() {  # <binary>
+  local binary=$1 output
+  [ -x "$binary" ] || return 1
+  output=$("$binary" --version 2>/dev/null) || return 1
+  case "$output" in
+    *"$REQUIRED_OXLINT_VERSION"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 find_oxlint() {
-  if [ -n "${OXLINT_BIN:-}" ] && [ -x "$OXLINT_BIN" ]; then
-    printf '%s\n' "$OXLINT_BIN"
-    return 0
-  fi
-  if [ -x "$ROOT/node_modules/.bin/oxlint" ]; then
-    printf '%s\n' "$ROOT/node_modules/.bin/oxlint"
-    return 0
-  fi
-  command -v oxlint 2>/dev/null
+  local candidate
+  for candidate in "${OXLINT_BIN:-}" "$ROOT/node_modules/.bin/oxlint" "$(command -v oxlint 2>/dev/null || true)"; do
+    [ -n "$candidate" ] || continue
+    if oxlint_matches_pin "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
 }
 
 OXLINT_BIN=$(find_oxlint) || OXLINT_BIN=
@@ -36,6 +48,7 @@ if [ -z "$OXLINT_BIN" ]; then
     fail "the pinned oxlint install failed, so the route-rule acceptance proof cannot run"$'\n'"$install_out"
   fi
   OXLINT_BIN="$TMP_ROOT/oxlint/oxlint"
+  oxlint_matches_pin "$OXLINT_BIN" || fail "the pinned oxlint install did not report version $REQUIRED_OXLINT_VERSION"
 fi
 export OXLINT_BIN
 
@@ -50,8 +63,8 @@ run_rule_check() {  # <check-file> <failure-label>
     fail "$label"$'\n'"$out"
   fi
   passed=$(printf '%s\n' "$out" | awk '$1 == "#" && $2 == "pass" { print $3; exit }')
-  if [ -z "$passed" ] || [ "$passed" -lt 11 ]; then
-    fail "$label: expected at least 11 passing subtests"$'\n'"$out"
+  if [ -z "$passed" ] || [ "$passed" -lt 12 ]; then
+    fail "$label: expected at least 12 passing subtests"$'\n'"$out"
   fi
   if printf '%s\n' "$out" | grep -q '# SKIP'; then
     fail "$label: an acceptance case was skipped instead of executed"$'\n'"$out"

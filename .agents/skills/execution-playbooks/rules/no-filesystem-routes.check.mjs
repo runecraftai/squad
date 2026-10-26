@@ -209,6 +209,10 @@ test("the verification command catches every banned pattern and an uncommitted r
       "generated routeTree require": 'const { routeTree } = require("./routeTree.gen");\nmodule.exports = routeTree;\n',
       "generated routeTree dynamic import":
         'export async function loadTree() {\n  const { routeTree } = await import("./routeTree.gen");\n  return routeTree;\n}\n',
+      "suppressed createFileRoute":
+        'import { createFileRoute } from "@tanstack/react-router";\n// oxlint-disable-next-line squad/no-filesystem-routes\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
+      "bare suppression directive":
+        '// oxlint-disable\nimport { createFileRoute } from "@tanstack/react-router";\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
     };
     for (const [label, source] of Object.entries(violations)) {
       const file = routeFile(dir, "uncommitted.tsx");
@@ -223,6 +227,37 @@ test("the verification command catches every banned pattern and an uncommitted r
   }
 });
 
+test("the rule reports a suppression directive that names it during a direct lint", () => {
+  const dir = makeProject();
+  try {
+    fs.writeFileSync(
+      routeFile(dir),
+      'import { createFileRoute } from "@tanstack/react-router";\n// oxlint-disable-next-line squad/no-filesystem-routes\nexport const Route = createFileRoute("/bad")({ component: () => null });\n',
+    );
+    const result = spawnSync(
+      requireOxlint(),
+      [
+        "--config",
+        "tools/oxlint/no-filesystem-routes.oxlintrc.json",
+        "-A",
+        "all",
+        "-D",
+        "squad/no-filesystem-routes",
+        "src/app/routes/index.tsx",
+      ],
+      { cwd: dir, encoding: "utf8" },
+    );
+    assert.notEqual(result.status, 0, `a suppression directive must not silence the rule:\n${output(result)}`);
+    assert.match(
+      output(result),
+      /Do not suppress squad\/no-filesystem-routes/,
+      `the rule must report the suppression directive:\n${output(result)}`,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the verification command fails closed when oxlint is unavailable", () => {
   const dir = makeProject();
   try {
@@ -230,10 +265,15 @@ test("the verification command fails closed when oxlint is unavailable", () => {
     const result = spawnSync(process.execPath, ["tools/oxlint/verify-no-filesystem-routes.mjs"], {
       cwd: dir,
       encoding: "utf8",
-      env: { ...process.env, OXLINT_BIN: path.join(dir, "missing-oxlint"), PATH: "" },
+      env: { ...process.env, OXLINT_BIN: "", PATH: "" },
     });
     assert.notEqual(result.status, 0, "a project without oxlint must not report a green route check");
-    assert.match(output(result), /oxlint/, `the refusal must name oxlint:\n${output(result)}`);
+    assert.match(
+      output(result),
+      /oxlint is not installed/,
+      `the refusal must name the missing tool:\n${output(result)}`,
+    );
+    assert.match(output(result), /OXLINT_BIN/, `the refusal must name the escape hatch:\n${output(result)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
