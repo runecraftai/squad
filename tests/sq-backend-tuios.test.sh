@@ -217,13 +217,18 @@ case "${1:-}" in
       prompt_actions='"actions":["approve","deny","choose","text"],'
       [ -z "${SQUAD_TUIOS_FAKE_PROMPT_ACTIONS:-}" ] || prompt_actions=$(printf '"actions":%s,' "$SQUAD_TUIOS_FAKE_PROMPT_ACTIONS")
       [ "${SQUAD_TUIOS_FAKE_PROMPT_NO_ACTIONS:-0}" = 1 ] && prompt_actions=
+      peek_prompt_id=${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}
+      if [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
+         && [ -n "${SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND:-}" ]; then
+        peek_prompt_id=$SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
+      fi
       printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"%s",%s"answerable":true,"reason":"%s","success":true}\n' \
         "${SQUAD_TUIOS_FAKE_PROMPT_FOUND:-true}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_KIND:-approval}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_OPTIONS:-[]}" \
-        "${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}" \
+        "$peek_prompt_id" \
         "$prompt_actions" \
         "${SQUAD_TUIOS_FAKE_PROMPT_REASON:-}"
     fi
@@ -1488,7 +1493,10 @@ unset SQUAD_TUIOS_FAKE_RESPOND_FAIL SQUAD_TUIOS_FAKE_RESPOND_ERROR
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 err="$TMP_ROOT/respond-prose.err"
 SQUAD_TUIOS_FAKE_RESPOND_PROSE='respond failed: respond pressed nothing: the pane is not on needs_input, no rule reads its prompt now, the prompt is not the one prompt_id names, or another client already answered it. Read it again with peek-prompt.'
-export SQUAD_TUIOS_FAKE_RESPOND_PROSE
+SQUAD_TUIOS_FAKE_RESPOND_MARK="$TMP_ROOT/respond-mark"
+SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND=prompt-beta
+export SQUAD_TUIOS_FAKE_RESPOND_PROSE SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
 if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose.out" 2>"$err"; then
   fail 'a prose prompt-changed refusal must not report success'
 fi
@@ -1498,20 +1506,20 @@ printf '%s' "$(cat "$TMP_ROOT/respond-prose.out")" | jq -e '
   .type == "tuios_prompt_recovery"
   and .reason == "changed_prompt_refusal"
   and .target == "owned:w-opaque_7"
-  and .prompt_id == "p1"
+  and .prompt_id == "prompt-beta"
   and .attempted_prompt_id == "p1"
   and .attempted_action == "approve"
   and .attempted_value == null
   and (.actions | index("approve") != null)
   and (.options | map(.n) == [2,5])
-  and (.prompt.prompt_id == "p1")
-' >/dev/null 2>&1 || fail 'a changed-prompt refusal must return the current prompt and the attempted answer'
+  and (.prompt.prompt_id == "prompt-beta")
+' >/dev/null 2>&1 || fail 'a changed-prompt refusal must return the freshly read new prompt and the attempted answer'
+unset SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a prose prompt-changed refusal must invoke the provider exactly once'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
-SQUAD_TUIOS_FAKE_RESPOND_MARK="$TMP_ROOT/respond-mark"
 SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=unblocked
-export SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
+export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
 rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
 if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose-unblocked.out" 2>"$err"; then
   fail 'a changed prompt that cleared must still be reported as a known no-op'
