@@ -454,9 +454,50 @@ fm_backend_tuios_send_text_line() {  # <target> <text> [expected-label]
 # fm_backend_tuios_respond answers only the exact prompt the supervisor read.
 # The daemon rechecks prompt_id atomically and enforces its respond authority;
 # this call is deliberately never retried because a lost reply may follow a
-# successful answer.
+# successful answer. The recovery reads below are read-only context for a new
+# decision: an unconfirmed write stays unresolved even when they still show the
+# same prompt, and no observation from them ever authorizes a resend.
+fm_backend_tuios_prompt_recovery_payload() {  # <target> <reason> <attempted-id> <attempted-action> <attempted-value> <read-state> [prompt-json] [write] [diagnostic]
+  local target=$1 reason=$2 attempted_id=$3 attempted_action=$4 attempted_value=$5 read_state=$6 prompt=${7:-null} write=${8:-} diagnostic=${9:-}
+  jq -cn \
+    --arg target "$target" --arg reason "$reason" \
+    --arg attempted_prompt_id "$attempted_id" \
+    --arg attempted_action "$attempted_action" \
+    --arg attempted_value "$attempted_value" \
+    --arg read "$read_state" \
+    --argjson prompt "$prompt" \
+    --arg write "$write" \
+    --arg diagnostic "$diagnostic" '
+    {type:"tuios_prompt_recovery",reason:$reason,target:$target}
+    + (if $prompt == null then
+         {read:$read}
+         + (if $read == "not_blocked" then {blocked:false} else {} end)
+       else
+         {prompt_id:($prompt.prompt_id // null),
+          actions:($prompt.actions // []),
+          options:($prompt.options // []),
+          prompt:$prompt}
+       end)
+    + (if $attempted_prompt_id == "" then {} else {attempted_prompt_id:$attempted_prompt_id} end)
+    + (if $attempted_action == "" then {} else {attempted_action:$attempted_action} end)
+    + (if $attempted_value == "" then {} else {attempted_value:$attempted_value} end)
+    + (if $write == "" then {} else {write:$write} end)
+    + (if $diagnostic == "" then {} else {diagnostic:$diagnostic} end)
+  '
+}
+
+fm_backend_tuios_prompt_recovery_read() {  # <target> <reason> <attempted-id> <attempted-action> <attempted-value> [write] [diagnostic]
+  local target=$1 reason=$2 attempted_id=$3 attempted_action=$4 attempted_value=$5 write=${6:-} diagnostic=${7:-} prompt rc
+  prompt=$(fm_backend_tuios_prompt_read "$target") && rc=0 || rc=$?
+  case "$rc" in
+    0) fm_backend_tuios_prompt_recovery_payload "$target" "$reason" "$attempted_id" "$attempted_action" "$attempted_value" blocked "$prompt" "$write" "$diagnostic" ;;
+    3) fm_backend_tuios_prompt_recovery_payload "$target" "$reason" "$attempted_id" "$attempted_action" "$attempted_value" not_blocked null "$write" "$diagnostic" ;;
+    *) fm_backend_tuios_prompt_recovery_payload "$target" "$reason" "$attempted_id" "$attempted_action" "$attempted_value" failed null "$write" "$diagnostic" ;;
+  esac
+}
+
 fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
-  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out err errfile rc settled confirmed verdict
+  local target=$1 action=$2 prompt_id=$3 value=${4:-} session window prompt catalog out err errfile rc prompt_rc settled confirmed verdict
   SQUAD_BACKEND_PANE_GRANT_TARGET=
   fm_backend_tuios_parse_target "$target" || { echo 'error: malformed TUIOS prompt target' >&2; return 1; }
   [ -n "$prompt_id" ] || { echo 'error: TUIOS prompt id is required; nothing was answered' >&2; return 1; }
@@ -483,9 +524,23 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
   ' >/dev/null 2>&1 || { echo 'error: installed TUIOS daemon does not advertise the prompt response capability this answer needs; nothing was answered' >&2; return 1; }
   session=$SQUAD_BACKEND_TUIOS_SESSION
   window=$SQUAD_BACKEND_TUIOS_WINDOW
-  prompt=$(fm_backend_tuios_prompt_json "$target") || { echo 'error: target is not currently waiting on a readable TUIOS prompt; nothing was answered' >&2; return 1; }
+  prompt=$(fm_backend_tuios_prompt_read "$target") && prompt_rc=0 || prompt_rc=$?
+  case "$prompt_rc" in
+    0) ;;
+    3)
+      echo 'error: the target is not currently waiting on a TUIOS prompt; nothing was answered' >&2
+      fm_backend_tuios_prompt_recovery_payload "$target" stale_decision "$prompt_id" "$action" "$value" not_blocked null
+      return 1
+      ;;
+    *)
+      echo 'error: the current TUIOS prompt could not be read; nothing was answered' >&2
+      fm_backend_tuios_prompt_recovery_payload "$target" stale_decision "$prompt_id" "$action" "$value" failed null
+      return 1
+      ;;
+  esac
   [ "$(printf '%s' "$prompt" | jq -r '.prompt_id // empty')" = "$prompt_id" ] || {
-    echo 'error: TUIOS prompt changed since it was read; nothing was answered; read the current prompt before deciding again' >&2
+    echo 'error: TUIOS prompt changed since it was read; the old decision expired and nothing was answered' >&2
+    fm_backend_tuios_prompt_recovery_payload "$target" stale_decision "$prompt_id" "$action" "$value" blocked "$prompt"
     return 1
   }
   printf '%s' "$prompt" | jq -e --arg action "$action" '(.actions // []) | index($action) != null' >/dev/null 2>&1 || {
@@ -515,7 +570,11 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
       [ -z "$out" ] || printf '%s\n' "$out" >&2
     fi
     case "$verdict" in
-      prompt_changed) echo 'error: TUIOS confirmed nothing was answered because the prompt changed; read the new prompt before deciding again' >&2; return 1 ;;
+      prompt_changed)
+        echo 'error: TUIOS confirmed nothing was answered because the prompt changed; the old decision expired' >&2
+        fm_backend_tuios_prompt_recovery_read "$target" changed_prompt_refusal "$prompt_id" "$action" "$value"
+        return 1
+        ;;
       risk_matched) echo 'error: TUIOS refused this risk-matched approval; nothing was answered and no risk acknowledgement was inferred' >&2; return 1 ;;
       not_authorized)
         # shellcheck disable=SC2034 # Set for the sourcing caller to print the sanctioned grant remedy.
@@ -524,7 +583,8 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
         return 1
         ;;
     esac
-    echo 'error: TUIOS response outcome may be uncertain; do not retry until the current prompt is re-read with bin/sq-crew-state.sh <task-id>' >&2
+    echo 'error: TUIOS response outcome is unresolved; do not retry; reconciling read-only' >&2
+    fm_backend_tuios_prompt_recovery_read "$target" unconfirmed_write_reconciliation "$prompt_id" "$action" "$value" unresolved "$out"
     return 1
   fi
   [ -z "$err" ] || printf '%s\n' "$err" >&2
@@ -533,24 +593,25 @@ fm_backend_tuios_respond() {  # <target> <action> <prompt-id> [value]
     (.success == true) and (.prompt_id == $id)
   ' >/dev/null 2>&1; then confirmed=true; else confirmed=false; fi
   [ "$confirmed" = true ] || {
-    echo 'error: TUIOS did not confirm the exact prompt response; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
+    [ -z "$out" ] || printf '%s\n' "$out" >&2
+    echo 'error: TUIOS did not confirm the exact prompt response; the write is unresolved; do not retry; reconciling read-only' >&2
+    fm_backend_tuios_prompt_recovery_read "$target" unconfirmed_write_reconciliation "$prompt_id" "$action" "$value" unresolved "$out"
     return 1
   }
+  printf '%s\n' "$out"
   if [ "$settled" = prompt ]; then
-    printf '%s\n' "$out"
-    echo 'error: the exact prompt was answered, but another prompt appeared; inspect it instead of retrying' >&2
+    echo 'error: the exact prompt was answered, but another prompt appeared; decide on that prompt instead of retrying' >&2
+    fm_backend_tuios_prompt_recovery_read "$target" next_prompt "$prompt_id" "$action" "$value"
     return 1
   fi
   if [ "$settled" = gone ]; then
-    printf '%s\n' "$out"
     echo 'error: the exact prompt was answered, but the operator window closed as it was typed; do not retry; inspect the task instead' >&2
     return 1
   fi
   [ "$settled" = state ] || {
-    echo 'error: TUIOS did not confirm the blocked prompt cleared; outcome may be uncertain; re-read the prompt with bin/sq-crew-state.sh <task-id> before any retry' >&2
+    echo 'error: the exact answer was confirmed, but settlement outcome may be uncertain; do not retry' >&2
     return 1
   }
-  printf '%s\n' "$out"
 }
 
 fm_backend_tuios_current_path() {  # <target>
@@ -857,19 +918,33 @@ fm_backend_tuios_agent_state() {  # <target>
   esac
 }
 
-# fm_backend_tuios_prompt_json: the blocking prompt the pane is waiting on, read
-# with the daemon's prompt verb. Prints the peek-prompt JSON object (whose
-# `lines`, `message`, `options`, `kind`, `prompt_id` and `reason` fields are the
-# documented prompt content) only when the pane is on needs_input; returns 1
-# otherwise or on any read failure.
-fm_backend_tuios_prompt_json() {  # <target>
+# fm_backend_tuios_prompt_read: read the prompt with the daemon's prompt verb
+# and print its peek-prompt JSON object (whose `lines`, `message`, `options`,
+# `kind`, `prompt_id` and `reason` fields are the documented prompt content),
+# returning 3 when the read succeeded but the pane is not blocked and 1 on any
+# read failure. fm_backend_tuios_prompt_json prints only a blocked prompt.
+fm_backend_tuios_prompt_read() {  # <target>; 0 blocked prompt, 3 readable but not blocked, 1 read failure
   local target=$1 out
   fm_backend_tuios_parse_target "$target" || return 1
   out=$("$(fm_backend_tuios_bin)" peek-prompt --session "$SQUAD_BACKEND_TUIOS_SESSION" \
     --window "$SQUAD_BACKEND_TUIOS_WINDOW" --json 2>/dev/null) || return 1
   printf '%s' "$out" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
-    type == "object" and (terror | not) and (.success != false) and (.blocked == true)
+    type == "object" and (terror | not) and (.success != false)
   ' >/dev/null 2>&1 || return 1
+  if printf '%s' "$out" | jq -e '.blocked == true' >/dev/null 2>&1; then
+    printf '%s' "$out"
+    return 0
+  fi
+  if printf '%s' "$out" | jq -e '.blocked == false' >/dev/null 2>&1; then
+    printf '%s' "$out"
+    return 3
+  fi
+  return 1
+}
+
+fm_backend_tuios_prompt_json() {  # <target>
+  local target=$1 out
+  out=$(fm_backend_tuios_prompt_read "$target") || return 1
   printf '%s' "$out"
 }
 

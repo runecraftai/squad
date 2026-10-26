@@ -20,10 +20,10 @@
 # recorded task selector whose backend is tuios, re-reads the current prompt,
 # demands the same prompt_id plus one of the prompt's own actions (and, for
 # choose, the displayed option number), and invokes the daemon's respond verb
-# exactly once: a lost or unconfirmed reply is never retried, so an uncertain
-# outcome must be re-read through bin/sq-crew-state.sh before any retry. A daemon
-# whose verb catalogue lacks the parameters that answer needs is refused by name
-# rather than degrading to keystrokes.
+# exactly once: a lost or unconfirmed reply is never retried, and its outcome
+# stays unresolved even when a read-only reconciliation still shows the same
+# prompt. A daemon whose verb catalogue lacks the parameters that answer needs
+# is refused by name rather than degrading to keystrokes.
 #
 # Text submission is verified: the line is typed ONCE, then Enter is sent and
 # retried (Enter only, never retyped) until the target backend confirms a

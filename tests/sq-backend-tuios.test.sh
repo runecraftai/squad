@@ -182,6 +182,7 @@ case "${1:-}" in
       "${SQUAD_TUIOS_FAKE_READY:-false}"
     ;;
   respond)
+    [ -z "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] || : > "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
     if [ -n "${SQUAD_TUIOS_FAKE_RESPOND_PROSE:-}" ]; then
       jq -cn --arg err "$SQUAD_TUIOS_FAKE_RESPOND_PROSE" '{error: $err, success: false}'
       exit 1
@@ -202,19 +203,33 @@ case "${1:-}" in
       "${SQUAD_TUIOS_FAKE_RESPOND_ID:-$respond_prompt_id}" "${SQUAD_TUIOS_FAKE_SETTLED:-state}" "${SQUAD_TUIOS_FAKE_STATE:-working}"
     ;;
   peek-prompt)
-    if [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ]; then
+    [ "${SQUAD_TUIOS_FAKE_PROMPT_PEEK_FAIL:-0}" = 1 ] && exit 1
+    if [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
+       && [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND:-}" = fail ]; then
+      exit 1
+    elif [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
+       && [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND:-}" = malformed ]; then
+      printf '{"success":true}\n'
+    elif [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE:-blocked}" = unblocked ] \
+       || { [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
+            && [ "${SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND:-}" = unblocked ]; }; then
       printf '{"blocked":false,"found":false,"reason":"the pane is not on needs_input","success":true}\n'
     else
       prompt_actions='"actions":["approve","deny","choose","text"],'
       [ -z "${SQUAD_TUIOS_FAKE_PROMPT_ACTIONS:-}" ] || prompt_actions=$(printf '"actions":%s,' "$SQUAD_TUIOS_FAKE_PROMPT_ACTIONS")
       [ "${SQUAD_TUIOS_FAKE_PROMPT_NO_ACTIONS:-0}" = 1 ] && prompt_actions=
+      peek_prompt_id=${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}
+      if [ -n "${SQUAD_TUIOS_FAKE_RESPOND_MARK:-}" ] && [ -e "$SQUAD_TUIOS_FAKE_RESPOND_MARK" ] \
+         && [ -n "${SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND:-}" ]; then
+        peek_prompt_id=$SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
+      fi
       printf '{"blocked":true,"found":%s,"kind":"%s","message":"%s","lines":["%s"],"options":%s,"prompt_id":"%s",%s"answerable":true,"reason":"%s","success":true}\n' \
         "${SQUAD_TUIOS_FAKE_PROMPT_FOUND:-true}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_KIND:-approval}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_MESSAGE:-approve Bash: make}" \
         "${SQUAD_TUIOS_FAKE_PROMPT_OPTIONS:-[]}" \
-        "${SQUAD_TUIOS_FAKE_PROMPT_ID:-p1}" \
+        "$peek_prompt_id" \
         "$prompt_actions" \
         "${SQUAD_TUIOS_FAKE_PROMPT_REASON:-}"
     fi
@@ -1321,13 +1336,26 @@ assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'respond --json --session owned --wi
 SQUAD_TUIOS_FAKE_RESPOND_ID=prompt-beta
 export SQUAD_TUIOS_FAKE_RESPOND_ID
 err="$TMP_ROOT/respond-unconfirmed.err"
-if fm_backend_tuios_respond owned:w-opaque_7 approve prompt-alpha >/dev/null 2>"$err"; then
+if fm_backend_tuios_respond owned:w-opaque_7 approve prompt-alpha >"$TMP_ROOT/respond-mismatch.out" 2>"$err"; then
   fail 'a response that does not confirm the exact prompt id must not report success'
 fi
 assert_contains "$(cat "$err")" 'did not confirm the exact prompt response' \
-  'a mismatched response prompt id must be an uncertain outcome, not a confirmed answer'
-assert_contains "$(cat "$err")" 'outcome may be uncertain' \
-  'a mismatched response prompt id must warn against retrying'
+  'a mismatched response prompt id must be an unresolved write, not a confirmed answer'
+assert_contains "$(cat "$err")" 'write is unresolved' \
+  'a mismatched response prompt id must remain unresolved'
+assert_contains "$(cat "$err")" 'do not retry' \
+  'an unconfirmed write must never authorize a retry'
+assert_not_contains "$(cat "$err")" 'before any retry' \
+  'an unconfirmed write must not suggest a retry after a reconciliation read'
+printf '%s' "$(cat "$TMP_ROOT/respond-mismatch.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "unconfirmed_write_reconciliation"
+  and .target == "owned:w-opaque_7"
+  and .write == "unresolved"
+  and .attempted_prompt_id == "prompt-alpha"
+  and .attempted_action == "approve"
+  and .prompt_id == "prompt-alpha"
+' >/dev/null 2>&1 || fail 'an unconfirmed write must preserve the attempted answer and attach the current prompt read-only'
 unset SQUAD_TUIOS_FAKE_RESPOND_ID
 unset SQUAD_TUIOS_FAKE_PROMPT_ID
 # The answer sends syntax parameters and reads exact-prompt returns, so a catalog
@@ -1359,12 +1387,66 @@ OUT=$(fm_backend_tuios_respond owned:w-opaque_7 approve p1 2>"$err") \
 assert_contains "$OUT" '"settled_by":"state"' 'a confirmed answer must stay confirmed with a stderr diagnostic'
 assert_contains "$(cat "$err")" 'daemon note about this successful answer' 'the out-of-band diagnostic must still be surfaced'
 unset SQUAD_TUIOS_FAKE_RESPOND_STDERR
-if fm_backend_tuios_respond owned:w-opaque_7 approve wrong-id >/dev/null 2>&1; then
-  fail 'a response to a prompt id other than the currently read prompt must refuse'
-fi
-assert_not_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond ' 'a changed prompt must not invoke TUIOS respond'
 SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '[{"n":2,"label":"first"},{"n":5,"label":"second"}]')
 export SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+for action in approve deny choose text; do
+  case "$action" in choose) value=5 ;; text) value=answer ;; *) value= ;; esac
+  snapshot=$(SQUAD_TUIOS_FAKE_PROMPT_ID=prompt-beta fm_backend_tuios_respond owned:w-opaque_7 "$action" wrong-id "$value" 2>/dev/null) &&
+    fail "a stale $action decision must refuse"
+  printf '%s' "$snapshot" | jq -e --arg action "$action" '
+    .type == "tuios_prompt_recovery"
+    and .reason == "stale_decision"
+    and .target == "owned:w-opaque_7"
+    and .prompt_id == "prompt-beta"
+    and .attempted_prompt_id == "wrong-id"
+    and .attempted_action == $action
+    and (.actions | index($action) != null)
+    and (.options | map(.n) == [2,5])
+    and (.prompt.prompt_id == "prompt-beta")
+  ' >/dev/null 2>&1 || fail "a stale $action decision must return the full current prompt context"
+  if [ -n "$value" ]; then
+    printf '%s' "$snapshot" | jq -e --arg value "$value" '.attempted_value == $value' >/dev/null 2>&1 \
+      || fail "a stale $action decision must preserve the attempted value"
+  else
+    printf '%s' "$snapshot" | jq -e '.attempted_value == null' >/dev/null 2>&1 \
+      || fail "a stale $action decision must not invent an attempted value"
+  fi
+done
+assert_not_contains "$(tail -n 1 "$SQUAD_TUIOS_LOG")" 'respond ' 'a changed prompt must not invoke TUIOS respond'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG" || true)
+err="$TMP_ROOT/respond-stale-unblocked.err"
+if SQUAD_TUIOS_FAKE_PROMPT_STATE=unblocked fm_backend_tuios_respond owned:w-opaque_7 deny wrong-id >"$TMP_ROOT/respond-stale-unblocked.out" 2>"$err"; then
+  fail 'a stale id with no current prompt must not report success'
+fi
+assert_contains "$(cat "$err")" 'nothing was answered' 'a stale id with no current prompt must be a known no-op'
+printf '%s' "$(cat "$TMP_ROOT/respond-stale-unblocked.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "stale_decision"
+  and .target == "owned:w-opaque_7"
+  and .read == "not_blocked"
+  and .blocked == false
+  and .attempted_prompt_id == "wrong-id"
+  and .attempted_action == "deny"
+  and (has("prompt_id") | not)
+  and (has("prompt") | not)
+' >/dev/null 2>&1 || fail 'a stale id with no current prompt must report the nonblocked read without implying a prompt'
+err="$TMP_ROOT/respond-stale-readfail.err"
+if SQUAD_TUIOS_FAKE_PROMPT_PEEK_FAIL=1 fm_backend_tuios_respond owned:w-opaque_7 approve wrong-id >"$TMP_ROOT/respond-stale-readfail.out" 2>"$err"; then
+  fail 'a stale id whose prompt read fails must not report success'
+fi
+assert_contains "$(cat "$err")" 'could not be read' 'a stale id with a failed prompt read must state the read failure'
+printf '%s' "$(cat "$TMP_ROOT/respond-stale-readfail.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "stale_decision"
+  and .target == "owned:w-opaque_7"
+  and .read == "failed"
+  and .attempted_prompt_id == "wrong-id"
+  and .attempted_action == "approve"
+  and (has("blocked") | not)
+  and (has("prompt_id") | not)
+' >/dev/null 2>&1 || fail 'a stale id whose prompt read fails must report an explicit read failure'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG" || true)" -eq "$respond_count" ] \
+  || fail 'a stale id that resolves no new prompt must not invoke TUIOS respond'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG" || true)
 if fm_backend_tuios_respond owned:w-opaque_7 choose p1 1 >/dev/null 2>&1; then
   fail 'a number the prompt does not display must refuse even when it is within the option count'
@@ -1410,11 +1492,23 @@ respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 SQUAD_TUIOS_FAKE_RESPOND_FAIL=1
 export SQUAD_TUIOS_FAKE_RESPOND_FAIL
 err="$TMP_ROOT/respond-uncertain.err"
-if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-uncertain.out" 2>"$err"; then
   fail 'an uncertain native response must not report success'
 fi
-assert_contains "$(cat "$err")" 'outcome may be uncertain' \
-  'an unrecognized refusal must stay an uncertain outcome, never a known no-op'
+assert_contains "$(cat "$err")" 'outcome is unresolved' \
+  'an unrecognized refusal must stay unresolved, never a known no-op'
+assert_contains "$(cat "$err")" 'do not retry' \
+  'a read-only reconciliation must not authorize resending'
+printf '%s' "$(cat "$TMP_ROOT/respond-uncertain.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "unconfirmed_write_reconciliation"
+  and .target == "owned:w-opaque_7"
+  and .write == "unresolved"
+  and .attempted_prompt_id == "p1"
+  and .attempted_action == "approve"
+  and .prompt_id == "p1"
+  and (.diagnostic | contains("simulated response refusal"))
+' >/dev/null 2>&1 || fail 'an unconfirmed write must return its read-only reconciliation separately from the send result'
 unset SQUAD_TUIOS_FAKE_RESPOND_FAIL
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'an uncertain native response must invoke respond exactly once'
@@ -1434,15 +1528,112 @@ unset SQUAD_TUIOS_FAKE_RESPOND_FAIL SQUAD_TUIOS_FAKE_RESPOND_ERROR
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 err="$TMP_ROOT/respond-prose.err"
 SQUAD_TUIOS_FAKE_RESPOND_PROSE='respond failed: respond pressed nothing: the pane is not on needs_input, no rule reads its prompt now, the prompt is not the one prompt_id names, or another client already answered it. Read it again with peek-prompt.'
-export SQUAD_TUIOS_FAKE_RESPOND_PROSE
-if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+SQUAD_TUIOS_FAKE_RESPOND_MARK="$TMP_ROOT/respond-mark"
+SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND=prompt-beta
+export SQUAD_TUIOS_FAKE_RESPOND_PROSE SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose.out" 2>"$err"; then
   fail 'a prose prompt-changed refusal must not report success'
 fi
 assert_contains "$(cat "$err")" 'nothing was answered' 'a prose prompt-changed refusal must be stated as a known no-op'
 assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a prose prompt-changed refusal must not be misreported as uncertain'
+printf '%s' "$(cat "$TMP_ROOT/respond-prose.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "changed_prompt_refusal"
+  and .target == "owned:w-opaque_7"
+  and .prompt_id == "prompt-beta"
+  and .attempted_prompt_id == "p1"
+  and .attempted_action == "approve"
+  and .attempted_value == null
+  and (.actions | index("approve") != null)
+  and (.options | map(.n) == [2,5])
+  and (.prompt.prompt_id == "prompt-beta")
+' >/dev/null 2>&1 || fail 'a changed-prompt refusal must return the freshly read new prompt and the attempted answer'
+unset SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a prose prompt-changed refusal must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a changed-prompt refusal must perform at most one read-only recovery read'
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
+SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=unblocked
+export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose-unblocked.out" 2>"$err"; then
+  fail 'a changed prompt that cleared must still be reported as a known no-op'
+fi
+printf '%s' "$(cat "$TMP_ROOT/respond-prose-unblocked.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "changed_prompt_refusal"
+  and .target == "owned:w-opaque_7"
+  and .read == "not_blocked"
+  and .blocked == false
+  and .attempted_prompt_id == "p1"
+  and .attempted_action == "approve"
+' >/dev/null 2>&1 || fail 'a changed-prompt recovery read that finds no blocked prompt must say so explicitly'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a cleared changed prompt must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a cleared changed prompt must still perform only one recovery read'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
+SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=fail
+export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose-readfail.out" 2>"$err"; then
+  fail 'a changed prompt whose recovery read fails must still be a known no-op'
+fi
+printf '%s' "$(cat "$TMP_ROOT/respond-prose-readfail.out")" | jq -e '
+  .type == "tuios_prompt_recovery"
+  and .reason == "changed_prompt_refusal"
+  and .target == "owned:w-opaque_7"
+  and .read == "failed"
+  and .blocked == null
+  and .attempted_prompt_id == "p1"
+  and .attempted_action == "approve"
+' >/dev/null 2>&1 || fail 'a failed changed-prompt recovery read must be reported explicitly'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a failed changed-prompt recovery read must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a failed recovery read must not be retried'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
+SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND=malformed
+export SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-prose-malformed.out" 2>"$err"; then
+  fail 'a malformed changed-prompt recovery reply must still be a known no-op'
+fi
+printf '%s' "$(cat "$TMP_ROOT/respond-prose-malformed.out")" | jq -e '
+  (.type == "tuios_prompt_recovery")
+  and (.reason == "changed_prompt_refusal")
+  and (.read == "failed")
+  and (has("blocked") | not)
+' >/dev/null 2>&1 || fail 'a recovery reply without a boolean blocked state must be an explicit read failure'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a malformed recovery reply must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a malformed recovery reply must not be re-read'
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+peek_count=$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)
+weird_target='owned:w"q\b'
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+if fm_backend_tuios_respond "$weird_target" approve p1 >"$TMP_ROOT/respond-prose-quoted.out" 2>"$err"; then
+  fail 'a quoted target must still be a known no-op after a changed-prompt refusal'
+fi
+printf '%s' "$(cat "$TMP_ROOT/respond-prose-quoted.out")" | jq -e --arg target "$weird_target" '
+  .type == "tuios_prompt_recovery"
+  and .target == $target
+  and .read == "failed"
+' >/dev/null 2>&1 || fail 'a recovery payload must escape a target that contains JSON metacharacters'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a quoted target must invoke the provider exactly once'
+[ "$(grep -c '^peek-prompt' "$SQUAD_TUIOS_LOG" || true)" -eq "$((peek_count + 2))" ] \
+  || fail 'a quoted target must still perform only one recovery read'
+unset SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_STATE_AFTER_RESPOND
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+unset SQUAD_TUIOS_FAKE_PROMPT_ID
 SQUAD_TUIOS_FAKE_RESPOND_PROSE='An allow for an approval that matches a risk rule was refused because risk_ack did not name exactly the rules it matched. Nothing was answered. Read the rules with get-approval, or answer in the pane.'
 export SQUAD_TUIOS_FAKE_RESPOND_PROSE
 if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
@@ -1474,6 +1665,36 @@ pass 'TUIOS backend: prompt id, displayed option numbers, safety refusals, and u
 # The answer's own settled outcome is not always the pane leaving the prompt: a
 # closed window is a confident end state, and only a timeout stays uncertain.
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
+err="$TMP_ROOT/respond-next-prompt.err"
+SQUAD_TUIOS_FAKE_SETTLED=prompt
+SQUAD_TUIOS_FAKE_RESPOND_MARK="$TMP_ROOT/respond-mark"
+SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND=prompt-beta
+SQUAD_TUIOS_FAKE_PROMPT_OPTIONS=$(printf '%s' '[{"n":2,"label":"first"},{"n":5,"label":"second"}]')
+export SQUAD_TUIOS_FAKE_SETTLED SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+rm -f "$SQUAD_TUIOS_FAKE_RESPOND_MARK"
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-next-prompt.out" 2>"$err"; then
+  fail 'a settled answer that presents another prompt must not report a fully settled state'
+fi
+assert_contains "$(cat "$err")" 'exact prompt was answered' 'a settled-by-prompt answer must keep the confirmed answer wording'
+assert_not_contains "$(cat "$err")" 'outcome may be uncertain' 'a settled-by-prompt answer must not be misreported as uncertain'
+jq -s -e '
+  length == 2
+  and (.[0].success == true and .[0].prompt_id == "p1" and .[0].settled_by == "prompt")
+  and (.[1].type == "tuios_prompt_recovery"
+    and .[1].reason == "next_prompt"
+    and .[1].target == "owned:w-opaque_7"
+    and .[1].prompt_id == "prompt-beta"
+    and .[1].attempted_prompt_id == "p1"
+    and .[1].attempted_action == "approve"
+    and (.[1].actions | index("choose") != null)
+    and (.[1].options | map(.n) == [2,5])
+    and (.[1].prompt.prompt_id == "prompt-beta"))
+' "$TMP_ROOT/respond-next-prompt.out" >/dev/null 2>&1 \
+  || fail 'a settled-by-prompt answer must return the next prompt snapshot with actions and options'
+[ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
+  || fail 'a settled-by-prompt answer must invoke respond exactly once'
+unset SQUAD_TUIOS_FAKE_SETTLED SQUAD_TUIOS_FAKE_RESPOND_MARK SQUAD_TUIOS_FAKE_PROMPT_ID_AFTER_RESPOND SQUAD_TUIOS_FAKE_PROMPT_OPTIONS
+respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 err="$TMP_ROOT/respond-gone.err"
 SQUAD_TUIOS_FAKE_SETTLED=gone
 export SQUAD_TUIOS_FAKE_SETTLED
@@ -1488,10 +1709,14 @@ assert_contains "$(cat "$TMP_ROOT/respond-gone.out")" '"settled_by":"gone"' 'the
 respond_count=$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")
 SQUAD_TUIOS_FAKE_SETTLED=timeout
 export SQUAD_TUIOS_FAKE_SETTLED
-if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >/dev/null 2>"$err"; then
+if fm_backend_tuios_respond owned:w-opaque_7 approve p1 >"$TMP_ROOT/respond-timeout.out" 2>"$err"; then
   fail 'a timed-out wait must not be reported as a settled prompt'
 fi
-assert_contains "$(cat "$err")" 'outcome may be uncertain' 'a timed-out wait must keep the uncertain wording'
+assert_contains "$(cat "$err")" 'exact answer was confirmed' 'a timed-out wait must keep the confirmed answer'
+assert_contains "$(cat "$err")" 'settlement outcome may be uncertain' 'a timed-out wait must keep the uncertain settlement wording'
+printf '%s' "$(cat "$TMP_ROOT/respond-timeout.out")" | jq -e '
+  .success == true and .prompt_id == "p1" and .settled_by == "timeout"
+' >/dev/null 2>&1 || fail 'an uncertain settlement must still report the confirmed exact-id answer'
 unset SQUAD_TUIOS_FAKE_SETTLED
 [ "$(grep -c '^respond ' "$SQUAD_TUIOS_LOG")" -eq "$((respond_count + 1))" ] \
   || fail 'a timed-out wait must invoke respond exactly once and must not be retried'
