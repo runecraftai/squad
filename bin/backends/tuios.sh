@@ -1158,9 +1158,9 @@ fm_backend_tuios_queue_error_verdict() {  # <error-text>
     *agent_blocked*|*'on needs_input'*) printf 'agent_blocked' ;;
     *prompt_stalled*|*'no sign of taking'*|*'did not turn working'*) printf 'prompt_stalled' ;;
     *not_ready*|*'not ready'*|*'mid-turn'*) printf 'not_ready' ;;
-    # The daemon only queues for a pane it knows holds an agent. A harness it
-    # cannot attribute gets the pre-existing literal write instead, and that
-    # path never claims success.
+    # The daemon only queues for a pane it knows holds an agent. Delivery is
+    # queue-only, so a harness it cannot attribute is refused outright: nothing
+    # is typed into that terminal and nothing is retried.
     *'runs no agent tuios knows of'*) printf 'no_agent' ;;
     *) printf 'send-failed' ;;
   esac
