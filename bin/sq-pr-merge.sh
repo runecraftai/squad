@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Merge a task's PR after recording pr= and any available pr_head= through
-# bin/sq-pr-check.sh, so teardown can verify landed work after squash merges.
+# Merge a task's PR only after sq-gh has freshly verified its recorded head,
+# checks, and mergeability, with GitHub binding the merge to that exact SHA.
+# Record pr= and pr_head= through bin/sq-pr-check.sh only after merge succeeds.
 # The full canonical GitHub PR URL is parsed by bin/sq-pr-lib.sh and the derived
 # owner/repository and PR number are passed to sq-gh as separate arguments.
 #
@@ -61,6 +62,14 @@ reject_repo_overrides() {
         echo "error: extra merge arguments must not override the repository" >&2
         return 1
         ;;
+      --expected-head|--expected-head=*)
+        echo "error: extra merge arguments must not override the verified PR head" >&2
+        return 1
+        ;;
+      --auto)
+        echo "error: automatic merge is not allowed by the guarded merge path" >&2
+        return 1
+        ;;
     esac
   done
 }
@@ -74,26 +83,25 @@ if [ ! -f "$META" ] || [ -L "$META" ]; then
   exit 1
 fi
 
-"$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"
-grep -qxF "pr=$URL" "$META" || {
-  echo "error: PR metadata recording failed" >&2
+RECORDED_HEAD=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
+if ! fm_pr_head_valid "$RECORDED_HEAD"; then
+  echo "error: task metadata has no valid recorded PR head; run sq-pr-check before merging" >&2
   exit 1
-}
+fi
 
 merge_args=()
 if ! caller_has_merge_method "$@"; then
   merge_args=(--squash)
 fi
 
-auto_merge=0
-for arg in "$@"; do
-  case "$arg" in
-    --auto|--disable-auto) auto_merge=1 ;;
-  esac
-done
-
-sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
-if [ "$auto_merge" -eq 0 ]; then
-  SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
-    --source pr-merge --result landed || true
-fi
+sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" --expected-head "$RECORDED_HEAD" "${merge_args[@]+"${merge_args[@]}"}" "$@"
+"$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"
+grep -qxF "pr=$URL" "$META" || {
+  echo "error: PR metadata recording failed after confirmed merge" >&2
+  exit 1
+}
+case " $* " in
+  *" --disable-auto "*) ;;
+  *) SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+    --source pr-merge --result landed || true ;;
+esac

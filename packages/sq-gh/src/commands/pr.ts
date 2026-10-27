@@ -258,7 +258,7 @@ flags{create}:
 flags{edit}:
   --title <text>, --body <text> or --body-file <path>, --add-label <name> (repeatable), --remove-label <name> (repeatable), --add-assignee <login> (repeatable), --remove-assignee <login> (repeatable), --add-reviewer <login> (repeatable), --remove-reviewer <login> (repeatable), --milestone
 flags{merge}:
-  --method <merge|squash|rebase>, --merge, --squash, --rebase, --auto, --delete-branch, --body <text> or --body-file <path>, --subject
+  --method <merge|squash|rebase>, --merge, --squash, --rebase, --delete-branch, --expected-head <sha>, --body <text> or --body-file <path>, --subject
 flags{review}:
   --approve, --request-changes, --comment, --body <text> or --body-file <path>
 flags{comment}:
@@ -563,6 +563,13 @@ async function prClose(args: string[], ctx?: RepoContext): Promise<string> {
 
 async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   const num = takeNumber(args, "PR");
+  const expectedHead = takeFlag(args, "--expected-head");
+  if (!expectedHead || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(expectedHead)) {
+    throw new AxiError(
+      "--expected-head must be a full recorded commit SHA",
+      "VALIDATION_ERROR",
+    );
+  }
   const explicitMethod = takeFlag(args, "--method");
   const shorthandMethods = ["merge", "squash", "rebase"].filter((candidate) =>
     takeBoolFlag(args, `--${candidate}`),
@@ -591,15 +598,87 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
     );
   }
   const auto = takeBoolFlag(args, "--auto");
+  if (auto) {
+    throw new AxiError(
+      "--auto is not allowed on the guarded PR merge path",
+      "VALIDATION_ERROR",
+    );
+  }
   const deleteBranch = takeBoolFlag(args, "--delete-branch");
   const body = takeBody(args);
   const subject = takeFlag(args, "--subject");
 
-  // Idempotent: check if already merged
-  const pr = await ghJson<Pick<PrItem, "state" | "mergedBy" | "mergedAt">>(
-    ["pr", "view", String(num), "--json", "state,mergedBy,mergedAt"],
-    ctx,
-  );
+  // Fresh merge-boundary read; cached PR/check evidence is never sufficient.
+  let pr: Pick<PrItem, "state" | "mergedBy" | "mergedAt"> & {
+    headRefOid?: string;
+    mergeable?: string;
+    statusCheckRollup?: StatusCheck[];
+  };
+  try {
+    pr = await ghJson<
+      Pick<PrItem, "state" | "mergedBy" | "mergedAt"> & {
+        headRefOid?: string;
+        mergeable?: string;
+        statusCheckRollup?: StatusCheck[];
+      }
+    >(
+      [
+        "pr",
+        "view",
+        String(num),
+        "--json",
+        "state,mergedBy,mergedAt,headRefOid,mergeable,statusCheckRollup",
+      ],
+      ctx,
+    );
+  } catch {
+    throw new AxiError(
+      "could not read current PR head, checks, and mergeability",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (!pr || typeof pr !== "object") {
+    throw new AxiError(
+      "current PR read returned unknown data",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (!pr.headRefOid || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(pr.headRefOid)) {
+    throw new AxiError(
+      "current PR head is unavailable or invalid",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (pr.headRefOid !== expectedHead) {
+    throw new AxiError(
+      `PR head changed: recorded ${expectedHead}, current ${pr.headRefOid}`,
+      "VALIDATION_ERROR",
+    );
+  }
+  if (!Array.isArray(pr.statusCheckRollup)) {
+    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
+  }
+  if (
+    pr.statusCheckRollup.some((check) => !check || typeof check !== "object")
+  ) {
+    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
+  }
+  const checkStates = pr.statusCheckRollup.map(classifyCheck);
+  if (checkStates.includes("fail")) {
+    throw new AxiError("current PR checks are failing", "VALIDATION_ERROR");
+  }
+  if (checkStates.includes("pending")) {
+    throw new AxiError(
+      "current PR checks are pending or unknown",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (pr.mergeable !== "MERGEABLE") {
+    throw new AxiError(
+      `PR is not mergeable (mergeability: ${pr.mergeable ?? "unknown"})`,
+      "VALIDATION_ERROR",
+    );
+  }
   if ((pr.state ?? "").toUpperCase() === "MERGED") {
     return renderOutput([
       renderDetail(
@@ -623,9 +702,14 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
     ]);
   }
 
-  const ghArgs = ["pr", "merge", String(num)];
+  const ghArgs = [
+    "pr",
+    "merge",
+    String(num),
+    "--match-head-commit",
+    expectedHead,
+  ];
   if (method) ghArgs.push("--" + method);
-  if (auto) ghArgs.push("--auto");
   if (deleteBranch) ghArgs.push("--delete-branch");
   if (body !== undefined) ghArgs.push("--body", body);
   if (subject) ghArgs.push("--subject", subject);

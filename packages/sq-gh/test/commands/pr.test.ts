@@ -826,14 +826,42 @@ describe("prCommand", () => {
   });
 
   describe("merge", () => {
+    const head = "1234567890123456789012345678901234567890";
+    const verifiedPr = {
+      state: "OPEN",
+      headRefOid: head,
+      mergeable: "MERGEABLE",
+      statusCheckRollup: [{ name: "build", conclusion: "SUCCESS" }],
+    };
+
+    it("refuses automatic merge without reading or merging", async () => {
+      await expect(
+        prCommand(["merge", "10", "--expected-head", head, "--auto"], ctx),
+      ).rejects.toThrow("--auto is not allowed");
+      expect(mockedGhJson).not.toHaveBeenCalled();
+      expect(mockedGhExec).not.toHaveBeenCalled();
+    });
+
+    it("refuses missing expected head before reading or merging", async () => {
+      await expect(prCommand(["merge", "10"], ctx)).rejects.toThrow(
+        "--expected-head must be a full recorded commit SHA",
+      );
+      expect(mockedGhJson).not.toHaveBeenCalled();
+      expect(mockedGhExec).not.toHaveBeenCalled();
+    });
+
     it("returns already merged when PR is already merged (idempotent)", async () => {
       mockedGhJson.mockResolvedValue({
+        ...verifiedPr,
         state: "MERGED",
         mergedBy: { login: "alice" },
         mergedAt: "2024-01-01T00:00:00Z",
       });
 
-      const result = await prCommand(["merge", "10"], ctx);
+      const result = await prCommand(
+        ["merge", "10", "--expected-head", head],
+        ctx,
+      );
 
       expect(result).toContain("merged");
       expect(result).toContain("alice");
@@ -847,16 +875,24 @@ describe("prCommand", () => {
     ])(
       "maps %s shorthand to a gh merge method flag",
       async (input, ghFlag, method) => {
-        mockedGhJson.mockResolvedValue({ state: "OPEN" });
+        mockedGhJson.mockResolvedValue(verifiedPr);
         mockedGhExec.mockResolvedValue("");
 
         const result = await prCommand(
-          ["merge", "10", input, "--delete-branch"],
+          ["merge", "10", "--expected-head", head, input, "--delete-branch"],
           ctx,
         );
 
         expect(mockedGhExec).toHaveBeenCalledWith(
-          ["pr", "merge", "10", ghFlag, "--delete-branch"],
+          [
+            "pr",
+            "merge",
+            "10",
+            "--match-head-commit",
+            head,
+            ghFlag,
+            "--delete-branch",
+          ],
           ctx,
         );
         expect(result).toContain(`method: ${method}`);
@@ -864,15 +900,54 @@ describe("prCommand", () => {
     );
 
     it("keeps --method working", async () => {
-      mockedGhJson.mockResolvedValue({ state: "OPEN" });
+      mockedGhJson.mockResolvedValue(verifiedPr);
       mockedGhExec.mockResolvedValue("");
 
-      await prCommand(["merge", "10", "--method", "squash"], ctx);
-
-      expect(mockedGhExec).toHaveBeenCalledWith(
-        ["pr", "merge", "10", "--squash"],
+      await prCommand(
+        ["merge", "10", "--expected-head", head, "--method", "squash"],
         ctx,
       );
+
+      expect(mockedGhExec).toHaveBeenCalledWith(
+        ["pr", "merge", "10", "--match-head-commit", head, "--squash"],
+        ctx,
+      );
+    });
+
+    it.each([
+      [
+        "fresh failure after cached green",
+        { statusCheckRollup: [{ name: "build", conclusion: "FAILURE" }] },
+        "checks are failing",
+      ],
+      [
+        "pending",
+        { statusCheckRollup: [{ name: "build", status: "IN_PROGRESS" }] },
+        "checks are pending",
+      ],
+      ["unknown", { statusCheckRollup: undefined }, "checks are unknown"],
+      [
+        "head drift",
+        { headRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        `PR head changed: recorded ${head}, current aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+      ],
+      ["unmergeable", { mergeable: "CONFLICTING" }, "not mergeable"],
+    ])("refuses %s without invoking merge", async (_label, patch, reason) => {
+      mockedGhJson.mockResolvedValue({ ...verifiedPr, ...patch });
+      await expect(
+        prCommand(["merge", "10", "--expected-head", head], ctx),
+      ).rejects.toThrow(reason);
+      expect(mockedGhExec).not.toHaveBeenCalled();
+    });
+
+    it("refuses when the fresh PR read fails", async () => {
+      mockedGhJson.mockRejectedValue(new Error("provider unavailable"));
+      await expect(
+        prCommand(["merge", "10", "--expected-head", head], ctx),
+      ).rejects.toThrow(
+        "could not read current PR head, checks, and mergeability",
+      );
+      expect(mockedGhExec).not.toHaveBeenCalled();
     });
   });
 
@@ -911,14 +986,40 @@ describe("prCommand", () => {
     });
 
     it("uses file contents for pr merge", async () => {
+      const head = "1234567890123456789012345678901234567890";
       await withBodyFile(markdownBody, async (file) => {
-        mockedGhJson.mockResolvedValue({ state: "OPEN" });
+        mockedGhJson.mockResolvedValue({
+          state: "OPEN",
+          headRefOid: head,
+          mergeable: "MERGEABLE",
+          statusCheckRollup: [{ name: "build", conclusion: "SUCCESS" }],
+        });
         mockedGhExec.mockResolvedValue("");
 
-        await prCommand(["merge", "123", "--squash", "--body-file", file], ctx);
+        await prCommand(
+          [
+            "merge",
+            "123",
+            "--expected-head",
+            head,
+            "--squash",
+            "--body-file",
+            file,
+          ],
+          ctx,
+        );
 
         expect(mockedGhExec).toHaveBeenCalledWith(
-          ["pr", "merge", "123", "--squash", "--body", markdownBody],
+          [
+            "pr",
+            "merge",
+            "123",
+            "--match-head-commit",
+            head,
+            "--squash",
+            "--body",
+            markdownBody,
+          ],
           ctx,
         );
       });

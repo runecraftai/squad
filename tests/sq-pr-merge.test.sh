@@ -6,7 +6,7 @@
 # sq-pr-check.sh trigger never fires.
 #
 # Matrix:
-#   (a) merge records pr= and pr_head= before merging, and merges
+#   (a) merge records pr= and pr_head= only after the guarded merge succeeds
 #   (b) merge is refused when sq-gh pr merge itself fails (no silent success)
 #   (c) extra sq-gh pr merge args are forwarded after number and --repo
 #   (d) merge is refused before sq-gh when task meta is missing
@@ -47,6 +47,7 @@ make_case() {
 # headRefOid for sq-pr-check.sh's pr_head lookup. Args: case_dir head_sha
 add_gh_mocks() {
   local case_dir=$1 head=$2
+  printf 'pr_head=%s\n' "$head" >> "$case_dir/state/task-x1.meta"
   cat > "$case_dir/fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
@@ -70,6 +71,7 @@ SH
 # real merge failure is distinguishable from the recording step.
 add_gh_mocks_merge_fails() {
   local case_dir=$1
+  printf 'pr_head=%s\n' 1313131313131313131313131313131313131313 >> "$case_dir/state/task-x1.meta"
   cat > "$case_dir/fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
@@ -119,9 +121,9 @@ test_records_pr_and_head_before_merging() {
     "records-before-merge: pr= was not recorded"
   assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" \
     "records-before-merge: pr_head= was not recorded"
-  grep -qxF 'pr merge 9 --repo example/repo --squash' "$case_dir/sq-gh.log" \
+  grep -qxF 'pr merge 9 --repo example/repo --expected-head deadbeefcafefeed0000000000000000deadbeef --squash' "$case_dir/sq-gh.log" \
     || fail "records-before-merge: sq-gh pr merge was not invoked with number, --repo, and default --squash"
-  pass "sq-pr-merge records pr= and pr_head= before invoking sq-gh pr merge"
+  pass "sq-pr-merge records PR metadata after invoking the guarded merge"
 }
 
 test_merge_failure_propagates_after_recording() {
@@ -138,8 +140,8 @@ test_merge_failure_propagates_after_recording() {
   set -e
 
   expect_code 1 "$rc" "merge-fails: sq-pr-merge should propagate the sq-gh merge failure"
-  assert_grep 'pr=https://github.com/example/repo/pull/13' "$case_dir/state/task-x1.meta" \
-    "merge-fails: pr= should already be recorded even though the merge itself failed"
+  assert_no_grep 'pr=https://github.com/example/repo/pull/13' "$case_dir/state/task-x1.meta" \
+    "merge-fails: failed merge must leave PR metadata untouched"
   pass "sq-pr-merge propagates a real merge failure without silently succeeding"
 }
 
@@ -153,9 +155,34 @@ test_extra_merge_args_forwarded() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/15 -- --squash --delete-branch \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "extra-args: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 15 --repo example/repo --squash --delete-branch' "$case_dir/sq-gh.log" \
+  grep -qxF 'pr merge 15 --repo example/repo --expected-head 2222222222222222222222222222222222222222 --squash --delete-branch' "$case_dir/sq-gh.log" \
     || fail "extra-args: extra sq-gh pr merge flags were not forwarded"
   pass "sq-pr-merge forwards extra flags to sq-gh pr merge after the -- separator"
+}
+
+test_missing_recorded_head_refuses_without_metadata_changes() {
+  local case_dir rc before after
+  case_dir=$(make_case missing-recorded-head)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" dddddddddddddddddddddddddddddddddddddddd
+  grep -v '^pr_head=' "$case_dir/state/task-x1.meta" > "$case_dir/meta.tmp"
+  mv "$case_dir/meta.tmp" "$case_dir/state/task-x1.meta"
+  : > "$case_dir/sq-gh.log"
+  before=$(sha256sum "$case_dir/state/task-x1.meta")
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/20 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "missing-recorded-head: merge must refuse"
+  assert_grep 'no valid recorded PR head' "$case_dir/stderr" "missing-recorded-head: refusal was not actionable"
+  [ "$(awk 'END { print NR }' "$case_dir/stderr")" -eq 1 ] || fail "missing-recorded-head: refusal was not one line"
+  after=$(sha256sum "$case_dir/state/task-x1.meta")
+  [ "$before" = "$after" ] || fail "missing-recorded-head: refusal changed task metadata"
+  [ ! -s "$case_dir/sq-gh.log" ] || fail "missing-recorded-head: merge was invoked"
+  pass "sq-pr-merge refuses without a recorded head and leaves metadata untouched"
 }
 
 test_missing_meta_refuses_before_merge() {
@@ -268,7 +295,7 @@ test_explicit_merge_method_not_overridden() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/22 -- --merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "explicit-merge-method: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 22 --repo example/repo --merge' "$case_dir/sq-gh.log" \
+  grep -qxF 'pr merge 22 --repo example/repo --expected-head 5555555555555555555555555555555555555555 --merge' "$case_dir/sq-gh.log" \
     || fail "explicit-merge-method: caller --merge was not forwarded without an extra default --squash"
   pass "sq-pr-merge does not add default --squash when the caller passes an explicit merge method"
 }
@@ -283,7 +310,7 @@ test_method_equals_merge_method_not_overridden() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/23 -- --method=merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "method-equals-merge-method: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 23 --repo example/repo --method=merge' "$case_dir/sq-gh.log" \
+  grep -qxF 'pr merge 23 --repo example/repo --expected-head 7777777777777777777777777777777777777777 --method=merge' "$case_dir/sq-gh.log" \
     || fail "method-equals-merge-method: caller --method=merge was not forwarded without an extra default --squash"
   pass "sq-pr-merge respects --method=<value> as an explicit merge method"
 }
@@ -298,7 +325,7 @@ test_parses_pr_url_for_gh_axi() {
   run_pr_merge "$case_dir" task-x1 https://github.com/my-org/my-repo/pull/126 \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "url-parsing: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 126 --repo my-org/my-repo --squash' "$case_dir/sq-gh.log" \
+  grep -qxF 'pr merge 126 --repo my-org/my-repo --expected-head 6666666666666666666666666666666666666666 --squash' "$case_dir/sq-gh.log" \
     || fail "url-parsing: sq-gh pr merge was not invoked as number + --repo + default --squash"
   pass "sq-pr-merge parses a GitHub PR URL into sq-gh number and --repo arguments"
 }
@@ -310,13 +337,18 @@ test_auto_merge_is_not_recorded_as_landed() {
   add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   : > "$case_dir/sq-gh.log"
 
+  set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/31 -- --auto \
-    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "auto-merge: sq-pr-merge failed"
-
-  grep -qxF 'pr merge 31 --repo example/repo --squash --auto' "$case_dir/sq-gh.log" \
-    || fail "auto-merge: --auto was not forwarded to sq-gh pr merge"
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  local auto_rc=$?
+  set -e
+  expect_code 1 "$auto_rc" "auto-merge: guarded wrapper must reject --auto"
+  assert_grep 'automatic merge is not allowed' "$case_dir/stderr" "auto-merge: refusal was not actionable"
   assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
-    "auto-merge: enabling auto-merge on an open PR must not record a landing"
+    "auto-merge: refusal must not record a landing"
+  assert_no_grep 'pr=https://github.com/example/repo/pull/31' "$case_dir/state/task-x1.meta" \
+    "auto-merge: refusal must leave task metadata untouched"
+  [ ! -s "$case_dir/sq-gh.log" ] || fail "auto-merge: merge command was invoked"
 
   landed_dir=$(make_case real-merge)
   mkdir -p "$landed_dir/wt"
@@ -331,7 +363,7 @@ rows = [json.loads(line) for line in open(sys.argv[1])]
 assert [(r['event'], r['source'], r['result']) for r in rows] == [
     ('outcome', 'pr-merge', 'landed')], rows
 PY
-  pass "sq-pr-merge records a landing for a merge it performs and never for --auto"
+  pass "sq-pr-merge records confirmed landings and refuses automatic merges"
 }
 
 test_disable_auto_is_not_recorded_as_landed() {
@@ -344,7 +376,7 @@ test_disable_auto_is_not_recorded_as_landed() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/33 -- --disable-auto \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "disable-auto: sq-pr-merge failed"
 
-  grep -qxF 'pr merge 33 --repo example/repo --squash --disable-auto' "$case_dir/sq-gh.log" \
+  grep -qxF 'pr merge 33 --repo example/repo --expected-head cccccccccccccccccccccccccccccccccccccccc --squash --disable-auto' "$case_dir/sq-gh.log" \
     || fail "disable-auto: --disable-auto was not forwarded to sq-gh pr merge"
   assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
     "disable-auto: disabling auto-merge must not record a landing"
@@ -355,6 +387,7 @@ test_records_pr_and_head_before_merging
 test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
 test_missing_meta_refuses_before_merge
+test_missing_recorded_head_refuses_without_metadata_changes
 test_malformed_url_refuses_before_merge
 test_rejects_unsafe_url_segments_before_recording
 test_repo_override_args_refuse_before_recording
