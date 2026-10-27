@@ -65,6 +65,37 @@ func TestPostGreenPrepareAndActivateAtomic(t *testing.T) {
 	}
 }
 
+func TestPostGreenLeaseCAS(t *testing.T) {
+	d, run, in := observationFixture(t)
+	if err := d.PrepareCIObservation(in); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ActivateCIObservation(run.ID, 1, "abc123", true, 110); err != nil {
+		t.Fatal(err)
+	}
+	o, ok, err := d.AcquireCIObservationLease(run.ID, 110, 130)
+	if err != nil || !ok {
+		t.Fatalf("lease=%v err=%v", ok, err)
+	}
+	if o.PollSeq != 1 || o.LeaseUntil == nil || *o.LeaseUntil != 130 {
+		t.Fatalf("lease state=%+v", o)
+	}
+	committed, err := d.CommitCIObservationSample(CIObservationSample{RunID: run.ID, PollSeq: 0, PushGeneration: 1, At: 111, NextPollAt: 120, Verdict: "red", State: "watching"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed {
+		t.Fatal("stale token committed")
+	}
+	committed, err = d.CommitCIObservationSample(CIObservationSample{RunID: run.ID, PollSeq: 1, PushGeneration: 1, At: 111, NextPollAt: 120, Verdict: "red", State: "watching"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !committed {
+		t.Fatal("current token did not commit")
+	}
+}
+
 func TestPostGreenPRRetirementMonotonic(t *testing.T) {
 	d, run, in := observationFixture(t)
 	if err := d.PrepareCIObservation(in); err != nil {
