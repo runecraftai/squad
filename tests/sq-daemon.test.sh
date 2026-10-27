@@ -319,6 +319,7 @@ test_handle_wake_paused_signal_records_pause_marker() {
 test_away_pause_era_evidence_escalates() {
   local state dir win reason key idx
   local details=(
+    'pipeline step test quiet for 1h17m0s; inspect the step log'
     'operator idle with uncommitted work for 500s; inspect the unfinished work'
     'declared pause aged out after 4000s; confirm or clear the declared pause'
     'pane signature: compaction-banner "Compacting conversation", complete rendered output unchanged for 500s at hash 0123456789ab; inspect the stuck pane'

@@ -26,7 +26,7 @@
 #   signal: <file>...      status/turn-end signals, surfaced when a listed status
 #                          has a commander-relevant verb OR a no-verb signal's crew
 #                          is not provably working, unless afk is active
-#   stale: <window>        a provably-working stale is ALWAYS absorbed (with a wedge
+#   stale: <window>        pane staleness alone is absorbed while provably working (with a wedge
 #                          timer) regardless of what the status log says - an active
 #                          run-step or busy pane outranks even a commander-relevant log
 #                          line, since the operator's own log gets no new entry once
@@ -51,7 +51,7 @@
 #                          Changing output resets that timer and counter.
 #                          A declared paused:/commander-held last status line
 #                          still outranks busy and keeps the bounded pause cadence,
-#                          except for the three named pause-era reasons below.
+#                          except for the named objective reasons below.
 #                          Three independent rules append their own evidence to
 #                          the same reason: "operator idle with uncommitted work"
 #                          past SQUAD_STALE_ESCALATE_SECS, "declared pause aged
@@ -82,6 +82,11 @@
 #                          prompt always wakes even with no such edge in between. A
 #                          backend with no native blocked signal (tmux) never
 #                          raises this - it is never guessed from pane text.
+#   stale: <window> (pipeline step <step> quiet for <duration>; inspect the step log)
+#                          Drill reports quiet activity past step_quiet_warning;
+#                          running CI monitors are excluded, executing CI fixes
+#                          are not. Once per run/step quiet episode, independent
+#                          of pane output, busy claims, and declared pauses.
 #   check: <script>: <out> authenticated check output, always actionable
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
@@ -294,7 +299,7 @@ recorded_windows() {
 # is a backend target mangled by tr ':/.' '___' - the same transform
 # sq-teardown.sh and the away-mode daemon apply. Longest family first: ".stale-"
 # is a prefix of ".stale-since-" and ".paused-" of its two cadence markers.
-SENTRY_WINDOW_MARKER_FAMILIES=".wedge-escalations- .deferred-log- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-deferred-log- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
+SENTRY_WINDOW_MARKER_FAMILIES=".step-quiet-checked- .step-quiet-reported- .wedge-escalations- .deferred-log- .paused-resurfaced- .paused-rechecked- .pause-episode- .dirty-since- .dirty-unreadable- .sig-deferred-log- .sig-reported- .sig-since- .sig-hash- .sig-unreadable- .stale-since- .stale- .paused- .count- .hash-"
 
 # drop_window_markers: reset every piece of per-window bookkeeping this sentry
 # keeps for <window> - the pane hash/count, the stale suppressor and its wedge
@@ -314,7 +319,8 @@ drop_window_markers() {  # <window>
     "$STATE/.dirty-since-$key" "$STATE/.dirty-unreadable-$key" "$STATE/.pause-episode-$key" \
     "$STATE/.deferred-log-$key" \
     "$STATE/.sig-hash-$key" "$STATE/.sig-since-$key" "$STATE/.sig-reported-$key" "$STATE/.sig-unreadable-$key" \
-    "$STATE/.sig-deferred-log-$key"
+    "$STATE/.sig-deferred-log-$key" \
+    "$STATE/.step-quiet-checked-$key" "$STATE/.step-quiet-reported-$key"
 }
 
 # drop_orphan_window_markers: re-derive which keys still belong to a live task
@@ -336,7 +342,7 @@ drop_orphan_window_markers() {
     [ -n "$w" ] || continue
     live="$live$(printf '%s' "$w" | tr ':/.' '___') "
   done < <(recorded_windows)
-  for f in "$STATE"/.wedge-escalations-* "$STATE"/.deferred-log-* "$STATE"/.paused-resurfaced-* \
+  for f in "$STATE"/.step-quiet-checked-* "$STATE"/.step-quiet-reported-* "$STATE"/.wedge-escalations-* "$STATE"/.deferred-log-* "$STATE"/.paused-resurfaced-* \
            "$STATE"/.paused-rechecked-* "$STATE"/.pause-episode-* "$STATE"/.dirty-since-* \
            "$STATE"/.dirty-unreadable-* "$STATE"/.sig-deferred-log-* "$STATE"/.sig-reported-* \
            "$STATE"/.sig-since-* "$STATE"/.sig-hash-* "$STATE"/.sig-unreadable-* \
@@ -376,6 +382,35 @@ SQUAD_WEDGE_DEMAND_INSPECT_COUNT=${SQUAD_WEDGE_DEMAND_INSPECT_COUNT:-3}
 # pane source, not run-step).
 window_run_step_active() {  # <window>
   [ "$(operator_absorb_verdict "$(window_to_task "$1" "$STATE")")" = "working run-step" ]
+}
+
+# Independent of pane staleness: a foreground tool can animate its pane while
+# its pipeline log is stuck. Reuse the existing bounded check cadence, and the
+# crew helper's branch/code-bound Drill evidence. Query failures do not prove
+# recovery; retain the one-shot marker until a readable state clears it.
+pipeline_step_quiet_check() {  # <window> <task> <key>
+  local win=$1 task=$2 checked="$STATE/.step-quiet-checked-$3" reported="$STATE/.step-quiet-reported-$3"
+  local line quiet run_id episode step duration reason
+  [ "$(age_of "$checked")" -ge "$CHECK_INTERVAL" ] || return 0
+  date +%s > "$checked"
+  line=$("$SQUAD_CREW_STATE_BIN" "$task" 2>/dev/null) || return 0
+  case "$line" in
+    'state: unknown'*) return 0 ;;
+    'state: working · source: run-step · '*step_quiet=*) ;;
+    state:*) rm -f "$reported"; return 0 ;;
+    *) return 0 ;;
+  esac
+  quiet=${line#* · step_quiet=}; quiet=${quiet%% · *}
+  run_id=${line#* · run_id=}; run_id=${run_id%% · *}
+  step=${quiet%%:*}; duration=${quiet#*:}
+  case "$run_id:$step:$duration" in *[!A-Za-z0-9_:.-]*) return 0 ;; esac
+  [ -n "$run_id" ] && [ -n "$step" ] && [ -n "$duration" ] || return 0
+  episode="$run_id:$step"
+  [ "$(cat "$reported" 2>/dev/null || true)" != "$episode" ] || return 0
+  reason="stale: $win (pipeline step $step quiet for $duration; inspect the step log)"
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf '%s' "$episode" > "$reported"
+  wake "$reason"
 }
 
 busy_static_absorb_finished() {  # <window> <task> <since-file> <escalation-file> <suppressor-file>
@@ -1398,6 +1433,9 @@ EOF
         0) handle_push_transition "$backend" "${w%%:*}" "$poll_record" ;;
         1|3) continue ;;
       esac
+    fi
+    if [ "$kind" = strike ]; then
+      pipeline_step_quiet_check "$w" "$task" "$key"
     fi
     tail40=$(fm_backend_capture "$backend" "$w" 40 "$(window_label "$w")" 2>/dev/null) || continue
     key=$(printf '%s' "$w" | tr ':/.' '___')
