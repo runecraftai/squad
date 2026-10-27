@@ -268,18 +268,19 @@ type ShutdownResult struct {
 
 // RunInfo is the IPC representation of a pipeline run.
 type RunInfo struct {
-	ID                string          `json:"id"`
-	RepoID            string          `json:"repo_id"`
-	Branch            string          `json:"branch"`
-	HeadSHA           string          `json:"head_sha"`
-	SubmittedHeadSHA  *string         `json:"submitted_head_sha,omitempty"`
-	BaseSHA           string          `json:"base_sha"`
-	Status            types.RunStatus `json:"status"`
-	PRURL             *string         `json:"pr_url,omitempty"`
-	Error             *string         `json:"error,omitempty"`
-	CIReady           bool            `json:"ci_ready,omitempty"`
-	CIReadyNoCI       bool            `json:"ci_ready_no_ci,omitempty"`
-	SpecializedReview bool            `json:"specialized_review,omitempty"`
+	ID                string             `json:"id"`
+	RepoID            string             `json:"repo_id"`
+	Branch            string             `json:"branch"`
+	HeadSHA           string             `json:"head_sha"`
+	SubmittedHeadSHA  *string            `json:"submitted_head_sha,omitempty"`
+	BaseSHA           string             `json:"base_sha"`
+	Status            types.RunStatus    `json:"status"`
+	PRURL             *string            `json:"pr_url,omitempty"`
+	Error             *string            `json:"error,omitempty"`
+	CIReady           bool               `json:"ci_ready,omitempty"`
+	CIReadyNoCI       bool               `json:"ci_ready_no_ci,omitempty"`
+	CIObservation     *CIObservationInfo `json:"ci_observation,omitempty"`
+	SpecializedReview bool               `json:"specialized_review,omitempty"`
 	// AwaitingAgent is true while the run is parked at a gate awaiting the
 	// driving agent's response. AwaitingAgentSince is the unix-seconds time it
 	// parked, so a supervisor can read "parked for N seconds" in one call. Both
@@ -294,6 +295,18 @@ type RunInfo struct {
 	StateRev  int64 `json:"state_rev,omitempty"`
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`
+}
+
+// CIObservationInfo is the additive read-only observation snapshot.
+type CIObservationInfo struct {
+	HeadSHA      string  `json:"head_sha"`
+	FirstGreenAt int64   `json:"first_green_at"`
+	DeadlineAt   int64   `json:"deadline_at"`
+	State        string  `json:"state"`
+	Verdict      string  `json:"verdict"`
+	LastPollAt   *int64  `json:"last_poll_at,omitempty"`
+	NextPollAt   int64   `json:"next_poll_at"`
+	Reason       *string `json:"reason,omitempty"`
 }
 
 // StepResultInfo is the IPC representation of a step result.
@@ -330,13 +343,14 @@ type StepResultInfo struct {
 type EventType string
 
 const (
-	EventRunCreated         EventType = "run_created"
-	EventRunUpdated         EventType = "run_updated"
-	EventRunCompleted       EventType = "run_completed"
-	EventCIReadinessChanged EventType = "ci_readiness_changed"
-	EventStepStarted        EventType = "step_started"
-	EventStepCompleted      EventType = "step_completed"
-	EventLogChunk           EventType = "log_chunk"
+	EventRunCreated           EventType = "run_created"
+	EventRunUpdated           EventType = "run_updated"
+	EventRunCompleted         EventType = "run_completed"
+	EventCIReadinessChanged   EventType = "ci_readiness_changed"
+	EventCIObservationChanged EventType = "ci_observation_changed"
+	EventStepStarted          EventType = "step_started"
+	EventStepCompleted        EventType = "step_completed"
+	EventLogChunk             EventType = "log_chunk"
 	// EventStreamGap tells a subscriber that the daemon coalesced at least
 	// one state transition away under buffer pressure. StateRev is the
 	// highest revision folded into it. The subscriber must read authoritative

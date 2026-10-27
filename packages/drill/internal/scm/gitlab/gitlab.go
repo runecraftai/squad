@@ -238,10 +238,10 @@ func (h *Host) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
 		return "", err
 	}
 	sha := strings.TrimSpace(mr.SHA)
-	if sha == "" {
-		return "", fmt.Errorf("glab mr view: missing source SHA")
+	if !scm.ValidCommitSHA(sha) {
+		return "", fmt.Errorf("glab mr view: missing or malformed source SHA")
 	}
-	return sha, nil
+	return strings.ToLower(sha), nil
 }
 
 func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {

@@ -226,10 +226,10 @@ func (h *Host) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
 		return "", err
 	}
 	sha := strings.TrimSpace(got.LastMergeSourceCommit.CommitID)
-	if sha == "" {
-		return "", fmt.Errorf("az repos pr show: missing source commit id")
+	if !scm.ValidCommitSHA(sha) {
+		return "", fmt.Errorf("az repos pr show: missing or malformed source commit id")
 	}
-	return sha, nil
+	return strings.ToLower(sha), nil
 }
 
 func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {

@@ -295,22 +295,10 @@ func (h *Host) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
 		return "", fmt.Errorf("parse PR head: %w", err)
 	}
 	sha := strings.TrimSpace(value.Head)
-	if !validCommitSHA(sha) {
+	if !scm.ValidCommitSHA(sha) {
 		return "", fmt.Errorf("gh pr view returned invalid head SHA")
 	}
 	return strings.ToLower(sha), nil
-}
-
-func validCommitSHA(s string) bool {
-	if len(s) != 40 && len(s) != 64 {
-		return false
-	}
-	for _, r := range s {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
-			return false
-		}
-	}
-	return true
 }
 
 func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {

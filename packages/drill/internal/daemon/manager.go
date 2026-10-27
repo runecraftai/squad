@@ -419,11 +419,12 @@ func agentListsEqual(a, b []types.AgentName) bool {
 // subscribe-then-reconcile ordering rule. A run that has already completed
 // yields that one gap and then finishes.
 func (m *RunManager) Subscribe(runID string) (*Subscription, error) {
+	observationActive := m.observationWatching(runID)
 	m.subMu.Lock()
 	defer m.subMu.Unlock()
 
 	mb := newEventMailbox(runID, m.stateRevs[runID])
-	if m.completedRuns[runID] {
+	if m.completedRuns[runID] && !observationActive {
 		mb.close()
 		return &Subscription{mb: mb, unsub: func() {}}, nil
 	}
@@ -517,7 +518,15 @@ func (m *RunManager) sweepRunWorktreeProcesses(wtDir string) {
 // completed so future Subscribe calls return a gapped, immediately-finished
 // subscription. Soft close still drains queued frames and any pending gap, so
 // a coalesced terminal transition cannot be discarded by completion.
+func (m *RunManager) observationWatching(runID string) bool {
+	o, err := m.db.GetCIObservation(runID)
+	return err == nil && o != nil && o.State == "watching"
+}
+
 func (m *RunManager) closeSubscribers(runID string) {
+	if m.observationWatching(runID) {
+		return
+	}
 	m.subMu.Lock()
 	defer m.subMu.Unlock()
 	for _, mb := range m.subscribers[runID] {
