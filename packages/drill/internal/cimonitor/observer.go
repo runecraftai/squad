@@ -64,19 +64,15 @@ func SampleBound(ctx context.Context, reader Reader, pr *scm.PR, candidate Obser
 		return s, fmt.Errorf("read PR state: %w", err)
 	}
 	s.PRState = state
+	if state != scm.PRStateOpen {
+		s.Reason = "PR is not open"
+		return s, nil
+	}
 	before, err := reader.GetPRHeadSHA(ctx, pr)
 	if err != nil {
 		return s, fmt.Errorf("read PR head before checks: %w", err)
 	}
 	s.HeadBefore = strings.TrimSpace(before)
-	if !reader.Capabilities().MergeableState {
-		return s, fmt.Errorf("provider cannot positively resolve PR mergeability")
-	}
-	mergeable, err := reader.GetMergeableState(ctx, pr)
-	if err != nil {
-		return s, fmt.Errorf("read PR mergeability: %w", err)
-	}
-	s.Mergeable = mergeable
 	checks, err := reader.GetChecks(ctx, pr)
 	if err != nil {
 		return s, fmt.Errorf("read PR checks: %w", err)
@@ -103,10 +99,47 @@ func SampleBound(ctx context.Context, reader Reader, pr *scm.PR, candidate Obser
 		s.Reason = "PR or published head differs from observation candidate"
 		return s, nil
 	}
-	if state != scm.PRStateOpen {
-		s.Reason = "PR is not open"
+	if len(checks) == 0 {
+		if !candidate.DeclaredNoCI {
+			s.Reason = "provider reported no checks without trusted no-CI policy"
+			return s, nil
+		}
+	} else {
+		passed := false
+		pending := false
+		for _, check := range checks {
+			switch check.Bucket {
+			case scm.CheckBucketFail, scm.CheckBucketCancel:
+				s.Verdict = "red"
+				s.Reason = "one or more CI checks failed or were cancelled"
+				return s, nil
+			case scm.CheckBucketPass, scm.CheckBucketSkip:
+				passed = true
+			case scm.CheckBucketPending:
+				pending = true
+			default:
+				s.Reason = "provider returned an unknown CI check state"
+				return s, nil
+			}
+		}
+		if pending {
+			s.Verdict = "pending"
+			return s, nil
+		}
+		if !passed {
+			s.Reason = "provider returned no classifiable CI checks"
+			return s, nil
+		}
+	}
+	if !reader.Capabilities().MergeableState {
+		s.Reason = "provider cannot positively resolve PR mergeability"
 		return s, nil
 	}
+	mergeable, err := reader.GetMergeableState(ctx, pr)
+	if err != nil {
+		return s, fmt.Errorf("read PR mergeability: %w", err)
+	}
+	s.Mergeable = mergeable
 	if mergeable == scm.MergeableConflict {
 		s.Verdict = "red"
 		s.Reason = "PR has merge conflicts"
@@ -116,39 +149,6 @@ func SampleBound(ctx context.Context, reader Reader, pr *scm.PR, candidate Obser
 		s.Reason = "PR mergeability is unresolved"
 		return s, nil
 	}
-	if len(checks) == 0 {
-		if candidate.DeclaredNoCI {
-			s.Verdict = "green"
-			return s, nil
-		}
-		s.Reason = "provider reported no checks without trusted no-CI policy"
-		return s, nil
-	}
-	passed := false
-	pending := false
-	for _, check := range checks {
-		switch check.Bucket {
-		case scm.CheckBucketFail, scm.CheckBucketCancel:
-			s.Verdict = "red"
-			s.Reason = "one or more CI checks failed or were cancelled"
-			return s, nil
-		case scm.CheckBucketPass, scm.CheckBucketSkip:
-			passed = true
-		case scm.CheckBucketPending:
-			pending = true
-		default:
-			s.Reason = "provider returned an unknown CI check state"
-			return s, nil
-		}
-	}
-	if pending {
-		s.Verdict = "pending"
-		return s, nil
-	}
-	if passed {
-		s.Verdict = "green"
-		return s, nil
-	}
-	s.Reason = "provider returned no classifiable CI checks"
+	s.Verdict = "green"
 	return s, nil
 }

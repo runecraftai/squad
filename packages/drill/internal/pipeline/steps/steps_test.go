@@ -356,6 +356,13 @@ func fakeCIGHHandler(args []string) {
 			os.Exit(1)
 		}
 		fmt.Println(checksJSON)
+		if raw := os.Getenv("FAKE_CLI_CHECKS_EXIT"); raw != "" {
+			code, err := strconv.Atoi(raw)
+			if err != nil {
+				os.Exit(1)
+			}
+			os.Exit(code)
+		}
 		os.Exit(0)
 	}
 	if strings.Contains(joined, "run rerun") {
