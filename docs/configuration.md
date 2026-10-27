@@ -108,7 +108,7 @@ state/               volatile runtime signals; gitignored
   .hash-* .count-*   sentry internals; never touch
   .stale-* .stale-since-* .wedge-escalations-* .seen-*   sentry internals; never touch manually - teardown retires them for the released window, the sentry drops the stale and wedge markers of any window whose task record is gone, and housekeeping also retires .seen-* when the window is gone
   .compaction-notified-*   per-task compaction dedup marker shared by the sentry and the away-mode daemon; never touch - teardown retires it for the released task
-  .paused-* .pause-episode-* .dirty-* .sig-* .deferred-log-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch - teardown retires the pause-era episode, dirty-worktree, pane-signature, and deferral-log markers for the released window
+  .paused-* .pause-episode-* .step-quiet-* .dirty-* .sig-* .deferred-log-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch - teardown retires the pause-era episode, quiet-step observation and episode, dirty-worktree, pane-signature, and deferral-log markers for the released window
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch - teardown retires .subsuper-stale-*, .subsuper-paused-*, and .subsuper-seen-status-* for the released task

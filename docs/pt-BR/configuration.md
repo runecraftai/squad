@@ -62,7 +62,7 @@ skills/              standalone public installer-facing skills, committed; not l
   .hash-* .count-*   sentry internals; never touch
   .stale-* .stale-since-* .wedge-escalations-* .seen-*   sentry internals; never touch manually - teardown retires them for the released window, the sentry drops the stale and wedge markers of any window whose task record is gone, and housekeeping also retires .seen-* when the window is gone
   .compaction-notified-*   per-task compaction dedup marker shared by the sentry and the away-mode daemon; never touch - teardown retires it for the released task
-  .paused-* .pause-episode-* .dirty-* .sig-* .deferred-log-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch - o teardown aposenta os marcadores de episódio de pausa, worktree sujo, assinatura de painel e log de adiamento da janela liberada
+  .paused-* .pause-episode-* .step-quiet-* .dirty-* .sig-* .deferred-log-* .hb-surfaced-* .last-* .heartbeat-streak   sentry internals; never touch - o teardown aposenta os marcadores de episódio de pausa, de observação e episódio de passo quiet, worktree sujo, assinatura de painel e log de adiamento da janela liberada
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
 ```
