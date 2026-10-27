@@ -56,11 +56,12 @@ A Herdr idle pane is not a failure by itself; relaunch only after `bin/sq-crew-s
 
 Operator panes receive non-interactive `GIT_EDITOR` and `GIT_SEQUENCE_EDITOR` defaults from `bin/sq-spawn.sh`; these avoid editor stalls while retaining existing commit and rebase messages.
 
-## Pause-era stale reasons
+## Objective stale reasons
 
-A `stale:` reason naming `operator idle with uncommitted work`, `declared pause aged out`, or `pane signature:` is objective pause-era evidence, never an expected external wait, so inspect the recorded worktree and pane instead of re-absorbing it as a routine pause recheck.
+A `stale:` reason naming `operator idle with uncommitted work`, `declared pause aged out`, `pane signature:`, or `pipeline step <step> quiet for <duration>` is objective evidence the sentry already waited its own threshold for, never an expected external wait, so inspect the recorded worktree and pane instead of re-absorbing it as a routine pause recheck.
 Reconcile the worktree's uncommitted work by preserving or landing it, asking the commander before any discard, and confirm or clear an aged-out declared pause against the external wait it named.
 For a named pane signature, quote the signature you actually saw when redirecting or relaunching the operator.
+For a named quiet step, read that step's own log from the task worktree with `drill axi logs --step <step>` (`--full` for the whole log): a log that stopped producing output is the stall, so interrupt and relaunch per the live-endpoint escalation below, while a step still appending output is progressing and needs no action.
 
 ## Live-endpoint escalation
 

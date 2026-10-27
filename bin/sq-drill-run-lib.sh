@@ -160,6 +160,33 @@ fm_drill_current_run() {  # <worktree> <timeout> <runs-limit>
   fi
 }
 
+# First quiet executing step as <step>:<quiet-duration>. Drill owns freshness:
+# consume its active_steps last_activity `quiet <duration> ago` prefix, never
+# infer it from total runtime, pane hashes, or a second timeout. The running CI
+# monitor intentionally waits silently for merge/close; CI fixes still execute.
+# Missing/older activity tables and unknown activity are not stall evidence.
+fm_drill_current_run_quiet_step() {
+  [ "$SQ_DRILL_RUN_SOURCE" = full ] || return 0
+  [ "$(fm_drill_current_run_state)" = active ] || return 0
+  fm_drill_current_run_parked && return 0
+  printf '%s\n' "$SQ_DRILL_RUN_OUT" | awk -F, '
+    /^[[:space:]]*active_steps\[[0-9]+\]\{step,status,active_for,last_activity,agent_pid,round\}:/ { active=1; next }
+    active && /^[[:space:]]*[^[:space:]]/ {
+      step=$1; status=$2; activity=$4
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", step)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
+      sub(/^[[:space:]]*"?/, "", activity)
+      if (step !~ /^[a-z][a-z0-9_-]*$/ || status !~ /^(running|fixing)$/) { active=0; next }
+      if (step == "ci" && status == "running") next
+      if (activity ~ /^quiet [0-9]+([dhms][0-9]+)*[dhms] ago/) {
+        sub(/^quiet /, "", activity); sub(/ ago.*/, "", activity)
+        print step ":" activity
+        exit
+      }
+    }
+  '
+}
+
 # Lifecycle of the captured run, not the dispatch record or CI-ready task view.
 # Non-terminal runs are `active`; fm_drill_current_run_parked refines that into
 # parked-at-a-gate when the captured evidence shows one.

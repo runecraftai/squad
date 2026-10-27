@@ -51,8 +51,10 @@
 #      attributed to this crew, a dead endpoint also reports unknown · none rather
 #      than trusting a stale status log.
 #
-# Read-only and side-effect free. Always exits 0 on a successful read regardless
-# of state; exit 2 only on a usage error (no id).
+# Read-only and side-effect free. Exits 0 on a successful read regardless of
+# state, 3 when durable custody refused a legacy write during the read (the
+# canonical line is still printed and remains authoritative), and 2 only on a
+# usage error (no id).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -453,6 +455,19 @@ if [ "$HAVE_RUN" = 1 ]; then
     fi
     if [ "$CI_LOG_STATE" != not-ready ]; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
+    fi
+  fi
+
+  # Keep execution state authoritative while exposing Drill's own bounded
+  # inactivity evidence separately for sentry inspection, not interruption.
+  if [ "$RUN_STATE" = working ] && [ "$RUN_SOURCE" = full ]; then
+    quiet_step=$(fm_drill_current_run_quiet_step)
+    if [ -n "$quiet_step" ]; then
+      run_id=$(strip_quotes "$(drill_field id)")
+      case "$run_id" in
+        ''|*[!A-Za-z0-9_-]*) : ;;
+        *) RUN_DETAIL="$RUN_DETAIL${SEP}step_quiet=$quiet_step${SEP}run_id=$run_id" ;;
+      esac
     fi
   fi
 
