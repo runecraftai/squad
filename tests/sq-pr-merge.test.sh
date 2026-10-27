@@ -15,7 +15,7 @@
 #   (f) malformed PR URL fails fast without calling sq-gh
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
-#   (i) --auto is refused and only a real --disable-auto flag suppresses the landing
+#   (i) --auto is refused and a synchronous --disable-auto merge still records its landing
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -367,7 +367,7 @@ PY
   pass "sq-pr-merge records confirmed landings and refuses automatic merges"
 }
 
-test_disable_auto_is_not_recorded_as_landed() {
+test_disable_auto_still_records_landing() {
   local case_dir
   case_dir=$(make_case disable-auto)
   mkdir -p "$case_dir/wt"
@@ -379,29 +379,13 @@ test_disable_auto_is_not_recorded_as_landed() {
 
   grep -qxF 'pr merge 33 --repo example/repo --expected-head cccccccccccccccccccccccccccccccccccccccc --squash --disable-auto' "$case_dir/sq-gh.log" \
     || fail "disable-auto: --disable-auto was not forwarded to sq-gh pr merge"
-  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
-    "disable-auto: disabling auto-merge must not record a landing"
-  pass "sq-pr-merge never records a landing for --disable-auto"
-}
-
-test_disable_auto_text_inside_a_value_still_records_landing() {
-  local case_dir
-  case_dir=$(make_case disable-auto-in-value)
-  mkdir -p "$case_dir/wt"
-  add_gh_mocks "$case_dir" eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-  : > "$case_dir/sq-gh.log"
-
-  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/34 -- \
-    --squash --subject 'revert --disable-auto experiment' \
-    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "disable-auto-in-value: sq-pr-merge failed"
-
   python3 - "$case_dir/data/task-x1/dispatch.jsonl" <<'PY'
 import json, sys
 rows = [json.loads(line) for line in open(sys.argv[1])]
 assert [(r['event'], r['source'], r['result']) for r in rows] == [
     ('outcome', 'pr-merge', 'landed')], rows
 PY
-  pass "a literal --disable-auto inside an argument value does not suppress the landing record"
+  pass "sq-pr-merge records the landing for a synchronous --disable-auto merge"
 }
 
 test_records_pr_and_head_before_merging
@@ -415,6 +399,5 @@ test_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_auto_merge_is_not_recorded_as_landed
-test_disable_auto_is_not_recorded_as_landed
-test_disable_auto_text_inside_a_value_still_records_landing
+test_disable_auto_still_records_landing
 test_parses_pr_url_for_gh_axi

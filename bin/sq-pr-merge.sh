@@ -54,14 +54,6 @@ caller_has_merge_method() {
   return 1
 }
 
-caller_disabled_auto() {
-  local arg
-  for arg in "$@"; do
-    [ "$arg" != --disable-auto ] || return 0
-  done
-  return 1
-}
-
 reject_repo_overrides() {
   local arg
   for arg in "$@"; do
@@ -108,7 +100,5 @@ grep -qxF "pr=$URL" "$META" || {
   echo "error: PR metadata recording failed after confirmed merge" >&2
   exit 1
 }
-if ! caller_disabled_auto "$@"; then
-  SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
-    --source pr-merge --result landed || true
-fi
+SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+  --source pr-merge --result landed || true
