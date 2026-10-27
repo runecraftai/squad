@@ -968,6 +968,21 @@ signal_task_is_terminal_and_agentless() {  # <signal-file>
   window_is_terminal_and_agentless "$target" "$task" 1
 }
 
+# Keep the first commander-relevant terminal status observable when no agent
+# remains. The heartbeat marker records delivery independently of .seen-* so
+# the stale skip may still retire every signal signature without repeating the
+# notice on later polls.
+signal_terminal_notice_is_unsurfaced() {  # <signal-file>
+  local f=$1 task last surfaced
+  case "$f" in *.status) ;; *) return 1 ;; esac
+  task=${f##*/}
+  task=${task%.status}
+  last=$(last_status_line "$f")
+  status_is_commander_relevant "$last" || return 1
+  surfaced=$(cat "$(_hb_surfaced_path "$task")" 2>/dev/null || true)
+  [ "$surfaced" != "$last" ]
+}
+
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
 # mtime-vs-a-startup-touch, so signals that land while no sentry is running
@@ -991,7 +1006,7 @@ scan_signals() {
     fi
     sig=$(stat_sig "$f") || continue
     [ "$sig" = "$(cat "$sf" 2>/dev/null)" ] && continue
-    if signal_task_is_terminal_and_agentless "$f"; then
+    if signal_task_is_terminal_and_agentless "$f" && ! signal_terminal_notice_is_unsurfaced "$f"; then
       task=${f##*/}
       task=${task%.status}
       task=${task%.turn-ended}
@@ -1015,7 +1030,7 @@ drop_orphan_signal_entries() {  # <pending>...
     [ -n "$sf" ] || continue
     if ! signal_task_has_record "$f"; then
       rm -f "$sf"
-    elif signal_task_is_terminal_and_agentless "$f"; then
+    elif signal_task_is_terminal_and_agentless "$f" && ! signal_terminal_notice_is_unsurfaced "$f"; then
       task=${f##*/}
       task=${task%.status}
       task=${task%.turn-ended}
