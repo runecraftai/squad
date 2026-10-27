@@ -140,6 +140,7 @@ func (h *Host) Available(ctx context.Context) error {
 
 type mrPayload struct {
 	IID                 int    `json:"iid"`
+	SHA                 string `json:"sha"`
 	WebURL              string `json:"web_url"`
 	URL                 string `json:"url"`
 	State               string `json:"state"`
@@ -229,6 +230,18 @@ func (h *Host) UpdatePR(ctx context.Context, pr *scm.PR, content scm.PRContent) 
 		return nil, fmt.Errorf("glab mr update: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return pr, nil
+}
+
+func (h *Host) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
+	mr, err := h.viewMR(ctx, pr.Number)
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(mr.SHA)
+	if sha == "" {
+		return "", fmt.Errorf("glab mr view: missing source SHA")
+	}
+	return sha, nil
 }
 
 func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {

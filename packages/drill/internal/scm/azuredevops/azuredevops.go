@@ -220,6 +220,18 @@ func (h *Host) UpdatePR(ctx context.Context, pr *scm.PR, content scm.PRContent) 
 	return pr, nil
 }
 
+func (h *Host) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
+	got, err := h.showPR(ctx, pr)
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(got.LastMergeSourceCommit.CommitID)
+	if sha == "" {
+		return "", fmt.Errorf("az repos pr show: missing source commit id")
+	}
+	return sha, nil
+}
+
 func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {
 	got, err := h.showPR(ctx, pr)
 	if err != nil {

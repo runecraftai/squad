@@ -1,6 +1,7 @@
 package steps
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -145,6 +146,10 @@ func missingFromCustomPath(env []string, name string) string {
 // When sctx.Env overrides PATH, the binary is resolved from the overridden PATH
 // so that tests can inject fake binaries without modifying the process environment.
 func stepCmd(sctx *pipeline.StepContext, name string, args ...string) *exec.Cmd {
+	return stepCmdContext(sctx, sctx.Ctx, name, args...)
+}
+
+func stepCmdContext(sctx *pipeline.StepContext, ctx context.Context, name string, args ...string) *exec.Cmd {
 	resolved := name
 	missingFromPath := false
 	if len(sctx.Env) > 0 && !strings.Contains(name, string(filepath.Separator)) {
@@ -155,7 +160,7 @@ func stepCmd(sctx *pipeline.StepContext, name string, args ...string) *exec.Cmd 
 			missingFromPath = true
 		}
 	}
-	cmd := exec.CommandContext(sctx.Ctx, resolved, args...)
+	cmd := exec.CommandContext(ctx, resolved, args...)
 	cmd.Dir = sctx.WorkDir
 	winproc.Harden(cmd)
 	if len(sctx.Env) > 0 {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -719,6 +720,30 @@ func githubTestCmdFactory(responses map[string]githubTestResponse) CmdFactory {
 	}
 }
 
+func TestPostGreenChecksConclusionExitCodes(t *testing.T) {
+	command := "gh pr checks 42 --repo owner/repo --json name,state,bucket,completedAt,link"
+	pr := &scm.PR{Number: "42"}
+	for _, tc := range []struct {
+		code          int
+		want, payload string
+	}{{1, "fail", `[{"name":"ci","state":"FAILURE","bucket":"fail"}]`}, {8, "pending", `[{"name":"ci","state":"IN_PROGRESS","bucket":"pending"}]`}} {
+		host := New(githubTestCmdFactory(map[string]githubTestResponse{command: {stdout: tc.payload, code: tc.code}}), nil, "", "owner/repo")
+		checks, err := host.GetChecks(context.Background(), pr)
+		if err != nil {
+			t.Fatalf("exit %d: %v", tc.code, err)
+		}
+		if len(checks) != 1 || string(checks[0].Bucket) != tc.want {
+			t.Fatalf("exit %d checks=%+v", tc.code, checks)
+		}
+	}
+	for _, tc := range []githubTestResponse{{stdout: "[]", code: 2}, {stdout: "not json", code: 1}} {
+		host := New(githubTestCmdFactory(map[string]githubTestResponse{command: tc}), nil, "", "owner/repo")
+		if _, err := host.GetChecks(context.Background(), pr); err == nil {
+			t.Fatalf("response %+v unexpectedly succeeded", tc)
+		}
+	}
+}
+
 func TestGitHubHelperProcess(t *testing.T) {
 	if os.Getenv("GITHUB_TEST_HELPER") != "1" {
 		return
@@ -742,7 +767,11 @@ func TestGitHubHelperProcess(t *testing.T) {
 		os.Exit(1)
 	}
 	if code := os.Getenv("GITHUB_TEST_EXIT_CODE"); code != "" && code != "0" {
-		os.Exit(1)
+		value, err := strconv.Atoi(code)
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Exit(value)
 	}
 	os.Exit(0)
 }

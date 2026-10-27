@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/runecraftai/squad/packages/drill/internal/bitbucket"
+	"github.com/runecraftai/squad/packages/drill/internal/cimonitor"
 	"github.com/runecraftai/squad/packages/drill/internal/pipeline"
 	"github.com/runecraftai/squad/packages/drill/internal/scm"
 	"github.com/runecraftai/squad/packages/drill/internal/scm/azuredevops"
@@ -18,9 +19,12 @@ import (
 // (unknown provider, missing Bitbucket config, etc) it returns nil and a
 // human-readable skip reason suitable for logging.
 func buildHost(sctx *pipeline.StepContext, provider scm.Provider) (scm.Host, string) {
-	cmdFactory := func(_ context.Context, name string, args ...string) *exec.Cmd {
-		return stepCmd(sctx, name, args...)
-	}
+	return buildHostWithFactory(sctx, provider, func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return stepCmdContext(sctx, ctx, name, args...)
+	})
+}
+
+func buildHostWithFactory(sctx *pipeline.StepContext, provider scm.Provider, cmdFactory func(context.Context, string, ...string) *exec.Cmd) (scm.Host, string) {
 	switch provider {
 	case scm.ProviderGitHub:
 		// Resolve the slug so gh commands carry --repo and work from the
@@ -94,4 +98,47 @@ func buildHost(sctx *pipeline.StepContext, provider scm.Provider) (scm.Host, str
 	default:
 		return nil, fmt.Sprintf("provider %s is not supported yet", provider)
 	}
+}
+
+// observerReader deliberately hides provider write operations from observation.
+type observerReader struct {
+	host  scm.Host
+	heads scm.PRHeadReader
+}
+
+func (r observerReader) Available(ctx context.Context) error { return r.host.Available(ctx) }
+func (r observerReader) Capabilities() scm.Capabilities      { return r.host.Capabilities() }
+func (r observerReader) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {
+	return r.host.GetPRState(ctx, pr)
+}
+func (r observerReader) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
+	return r.heads.GetPRHeadSHA(ctx, pr)
+}
+func (r observerReader) GetChecks(ctx context.Context, pr *scm.PR) ([]scm.Check, error) {
+	return r.host.GetChecks(ctx, pr)
+}
+func (r observerReader) GetMergeableState(ctx context.Context, pr *scm.PR) (scm.MergeableState, error) {
+	return r.host.GetMergeableState(ctx, pr)
+}
+
+// BuildObserverReader builds the narrow read-only API. Its StepContext must
+// identify the stable gate directory rather than a cleaned execution copy.
+func BuildObserverReader(sctx *pipeline.StepContext, provider scm.Provider) (cimonitor.Reader, string) {
+	return BuildObserverReaderWithFactory(sctx, provider, func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return stepCmdContext(sctx, ctx, name, args...)
+	})
+}
+
+// BuildObserverReaderWithFactory accepts the per-call command factory so
+// observation deadlines cancel provider subprocesses using the sample context.
+func BuildObserverReaderWithFactory(sctx *pipeline.StepContext, provider scm.Provider, factory func(context.Context, string, ...string) *exec.Cmd) (cimonitor.Reader, string) {
+	host, reason := buildHostWithFactory(sctx, provider, factory)
+	if host == nil {
+		return nil, reason
+	}
+	headReader, ok := host.(scm.PRHeadReader)
+	if !ok {
+		return nil, fmt.Sprintf("provider %s cannot read PR source head", provider)
+	}
+	return observerReader{host: host, heads: headReader}, ""
 }
