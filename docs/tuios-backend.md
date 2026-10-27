@@ -164,6 +164,7 @@ The structural signal is the pane's own foreground process, so a build that stop
 
 ## Cleanup
 
+A recorded session that no longer exists has no workspace left to release, so teardown completes and retires the task record.
 Cleanup verifies both the exact opaque window id and the recorded task label before closing anything, so only the recorded task window can ever be closed. The close is TUIOS's own window-close path (`close-window`, which the CLI surfaces as `tuios run-command CloseWindow <id>`) addressed by the exact session and window id - never the tmux compatibility shim, which would resolve a shim pane id instead. `run-command` exits 0 even when the close failed, so its result envelope is the only success signal and a refusal is surfaced with the daemon's own message. After the exact task window is confirmed gone, cleanup clears only that task's recorded workspace name and only when the workspace is otherwise empty. A mismatch, remaining window, or unreadable inventory preserves the name rather than risking another owner's layout. Cleanup never deletes a session and never touches the daemon.
 
 ## Away-mode supervision

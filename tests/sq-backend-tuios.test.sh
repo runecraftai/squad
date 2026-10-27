@@ -98,7 +98,13 @@ case "${1:-}" in
     printf '{"success":true}\n'
     ;;
   list-windows)
-    if [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ]; then
+    if [ "${SQUAD_TUIOS_FAKE_SESSION_ABSENT:-0}" = 1 ]; then
+      jq -cn --arg session "${SQUAD_TUIOS_FAKE_SESSION:-owned}" '{error: ("list-windows failed: session " + $session + " not found.\nMost likely cause: the name matches no live session."), success: false}'
+      exit 1
+    elif [ "${SQUAD_TUIOS_FAKE_LIST_OTHER_ERROR:-0}" = 1 ]; then
+      printf '%s\n' '{"error":"list-windows failed: daemon unavailable","success":false}'
+      exit 1
+    elif [ "${SQUAD_TUIOS_FAKE_LIST_FAIL:-0}" = 1 ]; then
       exit 1
     elif [ "${SQUAD_TUIOS_FAKE_LIST_FAIL_AFTER_CREATE:-0}" = 1 ] && [ -f "$SQUAD_TUIOS_CREATED_WINDOW" ]; then
       exit 1
@@ -984,6 +990,19 @@ SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1
 export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS
 fm_backend_tuios_release_task_workspace next-ws "$TMP_ROOT/state/next-ws.meta" || fail 'normal teardown must release and unname its empty task workspace'
 assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name --session owned 2' 'task teardown must clear only its own workspace name'
+SQUAD_TUIOS_FAKE_SESSION_ABSENT=1
+export SQUAD_TUIOS_FAKE_SESSION_ABSENT
+fm_backend_tuios_release_task_workspace next-ws "$TMP_ROOT/state/next-ws.meta" || fail 'a definitively absent recorded session must have no workspace to release'
+unset SQUAD_TUIOS_FAKE_SESSION_ABSENT
+SQUAD_TUIOS_FAKE_LIST_OTHER_ERROR=1
+export SQUAD_TUIOS_FAKE_LIST_OTHER_ERROR
+if fm_backend_tuios_release_task_workspace next-ws "$TMP_ROOT/state/next-ws.meta" 2>"$TMP_ROOT/release-error"; then fail 'a non-not-found CLI failure must refuse'; fi
+assert_contains "$(cat "$TMP_ROOT/release-error")" 'could not read TUIOS windows for session owned' 'a CLI failure must have a diagnostic'
+unset SQUAD_TUIOS_FAKE_LIST_OTHER_ERROR
+: > "$SQUAD_TUIOS_CREATED_WINDOW"
+if fm_backend_tuios_release_task_workspace next-ws "$TMP_ROOT/state/next-ws.meta" 2>"$TMP_ROOT/release-open-window-error"; then fail 'an open task window must retain its workspace claim'; fi
+assert_contains "$(cat "$TMP_ROOT/release-open-window-error")" 'task window owned:w-opaque_7 remains' 'an open task window must retain the existing refusal message'
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS
 rm -f "$TMP_ROOT/state/next-ws.meta"
 # A wrong workspace must refuse and close only the just-created window.
