@@ -329,7 +329,7 @@ Session start is the only exception because its one-shot digest already drained 
 Treat any `OPEN DECISIONS` section from the drain as actionable reconciliation input even when no wake record was queued.
 A status line is a wake event, not current state; use `bin/sq-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 A declared `paused:` event means a bounded external wait expected to clear on its own, while `blocked:` means Squad action is needed.
-A pause cannot hide unfinished work: the sentry still escalates an idle dirty worktree, a declared pause past `SQUAD_PAUSE_MAX_SECS`, and a stuck pane signature as named `stale:` reasons, so treat those as evidence to inspect, never as an expected wait.
+A pause cannot hide unfinished work: the sentry still escalates an idle dirty worktree, a declared pause past `SQUAD_PAUSE_MAX_SECS`, a stuck pane signature, and an executing pipeline step whose log stopped advancing as named `stale:` reasons, so treat those as evidence to inspect, never as an expected wait.
 
 Handle actionable wakes as follows:
 

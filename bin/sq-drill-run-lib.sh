@@ -178,7 +178,7 @@ fm_drill_current_run_quiet_step() {
       sub(/^[[:space:]]*"?/, "", activity)
       if (step !~ /^[a-z][a-z0-9_-]*$/ || status !~ /^(running|fixing)$/) { active=0; next }
       if (step == "ci" && status == "running") next
-      if (activity ~ /^quiet [0-9][0-9hms.]* ago/) {
+      if (activity ~ /^quiet [0-9]+([dhms][0-9]+)*[dhms] ago/) {
         sub(/^quiet /, "", activity); sub(/ ago.*/, "", activity)
         print step ":" activity
         exit

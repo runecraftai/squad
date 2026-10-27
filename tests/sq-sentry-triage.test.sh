@@ -1096,11 +1096,12 @@ SH
   chmod +x "$fakebin/drill"
   export SQUAD_FAKE_STEP_STATUS="$dir/drill-status"
   export SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$dir/pane"
-  for mode in progressing quiet duplicate recovered requiet ci-monitor ci-fixing; do
+  for mode in progressing quiet duplicate recovered requiet ci-monitor ci-fixing day; do
     step='test'; activity='2s ago: log: test output, still progressing'
     case "$mode" in
-      quiet|duplicate|requiet) activity='quiet 1h17m0s ago: log: last test output' ;;
-      ci-monitor|ci-fixing) step=ci; activity='quiet 4h0m0s ago: log: monitoring PR' ;;
+      quiet|duplicate|requiet) activity='quiet 1h17m ago: log: last test output' ;;
+      ci-monitor|ci-fixing) step=ci; activity='quiet 4h0m ago: log: monitoring PR' ;;
+      day) activity='quiet 1d2h ago: log: last test output' ;;
     esac
     cat > "$SQUAD_FAKE_STEP_STATUS" <<EOF
 run:
@@ -1111,20 +1112,25 @@ run:
   steps[1]{step,status,findings,duration_ms}:
     $step,$([ "$mode" = ci-fixing ] && echo fixing || echo running),0,0
   active_steps[1]{step,status,active_for,last_activity,agent_pid,round}:
-    $step,$([ "$mode" = ci-fixing ] && echo fixing || echo running),1h20m0s,"$activity","123",starting
+    $step,$([ "$mode" = ci-fixing ] && echo fixing || echo running),1h20m,"$activity","123",starting
 EOF
     # Force a new observation, without changing the continuous quiet episode.
     rm -f "$state/.step-quiet-checked-$key"
     watch_bg "$state" "$fakebin" "$out" env SQUAD_CHECK_INTERVAL=1 SQUAD_STALE_ESCALATE_SECS=1
     pid=$!
     case "$mode" in
-      quiet|requiet|ci-fixing)
+      quiet|requiet|ci-fixing|day)
         wakes=$((wakes + 1))
         wait_for_exit "$pid" 60 || { reap "$pid"; fail "$mode did not surface a quiet-step wake"; }
         grep -F "stale: $window (pipeline step $step quiet for" "$out" >/dev/null \
           || fail "quiet wake lost step name: $(cat "$out")"
-        grep -F "$([ "$step" = ci ] && echo 4h0m0s || echo 1h17m0s)" "$out" >/dev/null \
-          || fail 'quiet wake lost duration'
+        case "$mode" in
+          ci-fixing) want=4h0m ;;
+          day) want=1d2h ;;
+          *) want=1h17m ;;
+        esac
+        grep -F "quiet for $want" "$out" >/dev/null \
+          || fail "quiet wake lost duration: $(cat "$out")"
         [ "$(wc -l < "$state/.stand-to-queue" | tr -d ' ')" = "$wakes" ] \
           || fail 'quiet episode queued more than one wake'
         ;;
@@ -1137,7 +1143,7 @@ EOF
     esac
   done
   unset SQUAD_FAKE_STEP_STATUS SQUAD_FAKE_TMUX_WINDOW SQUAD_FAKE_TMUX_CAPTURE
-  pass 'Drill activity: progressing steps and quiet CI monitor absorbed; quiet test/fix wakes once with step and duration'
+  pass 'Drill activity: progressing steps and quiet CI monitor absorbed; quiet test/fix wakes once with step and duration, including day-scale quiet'
 }
 
 test_wedge_timer_deferred_while_run_step_active() {

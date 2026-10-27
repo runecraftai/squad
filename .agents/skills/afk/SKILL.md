@@ -167,7 +167,8 @@ Classify each wake this way:
   Other signals with no commander-relevant status -> self-handle.
 - `signal` or `stale` for a declared `paused:` external wait -> self-handle and track the pause rather than a wedge.
   If it remains declared and idle past `SQUAD_PAUSE_RESURFACE_SECS` (default 3600s), housekeeping sends one awaiting-external recheck and resets the pause window.
-  Objective pause-era evidence outranks that absorption: an idle dirty worktree, a declared pause older than `SQUAD_PAUSE_MAX_SECS` (default 3600s), and a static stuck pane signature arrive as named `stale` reasons and escalate once per episode instead of being absorbed into the pause marker.
+  Objective pause-era evidence outranks that absorption: an idle dirty worktree, a declared pause older than `SQUAD_PAUSE_MAX_SECS` (default 3600s), a static stuck pane signature, and a `pipeline step <step> quiet for <duration>` reason arrive as named `stale` reasons and escalate once per episode instead of being absorbed into the pause marker.
+  For the named quiet step, `drill axi logs --step <step>` in the task worktree shows whether the step stopped producing output or is still progressing.
 - `check` -> always escalate. Check scripts print only when Squad should wake.
 - `stale` with a terminal status or bare legacy commander-relevant line -> escalate.
   Nonterminal progress remains transient even when its prose contains a legacy free-text token or its seen-status marker already matches, so record a marker and self-handle.
@@ -257,7 +258,7 @@ These properties must hold:
   or crashed injection.
 - Wedge detection is bounded-latency, not lossy.
 - Declared external waits are rechecked on a separate, bounded cadence rather than being mislabeled as wedges.
-  Objective pause-era evidence (idle dirty worktree, aged-out declared pause, stuck pane signature) still escalates in away mode instead of being swallowed by that cadence.
+  Objective pause-era evidence (idle dirty worktree, aged-out declared pause, stuck pane signature, quiet pipeline step) still escalates in away mode instead of being swallowed by that cadence.
 - The catch-all scan backs up the keyword classifier.
 - The daemon preserves a single-instance portable lock, crash-loop backoff,
   a pane-gone guard, and a signal-trapped shutdown that flushes buffered
