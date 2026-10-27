@@ -222,6 +222,15 @@ fm_backend_tuios_unname_workspace_if_empty() {  # <session> <workspace> <task-la
   fm_backend_tuios_name_workspace "$session" "$workspace" ''
 }
 
+fm_backend_tuios_session_absent_answer() {  # <CLI output> <session>
+  local response=$1 session=$2
+  printf '%s' "$response" | jq -e --arg session "$session" '
+    .success == false
+    and (.error | type == "string")
+    and (.error | startswith("list-windows failed: session " + $session + " not found."))
+  ' >/dev/null 2>&1
+}
+
 fm_backend_tuios_release_task_workspace() {  # <task-id> <meta-file>
   local id=$1 meta=$2 session window workspace label inventory windows present name
   [ "$(fm_meta_get "$meta" backend)" = tuios ] || return 0
@@ -229,29 +238,39 @@ fm_backend_tuios_release_task_workspace() {  # <task-id> <meta-file>
   window=$(fm_meta_get "$meta" tuios_window_id)
   workspace=$(fm_meta_get "$meta" tuios_workspace_id)
   [ -n "$workspace" ] || return 0
-  [ "$(fm_meta_get "$meta" endpoint_task_id)" = "$id" ] || return 1
-  [ "$(fm_meta_get "$meta" window)" = "$session:$window" ] || return 1
-  [[ "$workspace" =~ ^[1-9][0-9]*$ ]] || return 1
+  [ "$(fm_meta_get "$meta" endpoint_task_id)" = "$id" ] || { echo "error: TUIOS metadata task id does not match $id" >&2; return 1; }
+  [ "$(fm_meta_get "$meta" window)" = "$session:$window" ] || { echo "error: TUIOS metadata target does not match $session:$window" >&2; return 1; }
+  [[ "$workspace" =~ ^[1-9][0-9]*$ ]] || { echo "error: invalid TUIOS workspace id '$workspace'" >&2; return 1; }
   label="sq-$id"
-  windows=$(fm_backend_tuios_list_windows_json "$session") || return 1
+  if ! windows=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null); then
+    fm_backend_tuios_session_absent_answer "$windows" "$session" && return 0
+    echo "error: could not read TUIOS windows for session $session" >&2
+    return 1
+  fi
+  printf '%s' "$windows" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    type == "object"
+    and (terror | not)
+    and (.windows | type == "array")
+    and all(.windows[]; type == "object" and ((tids | unique | length) == 1))
+  ' >/dev/null 2>&1 || { echo "error: could not verify TUIOS windows for session $session" >&2; return 1; }
   printf '%s' "$windows" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     all(.windows[]; (tworkspaces | unique | length) == 1)
   ' >/dev/null 2>&1 || { echo 'error: cannot safely verify TUIOS workspace occupancy' >&2; return 1; }
   present=$(printf '%s' "$windows" | jq -r --arg id "$window" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     [.windows[] | select((tids | index($id)) != null)] | length
-  ' 2>/dev/null) || return 1
+  ' 2>/dev/null) || { echo "error: could not identify task window $session:$window" >&2; return 1; }
   [ "$present" = 0 ] || { echo "error: task window $session:$window remains; retaining its workspace claim" >&2; return 1; }
   printf '%s' "$windows" | jq -e --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     any(.windows[]; (tworkspaces | index($ws)) != null)
   ' >/dev/null 2>&1 && { echo "error: workspace $workspace still contains another window; retaining task metadata" >&2; return 1; }
-  inventory=$(fm_backend_tuios_list_workspaces_json "$session") || return 1
+  inventory=$(fm_backend_tuios_list_workspaces_json "$session") || { echo "error: could not read TUIOS workspace inventory for session $session" >&2; return 1; }
   printf '%s' "$inventory" | jq -e --argjson ws "$workspace" '
     [.workspaces[] | select(.workspace == $ws)] as $w
     | ($w | length) == 1 and ($w[0].window_count == 0)
   ' >/dev/null 2>&1 || { echo "error: workspace $workspace is absent or still has windows; retaining task metadata" >&2; return 1; }
   name=$(printf '%s' "$inventory" | jq -r --argjson ws "$workspace" '
     [.workspaces[] | select(.workspace == $ws)] | if length == 1 then (.[0].name // "") else empty end
-  ' 2>/dev/null) || return 1
+  ' 2>/dev/null) || { echo "error: could not read workspace $workspace name from TUIOS inventory" >&2; return 1; }
   [ -n "$name" ] || return 0
   [ "$name" = "$label" ] || return 0
   fm_backend_tuios_name_workspace "$session" "$workspace" '' || {
