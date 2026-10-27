@@ -456,6 +456,19 @@ if [ "$HAVE_RUN" = 1 ]; then
     fi
   fi
 
+  # Keep execution state authoritative while exposing Drill's own bounded
+  # inactivity evidence separately for sentry inspection, not interruption.
+  if [ "$RUN_STATE" = working ] && [ "$RUN_SOURCE" = full ]; then
+    quiet_step=$(fm_drill_current_run_quiet_step)
+    if [ -n "$quiet_step" ]; then
+      run_id=$(strip_quotes "$(drill_field id)")
+      case "$run_id" in
+        ''|*[!A-Za-z0-9_-]*) : ;;
+        *) RUN_DETAIL="$RUN_DETAIL${SEP}step_quiet=$quiet_step${SEP}run_id=$run_id" ;;
+      esac
+    fi
+  fi
+
   # Reconcile the status log. A needs-decision/blocked log line that the run-step
   # has moved past (anything but a genuinely parked run) is deterministically
   # stale: the gate resolved and the run resumed or finished.

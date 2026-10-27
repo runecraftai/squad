@@ -1072,6 +1072,74 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated() {
 # run-step, reaching demand-deep-inspection while CI progressed normally. An active
 # run-step is the authoritative declared wait, so the timer must not escalate while
 # it holds. The companion below proves the wedge limit still applies with no step.
+# Exercise the real crew-state attribution and Drill activity parser, not a
+# canned working verdict. Only Drill's already-thresholded quiet flag may alarm.
+test_pipeline_step_quiet_activity() {
+  local dir state fakebin out window key pid head branch activity step mode wakes=0
+  dir=$(make_case pipeline-step-quiet); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; window="test:sq-step-quiet"; key=test_sq-step-quiet
+  branch=sq/step-quiet
+  mkdir -p "$dir/repo"
+  git -C "$dir/repo" init -q
+  git -C "$dir/repo" -c user.name=Test -c user.email=test@example.invalid commit -qm init --allow-empty
+  git -C "$dir/repo" checkout -qb "$branch"
+  head=$(git -C "$dir/repo" rev-parse HEAD)
+  printf 'window=%s\nkind=strike\nworktree=%s\n' "$window" "$dir/repo" > "$state/step-quiet.meta"
+  printf 'working: validating\n' > "$state/step-quiet.status"
+  printf '%s' "$(seen_sig "$state/step-quiet.status")" > "$state/.seen-step-quiet_status"
+  printf 'waiting on drill\n' > "$dir/pane"
+  printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$ROOT/bin/sq-crew-state.sh" > "$fakebin/sq-crew-state.sh"
+  cat > "$fakebin/drill" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = 'axi status' ]; then cat "$SQUAD_FAKE_STEP_STATUS"; fi
+SH
+  chmod +x "$fakebin/drill"
+  export SQUAD_FAKE_STEP_STATUS="$dir/drill-status"
+  export SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$dir/pane"
+  for mode in progressing quiet duplicate recovered requiet ci-monitor ci-fixing; do
+    step='test'; activity='2s ago: log: test output, still progressing'
+    case "$mode" in
+      quiet|duplicate|requiet) activity='quiet 1h17m0s ago: log: last test output' ;;
+      ci-monitor|ci-fixing) step=ci; activity='quiet 4h0m0s ago: log: monitoring PR' ;;
+    esac
+    cat > "$SQUAD_FAKE_STEP_STATUS" <<EOF
+run:
+  id: "01QUIET"
+  branch: $branch
+  head: $head
+  status: running
+  steps[1]{step,status,findings,duration_ms}:
+    $step,$([ "$mode" = ci-fixing ] && echo fixing || echo running),0,0
+  active_steps[1]{step,status,active_for,last_activity,agent_pid,round}:
+    $step,$([ "$mode" = ci-fixing ] && echo fixing || echo running),1h20m0s,"$activity","123",starting
+EOF
+    # Force a new observation, without changing the continuous quiet episode.
+    rm -f "$state/.step-quiet-checked-$key"
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_CHECK_INTERVAL=1 SQUAD_STALE_ESCALATE_SECS=1
+    pid=$!
+    case "$mode" in
+      quiet|requiet|ci-fixing)
+        wakes=$((wakes + 1))
+        wait_for_exit "$pid" 60 || { reap "$pid"; fail "$mode did not surface a quiet-step wake"; }
+        grep -F "stale: $window (pipeline step $step quiet for" "$out" >/dev/null \
+          || fail "quiet wake lost step name: $(cat "$out")"
+        grep -F "$([ "$step" = ci ] && echo 4h0m0s || echo 1h17m0s)" "$out" >/dev/null \
+          || fail 'quiet wake lost duration'
+        [ "$(wc -l < "$state/.stand-to-queue" | tr -d ' ')" = "$wakes" ] \
+          || fail 'quiet episode queued more than one wake'
+        ;;
+      *)
+        wait_live "$pid" 40 || { reap "$pid"; fail "$mode unexpectedly alarmed: $(cat "$out")"; }
+        reap "$pid"
+        [ ! -s "$out" ] || fail "$mode printed a wake"
+        [ -e "$state/.step-quiet-checked-$key" ] || fail 'quiet-step observation never ran'
+        ;;
+    esac
+  done
+  unset SQUAD_FAKE_STEP_STATUS SQUAD_FAKE_TMUX_WINDOW SQUAD_FAKE_TMUX_CAPTURE
+  pass 'Drill activity: progressing steps and quiet CI monitor absorbed; quiet test/fix wakes once with step and duration'
+}
+
 test_wedge_timer_deferred_while_run_step_active() {
   local dir state fakebin out capture_file window key pane_hash since pid
   dir=$(make_case wedge-run-step-active); state="$dir/state"; fakebin="$dir/fakebin"
@@ -2510,6 +2578,8 @@ test_teardown_drops_target_and_wedge_counter() {
   # Teardown shape: the task metadata and status are gone while the window-keyed
   # bookkeeping survives (the release could not resolve the window it released).
   rm -f "$state/torn.meta" "$state/torn.status" "$state/.seen-torn_status"
+  : > "$state/.step-quiet-checked-$key"
+  : > "$state/.step-quiet-reported-$key"
   # Control: an unrelated LIVE task's window, mid-episode and past its threshold,
   # whose escalation round must be untouched by the drop.
   live_window="test:sq-live"
@@ -2538,6 +2608,8 @@ test_teardown_drops_target_and_wedge_counter() {
   [ ! -e "$state/.stale-$key" ] || fail "a torn-down target kept its stale suppressor"
   [ ! -e "$state/.hash-$key" ] || fail "a torn-down target kept its pane hash"
   [ ! -e "$state/.count-$key" ] || fail "a torn-down target kept its pane hash count"
+  [ ! -e "$state/.step-quiet-checked-$key" ] || fail "a torn-down target kept its step observation marker"
+  [ ! -e "$state/.step-quiet-reported-$key" ] || fail "a torn-down target kept its quiet-step episode"
   [ "$(cat "$state/.wedge-escalations-$live_key" 2>/dev/null || true)" = "2" ] || fail "the live control window's own escalation counter was reset by the drop"
   [ "$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.stand-to-queue")" = 0 ] \
     || fail "a torn-down target queued a stale wake"
@@ -4611,6 +4683,7 @@ test_terminal_stale_surfaced
 test_finished_stale_is_absorbed
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
+test_pipeline_step_quiet_activity
 test_wedge_timer_deferred_while_run_step_active
 test_wedge_timer_escalates_without_active_step
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold

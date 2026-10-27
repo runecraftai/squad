@@ -281,7 +281,8 @@ retire_watcher_markers() {  # <state-dir> <task-id> <window>
     "$state/.dirty-since-$key" "$state/.dirty-unreadable-$key" "$state/.pause-episode-$key" \
     "$state/.deferred-log-$key" \
     "$state/.sig-hash-$key" "$state/.sig-since-$key" "$state/.sig-reported-$key" "$state/.sig-unreadable-$key" \
-    "$state/.sig-deferred-log-$key"
+    "$state/.sig-deferred-log-$key" \
+    "$state/.step-quiet-checked-$key" "$state/.step-quiet-reported-$key"
 }
 
 remote_recovery_paths_validate() {

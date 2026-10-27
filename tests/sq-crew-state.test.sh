@@ -395,6 +395,45 @@ test_active_run_is_authoritative() {
   pass "active run-step is authoritative"
 }
 
+test_quiet_step_evidence_is_bound_and_excludes_nonexecution() {
+  reset_fakes
+  local d out base scenario
+  d=$(new_case quiet-step-evidence)
+  make_repo_on_branch "$d/wt" sq/quiet
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/quiet.meta" 'window=fm:sq-quiet' "worktree=$d/wt" 'kind=strike'
+  base="$(run_running sq/quiet)"
+  for scenario in quiet recent unknown missing parked terminal foreign; do
+    SQUAD_FAKE_AXI_STATUS=$base
+    case "$scenario" in
+      quiet|parked|terminal|foreign)
+        SQUAD_FAKE_AXI_STATUS="$SQUAD_FAKE_AXI_STATUS
+  active_steps[2]{step,status,active_for,last_activity,agent_pid,round}:
+    ci,running,4h0m0s,\"quiet 4h0m0s ago: log: waiting\",\"\",starting
+    test,running,1h20m0s,\"quiet 1h17m0s ago: log: last output, with comma\",\"42\",starting" ;;
+      recent|unknown)
+        SQUAD_FAKE_AXI_STATUS="$SQUAD_FAKE_AXI_STATUS
+  active_steps[1]{step,status,active_for,last_activity,agent_pid,round}:
+    test,running,1h20m0s,\"$([ "$scenario" = recent ] && echo '2s ago: log: quiet is just log text' || echo unknown)\",\"42\",starting" ;;
+    esac
+    case "$scenario" in
+      parked) SQUAD_FAKE_AXI_STATUS="$SQUAD_FAKE_AXI_STATUS
+  awaiting_agent: 15m" ;;
+      terminal) SQUAD_FAKE_AXI_STATUS="$SQUAD_FAKE_AXI_STATUS
+  outcome: passed" ;;
+      foreign) SQUAD_FAKE_AXI_STATUS="${SQUAD_FAKE_AXI_STATUS/sq\/quiet/sq\/other}" ;;
+    esac
+    out=$(run_crew_state "$d" quiet)
+    if [ "$scenario" = quiet ]; then
+      assert_contains "$out" 'step_quiet=test:1h17m0s' 'quiet evidence includes step and duration, skips CI monitor'
+      assert_contains "$out" 'run_id=01RUN' 'quiet evidence identifies its run'
+    else
+      assert_not_contains "$out" 'step_quiet=' "$scenario is not quiet execution evidence"
+    fi
+  done
+  pass 'quiet-step evidence is branch/code bound and excludes gates, terminal runs, absent/unknown/recent activity'
+}
+
 # (b) needs-decision log + a resumed (running/fixing) run = SUPERSEDED
 test_stale_needs_decision_superseded() {
   reset_fakes
@@ -1502,6 +1541,7 @@ test_newest_running_run_overrides_older_terminal_snapshot
 test_active_run_overrides_execution_record
 test_exec_lock_is_not_held_across_run_attribution
 test_active_run_is_authoritative
+test_quiet_step_evidence_is_bound_and_excludes_nonexecution
 test_stale_needs_decision_superseded
 test_stale_blocked_superseded
 test_genuine_parked_not_superseded

@@ -1580,7 +1580,7 @@ handle_wake() {  # <reason> <state>
                   esac ;;
                 idle\ *s,\ possible\ wedge,\ escalation\ *)
                   decision="escalate|${reason#stale: }" ;;
-                operator\ idle\ with\ uncommitted\ work*|declared\ pause\ aged\ out*|pane\ signature:*)
+                operator\ idle\ with\ uncommitted\ work*|declared\ pause\ aged\ out*|pane\ signature:*|pipeline\ step\ *\ quiet\ for\ *)
                   # Objective evidence the sentry already waited its own threshold
                   # for. A declared paused: line, a stale status, and a harness
                   # busy claim all lose to it, so away mode escalates the named
