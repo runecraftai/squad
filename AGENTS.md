@@ -335,7 +335,7 @@ The one exception is a window whose execution is genuinely terminal (its shared 
 Handle actionable wakes as follows:
 
 1. For `signal:`, read the listed event lines first, then reconcile current state only where action depends on it.
-2. For `stale:`, inspect the recorded endpoint and load `stuck-operator-recovery` for a stopped, looping, confused, or unresponsive worker; a pause-era reason names the unfinished work or stuck signature to inspect, and a deep-inspection reason also requires current-state and validation-log inspection.
+2. For `stale:`, inspect the recorded endpoint and load `stuck-operator-recovery` for a stopped, looping, confused, or unresponsive worker; an objective stale reason names the unfinished work, stuck signature, or quiet step to inspect, and a deep-inspection reason also requires current-state and validation-log inspection.
 3. For `check:`, act on the named poll result, including merges, Relay events, and process-to-event source results.
 4. For `heartbeat:`, review the whole unit from the structured unit view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged unit as progress.
 
