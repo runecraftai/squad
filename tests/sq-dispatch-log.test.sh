@@ -7,6 +7,9 @@ set -euo pipefail
 TMP_ROOT=$(fm_test_tmproot sq-dispatch-log)
 fm_git_identity fmtest fmtest@example.invalid
 
+# Current PR head the fake forge reports back.
+MERGE_HEAD=deadbeefcafefeed0000000000000000deadbeef
+
 make_case() {
   local dir="$TMP_ROOT/$1" fakebin
   mkdir -p "$dir/data/task" "$dir/state" "$dir/config" "$dir/projects"
@@ -28,7 +31,14 @@ case "$*" in
 esac
 exit 0
 SH
-  chmod +x "$fakebin/tmux" "$fakebin/sq-gh"
+  cat > "$fakebin/gh" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *headRefOid*) printf '%s\n' '$MERGE_HEAD' ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux" "$fakebin/sq-gh" "$fakebin/gh"
   fm_git_worktree "$dir/project" "$dir/wt" "sq/$1"
   printf 'PRIVATE_BRIEF_SENTINEL\necho done >> "%s/state/task.status"\n' "$dir" > "$dir/data/task/brief.md"
   touch "$dir/state/task.status" "$dir/state/.last-sentry-beat"
@@ -96,7 +106,7 @@ pass 'a second decision appends without altering history and restores private mo
 # Status history is baselined; terminal appends are logged even when desktop
 # notifications are filtered or the task window is focused. Never copy its text.
 fm_write_meta "$dir/state/task.meta" 'window=Squad:sq-task' "worktree=$dir/wt" \
-  "project=$dir/project" 'kind=strike' 'mode=local-only'
+  "project=$dir/project" 'kind=strike' 'mode=local-only' "pr_head=$MERGE_HEAD"
 touch "$dir/state/task.status"
 run_case "$dir" sq-status-notify.sh scan "$dir"
 printf 'done: PRIVATE_BRIEF_SENTINEL\nfailed: PRIVATE_SECRET_SENTINEL\n' >> "$dir/state/task.status"
@@ -166,6 +176,7 @@ pass 'unsafe destinations and payloads are skipped with one non-sensitive warnin
 dir=$(make_case best-effort)
 mkdir "$dir/data/task/dispatch.jsonl"
 spawn "$dir" > "$dir/spawn.out" 2> "$dir/spawn.err" || fail 'log failure blocked spawn'
+printf 'pr_head=%s\n' "$MERGE_HEAD" >> "$dir/state/task.meta"
 run_case "$dir" sq-pr-merge.sh task https://github.com/example/repo/pull/2 \
   > "$dir/merge.out" 2> "$dir/merge.err" || fail 'log failure blocked merge'
 run_case "$dir" sq-status-notify.sh scan "$dir"

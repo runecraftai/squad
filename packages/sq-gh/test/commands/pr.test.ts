@@ -852,8 +852,10 @@ describe("prCommand", () => {
 
     it("returns already merged when PR is already merged (idempotent)", async () => {
       mockedGhJson.mockResolvedValue({
-        ...verifiedPr,
         state: "MERGED",
+        headRefOid: head,
+        mergeable: "UNKNOWN",
+        statusCheckRollup: undefined,
         mergedBy: { login: "alice" },
         mergedAt: "2024-01-01T00:00:00Z",
       });
@@ -865,6 +867,21 @@ describe("prCommand", () => {
 
       expect(result).toContain("merged");
       expect(result).toContain("alice");
+      expect(mockedGhExec).not.toHaveBeenCalled();
+    });
+
+    it("refuses an already merged PR whose head no longer matches", async () => {
+      mockedGhJson.mockResolvedValue({
+        state: "MERGED",
+        headRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        mergeable: "UNKNOWN",
+        mergedBy: { login: "alice" },
+        mergedAt: "2024-01-01T00:00:00Z",
+      });
+
+      await expect(
+        prCommand(["merge", "10", "--expected-head", head], ctx),
+      ).rejects.toThrow("PR head changed");
       expect(mockedGhExec).not.toHaveBeenCalled();
     });
 
@@ -929,7 +946,7 @@ describe("prCommand", () => {
       [
         "head drift",
         { headRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
-        `PR head changed: recorded ${head}, current aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+        `PR head changed: recorded ${head}, current aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; re-run bin/sq-pr-check.sh`,
       ],
       ["unmergeable", { mergeable: "CONFLICTING" }, "not mergeable"],
     ])("refuses %s without invoking merge", async (_label, patch, reason) => {

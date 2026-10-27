@@ -272,7 +272,7 @@ examples:
   sq-gh pr view 42 --comments
   sq-gh pr view 42 --reviews
   sq-gh pr comment 42 --body-file review.md
-  sq-gh pr merge 42 --squash --delete-branch`;
+  sq-gh pr merge 42 --expected-head <sha> --squash --delete-branch`;
 
 // ---------------------------------------------------------------------------
 // Subcommands
@@ -651,31 +651,7 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   }
   if (pr.headRefOid !== expectedHead) {
     throw new AxiError(
-      `PR head changed: recorded ${expectedHead}, current ${pr.headRefOid}`,
-      "VALIDATION_ERROR",
-    );
-  }
-  if (!Array.isArray(pr.statusCheckRollup)) {
-    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
-  }
-  if (
-    pr.statusCheckRollup.some((check) => !check || typeof check !== "object")
-  ) {
-    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
-  }
-  const checkStates = pr.statusCheckRollup.map(classifyCheck);
-  if (checkStates.includes("fail")) {
-    throw new AxiError("current PR checks are failing", "VALIDATION_ERROR");
-  }
-  if (checkStates.includes("pending")) {
-    throw new AxiError(
-      "current PR checks are pending or unknown",
-      "VALIDATION_ERROR",
-    );
-  }
-  if (pr.mergeable !== "MERGEABLE") {
-    throw new AxiError(
-      `PR is not mergeable (mergeability: ${pr.mergeable ?? "unknown"})`,
+      `PR head changed: recorded ${expectedHead}, current ${pr.headRefOid}; re-run bin/sq-pr-check.sh <task-id> <pr-url> to record the current head before merging`,
       "VALIDATION_ERROR",
     );
   }
@@ -700,6 +676,30 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
         getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
       ),
     ]);
+  }
+  if (!Array.isArray(pr.statusCheckRollup)) {
+    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
+  }
+  if (
+    pr.statusCheckRollup.some((check) => !check || typeof check !== "object")
+  ) {
+    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
+  }
+  const checkStates = pr.statusCheckRollup.map(classifyCheck);
+  if (checkStates.includes("fail")) {
+    throw new AxiError("current PR checks are failing", "VALIDATION_ERROR");
+  }
+  if (checkStates.includes("pending")) {
+    throw new AxiError(
+      "current PR checks are pending or unknown",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (pr.mergeable !== "MERGEABLE") {
+    throw new AxiError(
+      `PR is not mergeable (mergeability: ${pr.mergeable ?? "unknown"})`,
+      "VALIDATION_ERROR",
+    );
   }
 
   const ghArgs = [

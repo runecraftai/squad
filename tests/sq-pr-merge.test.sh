@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Tests for bin/sq-pr-merge.sh: the one path Squad uses to merge a task's
-# PR, which must always record pr= and any available pr_head= into the task's
-# meta before merging so sq-teardown.sh's landed-check has a PR reference to
-# verify against, even on repos with no PR CI where the usual "checks green"
+# PR, which must refuse without a fresh, matching recorded pr_head= and only
+# record pr= and the confirmed pr_head= into the task's meta after the guarded
+# merge succeeds, so sq-teardown.sh's landed-check has a PR reference to verify
+# against, even on repos with no PR CI where the usual "checks green"
 # sq-pr-check.sh trigger never fires.
 #
 # Matrix:
@@ -14,7 +15,7 @@
 #   (f) malformed PR URL fails fast without calling sq-gh
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
-#   (i) --auto only enables auto-merge, so no landing outcome is recorded
+#   (i) --auto is refused and only a real --disable-auto flag suppresses the landing
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -383,6 +384,26 @@ test_disable_auto_is_not_recorded_as_landed() {
   pass "sq-pr-merge never records a landing for --disable-auto"
 }
 
+test_disable_auto_text_inside_a_value_still_records_landing() {
+  local case_dir
+  case_dir=$(make_case disable-auto-in-value)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  : > "$case_dir/sq-gh.log"
+
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/34 -- \
+    --squash --subject 'revert --disable-auto experiment' \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "disable-auto-in-value: sq-pr-merge failed"
+
+  python3 - "$case_dir/data/task-x1/dispatch.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1])]
+assert [(r['event'], r['source'], r['result']) for r in rows] == [
+    ('outcome', 'pr-merge', 'landed')], rows
+PY
+  pass "a literal --disable-auto inside an argument value does not suppress the landing record"
+}
+
 test_records_pr_and_head_before_merging
 test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
@@ -395,4 +416,5 @@ test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_auto_merge_is_not_recorded_as_landed
 test_disable_auto_is_not_recorded_as_landed
+test_disable_auto_text_inside_a_value_still_records_landing
 test_parses_pr_url_for_gh_axi
