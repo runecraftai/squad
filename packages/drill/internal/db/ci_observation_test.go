@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/runecraftai/squad/packages/drill/internal/types"
@@ -132,5 +133,83 @@ func TestPostGreenNotificationExactlyOnce(t *testing.T) {
 	}
 	if obs.FirstGreenAt != 100 {
 		t.Fatalf("first-green changed: %d", obs.FirstGreenAt)
+	}
+}
+
+func TestPostGreenActivationPreservesTrustedNoCI(t *testing.T) {
+	d, run, in := observationFixture(t)
+	in.DeclaredNoCI = true
+	if err := d.PrepareCIObservation(in); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ActivateCIObservation(run.ID, 1, in.HeadSHA, true, 110); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CIReadyAt == nil || *got.CIReadyAt != 110 || !got.CIReadyNoCI {
+		t.Fatalf("run readiness = at %v no_ci %v, want 110/true", got.CIReadyAt, got.CIReadyNoCI)
+	}
+}
+
+func TestPostGreenActivationCompletesCIStepAndClearsAgent(t *testing.T) {
+	d, run, in := observationFixture(t)
+	if err := d.PrepareCIObservation(in); err != nil {
+		t.Fatal(err)
+	}
+	step, err := d.InsertStepResult(run.ID, types.StepCI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.StartStep(step.ID); err != nil {
+		t.Fatal(err)
+	}
+	pid := 4321
+	if err := d.SetStepAgentActivity(step.ID, "agent running pid=4321", &pid); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ActivateCIObservation(run.ID, 1, in.HeadSHA, true, 110); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetStepResult(step.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != types.StepStatusCompleted || got.CompletedAt == nil || *got.CompletedAt != 110 {
+		t.Fatalf("CI step not completed at activation: %#v", got)
+	}
+	if got.AgentPID != nil {
+		t.Fatalf("completed CI step still advertises agent pid %v", *got.AgentPID)
+	}
+	if got.LastActivityAt == nil || *got.LastActivityAt != 110 || got.LastActivity == nil || *got.LastActivity != "status: completed" {
+		t.Fatalf("terminal activity missing: %#v", got)
+	}
+	if got.ExitCode == nil || *got.ExitCode != 0 {
+		t.Fatalf("completed CI step exit code = %v, want 0", got.ExitCode)
+	}
+}
+
+func TestPostGreenPrepareRefusesUnboundRun(t *testing.T) {
+	d := openTestDB(t)
+	repo, err := d.InsertRepo("/tmp/ci-observation-unbound", "https://example.test/unbound.git", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := d.InsertRun(repo.ID, "feature", "abc123", "base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.UpdateRunStatus(run.ID, types.RunRunning); err != nil {
+		t.Fatal(err)
+	}
+	in := PrepareCIObservationInput{RunID: run.ID, HeadSHA: "abc123", PushGeneration: 1, PushTargetFingerprint: "target-hash", PushTargetKind: "github", PushRef: "refs/heads/feature", PRURL: "https://example.test/unbound/pull/7", FirstGreenAt: 100, DeadlineAt: 200}
+	err = d.PrepareCIObservation(in)
+	if err == nil {
+		t.Fatal("prepared an observation for a run with no push binding")
+	}
+	if !strings.Contains(err.Error(), "run is not bound to the requested successful push") {
+		t.Fatalf("unbound run rejected with unexpected error: %v", err)
 	}
 }

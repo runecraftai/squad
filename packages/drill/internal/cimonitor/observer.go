@@ -52,6 +52,10 @@ func SampleBound(ctx context.Context, reader Reader, pr *scm.PR, candidate Obser
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	s := Sample{At: now(), Verdict: "unknown"}
+	if !scm.ValidCommitSHA(candidate.HeadSHA) {
+		s.Reason = "observation candidate head is not a full commit SHA"
+		return s, nil
+	}
 	if err := reader.Available(ctx); err != nil {
 		return s, fmt.Errorf("observation provider unavailable: %w", err)
 	}
@@ -91,6 +95,10 @@ func SampleBound(ctx context.Context, reader Reader, pr *scm.PR, candidate Obser
 		return s, fmt.Errorf("read published PR head: %w", err)
 	}
 	s.PublishedHead = strings.TrimSpace(remote)
+	if !scm.ValidCommitSHA(s.HeadBefore) || !scm.ValidCommitSHA(s.HeadAfter) || !scm.ValidCommitSHA(s.PublishedHead) {
+		s.Reason = "PR or published head is not a full commit SHA"
+		return s, nil
+	}
 	if s.HeadBefore != candidate.HeadSHA || s.HeadAfter != candidate.HeadSHA || s.PublishedHead != candidate.HeadSHA {
 		s.Reason = "PR or published head differs from observation candidate"
 		return s, nil

@@ -2,6 +2,7 @@ package cimonitor
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,21 +35,119 @@ func (f *observerReaderFake) GetMergeableState(context.Context, *scm.PR) (scm.Me
 }
 
 func TestPostGreenBoundSampleReadOnly(t *testing.T) {
+	const headA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const headB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	mergeabilityCaps := scm.Capabilities{MergeableState: true}
+	passingChecks := []scm.Check{{Name: "build", Bucket: scm.CheckBucketPass}}
 	pr := &scm.PR{Number: "9", URL: "https://example.test/pr/9"}
-	reader := &observerReaderFake{heads: []string{"abc", "abc"}, state: scm.PRStateOpen, merge: scm.MergeableOK, caps: scm.Capabilities{MergeableState: true}, checks: []scm.Check{{Name: "build", Bucket: scm.CheckBucketPass}}}
-	s, err := SampleBound(context.Background(), reader, pr, ObservationCandidate{HeadSHA: "abc", PR: pr}, func(context.Context) (string, error) { return "abc", nil }, time.Second, nil)
-	if err != nil || s.Verdict != "green" {
-		t.Fatalf("sample=%+v err=%v", s, err)
+
+	tests := []struct {
+		name         string
+		heads        []string
+		candidate    string
+		published    string
+		merge        scm.MergeableState
+		caps         scm.Capabilities
+		declaredNoCI bool
+		wantVerdict  string
+		wantReason   string
+		wantErr      bool
+	}{
+		{
+			name:        "stable bound head is green",
+			heads:       []string{headA, headA},
+			candidate:   headA,
+			published:   headA,
+			merge:       scm.MergeableOK,
+			caps:        mergeabilityCaps,
+			wantVerdict: "green",
+		},
+		{
+			name:        "moved head is not green",
+			heads:       []string{headA, headB},
+			candidate:   headA,
+			published:   headA,
+			merge:       scm.MergeableOK,
+			caps:        mergeabilityCaps,
+			wantVerdict: "unknown",
+			wantReason:  "PR or published head differs from observation candidate",
+		},
+		{
+			name:        "unresolved mergeability is not green",
+			heads:       []string{headA, headA},
+			candidate:   headA,
+			published:   headA,
+			merge:       scm.MergeableUnknown,
+			caps:        mergeabilityCaps,
+			wantVerdict: "unknown",
+			wantReason:  "PR mergeability is unresolved",
+		},
+		{
+			name:       "provider without mergeability support cannot sample green",
+			heads:      []string{headA},
+			candidate:  headA,
+			published:  headA,
+			merge:      scm.MergeableOK,
+			caps:       scm.Capabilities{MergeableState: false},
+			wantErr:    true,
+			wantReason: "provider cannot positively resolve PR mergeability",
+		},
+		{
+			name:        "blank published head is not green",
+			heads:       []string{headA, headA},
+			candidate:   headA,
+			published:   "",
+			merge:       scm.MergeableOK,
+			caps:        mergeabilityCaps,
+			wantVerdict: "unknown",
+			wantReason:  "PR or published head is not a full commit SHA",
+		},
+		{
+			name:        "malformed candidate head is not green",
+			heads:       []string{headA, headA},
+			candidate:   "abc",
+			published:   headA,
+			merge:       scm.MergeableOK,
+			caps:        mergeabilityCaps,
+			wantVerdict: "unknown",
+			wantReason:  "observation candidate head is not a full commit SHA",
+		},
 	}
-	reader.heads = []string{"abc", "def"}
-	s, err = SampleBound(context.Background(), reader, pr, ObservationCandidate{HeadSHA: "abc"}, func(context.Context) (string, error) { return "abc", nil }, time.Second, nil)
-	if err != nil || s.Verdict == "green" {
-		t.Fatalf("moved head accepted: %+v err=%v", s, err)
-	}
-	reader.heads = []string{"abc", "abc"}
-	reader.merge = scm.MergeableUnknown
-	s, err = SampleBound(context.Background(), reader, pr, ObservationCandidate{HeadSHA: "abc"}, func(context.Context) (string, error) { return "abc", nil }, time.Second, nil)
-	if err != nil || s.Verdict == "green" {
-		t.Fatalf("unknown mergeability accepted: %+v err=%v", s, err)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := &observerReaderFake{
+				heads:  append([]string(nil), tc.heads...),
+				state:  scm.PRStateOpen,
+				merge:  tc.merge,
+				caps:   tc.caps,
+				checks: passingChecks,
+			}
+			s, err := SampleBound(context.Background(), reader, pr,
+				ObservationCandidate{HeadSHA: tc.candidate, PR: pr, DeclaredNoCI: tc.declaredNoCI},
+				func(context.Context) (string, error) { return tc.published, nil },
+				time.Second, nil)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("sample accepted without a positive mergeability capability: %+v", s)
+				}
+				if s.Verdict == "green" {
+					t.Fatalf("failed read reported green: %+v", s)
+				}
+				if tc.wantReason != "" && !strings.Contains(err.Error(), tc.wantReason) {
+					t.Fatalf("error=%q, want %q", err, tc.wantReason)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("sample=%+v err=%v", s, err)
+				}
+				if s.Verdict != tc.wantVerdict {
+					t.Fatalf("verdict=%q reason=%q, want %q", s.Verdict, s.Reason, tc.wantVerdict)
+				}
+				if tc.wantReason != "" && s.Reason != tc.wantReason {
+					t.Fatalf("reason=%q, want %q", s.Reason, tc.wantReason)
+				}
+			}
+		})
 	}
 }

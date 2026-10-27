@@ -58,14 +58,20 @@ func (d *DB) PrepareCIObservation(in PrepareCIObservationInput) error {
 	}
 	defer tx.Rollback()
 	var gen sql.NullInt64
-	var sha, fingerprint, kind, ref, pr string
+	var sha, fingerprint, kind, ref, pr sql.NullString
 	var active int
 	var status string
 	err = tx.QueryRow(`SELECT status, last_pushed_sha, push_generation, push_target_fingerprint, push_target_kind, push_ref, pr_url, push_active FROM runs WHERE id = ?`, in.RunID).Scan(&status, &sha, &gen, &fingerprint, &kind, &ref, &pr, &active)
 	if err != nil {
 		return fmt.Errorf("prepare CI observation: read run: %w", err)
 	}
-	if status != "running" || active != 0 || !gen.Valid || gen.Int64 != in.PushGeneration || sha != in.HeadSHA || fingerprint != in.PushTargetFingerprint || kind != in.PushTargetKind || ref != in.PushRef || pr != in.PRURL || in.HeadSHA == "" || in.PRURL == "" {
+	if status != "running" || active != 0 || in.HeadSHA == "" || in.PRURL == "" ||
+		!gen.Valid || gen.Int64 != in.PushGeneration ||
+		!sha.Valid || sha.String != in.HeadSHA ||
+		!fingerprint.Valid || fingerprint.String != in.PushTargetFingerprint ||
+		!kind.Valid || kind.String != in.PushTargetKind ||
+		!ref.Valid || ref.String != in.PushRef ||
+		!pr.Valid || pr.String != in.PRURL {
 		return fmt.Errorf("prepare CI observation: run is not bound to the requested successful push")
 	}
 	var old CIObservation
@@ -105,7 +111,7 @@ func (d *DB) ActivateCIObservation(runID string, generation int64, finalHead str
 	if n != 1 {
 		return fmt.Errorf("activate CI observation: preparation identity changed")
 	}
-	res, err = tx.Exec(`UPDATE runs SET status='completed', ci_ready_at=?, terminal_head_verified_at=?, push_active=0, awaiting_agent_since=NULL, head_sha=?, updated_at=? WHERE id=? AND status='running' AND push_generation=? AND last_pushed_sha=?`, at, at, finalHead, at, runID, generation, finalHead)
+	res, err = tx.Exec(`UPDATE runs SET status='completed', ci_ready_at=?, ci_ready_no_ci=(SELECT declared_no_ci FROM ci_observations WHERE run_id=?), terminal_head_verified_at=?, push_active=0, awaiting_agent_since=NULL, head_sha=?, updated_at=? WHERE id=? AND status='running' AND push_generation=? AND last_pushed_sha=?`, at, runID, at, finalHead, at, runID, generation, finalHead)
 	if err != nil {
 		return fmt.Errorf("activate CI observation: complete run: %w", err)
 	}
@@ -113,7 +119,7 @@ func (d *DB) ActivateCIObservation(runID string, generation int64, finalHead str
 	if n != 1 {
 		return fmt.Errorf("activate CI observation: run identity changed")
 	}
-	if _, err := tx.Exec(`UPDATE step_results SET status='completed', completed_at=? WHERE run_id=? AND step_name='ci' AND status IN ('running','pending')`, at, runID); err != nil {
+	if _, err := tx.Exec(`UPDATE step_results SET status='completed', exit_code=COALESCE(exit_code, 0), completed_at=?, last_activity_at=?, last_activity='status: completed', agent_pid=NULL WHERE run_id=? AND step_name='ci' AND status IN ('running','pending')`, at, at, runID); err != nil {
 		return fmt.Errorf("activate CI observation: complete CI step: %w", err)
 	}
 	return tx.Commit()
