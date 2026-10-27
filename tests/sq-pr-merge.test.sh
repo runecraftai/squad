@@ -104,9 +104,9 @@ run_pr_merge() {
   return "$rc"
 }
 
-test_records_pr_and_head_before_merging() {
+test_records_pr_and_head_after_confirmed_merge() {
   local case_dir rc
-  case_dir=$(make_case records-before-merge)
+  case_dir=$(make_case records-after-merge)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
   : > "$case_dir/sq-gh.log"
@@ -117,17 +117,17 @@ test_records_pr_and_head_before_merging() {
   rc=$?
   set -e
 
-  expect_code 0 "$rc" "records-before-merge: sq-pr-merge should succeed"
+  expect_code 0 "$rc" "records-after-merge: sq-pr-merge should succeed"
   assert_grep 'pr=https://github.com/example/repo/pull/9' "$case_dir/state/task-x1.meta" \
-    "records-before-merge: pr= was not recorded"
+    "records-after-merge: pr= was not recorded"
   assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" \
-    "records-before-merge: pr_head= was not recorded"
+    "records-after-merge: pr_head= was not recorded"
   grep -qxF 'pr merge 9 --repo example/repo --expected-head deadbeefcafefeed0000000000000000deadbeef --squash' "$case_dir/sq-gh.log" \
-    || fail "records-before-merge: sq-gh pr merge was not invoked with number, --repo, and default --squash"
+    || fail "records-after-merge: sq-gh pr merge was not invoked with number, --repo, and default --squash"
   pass "sq-pr-merge records PR metadata after invoking the guarded merge"
 }
 
-test_merge_failure_propagates_after_recording() {
+test_merge_failure_propagates_without_recording() {
   local case_dir rc
   case_dir=$(make_case merge-fails)
   mkdir -p "$case_dir/wt"
@@ -388,8 +388,8 @@ PY
   pass "sq-pr-merge records the landing for a synchronous --disable-auto merge"
 }
 
-test_records_pr_and_head_before_merging
-test_merge_failure_propagates_after_recording
+test_records_pr_and_head_after_confirmed_merge
+test_merge_failure_propagates_without_recording
 test_extra_merge_args_forwarded
 test_missing_meta_refuses_before_merge
 test_missing_recorded_head_refuses_without_metadata_changes

@@ -957,12 +957,20 @@ describe("prCommand", () => {
       expect(mockedGhExec).not.toHaveBeenCalled();
     });
 
-    it("refuses when the fresh PR read fails", async () => {
-      mockedGhJson.mockRejectedValue(new Error("provider unavailable"));
-      await expect(
-        prCommand(["merge", "10", "--expected-head", head], ctx),
-      ).rejects.toThrow(
-        "could not read current PR head, checks, and mergeability",
+    it("propagates the provider error when the fresh PR read fails", async () => {
+      mockedGhJson.mockRejectedValue(
+        new AxiError("Pull request #10 does not exist", "NOT_FOUND"),
+      );
+      let caught: unknown;
+      try {
+        await prCommand(["merge", "10", "--expected-head", head], ctx);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(AxiError);
+      expect((caught as AxiError).code).toBe("NOT_FOUND");
+      expect((caught as AxiError).message).toBe(
+        "Pull request #10 does not exist",
       );
       expect(mockedGhExec).not.toHaveBeenCalled();
     });

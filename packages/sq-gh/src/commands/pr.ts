@@ -561,6 +561,15 @@ async function prClose(args: string[], ctx?: RepoContext): Promise<string> {
   ]);
 }
 
+type PrMergeSnapshot = Pick<PrItem, "state" | "mergedBy" | "mergedAt"> & {
+  headRefOid?: string;
+  mergeable?: string;
+  statusCheckRollup?: StatusCheck[];
+};
+
+const PR_MERGE_SNAPSHOT_FIELDS =
+  "state,mergedBy,mergedAt,headRefOid,mergeable,statusCheckRollup";
+
 async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   const num = takeNumber(args, "PR");
   const expectedHead = takeFlag(args, "--expected-head");
@@ -609,34 +618,10 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   const subject = takeFlag(args, "--subject");
 
   // Fresh merge-boundary read; cached PR/check evidence is never sufficient.
-  let pr: Pick<PrItem, "state" | "mergedBy" | "mergedAt"> & {
-    headRefOid?: string;
-    mergeable?: string;
-    statusCheckRollup?: StatusCheck[];
-  };
-  try {
-    pr = await ghJson<
-      Pick<PrItem, "state" | "mergedBy" | "mergedAt"> & {
-        headRefOid?: string;
-        mergeable?: string;
-        statusCheckRollup?: StatusCheck[];
-      }
-    >(
-      [
-        "pr",
-        "view",
-        String(num),
-        "--json",
-        "state,mergedBy,mergedAt,headRefOid,mergeable,statusCheckRollup",
-      ],
-      ctx,
-    );
-  } catch {
-    throw new AxiError(
-      "could not read current PR head, checks, and mergeability",
-      "VALIDATION_ERROR",
-    );
-  }
+  const pr = await ghJson<PrMergeSnapshot>(
+    ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
+    ctx,
+  );
   if (!pr || typeof pr !== "object") {
     throw new AxiError(
       "current PR read returned unknown data",
