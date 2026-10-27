@@ -3222,6 +3222,55 @@ SH
   pass "the terminal projection is read once per task generation, and one generation is traced once across its refreshes"
 }
 
+# The signal scan runs inside a command substitution while the stale pass runs in
+# the sentry's own shell. One generation must cost one projection read across
+# both, so the scan's verdict has to survive the subshell: the scan retires the
+# signatures of this already-surfaced terminal notice on every poll, which is
+# exactly the path that would otherwise re-fork sq-crew-state.sh per poll.
+test_signal_scan_and_window_pass_share_terminal_memo() {
+  local dir state fakebin out capture_file command_file window calls pid i
+  dir=$(make_case terminal-probe-shared); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-terminal-probe-shared"; calls="$dir/crew-state.calls"
+  : > "$calls"
+  cat > "$fakebin/sq-crew-state.sh" <<SH
+#!/usr/bin/env bash
+printf 'read\n' >> '$calls'
+printf '%s\n' "\${SQUAD_FAKE_CREW_STATE:-state: unknown · source: none · fake default}"
+exit 0
+SH
+  chmod +x "$fakebin/sq-crew-state.sh"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/probe-shared.meta"
+  printf 'working: last progress note\ndone: PR https://example.test/pr/11 checks green\n' > "$state/probe-shared.status"
+  printf 'late turn end\n' > "$state/probe-shared.turn-ended"
+  printf 'done: PR https://example.test/pr/11 checks green' > "$state/.hb-surfaced-probe-shared"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition probe-shared released >/dev/null \
+    || fail "could not create the released execution fixture"
+
+  PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" "$WATCH" > "$out" &
+  pid=$!
+  i=0
+  while [ "$i" -lt 100 ]; do
+    grep -F 'skipped stale supervision' "$state/.sentry-triage.log" >/dev/null 2>&1 && break
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -F 'skipped stale supervision' "$state/.sentry-triage.log" >/dev/null 2>&1 \
+    || { reap "$pid"; fail "the terminal-agentless stale pass never ran for the seeded generation: $(cat "$out")"; }
+  [ "$(wc -l < "$calls" | tr -d ' ')" = 1 ] \
+    || { reap "$pid"; fail "the signal scan and the stale pass read the terminal projection $(wc -l < "$calls" | tr -d ' ') times for one generation instead of sharing one memoized verdict"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "the absorbed terminal-agentless generation woke the sentry: $(cat "$out")"
+  pass "the signal scan and the stale pass share one memoized terminal verdict per generation"
+}
+
 # A task record can outlive its dispatch sidecar: the meta is published before the
 # exec claim (an interrupted spawn) and the exec is removed before the meta (an
 # interrupted teardown). Such a record still must not enter the stale clock when
@@ -4519,6 +4568,7 @@ test_terminal_agentless_notice_surfaces_once_then_stays_quiet
 test_released_record_with_live_run_keeps_stale_supervision
 test_agentless_window_with_unretired_terminal_execution_skips_stale
 test_terminal_projection_is_memoized_per_task_generation
+test_signal_scan_and_window_pass_share_terminal_memo
 test_agentless_window_without_dispatch_sidecar_uses_terminal_projection
 test_unretired_running_record_with_stale_busy_claim_skips_stale
 test_busy_static_finished_task_is_absorbed_without_alarm

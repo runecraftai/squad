@@ -236,10 +236,18 @@ _event_cap_fails=0
 # agent attribution, and the live meta/status/busy-record/dispatch signatures
 # that projection consumes, refreshed at most once per TERMINAL_PROBE_SECS so an
 # external transition (a drill run that reaches a terminal step) is still picked
-# up while the pane stays agentless.
+# up while the pane stays agentless. The verdict is persisted rather than held in
+# a shell variable: the signal scan runs inside command substitutions, so a
+# variable written there would be lost with the subshell and the scan and the
+# window pass would each pay for their own projection. The file is reset when
+# this sentry process starts, so the next process re-reads a generation.
 TERMINAL_PROBE_SECS=300
-_terminal_probe_memo=""
+TERMINAL_PROBE_MEMO_FILE="$STATE/.terminal-probe"
 _terminal_probe_hit=""
+
+terminal_probe_reset() {
+  rm -f -- "$TERMINAL_PROBE_MEMO_FILE"
+}
 
 # afk_present: 0 while the away-mode flag exists. When set, the daemon wraps this
 # sentry and owns triage, so the sentry must behave one-shot (enqueue + exit on
@@ -274,24 +282,24 @@ window_is_busy() {  # <window> <tail40>
 # terminal_probe_lookup: 0 when a memoized verdict for <task> at <signature> is
 # still within TERMINAL_PROBE_SECS, leaving it in _terminal_probe_hit.
 terminal_probe_lookup() {  # <task> <signature>
-  local task=$1 sig=$2 line age verdict now=
+  local task=$1 sig=$2 line rest age verdict now=
   _terminal_probe_hit=""
+  [ -f "$TERMINAL_PROBE_MEMO_FILE" ] || return 1
   while IFS= read -r line; do
     [ "${line%%$'\t'*}" = "$task" ] || continue
-    line=${line#*$'\t'}
-    [ "${line%%$'\t'*}" = "$sig" ] || continue
-    line=${line#*$'\t'}
-    age=${line%%$'\t'*}
-    line=${line#*$'\t'}
-    verdict=${line%%$'\t'*}
+    rest=${line#*$'\t'}
+    [ "${rest%%$'\t'*}" = "$sig" ] || continue
+    rest=${rest#*$'\t'}
+    age=${rest%%$'\t'*}
+    rest=${rest#*$'\t'}
+    verdict=${rest%%$'\t'*}
     case "$age" in ''|*[!0-9]*) return 1 ;; esac
+    [ -e "$STATE/$task.meta" ] || return 1
     [ -n "$now" ] || now=$(date +%s)
     [ $(( now - age )) -lt "$TERMINAL_PROBE_SECS" ] || return 1
     _terminal_probe_hit=$verdict
     return 0
-  done <<EOF
-$_terminal_probe_memo
-EOF
+  done < "$TERMINAL_PROBE_MEMO_FILE"
   return 1
 }
 
@@ -300,6 +308,7 @@ EOF
 # starting a new one, so it never repeats the trace.
 terminal_probe_traced() {  # <task> <signature>
   local task=$1 sig=$2 line rest logged
+  [ -f "$TERMINAL_PROBE_MEMO_FILE" ] || { printf '0'; return 0; }
   while IFS= read -r line; do
     [ "${line%%$'\t'*}" = "$task" ] || continue
     rest=${line#*$'\t'}
@@ -307,12 +316,9 @@ terminal_probe_traced() {  # <task> <signature>
     rest=${rest#*$'\t'}
     rest=${rest#*$'\t'}
     logged=${rest#*$'\t'}
-    case "$logged" in 1) printf '1'; return 0 ;; esac
-    printf '0'
+    case "$logged" in 1) printf '1' ;; *) printf '0' ;; esac
     return 0
-  done <<EOF
-$_terminal_probe_memo
-EOF
+  done < "$TERMINAL_PROBE_MEMO_FILE"
   printf '0'
 }
 
@@ -320,16 +326,24 @@ EOF
 # <logged>, dropping the generations of tasks whose metadata is gone so a
 # long-lived sentry's memo stays bounded by the live supervision set.
 terminal_probe_store() {  # <task> <signature> <verdict> <logged>
-  local task=$1 sig=$2 verdict=$3 logged=$4 kept="" line
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    [ "${line%%$'\t'*}" = "$task" ] && continue
-    [ -e "$STATE/${line%%$'\t'*}.meta" ] || continue
-    kept="$kept$line"$'\n'
-  done <<EOF
-$_terminal_probe_memo
-EOF
-  _terminal_probe_memo="$kept$task"$'\t'"$sig"$'\t'"$(date +%s)"$'\t'"$verdict"$'\t'"$logged"$'\n'
+  local task=$1 sig=$2 verdict=$3 logged=$4 memo=$TERMINAL_PROBE_MEMO_FILE
+  local tmp="$TERMINAL_PROBE_MEMO_FILE.tmp.$$" kept="" line
+  if [ -f "$memo" ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      [ "${line%%$'\t'*}" = "$task" ] && continue
+      [ -e "$STATE/${line%%$'\t'*}.meta" ] || continue
+      kept="$kept$line"$'\n'
+    done < "$memo"
+  fi
+  if {
+    [ -z "$kept" ] || printf '%s' "$kept"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$sig" "$(date +%s)" "$verdict" "$logged"
+  } > "$tmp" 2>/dev/null; then
+    mv -f -- "$tmp" "$memo" 2>/dev/null || rm -f -- "$tmp"
+  else
+    rm -f -- "$tmp"
+  fi
 }
 
 # A window whose execution is genuinely terminal and whose recorded pane has no
@@ -1330,6 +1344,7 @@ if ! fm_lock_try_acquire "$WATCH_LOCK"; then
   exit 0
 fi
 sentry_cleanup() {
+  terminal_probe_reset
   fm_active_check_stop || return 1
   fm_check_output_cleanup
   fm_custom_check_snapshot_cleanup
@@ -1337,6 +1352,7 @@ sentry_cleanup() {
 }
 trap sentry_cleanup EXIT
 trap 'exit 1' HUP INT TERM
+terminal_probe_reset
 # This sentry's own pid, as recorded in the lock by fm_lock_claim (which writes
 # ${BASHPID:-$$} from this same main shell). Read directly, never via a command
 # substitution, so it matches the stored holder pid for the self-eviction check.
