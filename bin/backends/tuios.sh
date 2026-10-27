@@ -97,15 +97,22 @@ SQUAD_BACKEND_TUIOS_JQ_LIB='
             | length > 0;
 '
 
-fm_backend_tuios_list_windows_json() {  # <session> -> validated windows inventory
-  local session=$1 json
-  json=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null) || return 1
-  printf '%s' "$json" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+# Authoritative read of a windows inventory envelope: callers that captured the
+# CLI output themselves (release distinguishes a failing call from a malformed
+# payload) validate through this same owner.
+fm_backend_tuios_windows_json_valid() {  # <windows inventory JSON>
+  printf '%s' "$1" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     type == "object"
     and (terror | not)
     and (.windows | type == "array")
     and all(.windows[]; type == "object" and ((tids | unique | length) == 1))
-  ' >/dev/null 2>&1 || return 1
+  ' >/dev/null 2>&1
+}
+
+fm_backend_tuios_list_windows_json() {  # <session> -> validated windows inventory
+  local session=$1 json
+  json=$(fm_backend_tuios_cli "$session" list-windows --json 2>/dev/null) || return 1
+  fm_backend_tuios_windows_json_valid "$json" || return 1
   printf '%s' "$json"
 }
 
@@ -247,12 +254,7 @@ fm_backend_tuios_release_task_workspace() {  # <task-id> <meta-file>
     echo "error: could not read TUIOS windows for session $session" >&2
     return 1
   fi
-  printf '%s' "$windows" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
-    type == "object"
-    and (terror | not)
-    and (.windows | type == "array")
-    and all(.windows[]; type == "object" and ((tids | unique | length) == 1))
-  ' >/dev/null 2>&1 || { echo "error: could not verify TUIOS windows for session $session" >&2; return 1; }
+  fm_backend_tuios_windows_json_valid "$windows" || { echo "error: could not verify TUIOS windows for session $session" >&2; return 1; }
   printf '%s' "$windows" | jq -e "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     all(.windows[]; (tworkspaces | unique | length) == 1)
   ' >/dev/null 2>&1 || { echo 'error: cannot safely verify TUIOS workspace occupancy' >&2; return 1; }
