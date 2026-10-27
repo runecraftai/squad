@@ -136,6 +136,41 @@ CREATE TABLE IF NOT EXISTS intent_cache (
     session_id  TEXT NOT NULL,
     created_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ci_observations (
+    run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+    head_sha TEXT NOT NULL,
+    push_generation INTEGER NOT NULL,
+    push_target_fingerprint TEXT NOT NULL,
+    push_target_kind TEXT NOT NULL,
+    push_ref TEXT NOT NULL,
+    pr_url TEXT NOT NULL,
+    declared_no_ci INTEGER NOT NULL,
+    first_green_at INTEGER NOT NULL,
+    deadline_at INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    last_poll_at INTEGER,
+    next_poll_at INTEGER NOT NULL,
+    lease_until INTEGER,
+    poll_seq INTEGER NOT NULL DEFAULT 0,
+    consecutive_errors INTEGER NOT NULL DEFAULT 0,
+    reason TEXT,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ci_observations_state_due
+    ON ci_observations (state, next_poll_at);
+
+CREATE TABLE IF NOT EXISTS ci_notifications (
+    run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    head_sha TEXT NOT NULL,
+    pr_url TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    details_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, kind)
+);
 `
 
 // migrationStatements hold additive schema changes applied to databases that

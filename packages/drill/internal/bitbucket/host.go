@@ -68,6 +68,21 @@ func (h *Host) UpdatePR(ctx context.Context, pr *scm.PR, content scm.PRContent) 
 	return h.toPR(updated), nil
 }
 
+func (h *Host) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
+	id, err := strconv.Atoi(pr.Number)
+	if err != nil {
+		return "", err
+	}
+	got, err := h.client.GetPR(ctx, h.repo, id)
+	if err != nil {
+		return "", err
+	}
+	if got == nil || !scm.ValidCommitSHA(strings.TrimSpace(got.SourceCommitHash)) {
+		return "", fmt.Errorf("Bitbucket PR has no valid source commit hash")
+	}
+	return strings.ToLower(strings.TrimSpace(got.SourceCommitHash)), nil
+}
+
 func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {
 	id, err := strconv.Atoi(pr.Number)
 	if err != nil {

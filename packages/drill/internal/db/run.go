@@ -432,6 +432,9 @@ func terminalPRState(state string) bool {
 }
 
 func finalizeTerminalPRRun(tx *sql.Tx, id string, ts int64) error {
+	if _, err := tx.Exec(`UPDATE ci_observations SET state = (SELECT pr_state FROM runs WHERE id = ?), verdict = 'unknown', lease_until = NULL, updated_at = ? WHERE run_id = ? AND state IN ('preparing', 'watching')`, id, ts, id); err != nil {
+		return fmt.Errorf("retire terminal CI observation: %w", err)
+	}
 	if _, err := tx.Exec(
 		`UPDATE step_results SET status = ?, exit_code = COALESCE(exit_code, 0), completed_at = COALESCE(completed_at, ?),
 			last_activity_at = ?, last_activity = ?, agent_pid = NULL

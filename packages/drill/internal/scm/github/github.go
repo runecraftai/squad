@@ -277,6 +277,30 @@ func (h *Host) UpdatePR(ctx context.Context, pr *scm.PR, content scm.PRContent) 
 	return pr, nil
 }
 
+func (h *Host) GetPRHeadSHA(ctx context.Context, pr *scm.PR) (string, error) {
+	selector, err := prSelector(pr)
+	if err != nil {
+		return "", err
+	}
+	args := append([]string{"pr", "view", selector}, h.repoArgs()...)
+	args = append(args, "--json", "headRefOid")
+	out, err := h.cmd(ctx, "gh", args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("gh pr view head: %w", err)
+	}
+	var value struct {
+		Head string `json:"headRefOid"`
+	}
+	if err := json.Unmarshal(out, &value); err != nil {
+		return "", fmt.Errorf("parse PR head: %w", err)
+	}
+	sha := strings.TrimSpace(value.Head)
+	if !scm.ValidCommitSHA(sha) {
+		return "", fmt.Errorf("gh pr view returned invalid head SHA")
+	}
+	return strings.ToLower(sha), nil
+}
+
 func (h *Host) GetPRState(ctx context.Context, pr *scm.PR) (scm.PRState, error) {
 	selector, err := prSelector(pr)
 	if err != nil {
@@ -305,7 +329,13 @@ func (h *Host) GetChecks(ctx context.Context, pr *scm.PR) ([]scm.Check, error) {
 		if strings.Contains(string(out), "no checks reported") {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("gh pr checks: %w", err)
+		// gh pr checks exits 1 for a failing rollup and 8 for a pending one, so
+		// the JSON body is still the rollup in those cases. Any other nonzero
+		// exit is a read failure and must never be read as one.
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || (exitErr.ExitCode() != 1 && exitErr.ExitCode() != 8) {
+			return nil, fmt.Errorf("gh pr checks: %w", err)
+		}
 	}
 	var raw []struct {
 		Name        string `json:"name"`

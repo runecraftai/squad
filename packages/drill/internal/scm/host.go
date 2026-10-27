@@ -197,6 +197,25 @@ type Host interface {
 	FetchFailedCheckLogs(ctx context.Context, pr *PR, branch, headSHA string, failingNames []string) (string, error)
 }
 
+// ValidCommitSHA reports whether value is a full SHA-1 or SHA-256 commit ID.
+func ValidCommitSHA(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// PRHeadReader reads the provider's current source commit for a PR. It is
+// optional so existing Host implementations need not provide head evidence.
+type PRHeadReader interface {
+	GetPRHeadSHA(ctx context.Context, pr *PR) (string, error)
+}
+
 // CheckRerunner re-runs the provider-side job behind a failed check without
 // changing the commit under test. It is deliberately a separate interface
 // rather than a Host method: a backend whose provider exposes no rerun

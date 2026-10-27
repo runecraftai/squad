@@ -347,6 +347,97 @@ func TestCIStep_GetCIChecksNoChecksReported(t *testing.T) {
 	}
 }
 
+// TestCIStep_ProviderChecksExitCodes proves the existing CI producer honors
+// gh pr checks process status: exit 1 means the parsed rollup is failing, exit
+// 8 means it is still pending, and any other nonzero exit remains a read error
+// that keeps the monitor waiting without claiming readiness.
+func TestCIStep_ProviderChecksExitCodes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		exitCode    int
+		checksJSON  string
+		wantPark    bool
+		wantLog     string
+		wantWarning bool
+	}{
+		{
+			name:       "exit 1 failing rollup parks for approval",
+			exitCode:   1,
+			checksJSON: `[{"name":"build","state":"FAILURE","bucket":"fail","completedAt":"2026-07-30T08:06:01Z"}]`,
+			wantPark:   true,
+		},
+		{
+			name:       "exit 8 pending rollup keeps monitoring",
+			exitCode:   8,
+			checksJSON: `[{"name":"build","state":"IN_PROGRESS","bucket":"pending"}]`,
+			wantLog:    cimonitor.ChecksRunningMsg,
+		},
+		{
+			name:        "other nonzero exit remains a read error",
+			exitCode:    2,
+			checksJSON:  `[{"name":"build","state":"SUCCESS","bucket":"pass"}]`,
+			wantLog:     "could not check CI",
+			wantWarning: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, baseSHA, headSHA := setupGitRepo(t)
+			env := fakeCIGHChecksExit(t, "OPEN", tc.checksJSON, tc.exitCode)
+
+			prURL := "https://github.com/test/repo/pull/42"
+			ag := &mockAgent{name: "test"}
+			sctx := newTestContextWithDBRecords(t, ag, dir, baseSHA, headSHA, config.Commands{})
+			sctx.Env = env
+			sctx.Run.PRURL = &prURL
+			sctx.Config.CITimeout = 10 * time.Second
+			zero := 0
+			sctx.Config.AutoFix.CI = zero
+
+			var logs []string
+			sctx.Log = func(s string) { logs = append(logs, s) }
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			sctx.Ctx = ctx
+
+			step := &CIStep{
+				waitForNextPoll: func(ctx context.Context, _ time.Duration) error {
+					cancel()
+					return ctx.Err()
+				},
+			}
+			outcome, err := step.Execute(sctx)
+			switch {
+			case tc.wantPark:
+				if err != nil {
+					t.Fatalf("exit %d: %v", tc.exitCode, err)
+				}
+				if outcome == nil || !outcome.NeedsApproval {
+					t.Fatalf("exit %d rollup did not park for approval: %#v", tc.exitCode, outcome)
+				}
+			case !errors.Is(err, context.Canceled):
+				t.Fatalf("exit %d: expected continued monitoring, got %v", tc.exitCode, err)
+			}
+			if cimonitor.ChecksPassed(logs) {
+				t.Fatalf("exit %d must not report checks passed; logs=%v", tc.exitCode, logs)
+			}
+			found := false
+			for _, line := range logs {
+				if (tc.wantWarning && strings.Contains(line, tc.wantLog)) || (!tc.wantWarning && line == tc.wantLog) {
+					found = true
+					break
+				}
+			}
+			if tc.wantLog != "" && !found {
+				t.Fatalf("exit %d missing log %q; logs=%v", tc.exitCode, tc.wantLog, logs)
+			}
+		})
+	}
+}
+
 func TestCIStep_AllChecksPassingKeepsMonitoringOpenPR(t *testing.T) {
 	t.Parallel()
 	dir, baseSHA, headSHA := setupGitRepo(t)

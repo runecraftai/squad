@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -490,6 +491,18 @@ func fakeCIGHChecksError(t *testing.T, state, mergeable, checksErr string) []str
 		"FAKE_CLI_STATE":      state,
 		"FAKE_CLI_MERGEABLE":  mergeable,
 		"FAKE_CLI_CHECKS_ERR": checksErr,
+	})
+}
+
+func fakeCIGHChecksExit(t *testing.T, state, checksJSON string, exitCode int) []string {
+	t.Helper()
+	binDir := fakeCLIBinDir(t)
+	linkTestBinary(t, binDir, "gh")
+	return fakeCLIEnv(binDir, map[string]string{
+		"FAKE_CLI_MODE":        "ci-gh",
+		"FAKE_CLI_STATE":       state,
+		"FAKE_CLI_CHECKS":      checksJSON,
+		"FAKE_CLI_CHECKS_EXIT": strconv.Itoa(exitCode),
 	})
 }
 
