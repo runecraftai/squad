@@ -164,8 +164,9 @@ type CIObservationSample struct {
 	Notification            *CINotification
 }
 
-// CommitCIObservationSample is a lease-token CAS. Notification creation and the
-// sample update share one transaction, so failed writes cannot acknowledge a poll.
+// CommitCIObservationSample is a poll-sequence CAS that releases any held lease.
+// Notification creation and the sample update share one transaction, so failed
+// writes cannot acknowledge a poll.
 func (d *DB) CommitCIObservationSample(s CIObservationSample) (bool, error) {
 	tx, err := d.sql.Begin()
 	if err != nil {

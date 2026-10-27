@@ -329,6 +329,9 @@ func (h *Host) GetChecks(ctx context.Context, pr *scm.PR) ([]scm.Check, error) {
 		if strings.Contains(string(out), "no checks reported") {
 			return nil, nil
 		}
+		// gh pr checks exits 1 for a failing rollup and 8 for a pending one, so
+		// the JSON body is still the rollup in those cases. Any other nonzero
+		// exit is a read failure and must never be read as one.
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) || (exitErr.ExitCode() != 1 && exitErr.ExitCode() != 8) {
 			return nil, fmt.Errorf("gh pr checks: %w", err)
