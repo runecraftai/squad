@@ -3026,6 +3026,10 @@ test_terminal_agentless_notice_surfaces_once_then_stays_quiet() {
   queue_count=$(wc -l < "$state/.stand-to-queue" 2>/dev/null | tr -d '[:space:]')
 
   : > "$out"
+  # Re-seed both signatures so this run's first poll reaches the already-surfaced
+  # retirement gate instead of short-circuiting on the signature run 1 wrote.
+  printf 'older signature' > "$state/.seen-agentless-notice_status"
+  printf 'older signature' > "$state/.seen-agentless-notice_turn-ended"
   watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
     SQUAD_STALE_ESCALATE_SECS=1
