@@ -983,6 +983,23 @@ signal_terminal_notice_is_unsurfaced() {  # <signal-file>
   [ "$surfaced" != "$last" ]
 }
 
+# The one owner of the terminal-agentless retirement gate: a signal whose task is
+# terminal with no agent left, and whose commander-relevant notice is already
+# surfaced (or is not a status notice at all), is retired here instead of being
+# reported. Both the scan and the wake-boundary re-validation call this, so the
+# pair cannot drift and the re-validation never retires a notice the scan chose
+# to keep. Returns 0 when it handled (retired) the file.
+retire_terminal_agentless_signal() {  # <signal-file>
+  local f=$1 task
+  signal_task_is_terminal_and_agentless "$f" || return 1
+  signal_terminal_notice_is_unsurfaced "$f" && return 1
+  task=${f##*/}
+  task=${task%.status}
+  task=${task%.turn-ended}
+  retire_task_watcher_markers "$STATE" "$task"
+  return 0
+}
+
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
 # mtime-vs-a-startup-touch, so signals that land while no sentry is running
@@ -996,7 +1013,7 @@ signal_terminal_notice_is_unsurfaced() {  # <signal-file>
 # supervises: it is dropped with its .seen-* marker here, so a late turn-end
 # touch cannot keep waking Squad for a task that no longer exists.
 scan_signals() {
-  local f sig sf task
+  local f sig sf
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
     [ -e "$f" ] || continue
     sf="$STATE/.seen-$(basename "$f" | tr '.' '_')"
@@ -1006,13 +1023,7 @@ scan_signals() {
     fi
     sig=$(stat_sig "$f") || continue
     [ "$sig" = "$(cat "$sf" 2>/dev/null)" ] && continue
-    if signal_task_is_terminal_and_agentless "$f" && ! signal_terminal_notice_is_unsurfaced "$f"; then
-      task=${f##*/}
-      task=${task%.status}
-      task=${task%.turn-ended}
-      retire_task_watcher_markers "$STATE" "$task"
-      continue
-    fi
+    retire_terminal_agentless_signal "$f" && continue
     printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
   done
   return 0
@@ -1025,16 +1036,13 @@ scan_signals() {
 # teardown that lands inside SIGNAL_GRACE must not wake Squad for a task that
 # nothing supervises any more.
 drop_orphan_signal_entries() {  # <pending>...
-  local sf sig f task
+  local sf sig f
   printf '%s\n' "$@" | while IFS=$(printf '\t') read -r sf sig f; do
     [ -n "$sf" ] || continue
     if ! signal_task_has_record "$f"; then
       rm -f "$sf"
-    elif signal_task_is_terminal_and_agentless "$f" && ! signal_terminal_notice_is_unsurfaced "$f"; then
-      task=${f##*/}
-      task=${task%.status}
-      task=${task%.turn-ended}
-      retire_task_watcher_markers "$STATE" "$task"
+    elif retire_terminal_agentless_signal "$f"; then
+      continue
     else
       printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
     fi

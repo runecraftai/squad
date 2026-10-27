@@ -2991,6 +2991,59 @@ test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
   pass "released agentless windows leave no signal or stale markers, while an agent return resumes normal supervision"
 }
 
+# The terminal-agentless skip must not swallow the first commander-relevant
+# finish: Squad has to see the done:/failed: notice once even though the skip then
+# retires every signal signature so later polls of the same files stay quiet.
+test_terminal_agentless_notice_surfaces_once_then_stays_quiet() {
+  local dir state fakebin out capture_file command_file window statusf queue_count pid
+  dir=$(make_case terminal-agentless-notice); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-terminal-agentless-notice"; statusf="$state/agentless-notice.status"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/agentless-notice.meta"
+  printf 'working: last progress note\ndone: PR https://example.test/pr/9 checks green\n' > "$statusf"
+  printf 'late turn end\n' > "$state/agentless-notice.turn-ended"
+  printf 'stale signature' > "$state/.seen-agentless-notice_status"
+  printf 'stale signature' > "$state/.seen-agentless-notice_turn-ended"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition agentless-notice released >/dev/null \
+    || fail "could not create the released execution fixture"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 \
+    || { reap "$pid"; fail "the first terminal notice of an agentless task was swallowed: $(cat "$out")"; }
+  [ "$(grep -c '^signal:' "$out")" = 1 ] \
+    || fail "the terminal notice did not surface exactly once: $(cat "$out")"
+  grep -F "signal: $statusf" "$out" >/dev/null \
+    || fail "the surfaced wake did not name the terminal status file: $(cat "$out")"
+  [ "$(cat "$state/.hb-surfaced-agentless-notice" 2>/dev/null)" = 'done: PR https://example.test/pr/9 checks green' ] \
+    || fail "the surfaced notice was not recorded for later dedup: $(cat "$state/.hb-surfaced-agentless-notice" 2>/dev/null || true)"
+  [ "$(cut -f3,4 "$state/.stand-to-queue" | sort -u)" = "$(printf 'signal\tagentless-notice.status')" ] \
+    || fail "the terminal notice queued something other than one signal wake: $(cat "$state/.stand-to-queue" 2>/dev/null || true)"
+  queue_count=$(wc -l < "$state/.stand-to-queue" 2>/dev/null | tr -d '[:space:]')
+
+  : > "$out"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "the already-surfaced terminal notice resurfaced: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a later poll repeated the terminal notice: $(cat "$out")"; }
+  [ "$(wc -l < "$state/.stand-to-queue" 2>/dev/null | tr -d '[:space:]')" = "$queue_count" ] \
+    || { reap "$pid"; fail "a later poll enqueued a duplicate terminal wake"; }
+  reap "$pid"
+  for marker in _status _turn-ended; do
+    [ ! -e "$state/.seen-agentless-notice$marker" ] \
+      || fail "the terminal-agentless skip left .seen-agentless-notice$marker behind"
+  done
+  [ -s "$state/.hb-surfaced-agentless-notice" ] \
+    || fail "retiring the signal signatures dropped the surfaced-notice marker"
+  pass "an agentless terminal done:/failed: notice surfaces exactly once, then its signatures retire without repeating"
+}
+
 # A released dispatch record is immutable for dispatch, not proof that its run
 # is over: the shared projection reports a gate-parked run over it as running.
 # Such a window must keep ordinary supervision instead of being latched into the
@@ -4458,6 +4511,7 @@ test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_static_pane_without_readable_viewport_never_expires
 test_busy_static_unreadable_viewport_logs_limitation_once
 test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
+test_terminal_agentless_notice_surfaces_once_then_stays_quiet
 test_released_record_with_live_run_keeps_stale_supervision
 test_agentless_window_with_unretired_terminal_execution_skips_stale
 test_terminal_projection_is_memoized_per_task_generation
