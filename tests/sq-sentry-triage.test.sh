@@ -2936,6 +2936,504 @@ test_busy_static_unreadable_viewport_logs_limitation_once() {
   pass "a static busy claim with no complete viewport logs its evaluation limit once and never alarms"
 }
 
+test_released_agentless_window_skips_stale_but_resumes_when_agent_returns() {
+  local dir state fakebin out capture_file command_file window key pid
+  dir=$(make_case released-agentless); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-released-agentless"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/released-agentless.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/released-agentless.status"
+  printf 'stale signature\n' > "$state/.seen-released-agentless_status"
+  printf 'late turn end\n' > "$state/released-agentless.turn-ended"
+  printf 'stale signature\n' > "$state/.seen-released-agentless_turn-ended"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition released-agentless released >/dev/null \
+    || fail "could not create released execution fixture"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'old pane hash' > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf 'old pane hash' > "$state/.stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+  # Residue from an earlier away-mode episode for this same task: the daemon's
+  # task-keyed watcher markers and the compaction dedup marker.
+  printf '1\n' > "$state/.subsuper-stale-released-agentless"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-released-agentless"
+  printf 'working: stale line\n' > "$state/.subsuper-seen-status-released-agentless"
+  printf '7 2' > "$state/.compaction-notified-released-agentless"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "released agentless pane escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "released agentless pane produced repeated stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "released agentless pane enqueued stale wakes"; }
+  for marker in .hash- .count- .stale- .stale-since- .wedge-escalations-; do
+    [ ! -e "$state/$marker$key" ] || { reap "$pid"; fail "released agentless pane left $marker bookkeeping behind"; }
+  done
+  for marker in .subsuper-stale- .subsuper-paused- .subsuper-seen-status- .compaction-notified-; do
+    [ ! -e "$state/${marker}released-agentless" ] \
+      || { reap "$pid"; fail "released agentless pane left $marker task-keyed residue behind"; }
+  done
+  [ ! -e "$state/.seen-released-agentless_status" ] \
+    || { reap "$pid"; fail "released agentless pane left its status signal signature behind"; }
+  [ ! -e "$state/.seen-released-agentless_turn-ended" ] \
+    || { reap "$pid"; fail "released agentless pane left its turn-ended signal signature behind"; }
+
+  # The execution stays released, but a harness agent appearing in the same
+  # window must restore normal stale supervision rather than latch the skip.
+  printf 'pi\n' > "$command_file"
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "sentry did not resume supervision when an agent returned"; }
+  grep -F 'signal:' "$out" >/dev/null \
+    || fail "agent return did not surface the newly eligible signal: $(cat "$out")"
+  pass "released agentless windows leave no signal or stale markers, while an agent return resumes normal supervision"
+}
+
+# The terminal-agentless skip must not swallow the first commander-relevant
+# finish: Squad has to see the done:/failed: notice once even though the skip then
+# retires every signal signature so later polls of the same files stay quiet.
+test_terminal_agentless_notice_surfaces_once_then_stays_quiet() {
+  local dir state fakebin out capture_file command_file window statusf queue_count pid
+  dir=$(make_case terminal-agentless-notice); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-terminal-agentless-notice"; statusf="$state/agentless-notice.status"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/agentless-notice.meta"
+  printf 'working: last progress note\ndone: PR https://example.test/pr/9 checks green\n' > "$statusf"
+  printf 'late turn end\n' > "$state/agentless-notice.turn-ended"
+  printf 'stale signature' > "$state/.seen-agentless-notice_status"
+  printf 'stale signature' > "$state/.seen-agentless-notice_turn-ended"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition agentless-notice released >/dev/null \
+    || fail "could not create the released execution fixture"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 \
+    || { reap "$pid"; fail "the first terminal notice of an agentless task was swallowed: $(cat "$out")"; }
+  [ "$(grep -c '^signal:' "$out")" = 1 ] \
+    || fail "the terminal notice did not surface exactly once: $(cat "$out")"
+  grep -F "signal: $statusf" "$out" >/dev/null \
+    || fail "the surfaced wake did not name the terminal status file: $(cat "$out")"
+  [ "$(cat "$state/.hb-surfaced-agentless-notice" 2>/dev/null)" = 'done: PR https://example.test/pr/9 checks green' ] \
+    || fail "the surfaced notice was not recorded for later dedup: $(cat "$state/.hb-surfaced-agentless-notice" 2>/dev/null || true)"
+  [ "$(cut -f3,4 "$state/.stand-to-queue" | sort -u)" = "$(printf 'signal\tagentless-notice.status')" ] \
+    || fail "the terminal notice queued something other than one signal wake: $(cat "$state/.stand-to-queue" 2>/dev/null || true)"
+  queue_count=$(wc -l < "$state/.stand-to-queue" 2>/dev/null | tr -d '[:space:]')
+
+  : > "$out"
+  # Re-seed both signatures so this run's first poll reaches the already-surfaced
+  # retirement gate instead of short-circuiting on the signature run 1 wrote.
+  printf 'older signature' > "$state/.seen-agentless-notice_status"
+  printf 'older signature' > "$state/.seen-agentless-notice_turn-ended"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "the already-surfaced terminal notice resurfaced: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a later poll repeated the terminal notice: $(cat "$out")"; }
+  [ "$(wc -l < "$state/.stand-to-queue" 2>/dev/null | tr -d '[:space:]')" = "$queue_count" ] \
+    || { reap "$pid"; fail "a later poll enqueued a duplicate terminal wake"; }
+  reap "$pid"
+  for marker in _status _turn-ended; do
+    [ ! -e "$state/.seen-agentless-notice$marker" ] \
+      || fail "the terminal-agentless skip left .seen-agentless-notice$marker behind"
+  done
+  [ -s "$state/.hb-surfaced-agentless-notice" ] \
+    || fail "retiring the signal signatures dropped the surfaced-notice marker"
+  pass "an agentless terminal done:/failed: notice surfaces exactly once, then its signatures retire without repeating"
+}
+
+# The terminal stale skip owns the retirement of an already-delivered terminal
+# notice's signal signatures, not only the per-poll signal scan. When a signature
+# still matches its .seen-* marker the scan short-circuits on the unchanged
+# signature before it ever reaches its retirement gate, so nothing but the skip
+# can clear it. Retiring it is what keeps an unchanged done:/failed: notice from
+# being re-reported once an agent returns to the same window, and the delivered
+# notice's surfaced marker has to survive so the skip stays a retirement rather
+# than a second delivery.
+test_terminal_stale_skip_retires_signal_signatures_after_quiet_scan() {
+  local dir state fakebin out capture_file command_file window pid i marker
+  dir=$(make_case terminal-stale-retire-sigs); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-terminal-stale-retire"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/retire-sigs.meta"
+  printf 'working: last progress note\ndone: PR https://example.test/pr/13 checks green\n' \
+    > "$state/retire-sigs.status"
+  printf 'late turn end\n' > "$state/retire-sigs.turn-ended"
+  # Signatures already match, so scan_signals "continue"s above its retirement
+  # gate for both files: only the terminal stale skip can retire them here.
+  printf '%s' "$(seen_sig "$state/retire-sigs.status")" > "$state/.seen-retire-sigs_status"
+  printf '%s' "$(seen_sig "$state/retire-sigs.turn-ended")" > "$state/.seen-retire-sigs_turn-ended"
+  # The notice was already delivered to Squad, which is what licenses retirement.
+  printf 'done: PR https://example.test/pr/13 checks green' > "$state/.hb-surfaced-retire-sigs"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition retire-sigs released >/dev/null \
+    || fail "could not create the released execution fixture"
+  # Residue from an earlier away-mode episode for this same task.
+  printf '1\n' > "$state/.subsuper-stale-retire-sigs"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-retire-sigs"
+  printf 'working: stale line\n' > "$state/.subsuper-seen-status-retire-sigs"
+  printf '9 4' > "$state/.compaction-notified-retire-sigs"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  i=0
+  while [ "$i" -lt 60 ] && [ -e "$state/.seen-retire-sigs_status" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  wait_live "$pid" 40 || { reap "$pid"; fail "the retired terminal-agentless generation woke the sentry: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "the retired terminal-agentless generation printed a wake: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "the retired terminal-agentless generation enqueued a wake"; }
+  for marker in _status _turn-ended; do
+    [ ! -e "$state/.seen-retire-sigs$marker" ] \
+      || { reap "$pid"; fail "the terminal stale skip left .seen-retire-sigs$marker behind"; }
+  done
+  for marker in .subsuper-stale- .subsuper-paused- .subsuper-seen-status- .compaction-notified-; do
+    [ ! -e "$state/${marker}retire-sigs" ] \
+      || { reap "$pid"; fail "the terminal stale skip left $marker residue behind"; }
+  done
+  [ "$(cat "$state/.hb-surfaced-retire-sigs" 2>/dev/null)" = 'done: PR https://example.test/pr/13 checks green' ] \
+    || { reap "$pid"; fail "retiring the signatures dropped the delivered-notice marker"; }
+  [ "$(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || { reap "$pid"; fail "the terminal stale skip was not traced exactly once: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"; }
+  grep -F "$window" "$state/.sentry-triage.log" >/dev/null \
+    || { reap "$pid"; fail "the skip trace did not name the skipped window"; }
+  reap "$pid"
+  pass "the terminal stale skip retires every signal signature of an already-delivered notice even when the signal scan is quiet"
+}
+
+# A released dispatch record is immutable for dispatch, not proof that its run
+# is over: the shared projection reports a gate-parked run over it as running.
+# Such a window must keep ordinary supervision instead of being latched into the
+# terminal-agentless skip.
+test_released_record_with_live_run_keeps_stale_supervision() {
+  local dir state fakebin out capture_file command_file window sig pid
+  dir=$(make_case released-live-run); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-released-live-run"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/released-live-run.meta"
+  printf 'working: run still active\n' > "$state/released-live-run.status"
+  sig=$(seen_sig "$state/released-live-run.status")
+  printf '%s' "$sig" > "$state/.seen-released-live-run_status"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition released-live-run released >/dev/null \
+    || fail "could not create the released execution fixture"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 \
+    || { reap "$pid"; fail "a released record owning a parked run was skipped as terminal: $(cat "$out")"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "a released record with a live run did not keep ordinary stale supervision: $(cat "$out")"
+  pass "a released record that still owns a live run keeps ordinary stale supervision"
+}
+
+# The incident shape the release check alone misses: teardown was refused (the
+# work had not landed), so the dispatch record still says running even though the
+# crew's own run is long over. The shared current-state boundary - not the raw
+# dispatch record - is what proves there is nothing left to rescue.
+test_agentless_window_with_unretired_terminal_execution_skips_stale() {
+  local dir state fakebin out capture_file command_file window key pid sig
+  dir=$(make_case agentless-terminal-running); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-agentless-terminal"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/agentless-terminal.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/agentless-terminal.status"
+  sig=$(seen_sig "$state/agentless-terminal.status")
+  printf '%s' "$sig" > "$state/.seen-agentless-terminal_status"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" claim agentless-terminal >/dev/null \
+    || fail "could not claim the interrupted execution fixture"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition agentless-terminal running >/dev/null \
+    || fail "could not create the unretired running execution fixture"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'old pane hash' > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf 'old pane hash' > "$state/.stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+  printf '1\n' > "$state/.subsuper-stale-agentless-terminal"
+
+  # The crew's authoritative state is terminal even though its dispatch record
+  # was never retired.
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "terminal unretired execution escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "terminal unretired execution produced stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "terminal unretired execution enqueued stale wakes"; }
+  [ ! -e "$state/.hash-$key" ] || { reap "$pid"; fail "terminal unretired execution left window bookkeeping behind"; }
+  [ ! -e "$state/.subsuper-stale-agentless-terminal" ] \
+    || { reap "$pid"; fail "terminal unretired execution left the daemon stale marker behind"; }
+  reap "$pid"
+
+  # The same agentless running record with a gate-parked run keeps the ordinary
+  # escalation path: a live or parked run is never skipped, whatever its pane
+  # looks like, while an idle pane on its own is still supervised as before.
+  : > "$out"
+  rm -f "$state/.stand-to-queue"
+  sig=$(seen_sig "$state/agentless-terminal.status")
+  printf '%s' "$sig" > "$state/.seen-agentless-terminal_status"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a gate-parked run on an agentless window stopped escalating"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "a gate-parked run did not follow the ordinary stale path: $(cat "$out")"
+  pass "a terminal execution with an unretired dispatch record skips stale, while a gate-parked run still escalates"
+}
+
+# The shared current-state projection forks sq-crew-state.sh, which may make a
+# bounded drill call, so an outage population of agentless panes must not pay for
+# it once per window per poll. The sentry memoizes the verdict per task
+# generation, which carries the pane's agent attribution and the busy-record and
+# dispatch evidence the projection consumes, so a live pane is never skipped and
+# never pays for the projection, the incident sequence - the operator dies on an
+# unretired record whose only claim is a busy pane - yields exactly one bounded
+# trace even when the sentry re-confirms that generation on its refresh cadence,
+# and a changed generation re-reads instead of inheriting a terminal latch.
+test_terminal_projection_is_memoized_per_task_generation() {
+  local dir state fakebin window calls verdicts
+  dir=$(make_case terminal-probe-memo); state="$dir/state"; fakebin="$dir/fakebin"
+  window="test:sq-terminal-probe-memo"
+  calls="$dir/crew-state.calls"
+  : > "$calls"
+  cat > "$fakebin/sq-crew-state.sh" <<SH
+#!/usr/bin/env bash
+printf 'read\n' >> '$calls'
+printf '%s\n' "\${SQUAD_FAKE_CREW_STATE:-state: unknown · source: none · fake default}"
+exit 0
+SH
+  chmod +x "$fakebin/sq-crew-state.sh"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/memo.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/memo.status"
+  printf 'pi\n' > "$dir/command.txt"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" claim memo >/dev/null \
+    || fail "could not claim the memo fixture"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition memo running >/dev/null \
+    || fail "could not create the running memo fixture"
+
+  verdicts=$(PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_ROOT_OVERRIDE="$ROOT" \
+    SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_COMMAND_FILE="$dir/command.txt" \
+    SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy' \
+    bash -c '. "$1" || exit 1
+      poll() { if window_is_terminal_and_agentless "$1" memo; then echo terminal; else echo open; fi; }
+      i=0
+      while [ "$i" -lt 4 ]; do
+        poll "$2"
+        i=$((i + 1))
+      done
+      printf "bash\n" > "$3"
+      i=0
+      while [ "$i" -lt 4 ]; do
+        poll "$2"
+        i=$((i + 1))
+      done
+      TERMINAL_PROBE_SECS=0
+      i=0
+      while [ "$i" -lt 3 ]; do
+        poll "$2"
+        i=$((i + 1))
+      done
+      TERMINAL_PROBE_SECS=300
+      printf "working: run still queued\n" >> "$SQUAD_STATE_OVERRIDE/memo.status"
+      SQUAD_FAKE_CREW_STATE="state: parked · source: run-step · parked at review gate"
+      export SQUAD_FAKE_CREW_STATE
+      poll "$2"
+      printf "state=idle source=pi-ext\n" > "$SQUAD_STATE_OVERRIDE/memo.busy-state"
+      SQUAD_FAKE_CREW_STATE="state: unknown · source: pane · harness state unavailable"
+      export SQUAD_FAKE_CREW_STATE
+      poll "$2"
+      printf "pi\n" > "$3"
+      poll "$2"' \
+    _ "$WATCH" "$window" "$dir/command.txt") || fail "could not drive the terminal projection"
+  [ "$(printf '%s\n' "$verdicts" | sed -n '1,4p' | sort -u)" = open ] \
+    || fail "a live agent was skipped by a terminal projection: $verdicts"
+  [ "$(printf '%s\n' "$verdicts" | sed -n '5,11p' | sort -u)" = terminal ] \
+    || fail "an agentless terminal window was not read as terminal on every poll: $verdicts"
+  [ "$(printf '%s\n' "$verdicts" | sed -n '12p')" = open ] \
+    || fail "a started run did not re-read the terminal projection: $verdicts"
+  [ "$(printf '%s\n' "$verdicts" | sed -n '13p')" = open ] \
+    || fail "a cleared busy claim did not re-read the terminal projection: $verdicts"
+  [ "$(printf '%s\n' "$verdicts" | sed -n '14p')" = open ] \
+    || fail "a returning agent inherited the memoized verdict: $verdicts"
+  [ "$(wc -l < "$calls" | tr -d ' ')" = 6 ] \
+    || fail "the terminal projection ran $(wc -l < "$calls" | tr -d ' ') times across fourteen polls of one task, expected once per generation and once per refresh"
+  [ "$(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || fail "the first agentless skip of one generation was traced $(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true) times instead of once: $(cat "$state/.sentry-triage.log" 2>/dev/null)"
+  grep -F "$window" "$state/.sentry-triage.log" >/dev/null \
+    || fail "the bounded skip trace did not name the skipped window: $(cat "$state/.sentry-triage.log" 2>/dev/null)"
+  pass "the terminal projection is read once per task generation, and one generation is traced once across its refreshes"
+}
+
+# The signal scan runs inside a command substitution while the stale pass runs in
+# the sentry's own shell. One generation must cost one projection read across
+# both, so the scan's verdict has to survive the subshell: the scan retires the
+# signatures of this already-surfaced terminal notice on every poll, which is
+# exactly the path that would otherwise re-fork sq-crew-state.sh per poll.
+test_signal_scan_and_window_pass_share_terminal_memo() {
+  local dir state fakebin out capture_file command_file window calls pid i
+  dir=$(make_case terminal-probe-shared); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-terminal-probe-shared"; calls="$dir/crew-state.calls"
+  : > "$calls"
+  cat > "$fakebin/sq-crew-state.sh" <<SH
+#!/usr/bin/env bash
+printf 'read\n' >> '$calls'
+printf '%s\n' "\${SQUAD_FAKE_CREW_STATE:-state: unknown · source: none · fake default}"
+exit 0
+SH
+  chmod +x "$fakebin/sq-crew-state.sh"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/probe-shared.meta"
+  printf 'working: last progress note\ndone: PR https://example.test/pr/11 checks green\n' > "$state/probe-shared.status"
+  printf 'late turn end\n' > "$state/probe-shared.turn-ended"
+  printf 'done: PR https://example.test/pr/11 checks green' > "$state/.hb-surfaced-probe-shared"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition probe-shared released >/dev/null \
+    || fail "could not create the released execution fixture"
+
+  PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 \
+    SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$capture_file" \
+    SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" "$WATCH" > "$out" &
+  pid=$!
+  i=0
+  while [ "$i" -lt 100 ]; do
+    grep -F 'skipped stale supervision' "$state/.sentry-triage.log" >/dev/null 2>&1 && break
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -F 'skipped stale supervision' "$state/.sentry-triage.log" >/dev/null 2>&1 \
+    || { reap "$pid"; fail "the terminal-agentless stale pass never ran for the seeded generation: $(cat "$out")"; }
+  [ "$(wc -l < "$calls" | tr -d ' ')" = 1 ] \
+    || { reap "$pid"; fail "the signal scan and the stale pass read the terminal projection $(wc -l < "$calls" | tr -d ' ') times for one generation instead of sharing one memoized verdict"; }
+  reap "$pid"
+  [ ! -s "$out" ] || fail "the absorbed terminal-agentless generation woke the sentry: $(cat "$out")"
+  pass "the signal scan and the stale pass share one memoized terminal verdict per generation"
+}
+
+# A task record can outlive its dispatch sidecar: the meta is published before the
+# exec claim (an interrupted spawn) and the exec is removed before the meta (an
+# interrupted teardown). Such a record still must not enter the stale clock when
+# its pane is agentless and its crew projects terminal, while a gate-parked run
+# keeps the ordinary escalation path.
+test_agentless_window_without_dispatch_sidecar_uses_terminal_projection() {
+  local dir state fakebin out capture_file command_file window key sig pid
+  dir=$(make_case agentless-no-exec); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-agentless-no-exec"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/noexec.meta"
+  printf 'working: execution interrupted by outage\n' > "$state/noexec.status"
+  sig=$(seen_sig "$state/noexec.status")
+  printf '%s' "$sig" > "$state/.seen-noexec_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'old pane hash' > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf 'old pane hash' > "$state/.stale-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · terminal run' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "a sidecar-less terminal record escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a sidecar-less terminal record produced stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "a sidecar-less terminal record enqueued stale wakes"; }
+  [ ! -e "$state/.hash-$key" ] || { reap "$pid"; fail "a sidecar-less terminal record left window bookkeeping behind"; }
+  reap "$pid"
+
+  : > "$out"
+  rm -f "$state/.stand-to-queue"
+  sig=$(seen_sig "$state/noexec.status")
+  printf '%s' "$sig" > "$state/.seen-noexec_status"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: parked · source: run-step · parked at review gate' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_for_exit "$pid" 50 || { reap "$pid"; fail "a sidecar-less gate-parked run stopped escalating"; }
+  grep -Fx "stale: $window" "$out" >/dev/null \
+    || fail "a sidecar-less gate-parked run did not follow the ordinary stale path: $(cat "$out")"
+  pass "a record without a dispatch sidecar is judged by its terminal projection, and a gate-parked run still escalates"
+}
+
+# The incident shape the released check alone misses: the machine-wide outage
+# killed the operator, teardown was refused because the work had not landed, and
+# the dead operator's last busy claim survived on the sidecar. The crew projection
+# therefore still says `working · pane`, but no agent is in the pane to advance
+# that claim, so nothing is left to rescue: the busy-expired wedge clock must not
+# run at all and must leave no bookkeeping behind.
+test_unretired_running_record_with_stale_busy_claim_skips_stale() {
+  local dir state fakebin out capture_file command_file window key pane_hash pid
+  dir=$(make_case running-stale-busy-claim); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-running-stale-busy-claim"
+  printf 'Working...\n12k tokens USD 0.42' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/running-stale-busy-claim.meta"
+  record_pi_busy "$state" running-stale-busy-claim
+  printf 'working: execution interrupted by outage\n' > "$state/running-stale-busy-claim.status"
+  sig=$(seen_sig "$state/running-stale-busy-claim.status")
+  printf '%s' "$sig" > "$state/.seen-running-stale-busy-claim_status"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" claim running-stale-busy-claim >/dev/null \
+    || fail "could not claim the outage execution fixture"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition running-stale-busy-claim running >/dev/null \
+    || fail "could not create the unretired running execution fixture"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "$(cat "$capture_file")")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '2\n' > "$state/.count-$key"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.stale-since-$key"
+  printf '4\n' > "$state/.wedge-escalations-$key"
+  printf '1\n' > "$state/.subsuper-stale-running-stale-busy-claim"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_FAKE_CREW_STATE='state: working · source: pane · harness busy (pi-ext)' \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  wait_live "$pid" 50 \
+    || { reap "$pid"; fail "a stale busy claim on an unretired running record escalated: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a stale busy claim on an unretired running record produced stale output: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "a stale busy claim on an unretired running record enqueued stale wakes"; }
+  for marker in .hash- .count- .stale- .stale-since- .wedge-escalations-; do
+    [ ! -e "$state/$marker$key" ] \
+      || { reap "$pid"; fail "a skipped stale busy claim left $marker bookkeeping behind"; }
+  done
+  [ ! -e "$state/.subsuper-stale-running-stale-busy-claim" ] \
+    || { reap "$pid"; fail "a skipped stale busy claim left the daemon stale marker behind"; }
+  [ "$(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || { reap "$pid"; fail "the skipped window was traced $(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true) times instead of once: $(cat "$state/.sentry-triage.log" 2>/dev/null)"; }
+  reap "$pid"
+  pass "an unretired running record whose only claim is a busy pane no agent backs is skipped with no residue"
+}
+
 test_busy_static_finished_task_is_absorbed_without_alarm() {
   local dir state fakebin out capture_file window key sig pid
   dir=$(make_case busy-static-finished); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4128,6 +4626,15 @@ test_busy_static_pane_defers_while_run_step_active
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_static_pane_without_readable_viewport_never_expires
 test_busy_static_unreadable_viewport_logs_limitation_once
+test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
+test_terminal_agentless_notice_surfaces_once_then_stays_quiet
+test_terminal_stale_skip_retires_signal_signatures_after_quiet_scan
+test_released_record_with_live_run_keeps_stale_supervision
+test_agentless_window_with_unretired_terminal_execution_skips_stale
+test_terminal_projection_is_memoized_per_task_generation
+test_signal_scan_and_window_pass_share_terminal_memo
+test_agentless_window_without_dispatch_sidecar_uses_terminal_projection
+test_unretired_running_record_with_stale_busy_claim_skips_stale
 test_busy_static_finished_task_is_absorbed_without_alarm
 test_busy_static_done_status_never_masks_active_run
 test_nonterminal_stale_not_working_surfaced

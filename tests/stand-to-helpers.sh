@@ -75,7 +75,9 @@ if [ "${1:-}" = "capture-pane" ]; then
 fi
 if [ "${1:-}" = "display-message" ]; then
   case "$*" in
-    *pane_current_command*) printf '%s\n' "${SQUAD_FAKE_TMUX_CURRENT_COMMAND:-}"; exit 0 ;;
+    *pane_current_command*)
+      if [ -n "${SQUAD_FAKE_TMUX_COMMAND_FILE:-}" ]; then cat "$SQUAD_FAKE_TMUX_COMMAND_FILE"; else printf '%s\n' "${SQUAD_FAKE_TMUX_CURRENT_COMMAND:-}"; fi
+      exit 0 ;;
   esac
 fi
 exit 1

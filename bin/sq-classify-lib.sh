@@ -32,8 +32,9 @@
 # gen+seq in a per-task marker so the same compaction never re-fires on every
 # later turn-end touch. The caller writes it only after durably queuing the
 # wake, mirroring this file's own .seen-*/mark_surfaced convention.
-# bin/sq-teardown.sh retires that marker with the other task-keyed sentry
-# markers.
+# retire_task_watcher_markers below is the one owner of that marker and the rest
+# of the task-keyed watcher set, so every retiring consumer removes the same
+# families instead of keeping its own copy.
 
 # Directory of this library, used to locate the sibling sq-crew-state.sh reader.
 # Resolved at source time from BASH_SOURCE so it works whether sourced by a
@@ -844,6 +845,42 @@ operator_is_finished() {  # <id>
   esac
 }
 
+# Recorded dispatch state from the task's execution sidecar, read in place so a
+# watcher poll or scan never forks sq-exec-state.sh for it.
+task_recorded_exec_state() {  # <state> <id>
+  grep '^exec_state=' "$1/$2.exec" 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+# 0 when <id>'s execution side is genuinely terminal for a watcher deciding
+# whether an agentless window still has work to rescue. The shared current-state
+# projection (bin/sq-crew-state.sh) settles EVERY recorded dispatch state, not
+# just a released one: a released record is immutable for dispatch but still
+# reports a live or gate-parked run over it as running (fm_drill_reported_exec_state
+# in bin/sq-drill-run-lib.sh), and a record whose teardown was correctly refused
+# outlives its operator as a busy claim no agent is behind. Only an actively
+# running step or a run parked at its gate proves work remains, and those are
+# never settled as terminal. A declared external wait, a blocked pane, or an
+# open keyed decision keeps its own bounded handling unless the dispatch record
+# is released, which is what makes the wait impossible to resume; an unreadable
+# verdict is never terminal.
+task_execution_is_terminal() {  # <state> <id> [recorded-state]
+  local state=$1 id=$2 recorded=${3:-} line current source
+  [ -n "$id" ] || return 1
+  [ -n "$recorded" ] || recorded=$(task_recorded_exec_state "$state" "$id")
+  line=$("$SQUAD_CREW_STATE_BIN" "$id" 2>/dev/null) || true
+  case "$line" in state:*) ;; *) return 1 ;; esac
+  current=${line#state: }; current=${current%% *}
+  source=${line#*source: }; source=${source%% *}
+  case "$current:$source" in
+    working:run-step|parked:run-step) return 1 ;;
+  esac
+  [ "$recorded" = released ] && return 0
+  case "$current" in
+    done|failed|working) return 0 ;;
+  esac
+  return 1
+}
+
 # 0 if crew <id> shows POSITIVE evidence it is still working (operator_absorb_class
 # reports `working`). This is the "provably working" predicate at the heart of
 # absorb-only-when-provably-working: a no-verb turn-end or stale wake is absorbed
@@ -1030,6 +1067,27 @@ operator_compaction_mark_notified() {  # <id>
   marker="$state/.compaction-notified-$key"
   printf '%s %s' "$gen" "$r_seq" > "$marker" 2>/dev/null || true
   return 0
+}
+
+# The task-keyed marker set one crew leaves behind: the away-mode daemon's
+# stale/pause/seen-status watcher markers and this file's compaction-notified
+# dedup marker. bin/sq-teardown.sh retires them with the volatile state of a
+# torn-down task, and bin/sq-sentry.sh plus the away-mode daemon retire them when
+# they stop supervising a genuinely terminal window that has no agent left, so
+# every owner removes exactly one set instead of drifting copies. A survivor is
+# not inert: the daemon's stale persistence recheck re-resolves the window and
+# keeps escalating a pane nobody owns, and a surviving seen-status/notified
+# marker silently swallows the first legitimate wake once an agent returns.
+retire_task_watcher_markers() {  # <state-dir> <task-id>
+  local state=$1 id=${2:-} key
+  [ -n "$id" ] || return 0
+  key=$(printf '%s' "$id" | tr ':/.' '___')
+  local seen_status seen_turn_ended
+  seen_status=$(printf '%s.status' "$id" | tr '.' '_')
+  seen_turn_ended=$(printf '%s.turn-ended' "$id" | tr '.' '_')
+  rm -f "$state/.subsuper-stale-$key" "$state/.subsuper-paused-$key" \
+    "$state/.subsuper-seen-status-$key" "$state/.compaction-notified-$key" \
+    "$state/.seen-$seen_status" "$state/.seen-$seen_turn_ended"
 }
 
 # 0 (actionable) if ANY task referenced by a "signal:" wake is a

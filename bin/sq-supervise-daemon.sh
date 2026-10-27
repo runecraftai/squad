@@ -50,7 +50,11 @@
 #     gets its own longer PAUSE_RESURFACE_SECS recheck rather than a wedge
 #     escalation, but a pause cannot hide unfinished work: the sentry's named
 #     pause-era evidence (idle dirty worktree, aged-out declared pause, stuck
-#     pane signature) escalates through the normal digest instead.
+#     pane signature) escalates through the normal digest. A window whose
+#     execution is genuinely terminal and whose pane has no attributable agent
+#     is the exception: the sentry and this daemon exclude it from the stale
+#     clock and retire its task-keyed watcher markers, so none of that evidence
+#     applies to it.
 #     Operators are autonomous, so a delayed stale response does not stall a
 #     healthy operator's own progress.
 #     Buffered escalation delivery also has a max-defer alarm: if a digest stays
@@ -59,7 +63,9 @@
 #     alert if submit still cannot be confirmed.
 #   - Cheap heartbeat catch-all: every HEARTBEAT_SCAN_SECS the daemon greps all
 #     state/*.status for a commander-relevant line the per-wake classifier might
-#     have missed (e.g. a status verb outside COMMANDER_RE) and escalates it.
+#     have missed (e.g. a status verb outside COMMANDER_RE) and escalates it,
+#     leaving a terminal window with no attributable agent quiet and free of its
+#     task-keyed dedup markers.
 #
 # The robustness shell from the prior always-inject version is preserved:
 # single-instance lock (portable helper, no flock dependency), crash-loop
@@ -561,13 +567,17 @@ migrate_sentry_pause_markers() {  # <state>
     sentry_key=$(_stale_key "$win")
     last=$(last_status_state_line "$state/$task.status")
     if status_is_paused "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$sentry_key" ]; then
+      if task_is_terminal_and_agentless_cached "$state" "$task"; then
+        clear_pause_tracking "$win" "$state"
+        continue
+      fi
       reconcile_pause_tracking "$win" "$state" "$last"
     fi
   done
 }
 
 sync_pause_markers_from_signal() {  # <state> <signal files>
-  local state=$1 paths=$2 f last task win
+  local state=$1 paths=$2 f last task win key sentry_key
   local -a files
   read -r -a files <<<"$paths"
   for f in "${files[@]}"; do
@@ -577,6 +587,13 @@ sync_pause_markers_from_signal() {  # <state> <signal files>
     task=$(basename "$f"); task=${task%.status}
     win=$(window_for_task "$task" "$state" 2>/dev/null || true)
     [ -n "$win" ] || continue
+    key=$(_stale_key "$task")
+    sentry_key=$(_stale_key "$win")
+    if { status_is_paused "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$sentry_key" ]; } \
+       && task_is_terminal_and_agentless_cached "$state" "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     reconcile_pause_tracking "$win" "$state" "$last"
   done
 }
@@ -718,6 +735,64 @@ stale_window_is_busy() {  # <window> <state>
 
 window_run_step_active() {  # <window> <state>
   [ "$(operator_absorb_verdict "$(window_to_task "$1" "$2")")" = "working run-step" ]
+}
+
+# A task whose execution is genuinely terminal and whose recorded window has no
+# attributable agent has nothing left to rescue. The always-on sentry already
+# excludes that window from its stale clock and retires the task-keyed watcher
+# markers, so the away-mode loops must apply the same boundary: otherwise the
+# catch-all scan re-escalates the unchanged terminal status on every scan
+# cadence, and pause migration recreates the declared-pause marker the sentry
+# just retired. task_execution_is_terminal is the shared projection for every
+# dispatch state (a released record can still own a live or gate-parked run, and
+# a record whose teardown was refused can outlive its operator as a busy claim);
+# the agent probe is the same attribution the sentry uses, and it is read first
+# so a live or ambiguously read pane keeps ordinary supervision without paying
+# for the projection that only an agentless pane can turn into a skip.
+task_is_terminal_and_agentless() {  # <state> <task>
+  local state=$1 task=$2 meta win backend
+  [ -n "$task" ] || return 1
+  meta="$state/$task.meta"
+  [ -e "$meta" ] || return 1
+  win=$(fm_backend_target_of_meta "$meta" 2>/dev/null || true)
+  [ -n "$win" ] || return 1
+  backend=$(fm_backend_of_meta "$meta" 2>/dev/null || true)
+  [ -n "$backend" ] || backend=tmux
+  case "$(fm_backend_agent_state "$backend" "$win" 2>/dev/null || true)" in
+    dead|missing) ;;
+    *) return 1 ;;
+  esac
+  task_execution_is_terminal "$state" "$task"
+}
+
+# One housekeeping pass checks the same task from pause migration, the stale
+# and pause rechecks, and the catch-all scan. Each evaluation forks
+# sq-crew-state.sh (a bounded drill call when a run is attributed) plus a
+# backend probe, so the pass shares one verdict per task instead of paying it
+# again on every caller. Outside a pass the check is evaluated directly.
+_terminal_agentless_cache=""
+_terminal_agentless_pass=0
+
+task_is_terminal_and_agentless_cached() {  # <state> <task>
+  local key="$1/$2" entry
+  if [ "$_terminal_agentless_pass" -ne 1 ]; then
+    task_is_terminal_and_agentless "$1" "$2"
+    return
+  fi
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    [ "${entry%%$'\t'*}" = "$key" ] || continue
+    [ "${entry#*$'\t'}" = terminal ]
+    return
+  done <<EOF
+$_terminal_agentless_cache
+EOF
+  if task_is_terminal_and_agentless "$1" "$2"; then
+    _terminal_agentless_cache="$_terminal_agentless_cache$key"$'\t'"terminal"$'\n'
+    return 0
+  fi
+  _terminal_agentless_cache="$_terminal_agentless_cache$key"$'\t'"open"$'\n'
+  return 1
 }
 
 # A busy verdict on a stale marker is not proof of life once the sentry has handed
@@ -1162,6 +1237,8 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
 housekeeping() {  # <state>
   local state=$1 now due f key task win marker age last max_defer oldest pause_secs
   now=$(_now)
+  _terminal_agentless_cache=""
+  _terminal_agentless_pass=1
   migrate_sentry_pause_markers "$state"
 
   # (1) batch flush
@@ -1207,6 +1284,10 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
+    if task_is_terminal_and_agentless_cached "$state" "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     if operator_is_finished "$task"; then
       clear_pause_tracking "$win" "$state"
       continue
@@ -1254,6 +1335,10 @@ housekeeping() {  # <state>
       continue
     fi
     task=$(window_to_task "$win" "$state")
+    if task_is_terminal_and_agentless_cached "$state" "$task"; then
+      clear_pause_tracking "$win" "$state"
+      continue
+    fi
     if operator_is_finished "$task"; then
       clear_pause_tracking "$win" "$state"
       continue
@@ -1282,20 +1367,28 @@ housekeeping() {  # <state>
   done
 
   # (3) heartbeat scan (catch-all for a commander-relevant status the per-wake
-  #     classifier may have missed). Cheap: status files only, no tmux. The
-  #     commander-relevant filtering is the shared classifier's
-  #     scan_commander_relevant_statuses; the daemon layers its digest dedup on top.
+  #     classifier may have missed). Status files only for every ordinary record;
+  #     the commander-relevant filtering is the shared classifier's
+  #     scan_commander_relevant_statuses, and the daemon layers its digest dedup on
+  #     top. A terminal execution with an agentless window has nothing to rescue
+  #     and is skipped quietly here and in the sentry alike, so a skipped task's
+  #     retired dedup marker is never re-created into a per-cadence escalation.
   if [ "$(_file_age "$state/.subsuper-last-scan")" -ge "${SQUAD_HEARTBEAT_SCAN_SECS:-$HEARTBEAT_SCAN_SECS_DEFAULT}" ]; then
     _now > "$state/.subsuper-last-scan"
     local seen
     while IFS="$(printf '\t')" read -r f task last; do
       [ -n "$f" ] || continue
       seen="$state/.subsuper-seen-status-$(_stale_key "$task")"
+      if task_is_terminal_and_agentless_cached "$state" "$task"; then
+        retire_task_watcher_markers "$state" "$task"
+        continue
+      fi
       [ "$(cat "$seen" 2>/dev/null || true)" = "$last" ] && continue
       escalate_add "$state" "$(basename "$f"): $last (catch-all scan)"
       mark_status_seen "$state" "$task" "$last"
     done < <(scan_commander_relevant_statuses "$state")
   fi
+  _terminal_agentless_pass=0
 }
 
 # Find a currently recorded window target whose task id matches the marker key.

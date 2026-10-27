@@ -58,6 +58,30 @@
 #                          out" once past SQUAD_PAUSE_MAX_SECS per declaration, and
 #                          "pane signature: <name>" for a byte-identical complete
 #                          viewport that keeps showing a stuck signature.
+#                          A window whose execution is genuinely terminal - the
+#                          shared current-state projection reports no live or
+#                          gate-parked run over it, so the dispatch record was
+#                          released, the crew is done/failed (including a
+#                          terminal drill run over a record that was never
+#                          retired), or the only remaining claim is a pane
+#                          busy-signature or status-log progress note no agent
+#                          in that pane can back - and whose pane has no
+#                          attributable agent has nothing to rescue: it never
+#                          enters this clock, its per-window and task-keyed
+#                          markers are retired, and it therefore also keeps none
+#                          of the rules below (the bounded declared pause
+#                          re-surface cadence included). A window that still
+#                          owns an active or gate-parked run keeps the ordinary
+#                          supervision, as does a declared pause or an open keyed
+#                          decision whose dispatch record was never released.
+#                          Attribution is reread on every poll, so an agent
+#                          reappearing in that window resumes ordinary stale
+#                          supervision at once, and the first agentless skip of
+#                          one unchanged generation is recorded once in the triage
+#                          log.
+#                          The away-mode daemon applies the same terminal-plus-
+#                          agentless boundary to its catch-all scan and pause
+#                          migration, so a skipped task stays quiet there too.
 #   stale: <window> (<backend>: agent blocked - ...)
 #                          a backend's native transition record (bin/sq-transition-lib.sh)
 #                          reports the SAME window as `blocked` (a person is
@@ -205,6 +229,25 @@ EVENT_CAP_FAIL_MAX=${SQUAD_EVENT_CAP_FAIL_MAX:-3}
 _event_cap_key=""
 _event_cap_ok=0
 _event_cap_fails=0
+# The shared current-state projection behind window_is_terminal_and_agentless
+# forks sq-crew-state.sh, which may make a bounded drill call. The sentry keeps
+# its verdict per task generation instead of re-reading it for every agentless
+# window on every poll: a generation is the recorded dispatch state, the pane's
+# agent attribution, and the live meta/status/busy-record/dispatch signatures
+# that projection consumes, refreshed at most once per TERMINAL_PROBE_SECS so an
+# external transition (a drill run that reaches a terminal step) is still picked
+# up while the pane stays agentless. The verdict is persisted rather than held in
+# a shell variable: the signal scan runs inside command substitutions, so a
+# variable written there would be lost with the subshell and the scan and the
+# window pass would each pay for their own projection. The file is reset when
+# this sentry process starts, so the next process re-reads a generation.
+TERMINAL_PROBE_SECS=300
+TERMINAL_PROBE_MEMO_FILE="$STATE/.terminal-probe"
+_terminal_probe_hit=""
+
+terminal_probe_reset() {
+  rm -f -- "$TERMINAL_PROBE_MEMO_FILE"
+}
 
 # afk_present: 0 while the away-mode flag exists. When set, the daemon wraps this
 # sentry and owns triage, so the sentry must behave one-shot (enqueue + exit on
@@ -234,6 +277,127 @@ window_is_busy() {  # <window> <tail40>
       "${task:-unknown}" "$STATE" "$tail40")
   fi
   [ "${verdict%% *}" = busy ]
+}
+
+# terminal_probe_lookup: 0 when a memoized verdict for <task> at <signature> is
+# still within TERMINAL_PROBE_SECS, leaving it in _terminal_probe_hit.
+terminal_probe_lookup() {  # <task> <signature>
+  local task=$1 sig=$2 line rest age verdict now=
+  _terminal_probe_hit=""
+  [ -f "$TERMINAL_PROBE_MEMO_FILE" ] || return 1
+  while IFS= read -r line; do
+    [ "${line%%$'\t'*}" = "$task" ] || continue
+    rest=${line#*$'\t'}
+    [ "${rest%%$'\t'*}" = "$sig" ] || continue
+    rest=${rest#*$'\t'}
+    age=${rest%%$'\t'*}
+    rest=${rest#*$'\t'}
+    verdict=${rest%%$'\t'*}
+    case "$age" in ''|*[!0-9]*) return 1 ;; esac
+    [ -e "$STATE/$task.meta" ] || return 1
+    [ -n "$now" ] || now=$(date +%s)
+    [ $(( now - age )) -lt "$TERMINAL_PROBE_SECS" ] || return 1
+    _terminal_probe_hit=$verdict
+    return 0
+  done < "$TERMINAL_PROBE_MEMO_FILE"
+  return 1
+}
+
+# terminal_probe_traced: 1 when the memo already recorded a traced terminal skip
+# for <task> at <signature>. A refresh re-confirms the same generation instead of
+# starting a new one, so it never repeats the trace.
+terminal_probe_traced() {  # <task> <signature>
+  local task=$1 sig=$2 line rest logged
+  [ -f "$TERMINAL_PROBE_MEMO_FILE" ] || { printf '0'; return 0; }
+  while IFS= read -r line; do
+    [ "${line%%$'\t'*}" = "$task" ] || continue
+    rest=${line#*$'\t'}
+    [ "${rest%%$'\t'*}" = "$sig" ] || continue
+    rest=${rest#*$'\t'}
+    rest=${rest#*$'\t'}
+    logged=${rest#*$'\t'}
+    case "$logged" in 1) printf '1' ;; *) printf '0' ;; esac
+    return 0
+  done < "$TERMINAL_PROBE_MEMO_FILE"
+  printf '0'
+}
+
+# terminal_probe_store: replace <task>'s memo entry with <signature> <verdict>
+# <logged>, dropping the generations of tasks whose metadata is gone so a
+# long-lived sentry's memo stays bounded by the live supervision set.
+terminal_probe_store() {  # <task> <signature> <verdict> <logged>
+  local task=$1 sig=$2 verdict=$3 logged=$4 memo=$TERMINAL_PROBE_MEMO_FILE
+  local tmp="$TERMINAL_PROBE_MEMO_FILE.tmp.$$" kept="" line
+  if [ -f "$memo" ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      [ "${line%%$'\t'*}" = "$task" ] && continue
+      [ -e "$STATE/${line%%$'\t'*}.meta" ] || continue
+      kept="$kept$line"$'\n'
+    done < "$memo"
+  fi
+  if {
+    [ -z "$kept" ] || printf '%s' "$kept"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$sig" "$(date +%s)" "$verdict" "$logged"
+  } > "$tmp" 2>/dev/null; then
+    mv -f -- "$tmp" "$memo" 2>/dev/null || rm -f -- "$tmp"
+  else
+    rm -f -- "$tmp"
+  fi
+}
+
+# A window whose execution is genuinely terminal and whose recorded pane has no
+# attributable agent has no live work left to wedge, so it must not enter the
+# stale clock at all. Attribution is read first, so a live or ambiguously read
+# pane keeps ordinary supervision (and never inherits, or pays for, a projection
+# verdict), and only a confidently agentless pane can be skipped. The recorded
+# dispatch state is read in place through the shared task_recorded_exec_state
+# (bin/sq-classify-lib.sh), never a forked sq-exec-state.sh per window per poll,
+# and the shared terminal projection (task_execution_is_terminal in
+# bin/sq-classify-lib.sh) decides it for every dispatch state: a released record
+# still reports a live or gate-parked run as running, and a record whose
+# teardown was refused keeps exactly the busy claim that outlived its operator,
+# so neither the release alone nor a done/failed check settles the execution
+# side. The verdict is memoized per task generation, which carries the
+# attribution and the busy-record/dispatch signatures the projection consumes,
+# so a claim that clears, another attempt that starts, or an agent that returns
+# all re-read it instead of inheriting a terminal latch. The first agentless
+# skip of one unchanged generation is traced once, and re-confirming that
+# generation on the refresh cadence does not trace it again. A retained record
+# with no dispatch sidecar - meta published before the claim that never landed,
+# or removed before the meta on an interrupted teardown - has no recorded state
+# to read and is judged by that projection alone.
+window_is_terminal_and_agentless() {  # <window> <task> [quiet]
+  local w=$1 task=$2 quiet=${3:-0} recorded sig attr
+  [ -n "$task" ] || return 1
+  attr=$(fm_backend_agent_state "$(window_backend "$w")" "$w" 2>/dev/null || true)
+  case "$attr" in
+    dead|missing) ;;
+    *) return 1 ;;
+  esac
+  recorded=$(task_recorded_exec_state "$STATE" "$task")
+  sig="$recorded|$attr|$(stat_sig "$STATE/$task.meta")|$(stat_sig "$STATE/$task.status")|$(stat_sig "$(fm_busy_record_path "$STATE" "$task")")|$(stat_sig "$STATE/$task.exec")"
+  if terminal_probe_lookup "$task" "$sig"; then
+    [ "$_terminal_probe_hit" = terminal ] || return 1
+    if [ "$quiet" != 1 ] && [ "$(terminal_probe_traced "$task" "$sig")" != 1 ]; then
+      triage_log "skipped stale supervision (terminal execution, agentless window): $w"
+      terminal_probe_store "$task" "$sig" terminal 1
+    fi
+    return 0
+  fi
+  if task_execution_is_terminal "$STATE" "$task" "$recorded"; then
+    if [ "$quiet" = 1 ]; then
+      terminal_probe_store "$task" "$sig" terminal 0
+    else
+      [ "$(terminal_probe_traced "$task" "$sig")" = 1 ] \
+        || triage_log "skipped stale supervision (terminal execution, agentless window): $w"
+      terminal_probe_store "$task" "$sig" terminal 1
+    fi
+  else
+    terminal_probe_store "$task" "$sig" open 0
+    return 1
+  fi
+  return 0
 }
 
 window_kind() {
@@ -804,17 +968,64 @@ signal_task_has_record() {  # <signal-file>
   [ -e "$STATE/$task.meta" ]
 }
 
+# A terminal execution with no agent behind its recorded pane is not a fresh
+# signal source, even after its dedup signatures are retired. Otherwise the
+# still-present status and turn-end files would re-wake on every poll.
+signal_task_is_terminal_and_agentless() {  # <signal-file>
+  local task=${1##*/} target meta
+  task=${task%.status}
+  task=${task%.turn-ended}
+  meta="$STATE/$task.meta"
+  [ -e "$meta" ] || return 1
+  target=$(fm_backend_target_of_meta "$meta" 2>/dev/null || true)
+  [ -n "$target" ] || return 1
+  window_is_terminal_and_agentless "$target" "$task" 1
+}
+
+# Keep the first commander-relevant terminal status observable when no agent
+# remains. The heartbeat marker records delivery independently of .seen-* so
+# the stale skip may still retire every signal signature without repeating the
+# notice on later polls.
+signal_terminal_notice_is_unsurfaced() {  # <signal-file>
+  local f=$1 task last surfaced
+  case "$f" in *.status) ;; *) return 1 ;; esac
+  task=${f##*/}
+  task=${task%.status}
+  last=$(last_status_line "$f")
+  status_is_commander_relevant "$last" || return 1
+  surfaced=$(cat "$(_hb_surfaced_path "$task")" 2>/dev/null || true)
+  [ "$surfaced" != "$last" ]
+}
+
+# The one owner of the terminal-agentless retirement gate: a signal whose task is
+# terminal with no agent left, and whose commander-relevant notice is already
+# surfaced (or is not a status notice at all), is retired here instead of being
+# reported. Both the scan and the wake-boundary re-validation call this, so the
+# pair cannot drift and the re-validation never retires a notice the scan chose
+# to keep. Returns 0 when it handled (retired) the file.
+retire_terminal_agentless_signal() {  # <signal-file>
+  local f=$1 task
+  signal_task_is_terminal_and_agentless "$f" || return 1
+  signal_terminal_notice_is_unsurfaced "$f" && return 1
+  task=${f##*/}
+  task=${task%.status}
+  task=${task%.turn-ended}
+  retire_task_watcher_markers "$STATE" "$task"
+  return 0
+}
+
 # Layer 2 + 3 signal scan: status files and turn-end markers. Each file is
 # compared against a persisted size:mtime signature (.seen-*) rather than
 # mtime-vs-a-startup-touch, so signals that land while no sentry is running
 # are caught by the next one, and same-second writes cannot slip through a
 # strict -nt comparison. Prints one "<seen-file>\t<sig>\t<file>" line per
-# changed file; its only other write is the orphan drop below. .seen-* is
-# updated only after the wake is either surfaced or intentionally absorbed, so
-# a sentry killed mid-cycle never swallows a signal. A signal whose task record
-# is gone belongs to a torn-down task that nothing supervises: it is dropped
-# with its .seen-* marker here, so a late turn-end touch cannot keep waking
-# Squad for a task that no longer exists.
+# changed file; its other writes are the orphan drop and the terminal-agentless
+# marker retirement below, and both only run for a file that would otherwise be
+# reported. .seen-* is updated only after the wake is either surfaced or
+# intentionally absorbed, so a sentry killed mid-cycle never swallows a signal.
+# A signal whose task record is gone belongs to a torn-down task that nothing
+# supervises: it is dropped with its .seen-* marker here, so a late turn-end
+# touch cannot keep waking Squad for a task that no longer exists.
 scan_signals() {
   local f sig sf
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
@@ -825,9 +1036,9 @@ scan_signals() {
       continue
     fi
     sig=$(stat_sig "$f") || continue
-    if [ "$sig" != "$(cat "$sf" 2>/dev/null)" ]; then
-      printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
-    fi
+    [ "$sig" = "$(cat "$sf" 2>/dev/null)" ] && continue
+    retire_terminal_agentless_signal "$f" && continue
+    printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
   done
   return 0
 }
@@ -842,10 +1053,12 @@ drop_orphan_signal_entries() {  # <pending>...
   local sf sig f
   printf '%s\n' "$@" | while IFS=$(printf '\t') read -r sf sig f; do
     [ -n "$sf" ] || continue
-    if signal_task_has_record "$f"; then
-      printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
-    else
+    if ! signal_task_has_record "$f"; then
       rm -f "$sf"
+    elif retire_terminal_agentless_signal "$f"; then
+      continue
+    else
+      printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
     fi
   done
 }
@@ -1131,6 +1344,7 @@ if ! fm_lock_try_acquire "$WATCH_LOCK"; then
   exit 0
 fi
 sentry_cleanup() {
+  terminal_probe_reset
   fm_active_check_stop || return 1
   fm_check_output_cleanup
   fm_custom_check_snapshot_cleanup
@@ -1138,6 +1352,7 @@ sentry_cleanup() {
 }
 trap sentry_cleanup EXIT
 trap 'exit 1' HUP INT TERM
+terminal_probe_reset
 # This sentry's own pid, as recorded in the lock by fm_lock_claim (which writes
 # ${BASHPID:-$$} from this same main shell). Read directly, never via a command
 # substitution, so it matches the stored holder pid for the self-eviction check.
@@ -1372,6 +1587,11 @@ EOF
     fi
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
+    if window_is_terminal_and_agentless "$w" "$task"; then
+      drop_window_markers "$w"
+      retire_task_watcher_markers "$STATE" "$task"
+      continue
+    fi
     last=$(last_status_state_line "$STATE/$task.status")
     if ! status_is_paused_or_commander_held "$last" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$w"
