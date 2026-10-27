@@ -11,8 +11,9 @@
 # the token-efficient replacement for the prior always-inject daemon:
 # routine signal/stale/heartbeat wakes cost zero Squad context; only done/
 # needs-decision/blocked/failed/persistent-wedge/check-output events, a
-# declared-pause recheck, and the sentry's named pause-era evidence reach the LLM,
-# and even then as one pre-read digest per batch window.
+# declared-pause recheck, and the sentry's named objective evidence (pause-era or
+# quiet pipeline step) reach the LLM, and even then as one pre-read digest per
+# batch window.
 #
 # PRESENCE-GATING (the /afk contract). The daemon is the away-mode engine: it
 # injects ONLY when the durable away-mode flag state/.afk is present. Invoking
@@ -49,8 +50,9 @@
 #     within STALE_ESCALATE_SECS + a tick, never lost. A declared pause instead
 #     gets its own longer PAUSE_RESURFACE_SECS recheck rather than a wedge
 #     escalation, but a pause cannot hide unfinished work: the sentry's named
-#     pause-era evidence (idle dirty worktree, aged-out declared pause, stuck
-#     pane signature) escalates through the normal digest. A window whose
+#     evidence (idle dirty worktree, aged-out declared pause, stuck pane
+#     signature, pipeline step quiet past Drill's step_quiet_warning) escalates
+#     through the normal digest. A window whose
 #     execution is genuinely terminal and whose pane has no attributable agent
 #     is the exception: the sentry and this daemon exclude it from the stale
 #     clock and retire its task-keyed watcher markers, so none of that evidence

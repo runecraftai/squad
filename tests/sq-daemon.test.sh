@@ -312,10 +312,11 @@ test_handle_wake_paused_signal_records_pause_marker() {
   pass "handle_wake records a declared pause from a routine signal for long-cadence rechecks"
 }
 
-# The sentry's three pause-era rules name their evidence in the stale reason. Away
-# mode must escalate that evidence through the digest rather than re-absorbing it
-# as a routine pause, while a plain paused stale (no such evidence) still
-# self-handles on the long pause cadence.
+# The sentry's four paused/quiet-era rules (idle dirty worktree, aged-out
+# declared pause, stuck pane signature, quiet pipeline step) name their evidence
+# in the stale reason. Away mode must escalate that evidence through the digest
+# rather than re-absorbing it as a routine pause, while a plain paused stale (no
+# such evidence) still self-handles on the long pause cadence.
 test_away_pause_era_evidence_escalates() {
   local state dir win reason key idx
   local details=(
