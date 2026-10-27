@@ -3048,6 +3048,69 @@ test_terminal_agentless_notice_surfaces_once_then_stays_quiet() {
   pass "an agentless terminal done:/failed: notice surfaces exactly once, then its signatures retire without repeating"
 }
 
+# The terminal stale skip owns the retirement of an already-delivered terminal
+# notice's signal signatures, not only the per-poll signal scan. When a signature
+# still matches its .seen-* marker the scan short-circuits on the unchanged
+# signature before it ever reaches its retirement gate, so nothing but the skip
+# can clear it. Retiring it is what keeps an unchanged done:/failed: notice from
+# being re-reported once an agent returns to the same window, and the delivered
+# notice's surfaced marker has to survive so the skip stays a retirement rather
+# than a second delivery.
+test_terminal_stale_skip_retires_signal_signatures_after_quiet_scan() {
+  local dir state fakebin out capture_file command_file window pid i marker
+  dir=$(make_case terminal-stale-retire-sigs); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; command_file="$dir/command.txt"
+  window="test:sq-terminal-stale-retire"
+  printf 'idle shell prompt' > "$capture_file"
+  printf 'bash\n' > "$command_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/retire-sigs.meta"
+  printf 'working: last progress note\ndone: PR https://example.test/pr/13 checks green\n' \
+    > "$state/retire-sigs.status"
+  printf 'late turn end\n' > "$state/retire-sigs.turn-ended"
+  # Signatures already match, so scan_signals "continue"s above its retirement
+  # gate for both files: only the terminal stale skip can retire them here.
+  printf '%s' "$(seen_sig "$state/retire-sigs.status")" > "$state/.seen-retire-sigs_status"
+  printf '%s' "$(seen_sig "$state/retire-sigs.turn-ended")" > "$state/.seen-retire-sigs_turn-ended"
+  # The notice was already delivered to Squad, which is what licenses retirement.
+  printf 'done: PR https://example.test/pr/13 checks green' > "$state/.hb-surfaced-retire-sigs"
+  SQUAD_STATE_OVERRIDE="$state" "$ROOT/bin/sq-exec-state.sh" transition retire-sigs released >/dev/null \
+    || fail "could not create the released execution fixture"
+  # Residue from an earlier away-mode episode for this same task.
+  printf '1\n' > "$state/.subsuper-stale-retire-sigs"
+  printf '%s\n' "$(( $(date +%s) - 500 ))" > "$state/.subsuper-paused-retire-sigs"
+  printf 'working: stale line\n' > "$state/.subsuper-seen-status-retire-sigs"
+  printf '9 4' > "$state/.compaction-notified-retire-sigs"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_FAKE_TMUX_COMMAND_FILE="$command_file" \
+    SQUAD_STALE_ESCALATE_SECS=1
+  pid=$!
+  i=0
+  while [ "$i" -lt 60 ] && [ -e "$state/.seen-retire-sigs_status" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  wait_live "$pid" 40 || { reap "$pid"; fail "the retired terminal-agentless generation woke the sentry: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "the retired terminal-agentless generation printed a wake: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "the retired terminal-agentless generation enqueued a wake"; }
+  for marker in _status _turn-ended; do
+    [ ! -e "$state/.seen-retire-sigs$marker" ] \
+      || { reap "$pid"; fail "the terminal stale skip left .seen-retire-sigs$marker behind"; }
+  done
+  for marker in .subsuper-stale- .subsuper-paused- .subsuper-seen-status- .compaction-notified-; do
+    [ ! -e "$state/${marker}retire-sigs" ] \
+      || { reap "$pid"; fail "the terminal stale skip left $marker residue behind"; }
+  done
+  [ "$(cat "$state/.hb-surfaced-retire-sigs" 2>/dev/null)" = 'done: PR https://example.test/pr/13 checks green' ] \
+    || { reap "$pid"; fail "retiring the signatures dropped the delivered-notice marker"; }
+  [ "$(grep -c 'skipped stale supervision' "$state/.sentry-triage.log" 2>/dev/null || true)" = 1 ] \
+    || { reap "$pid"; fail "the terminal stale skip was not traced exactly once: $(cat "$state/.sentry-triage.log" 2>/dev/null || true)"; }
+  grep -F "$window" "$state/.sentry-triage.log" >/dev/null \
+    || { reap "$pid"; fail "the skip trace did not name the skipped window"; }
+  reap "$pid"
+  pass "the terminal stale skip retires every signal signature of an already-delivered notice even when the signal scan is quiet"
+}
+
 # A released dispatch record is immutable for dispatch, not proof that its run
 # is over: the shared projection reports a gate-parked run over it as running.
 # Such a window must keep ordinary supervision instead of being latched into the
@@ -4565,6 +4628,7 @@ test_busy_static_pane_without_readable_viewport_never_expires
 test_busy_static_unreadable_viewport_logs_limitation_once
 test_released_agentless_window_skips_stale_but_resumes_when_agent_returns
 test_terminal_agentless_notice_surfaces_once_then_stays_quiet
+test_terminal_stale_skip_retires_signal_signatures_after_quiet_scan
 test_released_record_with_live_run_keeps_stale_supervision
 test_agentless_window_with_unretired_terminal_execution_skips_stale
 test_terminal_projection_is_memoized_per_task_generation

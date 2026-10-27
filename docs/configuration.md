@@ -112,7 +112,7 @@ state/               volatile runtime signals; gitignored
   .terminal-probe   sentry memo of the shared terminal-execution projection, one TSV line per task generation (task, signature, checked-at, verdict, traced); refreshed at most once per `TERMINAL_PROBE_SECS`, wiped when a sentry process starts, pruned when the task record is gone, safe to delete
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
-  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch - sq-classify-lib.sh's retire_task_watcher_markers is the one owner of these families: teardown retires `.subsuper-stale-*`, `.subsuper-paused-*`, and `.subsuper-seen-status-*` for the released task, and the sentry and away-mode daemon retire them for a genuinely terminal execution whose pane has no agent left
+  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch - sq-classify-lib.sh's retire_task_watcher_markers is the one owner of the task-keyed `.subsuper-*` families: teardown retires `.subsuper-stale-*`, `.subsuper-paused-*`, and `.subsuper-seen-status-*` for the released task, and the sentry and away-mode daemon retire them for a genuinely terminal execution whose pane has no agent left
 .drill/        local validation state and evidence; gitignored
 ```
 

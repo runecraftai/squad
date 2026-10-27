@@ -330,7 +330,7 @@ Treat any `OPEN DECISIONS` section from the drain as actionable reconciliation i
 A status line is a wake event, not current state; use `bin/sq-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 A declared `paused:` event means a bounded external wait expected to clear on its own, while `blocked:` means Squad action is needed.
 A pause cannot hide unfinished work: the sentry still escalates an idle dirty worktree, a declared pause past `SQUAD_PAUSE_MAX_SECS`, and a stuck pane signature as named `stale:` reasons, so treat those as evidence to inspect, never as an expected wait.
-The one exception is a window whose execution is genuinely terminal (its shared current-state projection shows no live or gate-parked run over it - a released record, a finished crew, or only a pane busy-signature or status-log progress no agent in that pane can back) and whose pane has no attributable agent: it never enters the stale clock, has nothing to inspect, and is supervised normally again once an agent returns.
+The one exception is a window whose execution is genuinely terminal (its shared current-state projection shows no live or gate-parked run over it - a released record, a finished crew, or only a pane busy-signature or status-log progress no agent in that pane can back) and whose pane has no attributable agent: it never enters the stale clock, its first commander-relevant `done:`/`failed:` notice is still surfaced once, and it is supervised normally again once an agent returns.
 
 Handle actionable wakes as follows:
 

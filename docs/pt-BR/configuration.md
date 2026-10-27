@@ -66,7 +66,7 @@ skills/              standalone public installer-facing skills, committed; not l
   .terminal-probe   sentry memo of the shared terminal-execution projection, one TSV line per task generation (task, signature, checked-at, verdict, traced); refreshed at most once per `TERMINAL_PROBE_SECS`, wiped when a sentry process starts, pruned when the task record is gone, safe to delete
   .sentry-triage.log  sentry's absorbed-wake debug log (size-capped); never relied on, safe to delete
   .last-sentry-beat sentry liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
-  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch - retire_task_watcher_markers de bin/sq-classify-lib.sh é o dono único destas famílias: o teardown aposenta `.subsuper-stale-*`, `.subsuper-paused-*` e `.subsuper-seen-status-*` para a tarefa liberada, e a sentinela e o daemon de away mode os removem para uma execução genuinamente terminal cujo painel não tem agente
+  .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch - retire_task_watcher_markers de bin/sq-classify-lib.sh é o dono único das famílias `.subsuper-*` por tarefa: o teardown aposenta `.subsuper-stale-*`, `.subsuper-paused-*` e `.subsuper-seen-status-*` para a tarefa liberada, e a sentinela e o daemon de away mode os removem para uma execução genuinamente terminal cujo painel não tem agente
 ```
 
 ## Preferência Pi Calm (config/calm)
