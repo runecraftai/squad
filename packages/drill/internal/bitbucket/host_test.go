@@ -1,11 +1,40 @@
 package bitbucket
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/runecraftai/squad/packages/drill/internal/scm"
 )
+
+func TestPostGreenPRHeadReader(t *testing.T) {
+	sha := strings.Repeat("d", 40)
+	for _, tc := range []struct {
+		head    string
+		wantErr bool
+	}{{sha, false}, {"", true}, {"abc", true}} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/2.0/repositories/team/repo/pullrequests/3" {
+				t.Errorf("path=%s", r.URL.Path)
+			}
+			_, _ = w.Write([]byte(`{"id":3,"state":"OPEN","source":{"commit":{"hash":"` + tc.head + `"}}}`))
+		}))
+		client := &Client{baseURL: server.URL, email: "test", token: "test", httpClient: server.Client()}
+		host := NewHost(client, RepoRef{Workspace: "team", RepoSlug: "repo"})
+		got, err := host.GetPRHeadSHA(context.Background(), &scm.PR{Number: "3"})
+		server.Close()
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("head=%q got=%q err=%v", tc.head, got, err)
+		}
+		if !tc.wantErr && got != sha {
+			t.Fatalf("sha=%q", got)
+		}
+	}
+}
 
 func TestNormalizePRState(t *testing.T) {
 	tests := []struct {

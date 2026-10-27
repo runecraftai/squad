@@ -595,6 +595,24 @@ func TestGetChecksSurfacesErrorWhenPaginatedPageIsCorrupt(t *testing.T) {
 	}
 }
 
+func TestPostGreenPRHeadReader(t *testing.T) {
+	sha := strings.Repeat("a", 40)
+	cmd := "glab mr view 123 --output json"
+	for _, tc := range []struct {
+		payload string
+		wantErr bool
+	}{{`{"iid":123,"sha":"` + sha + `"}`, false}, {`{"iid":123,"sha":""}`, true}, {`{"iid":123,"sha":"abc"}`, true}} {
+		host := New(gitlabTestCmdFactory(map[string]gitlabTestResponse{cmd: {stdout: tc.payload}}), nil, "gitlab.example", "group/repo")
+		got, err := host.GetPRHeadSHA(context.Background(), &scm.PR{Number: "123"})
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("payload=%s sha=%q err=%v", tc.payload, got, err)
+		}
+		if !tc.wantErr && got != sha {
+			t.Fatalf("sha=%q", got)
+		}
+	}
+}
+
 type gitlabTestResponse struct {
 	stdout string
 	stderr string

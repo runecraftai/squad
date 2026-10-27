@@ -720,6 +720,24 @@ func githubTestCmdFactory(responses map[string]githubTestResponse) CmdFactory {
 	}
 }
 
+func TestPostGreenPRHeadReader(t *testing.T) {
+	sha := strings.Repeat("c", 40)
+	cmd := "gh pr view 42 --repo ghe.example/owner/repo --json headRefOid"
+	for _, tc := range []struct {
+		payload string
+		wantErr bool
+	}{{`{"headRefOid":"` + sha + `"}`, false}, {`{"headRefOid":""}`, true}, {`{"headRefOid":"abc"}`, true}} {
+		host := New(githubTestCmdFactory(map[string]githubTestResponse{cmd: {stdout: tc.payload}}), nil, "ghe.example", "ghe.example/owner/repo")
+		got, err := host.GetPRHeadSHA(context.Background(), &scm.PR{Number: "42"})
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("payload=%s sha=%q err=%v", tc.payload, got, err)
+		}
+		if !tc.wantErr && got != sha {
+			t.Fatalf("sha=%q", got)
+		}
+	}
+}
+
 func TestPostGreenChecksConclusionExitCodes(t *testing.T) {
 	command := "gh pr checks 42 --repo owner/repo --json name,state,bucket,completedAt,link"
 	pr := &scm.PR{Number: "42"}

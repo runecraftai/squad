@@ -148,27 +148,6 @@ func (d *DB) ListWatchingCIObservations() ([]*CIObservation, error) {
 	return out, rows.Err()
 }
 
-// AcquireCIObservationLease advances the poll token before provider reads. A
-// stale watcher cannot commit after another worker has claimed a newer lease.
-func (d *DB) AcquireCIObservationLease(runID string, at, leaseUntil int64) (*CIObservation, bool, error) {
-	res, err := d.sql.Exec(`UPDATE ci_observations SET poll_seq=poll_seq+1, lease_until=?, updated_at=? WHERE run_id=? AND state='watching' AND next_poll_at<=? AND (lease_until IS NULL OR lease_until<=?)`, leaseUntil, at, runID, at, at)
-	if err != nil {
-		return nil, false, fmt.Errorf("acquire CI observation lease: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return nil, false, err
-	}
-	if n == 0 {
-		return nil, false, nil
-	}
-	o, err := d.GetCIObservation(runID)
-	if err != nil {
-		return nil, false, err
-	}
-	return o, o != nil, nil
-}
-
 type CIObservationSample struct {
 	RunID                   string
 	PollSeq, PushGeneration int64

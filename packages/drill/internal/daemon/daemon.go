@@ -229,7 +229,6 @@ func runWithOptionsLocked(p *paths.Paths, d *db.DB, stepFactory StepFactory, sta
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	mgr.StartCIObservationHealthScan(ctx)
 
 	var shutdownOnce sync.Once
 	doShutdown := func(reason string) {
@@ -935,9 +934,6 @@ func runToInfo(d *db.DB, r *db.Run, steps []*db.StepResult) *ipc.RunInfo {
 		AwaitingAgentSince: r.AwaitingAgentSince,
 		CreatedAt:          r.CreatedAt,
 		UpdatedAt:          r.UpdatedAt,
-	}
-	if observation, err := d.GetCIObservation(r.ID); err == nil && observation != nil {
-		info.CIObservation = &ipc.CIObservationInfo{HeadSHA: observation.HeadSHA, FirstGreenAt: observation.FirstGreenAt, DeadlineAt: observation.DeadlineAt, State: observation.State, Verdict: observation.Verdict, LastPollAt: observation.LastPollAt, NextPollAt: observation.NextPollAt, Reason: observation.Reason}
 	}
 	if len(steps) > 0 {
 		info.Steps = make([]ipc.StepResultInfo, 0, len(steps))

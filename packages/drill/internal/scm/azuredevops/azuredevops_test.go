@@ -451,6 +451,24 @@ func TestFetchFailedCheckLogsUnsupported(t *testing.T) {
 	}
 }
 
+func TestPostGreenPRHeadReader(t *testing.T) {
+	sha := strings.Repeat("b", 40)
+	cmd := "az repos pr show --id 17 --organization https://dev.azure.com/acme --output json"
+	for _, tc := range []struct {
+		payload string
+		wantErr bool
+	}{{`{"pullRequestId":17,"lastMergeSourceCommit":{"commitId":"` + sha + `"}}`, false}, {`{"pullRequestId":17}`, true}, {`{"pullRequestId":17,"lastMergeSourceCommit":{"commitId":"abc"}}`, true}} {
+		host := New(azdoTestCmdFactory(map[string]azdoTestResponse{cmd: {stdout: tc.payload}}), nil, "https://dev.azure.com/acme", "project", "repo")
+		got, err := host.GetPRHeadSHA(context.Background(), &scm.PR{Number: "17"})
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("payload=%s sha=%q err=%v", tc.payload, got, err)
+		}
+		if !tc.wantErr && got != sha {
+			t.Fatalf("sha=%q", got)
+		}
+	}
+}
+
 type azdoTestResponse struct {
 	stdout string
 	stderr string
