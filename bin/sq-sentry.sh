@@ -558,7 +558,7 @@ pipeline_step_quiet_check() {  # <window> <task> <key>
   local line quiet run_id episode step duration reason
   [ "$(age_of "$checked")" -ge "$CHECK_INTERVAL" ] || return 0
   date +%s > "$checked"
-  line=$("$SQUAD_CREW_STATE_BIN" "$task" 2>/dev/null) || return 0
+  line=$("$SQUAD_CREW_STATE_BIN" "$task" 2>/dev/null) || true
   case "$line" in
     'state: unknown'*) return 0 ;;
     'state: working · source: run-step · '*step_quiet=*) ;;

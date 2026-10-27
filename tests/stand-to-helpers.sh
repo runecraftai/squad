@@ -96,6 +96,8 @@ SH
 # A per-id override SQUAD_FAKE_CREW_STATE_<sanitized-id> wins; otherwise the shared
 # SQUAD_FAKE_CREW_STATE; otherwise an unknown verdict (NOT provably working), the
 # safe default so a test that forgets to set one surfaces rather than absorbs.
+# SQUAD_FAKE_CREW_STATE_EXIT reproduces a read that prints its canonical line and
+# still exits non-zero (exit 3 when durable custody refused a legacy write).
 make_fake_crew_state() {  # <fakebin>
   local fakebin=$1
   cat > "$fakebin/sq-crew-state.sh" <<'SH'
@@ -106,7 +108,7 @@ key=$(printf '%s' "$id" | tr -c 'A-Za-z0-9' '_')
 var="SQUAD_FAKE_CREW_STATE_$key"
 val=${!var:-${SQUAD_FAKE_CREW_STATE:-}}
 printf '%s\n' "${val:-state: unknown · source: none · fake default}"
-exit 0
+exit "${SQUAD_FAKE_CREW_STATE_EXIT:-0}"
 SH
   chmod +x "$fakebin/sq-crew-state.sh"
   printf '%s\n' "$fakebin/sq-crew-state.sh"

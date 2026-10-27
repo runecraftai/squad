@@ -1176,6 +1176,43 @@ EOF
   pass 'Drill activity: progressing steps and quiet CI monitor absorbed; quiet test/fix wakes once with step and duration, including day-scale quiet and a non-run-step flap'
 }
 
+# sq-crew-state.sh prints its canonical line and only then exits 3 when durable
+# custody refused a legacy write during that read. The printed line stays the
+# authoritative read, so quiet-step evidence must still wake, and a readable
+# run-step read without that evidence must still retire the episode.
+test_quiet_step_read_survives_custody_refusal() {
+  local dir state fakebin out window key pid
+  dir=$(make_case quiet-step-custody-refusal); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; window="test:sq-step-refused"; key=test_sq-step-refused
+  printf 'window=%s\nkind=strike\n' "$window" > "$state/step-refused.meta"
+  printf 'working: validating\n' > "$state/step-refused.status"
+  printf '%s' "$(seen_sig "$state/step-refused.status")" > "$state/.seen-step-refused_status"
+  printf 'waiting on drill\n' > "$dir/pane"
+  export SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$dir/pane"
+  export SQUAD_FAKE_CREW_STATE_EXIT=3
+  export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running) · step_quiet=test:1h17m · run_id=01RUN · exec_state=running'
+  rm -f "$state/.step-quiet-checked-$key"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_CHECK_INTERVAL=1 SQUAD_STALE_ESCALATE_SECS=999999
+  pid=$!
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail 'a readable crew-state read that exited 3 dropped the quiet-step wake'; }
+  grep -F "stale: $window (pipeline step test quiet for 1h17m; inspect the step log)" "$out" >/dev/null \
+    || fail "refused quiet wake lost its step/duration evidence: $(cat "$out")"
+  [ "$(wc -l < "$state/.stand-to-queue" | tr -d ' ')" = 1 ] \
+    || fail 'a readable refused quiet episode queued more than one wake'
+  export SQUAD_FAKE_CREW_STATE='state: working · source: run-step · validating (running) · exec_state=running'
+  printf '01RUN:test' > "$state/.step-quiet-reported-$key"
+  rm -f "$state/.step-quiet-checked-$key"
+  : > "$out"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_CHECK_INTERVAL=1 SQUAD_STALE_ESCALATE_SECS=999999
+  pid=$!
+  wait_live "$pid" 40 || fail 'sentry exited on a readable refused run-step read without quiet evidence'
+  reap "$pid"
+  [ ! -e "$state/.step-quiet-reported-$key" ] \
+    || fail 'a readable refused run-step read without quiet evidence kept the episode marker'
+  unset SQUAD_FAKE_CREW_STATE SQUAD_FAKE_CREW_STATE_EXIT SQUAD_FAKE_TMUX_WINDOW SQUAD_FAKE_TMUX_CAPTURE
+  pass 'a readable crew-state line still wakes on quiet evidence and retires it when custody refused the write'
+}
+
 test_wedge_timer_deferred_while_run_step_active() {
   local dir state fakebin out capture_file window key pane_hash since pid
   dir=$(make_case wedge-run-step-active); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4720,6 +4757,7 @@ test_finished_stale_is_absorbed
 test_stale_terminal_status_overridden_by_active_run
 test_nonterminal_stale_provably_working_absorbed_then_escalated
 test_pipeline_step_quiet_activity
+test_quiet_step_read_survives_custody_refusal
 test_wedge_timer_deferred_while_run_step_active
 test_wedge_timer_escalates_without_active_step
 test_wedge_escalation_marks_demand_deep_inspection_after_threshold

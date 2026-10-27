@@ -51,8 +51,10 @@
 #      attributed to this crew, a dead endpoint also reports unknown · none rather
 #      than trusting a stale status log.
 #
-# Read-only and side-effect free. Always exits 0 on a successful read regardless
-# of state; exit 2 only on a usage error (no id).
+# Read-only and side-effect free. Exits 0 on a successful read regardless of
+# state, 3 when durable custody refused a legacy write during the read (the
+# canonical line is still printed and remains authoritative), and 2 only on a
+# usage error (no id).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
