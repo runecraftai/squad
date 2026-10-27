@@ -1075,7 +1075,7 @@ test_nonterminal_stale_provably_working_absorbed_then_escalated() {
 # Exercise the real crew-state attribution and Drill activity parser, not a
 # canned working verdict. Only Drill's already-thresholded quiet flag may alarm.
 test_pipeline_step_quiet_activity() {
-  local dir state fakebin out window key pid head branch activity step mode wakes=0
+  local dir state fakebin out window key pid head branch activity step mode wakes=0 escalate_secs
   dir=$(make_case pipeline-step-quiet); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; window="test:sq-step-quiet"; key=test_sq-step-quiet
   branch=sq/step-quiet
@@ -1084,7 +1084,7 @@ test_pipeline_step_quiet_activity() {
   git -C "$dir/repo" -c user.name=Test -c user.email=test@example.invalid commit -qm init --allow-empty
   git -C "$dir/repo" checkout -qb "$branch"
   head=$(git -C "$dir/repo" rev-parse HEAD)
-  printf 'window=%s\nkind=strike\nworktree=%s\n' "$window" "$dir/repo" > "$state/step-quiet.meta"
+  printf 'window=%s\nkind=strike\nworktree=%s\nharness=grok\n' "$window" "$dir/repo" > "$state/step-quiet.meta"
   printf 'working: validating\n' > "$state/step-quiet.status"
   printf '%s' "$(seen_sig "$state/step-quiet.status")" > "$state/.seen-step-quiet_status"
   printf 'waiting on drill\n' > "$dir/pane"
@@ -1094,14 +1094,35 @@ test_pipeline_step_quiet_activity() {
 if [ "$*" = 'axi status' ]; then cat "$SQUAD_FAKE_STEP_STATUS"; fi
 SH
   chmod +x "$fakebin/drill"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+if [ "${1:-}" = "list-windows" ]; then
+  [ -n "${SQUAD_FAKE_TMUX_WINDOW:-}" ] && printf '%s\n' "${SQUAD_FAKE_TMUX_WINDOW#*:}"
+  exit 0
+fi
+if [ "${1:-}" = "capture-pane" ]; then
+  [ -n "${SQUAD_FAKE_TMUX_CAPTURE:-}" ] && cat "$SQUAD_FAKE_TMUX_CAPTURE"
+  exit 0
+fi
+if [ "${1:-}" = "display-message" ]; then
+  case "$*" in
+    *'#{pane_id}'*) printf '%%1\n'; exit 0 ;;
+    *pane_current_command*) printf '\n'; exit 0 ;;
+  esac
+fi
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
   export SQUAD_FAKE_STEP_STATUS="$dir/drill-status"
   export SQUAD_FAKE_TMUX_WINDOW="$window" SQUAD_FAKE_TMUX_CAPTURE="$dir/pane"
-  for mode in progressing quiet duplicate recovered requiet ci-monitor ci-fixing day; do
+  for mode in progressing quiet duplicate recovered requiet ci-monitor ci-fixing day flap flap-requiet; do
     step='test'; activity='2s ago: log: test output, still progressing'
     case "$mode" in
       quiet|duplicate|requiet) activity='quiet 1h17m ago: log: last test output' ;;
       ci-monitor|ci-fixing) step=ci; activity='quiet 4h0m ago: log: monitoring PR' ;;
       day) activity='quiet 1d2h ago: log: last test output' ;;
+      flap|flap-requiet) activity='quiet 1h17m ago: log: last test output' ;;
     esac
     cat > "$SQUAD_FAKE_STEP_STATUS" <<EOF
 run:
@@ -1114,9 +1135,14 @@ run:
   active_steps[1]{step,status,active_for,last_activity,agent_pid,round}:
     $step,$([ "$mode" = ci-fixing ] && echo fixing || echo running),1h20m,"$activity","123",starting
 EOF
+    # A flap drops Drill's run attribution for one poll while the step stays
+    # continuously quiet; only a run-step read may end that episode.
+    case "$mode" in flap) : > "$SQUAD_FAKE_STEP_STATUS" ;; esac
     # Force a new observation, without changing the continuous quiet episode.
     rm -f "$state/.step-quiet-checked-$key"
-    watch_bg "$state" "$fakebin" "$out" env SQUAD_CHECK_INTERVAL=1 SQUAD_STALE_ESCALATE_SECS=1
+    escalate_secs=1
+    [ "$mode" = flap ] && escalate_secs=999999
+    watch_bg "$state" "$fakebin" "$out" env SQUAD_CHECK_INTERVAL=1 SQUAD_STALE_ESCALATE_SECS="$escalate_secs"
     pid=$!
     case "$mode" in
       quiet|requiet|ci-fixing|day)
@@ -1137,13 +1163,17 @@ EOF
       *)
         wait_live "$pid" 40 || { reap "$pid"; fail "$mode unexpectedly alarmed: $(cat "$out")"; }
         reap "$pid"
-        [ ! -s "$out" ] || fail "$mode printed a wake"
+        [ ! -s "$out" ] || fail "$mode printed a wake: $(cat "$out")"
         [ -e "$state/.step-quiet-checked-$key" ] || fail 'quiet-step observation never ran'
+        if [ "$mode" = flap ] || [ "$mode" = flap-requiet ]; then
+          [ "$(wc -l < "$state/.stand-to-queue" | tr -d ' ')" = "$wakes" ] \
+            || fail "$mode re-queued the same continuous quiet episode"
+        fi
         ;;
     esac
   done
   unset SQUAD_FAKE_STEP_STATUS SQUAD_FAKE_TMUX_WINDOW SQUAD_FAKE_TMUX_CAPTURE
-  pass 'Drill activity: progressing steps and quiet CI monitor absorbed; quiet test/fix wakes once with step and duration, including day-scale quiet'
+  pass 'Drill activity: progressing steps and quiet CI monitor absorbed; quiet test/fix wakes once with step and duration, including day-scale quiet and a non-run-step flap'
 }
 
 test_wedge_timer_deferred_while_run_step_active() {

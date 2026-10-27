@@ -47,7 +47,7 @@ Independently, the sentry checks branch/code-bound step activity through `bin/sq
 A quiet executing step raises `stale: <window> (pipeline step <step> quiet for <duration>; inspect the step log)` once per continuous run/step quiet episode, even with a busy or changing pane or an old declared pause; away mode escalates that same named evidence without another wedge wait.
 The running `ci` monitor is excluded because waiting for PR merge/close is deliberately silent; executing CI fixes are not excluded.
 Long-running steps with recent activity, parked gates, terminal runs, and missing or unknown activity do not provide quiet-step stall evidence.
-A readable recovery clears the episode marker; an unreadable state preserves it, and task cleanup removes it with the other window bookkeeping.
+A readable run-step recovery clears the episode marker; an unreadable or non-run-step read preserves it, and task cleanup removes it with the other window bookkeeping.
 `tests/sq-sentry-triage.test.sh` exercises this path through the real crew-state helper with Drill status fixtures, while `tests/sq-daemon.test.sh` pins the away-mode escalation.
 For an ordinary crew that has stopped, the normal-mode sentry first surfaces one stale wake, then applies that same cadence to an unchanged `paused:` or durable `commander-held` endpoint, recovering that pause classification only once the backend confidently reports its agent dead - unless the terminal, agentless exclusion above applies.
 Live or inconclusive liveness remains fail-open at that initial surface, so a pane a foreground long poll keeps changing still gets its first bounded recheck instead of waiting for a stable hash.

@@ -550,8 +550,9 @@ window_run_step_active() {  # <window>
 
 # Independent of pane staleness: a foreground tool can animate its pane while
 # its pipeline log is stuck. Reuse the existing bounded check cadence, and the
-# crew helper's branch/code-bound Drill evidence. Query failures do not prove
-# recovery; retain the one-shot marker until a readable state clears it.
+# crew helper's branch/code-bound Drill evidence. Query failures and
+# non-run-step reads do not prove recovery; retain the one-shot marker until a
+# readable run-step read without quiet evidence clears it.
 pipeline_step_quiet_check() {  # <window> <task> <key>
   local win=$1 task=$2 checked="$STATE/.step-quiet-checked-$3" reported="$STATE/.step-quiet-reported-$3"
   local line quiet run_id episode step duration reason
@@ -561,7 +562,8 @@ pipeline_step_quiet_check() {  # <window> <task> <key>
   case "$line" in
     'state: unknown'*) return 0 ;;
     'state: working · source: run-step · '*step_quiet=*) ;;
-    state:*) rm -f "$reported"; return 0 ;;
+    state:*'· source: run-step'*) rm -f "$reported"; return 0 ;;
+    state:*) return 0 ;;
     *) return 0 ;;
   esac
   quiet=${line#* · step_quiet=}; quiet=${quiet%% · *}
