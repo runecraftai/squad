@@ -62,8 +62,9 @@
 # terminal identity (handle, runtime, worktree id and path) and any fob worktree
 # identity through bin/sq-retired-missions.sh, and refuses rather than proceed
 # when that record cannot be persisted. The recorded terminal is then retired
-# through that exact handle, and a record whose Orca ownership is ambiguous or
-# unreachable is preserved for a later exact-handle retry. Orphaned fob worktrees
+# through that exact handle, and refuses rather than remove the Orca worktree or
+# task metadata while that handle is not confirmed gone, so a rerun can retry the
+# exact-handle close with every durable record intact. Orphaned fob worktrees
 # recorded this way are reconciled only by the bounded sweep that runs while
 # bootstrap holds the session lock.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
@@ -2398,7 +2399,10 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
     ORCA_PATH_MATCH_VERIFIED=1
   fi
   if [ -n "$T_ORCA" ]; then
-    "$SCRIPT_DIR/sq-retired-missions.sh" retire-terminal "$ID" || true
+    if ! "$SCRIPT_DIR/sq-retired-missions.sh" retire-terminal "$ID"; then
+      echo "error: Orca terminal $T_ORCA for $ID is not confirmed gone after its close was refused, skipped, or failed; retaining every durable task record - rerun teardown once the exact handle can be retired" >&2
+      exit 1
+    fi
   fi
   if [ -d "$WT" ]; then
     branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)

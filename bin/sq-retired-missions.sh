@@ -7,6 +7,10 @@ SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}
 SQUAD_BASE=${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}
 STATE=${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}
 LIMIT=${SQUAD_RETIRED_MISSIONS_SWEEP_LIMIT:-20}
+
+# shellcheck source=bin/sq-gate-refuse-lib.sh
+. "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
+
 case "$LIMIT" in ''|*[!0-9]*) LIMIT=20 ;; esac
 [ "$LIMIT" -gt 0 ] || LIMIT=20
 
@@ -192,8 +196,8 @@ record_references_live_meta() {  # <task-id> <field> <value>
   return 1
 }
 
-orca_inventory_check() {  # <handle> <runtime-id|unknown> <worktree-id> <path> -> present|absent
-  local handle=$1 expected_runtime=$2 worktree_id=$3 path=$4 status inventory runtime
+orca_inventory_check() {  # <handle> <runtime-id|unknown> <worktree-id> <path> [<absence-needs-existing-scope>]
+  local handle=$1 expected_runtime=$2 worktree_id=$3 path=$4 scope_required=${5:-1} status inventory runtime
   status=$(orca status --json) || return 1
   runtime=$(printf '%s' "$status" | node -e '
 const fs=require("fs"),d=JSON.parse(fs.readFileSync(0,"utf8")),r=d.result&&d.result.runtime;
@@ -204,21 +208,25 @@ process.stdout.write(runtime);
 ' "$expected_runtime") || return 1
   [ -n "$runtime" ] || return 1
   inventory=$(orca terminal list --worktree "id:$worktree_id" --json) || return 1
-  printf '%s' "$inventory" | node -e '
+  inventory=$(printf '%s' "$inventory" | node -e '
 const fs=require("fs"),d=JSON.parse(fs.readFileSync(0,"utf8")),a=d.result&&d.result.terminals;
 if(d.ok!==true || !d._meta || d._meta.runtimeId!==process.argv[1] || !d.result || d.result.truncated!==false || ((d.result.hostScope&&d.result.hostScope.omittedHostIds)||[]).length!==0 || !Array.isArray(a) || a.some(t=>!t||typeof t.handle!=="string")) process.exit(2);
 const found=a.filter(t=>t.handle===process.argv[2]);
 if(found.length===0) { process.stdout.write("absent"); process.exit(0); }
 if(found.length!==1 || found[0].worktreeId!==process.argv[3] || found[0].worktreePath!==process.argv[4]) process.exit(2);
 process.stdout.write("present");
-' "$runtime" "$handle" "$worktree_id" "$path"
+' "$runtime" "$handle" "$worktree_id" "$path") || return 1
+  if [ "$scope_required" = 1 ] && [ "$inventory" = absent ] && { [ ! -d "$path" ] || [ -L "$path" ]; }; then
+    return 1
+  fi
+  printf '%s\n' "$inventory"
 }
 
-terminal_state() {  # <handle> <recorded-runtime> <worktree-id> <path>
-  local state
-  state=$(orca_inventory_check "$1" "$2" "$3" "$4" 2>/dev/null) || state=ambiguous
+terminal_state() {  # <handle> <recorded-runtime> <worktree-id> <path> [<absence-needs-existing-scope>]
+  local state scope_required=${5:-1}
+  state=$(orca_inventory_check "$1" "$2" "$3" "$4" "$scope_required" 2>/dev/null) || state=ambiguous
   if [ "$state" = ambiguous ] && [ "$2" != unknown ]; then
-    state=$(orca_inventory_check "$1" unknown "$3" "$4" 2>/dev/null) || state=ambiguous
+    state=$(orca_inventory_check "$1" unknown "$3" "$4" "$scope_required" 2>/dev/null) || state=ambiguous
   fi
   printf '%s\n' "$state"
 }
@@ -256,7 +264,7 @@ retire_live_terminal() {
   REC_RUNTIME=$current
   record_update_close_attempted "$file" || { echo "preserved terminal $REC_TERMINAL: could not durably record the close attempt"; return 1; }
   orca terminal close --terminal "$REC_TERMINAL" --json >/dev/null 2>&1 || true
-  state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH")
+  state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH" 0)
   if [ "$state" = absent ] && remove_record "$file"; then
     echo "retired terminal $REC_TERMINAL: exact handle closed and absence confirmed"
     return 0
@@ -310,7 +318,7 @@ sweep_terminals() {
         REC_RUNTIME=$current
         record_update_close_attempted "$file" || { echo "preserved terminal $REC_TERMINAL: could not durably record the close attempt"; continue; }
         orca terminal close --terminal "$REC_TERMINAL" --json >/dev/null 2>&1 || true
-        state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH")
+        state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH" 0)
         if [ "$state" = absent ] && remove_record "$file"; then
           echo "retired terminal $REC_TERMINAL: exact handle closed and absence confirmed"
         else
@@ -432,12 +440,11 @@ sweep_worktrees() {
       continue
     fi
     acted=$((acted + 1))
-    if git -C "$project" worktree remove -- "$path" \
-      && git -C "$project" worktree prune; then
+    if git -C "$project" worktree remove -- "$path"; then
       if remove_record "$file"; then echo "retired worktree $path: clean HEAD is reachable and exact registration was removed"
       else echo "preserved worktree record $id: worktree retired but record cleanup failed"; fi
     else
-      echo "preserved worktree $path: owning git worktree removal or prune failed"
+      echo "preserved worktree $path: owning git worktree removal failed"
     fi
   done
   [ "$limited" = 0 ] || echo "preserved worktree records: sweep action limit $LIMIT reached"
@@ -450,8 +457,8 @@ sweep() {
 }
 
 case "${1:-}" in
-  record) [ "$#" -eq 2 ] || { usage; exit 2; }; record_task "$2" ;;
-  retire-terminal) [ "$#" -eq 2 ] || { usage; exit 2; }; retire_live_terminal "$2" ;;
-  sweep) [ "$#" -eq 1 ] || { usage; exit 2; }; sweep ;;
+  record) [ "$#" -eq 2 ] || { usage; exit 2; }; fm_refuse_if_gate_agent; record_task "$2" ;;
+  retire-terminal) [ "$#" -eq 2 ] || { usage; exit 2; }; fm_refuse_if_gate_agent; retire_live_terminal "$2" ;;
+  sweep) [ "$#" -eq 1 ] || { usage; exit 2; }; fm_refuse_if_gate_agent; sweep ;;
   *) usage; exit 2 ;;
 esac

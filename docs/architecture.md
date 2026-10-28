@@ -215,7 +215,7 @@ Ship briefs also tell the operator to verify `pwd -P` and `git rev-parse --show-
 
 Squad's own drill gate runs agents inside a checkout that also contains the unit-commander identity in `AGENTS.md`, so gate execution needs an authority boundary separate from ordinary operator worktree isolation.
 The tracked `.drill.yaml` sets `disable_project_settings: true`; drill honors that setting only from the trusted default-branch copy, so a pushed branch cannot enable its own project instructions during validation.
-Independently, `sq-spawn.sh`, `sq-send.sh`, and `sq-teardown.sh` source `bin/sq-gate-refuse-lib.sh` and exit with status 3 before unit mutation when the gate environment marker is present or the current checkout matches the default drill gate-repository topology.
+Independently, `sq-spawn.sh`, `sq-send.sh`, `sq-teardown.sh`, and `sq-retired-missions.sh` source `bin/sq-gate-refuse-lib.sh` and exit with status 3 before unit mutation when the gate environment marker is present or the current checkout matches the default drill gate-repository topology.
 A normal primary checkout or operator worktree has neither signal and remains unaffected.
 The helper's header owns the exact signal detection, relocated-base limitation, test-harness bypass, and relationship to drill's HEAD-continuity guard.
 

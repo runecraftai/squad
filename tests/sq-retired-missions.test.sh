@@ -354,6 +354,20 @@ test_confirmed_absence_clears_record_without_close_attempt() {
   pass "a terminal confirmed absent is cleared even when no close was ever attempted"
 }
 
+test_missing_worktree_scope_does_not_confirm_absence() {
+  local out record
+  make_terminal_case absent-scope
+  run_terminal record "$ID" || fail "could not write the terminal retirement record"
+  record="$STATE/.retired-terminals/$ID.record"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.terminals=[];fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  rm "$STATE/$ID.meta"
+  rm -rf "$WT"
+  out=$(run_terminal sweep) || fail "terminal sweep errored without an inventory scope: $out"
+  assert_contains "$out" "ambiguous" "an empty inventory from a missing worktree was accepted as absence"
+  assert_present "$record" "a terminal handle outside the queried scope was cleared as absent"
+  pass "an empty worktree-scoped inventory cannot confirm absence once that worktree is gone"
+}
+
 test_sweep_action_limit_does_not_starve_later_records() {
   local out record
   make_terminal_case action-budget
@@ -378,6 +392,7 @@ test_verified_runtime_survives_unverified_rerecord
 test_unknown_runtime_record_is_reverified_and_retired
 test_stale_runtime_record_is_reverified_by_sweep
 test_confirmed_absence_clears_record_without_close_attempt
+test_missing_worktree_scope_does_not_confirm_absence
 test_sweep_action_limit_does_not_starve_later_records
 test_non_pool_worktree_is_not_recorded
 test_runtime_refresh_preserves_pending_close_attempt

@@ -2,9 +2,10 @@
 # Behavior tests for the drill GATE-agent unit-lifecycle refusal.
 #
 # A confused drill gate agent runs inside a Squad checkout, adopts the
-# commander identity from AGENTS.md, and reaches for sq-spawn/sq-send/sq-teardown.
+# commander identity from AGENTS.md, and reaches for sq-spawn/sq-send/sq-teardown
+# (or the retired-mission recorder/sweeper).
 # bin/sq-gate-refuse-lib.sh is the Squad capability-removal half: sourced at
-# the top of those three entrypoints and called before any unit mutation, it
+# the top of those entrypoints and called before any unit mutation, it
 # fails closed on either of two independent signals:
 #   1. DRILL_GATE set in the environment (the marker drill stamps);
 #   2. the current worktree's git-common-dir resolves under a drill gate
@@ -393,6 +394,85 @@ test_teardown_refuses_and_admits() {
   pass "sq-teardown: refuses on marker and gate-worktree backstop; a normal teardown is unaffected"
 }
 
+# --- sq-retired-missions ----------------------------------------------------
+
+RETIRED="$ROOT/bin/sq-retired-missions.sh"
+
+# make_retired_case <name> -> echoes a case dir holding one live Orca task, a
+# fake Orca CLI with a ready runtime, and an empty terminal inventory (so a
+# sweep that actually runs would confirm absence and clear the record).
+make_retired_case() {
+  local name=$1 dir fakebin
+  dir="$TMP/$name"
+  fakebin="$dir/fakebin"
+  mkdir -p "$dir/base/state" "$dir/worktree" "$fakebin"
+  fm_write_meta "$dir/base/state/task-r1.meta" \
+    "backend=orca" "terminal=term-r1" "orca_worktree_id=repo::$dir/worktree" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=strike"
+  cat > "$fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  'status --json')
+    printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready","runtimeId":"runtime-1"}}}\n' ;;
+  'terminal list')
+    printf '{"ok":true,"result":{"terminals":[],"truncated":false},"_meta":{"runtimeId":"runtime-1"}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/orca"
+  printf '%s\n' "$dir"
+}
+
+# run_retired <cwd> <case_dir> [ASSIGN...] -- <subcommand> [args] -> combined output
+run_retired() {
+  local cwd=$1 case_dir=$2; shift 2
+  local assigns=()
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do assigns+=("$1"); shift; done
+  [ "$#" -eq 0 ] || shift
+  ( cd "$cwd" && env -u DRILL_GATE -u NO_MISTAKES_GATE -u SQUAD_GATE_REFUSE_BYPASS \
+      "PATH=$case_dir/fakebin:$PATH" "SQUAD_ROOT_OVERRIDE=$ROOT" \
+      "SQUAD_BASE=$case_dir/base" "SQUAD_STATE_OVERRIDE=$case_dir/base/state" \
+      "${assigns[@]+"${assigns[@]}"}" "$RETIRED" "$@" ) 2>&1
+}
+
+test_retired_missions_refuses_and_admits() {
+  local case_dir out rc record
+  case_dir=$(make_retired_case retired-envmark)
+  record="$case_dir/base/state/.retired-terminals/task-r1.record"
+
+  # env-marker refuse: no retirement record may be written.
+  out=$(run_retired "$NORMAL_CWD" "$case_dir" DRILL_GATE=1 -- record task-r1); rc=$?
+  expect_code 3 "$rc" "retired-missions: DRILL_GATE must refuse record"
+  assert_contains "$out" "$ENV_MSG" "retired-missions: env-marker refusal message"
+  assert_absent "$record" "retired-missions: refused record still persisted a retirement record"
+
+  # path-backstop refuse: gate-worktree cwd, marker UNSET.
+  out=$(run_retired "$GATE_WT" "$case_dir" -- record task-r1); rc=$?
+  expect_code 3 "$rc" "retired-missions: gate-worktree cwd must refuse with the marker unset"
+  assert_contains "$out" "$PATH_MSG" "retired-missions: path-backstop refusal message"
+  assert_absent "$record" "retired-missions: refused backstop record still persisted a retirement record"
+
+  # no-regression: a normal session records the retirement identity.
+  out=$(run_retired "$NORMAL_CWD" "$case_dir" -- record task-r1) \
+    || fail "retired-missions: a normal session could not record a retirement: $out"
+  assert_present "$record" "retired-missions: a normal record was not persisted"
+  rm "$case_dir/base/state/task-r1.meta"
+
+  # The sweep mutates records, so a gate context must refuse it; an unguarded
+  # sweep would confirm absence and clear the record.
+  out=$(run_retired "$GATE_WT" "$case_dir" -- sweep); rc=$?
+  expect_code 3 "$rc" "retired-missions: gate-worktree cwd must refuse sweep"
+  assert_contains "$out" "$PATH_MSG" "retired-missions: sweep path-backstop refusal message"
+  assert_present "$record" "retired-missions: refused sweep still reconciled a retirement record"
+
+  out=$(run_retired "$NORMAL_CWD" "$case_dir" -- sweep) \
+    || fail "retired-missions: a normal sweep failed: $out"
+  assert_contains "$out" "exact handle absence confirmed" "retired-missions: normal sweep did not reconcile the record"
+  assert_absent "$record" "retired-missions: normal sweep did not clear the confirmed-absent record"
+  pass "sq-retired-missions: refuses on marker and gate-worktree backstop; normal record and sweep are unaffected"
+}
+
 test_helper_env_marker_refuses
 test_helper_empty_env_marker_refuses
 test_helper_legacy_env_marker_refuses
@@ -401,3 +481,4 @@ test_helper_normal_is_noop
 test_spawn_refuses_and_admits
 test_send_refuses_and_admits
 test_teardown_refuses_and_admits
+test_retired_missions_refuses_and_admits

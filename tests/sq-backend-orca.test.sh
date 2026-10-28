@@ -1902,6 +1902,40 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
   pass "sq-teardown.sh backend=orca: preserves metadata on remove ok:false JSON"
 }
 
+test_teardown_retains_records_when_orca_close_unconfirmed() {
+  local proj wt data state config id out rc neutral
+  id="orcaclosefailz9"
+  proj="$TMP_ROOT/close-fail-project"
+  wt="$TMP_ROOT/close-fail-wt"
+  data="$TMP_ROOT/close-fail-data"
+  state="$TMP_ROOT/close-fail-state"
+  config="$TMP_ROOT/close-fail-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  touch "$state/.last-sentry-beat"
+  fm_write_meta "$state/$id.meta" \
+    "window=sq-$id" "endpoint_task_id=$id" "terminal=term-close-fail" "worktree=$wt" "project=$proj" \
+    "harness=claude" "kind=strike" "mode=local-only" "yolo=off" \
+    "backend=orca" "orca_worktree_id=wt-close-fail"
+  orca_case close-fail-teardown
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-close-fail","path":"%s"}}}\n' "$wt" > "$RESP/1.out"
+  neutral=$(neutral_fm_root "$CASE_DIR/neutral")
+  set +e
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" SQUAD_ORCA_CLOSE_FAIL=1 \
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    "$ROOT/bin/sq-teardown.sh" "$id" 2>&1 )
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "Orca teardown should refuse while the exact terminal is not confirmed gone; output=$out"
+  assert_contains "$out" "not confirmed gone" "teardown did not explain the unconfirmed Orca close"
+  assert_present "$state/$id.meta" "unconfirmed Orca close removed task metadata"
+  assert_present "$state/.retired-terminals/$id.record" "unconfirmed Orca close discarded its exact-handle retry record"
+  [ -d "$wt" ] || fail "unconfirmed Orca close removed the worktree that scopes the handle inventory"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm' \
+    "unconfirmed Orca close removed the Orca worktree"
+  pass "sq-teardown.sh backend=orca: an unconfirmed close retains the worktree, metadata, and exact-handle record"
+}
+
 test_scout_teardown_refuses_orca_missing_report_when_path_missing() {
   # Recon teardown runs the commander-held decision gate
   # (bin/sq-decision-hold.sh verify), whose --kind commander contract only the
@@ -2461,6 +2495,7 @@ test_scout_teardown_removes_orca_worktree_via_helper
 test_scout_teardown_refuses_orca_id_path_mismatch
 test_teardown_removes_orca_worktree_when_path_missing
 test_teardown_preserves_metadata_when_orca_remove_error_json
+test_teardown_retains_records_when_orca_close_unconfirmed
 test_scout_teardown_refuses_orca_missing_report_when_path_missing
 test_ship_teardown_refuses_orca_missing_worktree_path
 test_ship_teardown_removes_orca_worktree_when_id_path_matches
