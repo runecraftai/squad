@@ -705,6 +705,7 @@ fi
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+ORCA_MISSION_TAB=
 TUIOS_ABORT_CLEANUP=0
 TUIOS_WORKSPACE_ID=
 HERDR_PROJECTION_ABORT_CLEANUP=0
@@ -779,7 +780,13 @@ spawn_abort_cleanup() {
             echo "backend=orca"
             echo "orca_worktree_id=$ORCA_WORKTREE_ID"
             echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
-            [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
+            # A record that names a hosting workspace may name only a mission tab, never
+            # the worktree-bound endpoint Orca returned before that tab existed.
+            if [ -n "${ORCA_HOST_WORKSPACE_ID:-}" ]; then
+              [ -z "${ORCA_MISSION_TAB:-}" ] || echo "terminal=$ORCA_MISSION_TAB"
+            else
+              [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
+            fi
           } > "$STATE/$ID.meta" 2>/dev/null || true
         fi
       fi

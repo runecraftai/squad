@@ -52,7 +52,7 @@ Em builds Linux (verificado contra v1.4.188) ele registra a forma composta `<rep
 
 ## Ciclo de vida e segurança atuais
 
-O spawn valida que qualquer arquivo de metadados existente é regular, resolve o workspace hospedeiro, registra o repositório, cria um worktree independente, fecha o terminal que o Orca devolveu para esse worktree, abre uma aba de missão visível no workspace hospedeiro com título exatamente `sq-<id>`, instala os hooks do harness, grava metadados e lança o harness selecionado dentro do worktree.
+O spawn valida que qualquer arquivo de metadados existente é regular, registra a base do Squad no Orca quando o Orca ainda não a conhece, resolve o workspace hospedeiro, registra o repositório, cria um worktree independente, fecha o terminal que o Orca devolveu para esse worktree, abre uma aba de missão visível no workspace hospedeiro com título exatamente `sq-<id>`, instala os hooks do harness, grava metadados e lança o harness selecionado dentro do worktree.
 Um handle de fundo oculto é fechado e recusado, nunca usado para hospedar uma missão.
 O título da aba não carrega estado; o próprio Orca mostra o status do agente.
 Quando uma missão chega a `done` ou `failed`, a aba fecha uma vez pelo helper da aba de missão, que verifica que o terminal pertence ao workspace hospedeiro antes de fechá-lo e registra apenas um fechamento confirmado.

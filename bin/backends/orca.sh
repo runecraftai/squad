@@ -166,6 +166,11 @@ fm_backend_orca_worktree_create() {  # <project-path> <name>
 fm_backend_orca_host_workspace() {  # <base-path>
   local out id
   fm_backend_orca_tool_check || return 1
+  # A fresh install has no Orca repo entry for this base yet. repo_ensure shows
+  # before it adds, so an already-registered base is a no-op, and the call is best
+  # effort: when registration is unnecessary or cannot run, the worktree show below
+  # stays the authority that refuses a truly missing hosting workspace.
+  fm_backend_orca_repo_ensure "$1" >/dev/null 2>&1 || true
   out=$(orca worktree show --worktree "path:$1" --json) || {
     echo "error: Orca hosting workspace unavailable for Squad base $1; open that workspace before spawning" >&2
     return 1
@@ -187,6 +192,10 @@ fm_backend_orca_terminal_create() {  # <hosting-workspace-id> <title>
   }
   # terminal create may silently return a hidden background handle. Never launch
   # a mission there: the visible tab and its exact hosting workspace are required.
+  # Observed live on Orca 1.4.243 (2026-10-28): `orca terminal create --json` returned
+  # result.terminal with executionHostId, handle, hostPlatform, incarnationId, paneKey,
+  # processId, ptyId, surface=visible, tabId, title, and worktreeId. The gate below
+  # requires surface, tabId, and worktreeId exactly as that response carries them.
   if ! printf '%s' "$out" | node -e '
 const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const t = (d.result || {}).terminal || {};

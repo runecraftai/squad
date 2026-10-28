@@ -50,7 +50,7 @@ On Linux builds (verified against v1.4.188) it records the composite form `<repo
 
 ## Current lifecycle and safety
 
-Spawn validates that any existing metadata file is regular, resolves the hosting workspace, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
+Spawn validates that any existing metadata file is regular, registers the Squad base with Orca when Orca does not know it yet, resolves the hosting workspace, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
 A hidden background handle is closed and refused, never used to host a mission.
 The tab's title carries no state; Orca renders agent status itself.
 When a mission reaches `done` or `failed`, the tab closes once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
