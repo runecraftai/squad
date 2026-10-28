@@ -899,6 +899,7 @@ describe("prCommand", () => {
       );
 
       expect(result).toContain("merged:");
+      expect(result.startsWith("merged:")).toBe(true);
       expect(result).toContain("status: landed");
       expect(result).not.toContain("auto_merge_queued:");
       expect(mockedGhJson).toHaveBeenCalledTimes(2);
@@ -977,6 +978,7 @@ describe("prCommand", () => {
           ctx,
         );
         expect(result).toContain(`method: ${method}`);
+        expect(result.startsWith("merged:")).toBe(true);
         expect(result).toContain("status: landed");
       },
     );

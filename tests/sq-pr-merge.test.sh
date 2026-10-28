@@ -8,7 +8,7 @@
 #
 # Matrix:
 #   (a) merge records pr= and pr_head= only after the guarded merge succeeds
-#   (b) merge is refused when sq-gh pr merge itself fails (no silent success)
+#   (b) merge is refused when sq-gh pr merge itself fails, surfacing its reason
 #   (c) extra sq-gh pr merge args are forwarded after number and --repo
 #   (d) merge is refused before sq-gh when task meta is missing
 #   (e) PR URL is parsed to number + --repo for sq-gh (defaults to --squash)
@@ -145,6 +145,36 @@ test_merge_failure_propagates_without_recording() {
   assert_no_grep 'pr=https://github.com/example/repo/pull/13' "$case_dir/state/task-x1.meta" \
     "merge-fails: failed merge must leave PR metadata untouched"
   pass "sq-pr-merge propagates a real merge failure without silently succeeding"
+}
+
+test_sq_gh_refusal_reason_is_surfaced() {
+  local case_dir rc
+  case_dir=$(make_case guard-refusal)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" ffffffffffffffffffffffffffffffffffffffff
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
+printf 'error:\n  code: VALIDATION_ERROR\n  message: current PR checks are failing\n'
+exit 2
+SH
+  chmod +x "$case_dir/fakebin/sq-gh"
+  : > "$case_dir/sq-gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/36 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 2 "$rc" "guard-refusal: sq-gh exit code must propagate"
+  assert_grep 'current PR checks are failing' "$case_dir/stderr" \
+    "guard-refusal: refusal reason was not surfaced to the caller"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "guard-refusal: refusal must not record a landing"
+  assert_no_grep 'pr=https://github.com/example/repo/pull/36' "$case_dir/state/task-x1.meta" \
+    "guard-refusal: refusal must not refresh task metadata"
+  pass "sq-pr-merge surfaces sq-gh guard refusals with their exit code"
 }
 
 test_extra_merge_args_forwarded() {
@@ -455,6 +485,7 @@ test_disable_auto_refuses_before_merge() {
 
 test_records_pr_and_head_after_confirmed_merge
 test_merge_failure_propagates_without_recording
+test_sq_gh_refusal_reason_is_surfaced
 test_extra_merge_args_forwarded
 test_missing_meta_refuses_before_merge
 test_missing_recorded_head_refuses_without_metadata_changes

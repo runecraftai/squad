@@ -99,7 +99,12 @@ if ! caller_has_merge_method "$@"; then
   merge_args=(--squash)
 fi
 
-MERGE_RESULT=$(sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" --expected-head "$RECORDED_HEAD" "${merge_args[@]+"${merge_args[@]}"}" "$@")
+merge_rc=0
+MERGE_RESULT=$(sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" --expected-head "$RECORDED_HEAD" "${merge_args[@]+"${merge_args[@]}"}" "$@") || merge_rc=$?
+if [ "$merge_rc" -ne 0 ]; then
+  [ -z "$MERGE_RESULT" ] || printf '%s\n' "$MERGE_RESULT" >&2
+  exit "$merge_rc"
+fi
 printf '%s\n' "$MERGE_RESULT"
 if printf '%s\n' "$MERGE_RESULT" | grep -Eq '^(auto_)?merge_queued:'; then
   echo "error: the merge was queued instead of completed; task merge was not recorded as landed" >&2
