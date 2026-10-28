@@ -682,13 +682,16 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   if (checkStates.includes("fail")) {
     throw new AxiError("current PR checks are failing", "VALIDATION_ERROR");
   }
-  if (checkStates.includes("pending")) {
+  // Enqueuing auto-merge does not merge, so checks that are still running are
+  // not a reason to refuse; failing checks and unreadable check data still are.
+  if (checkStates.includes("pending") && !auto) {
     throw new AxiError(
       "current PR checks are pending or unknown",
       "VALIDATION_ERROR",
     );
   }
-  if (pr.mergeable !== "MERGEABLE") {
+  const mergeable = (pr.mergeable ?? "").toUpperCase();
+  if (auto ? mergeable === "CONFLICTING" : mergeable !== "MERGEABLE") {
     throw new AxiError(
       `PR is not mergeable (mergeability: ${pr.mergeable ?? "unknown"})`,
       "VALIDATION_ERROR",

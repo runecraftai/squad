@@ -834,6 +834,92 @@ describe("prCommand", () => {
       statusCheckRollup: [{ name: "build", conclusion: "SUCCESS" }],
     };
 
+    it("enqueues standalone auto-merge while checks are still pending", async () => {
+      const pendingPr = {
+        ...verifiedPr,
+        statusCheckRollup: [{ name: "build", status: "IN_PROGRESS" }],
+      };
+      mockedGhJson
+        .mockResolvedValueOnce(pendingPr)
+        .mockResolvedValueOnce(pendingPr);
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(["merge", "10", "--auto"], ctx);
+
+      expect(mockedGhExec).toHaveBeenCalledWith(
+        ["pr", "merge", "10", "--match-head-commit", head, "--auto"],
+        ctx,
+      );
+      expect(result).toContain("auto_merge_queued:");
+      expect(result).toContain("status: queued");
+      expect(result).not.toContain("status: landed");
+      expect(mockedGhJson).toHaveBeenCalledTimes(2);
+    });
+
+    it("enqueues standalone auto-merge while mergeability is still unknown", async () => {
+      const unknownMergeability = { ...verifiedPr, mergeable: "UNKNOWN" };
+      mockedGhJson
+        .mockResolvedValueOnce(unknownMergeability)
+        .mockResolvedValueOnce(unknownMergeability);
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(
+        ["merge", "10", "--expected-head", head, "--auto"],
+        ctx,
+      );
+
+      expect(mockedGhExec).toHaveBeenCalledWith(
+        ["pr", "merge", "10", "--match-head-commit", head, "--auto"],
+        ctx,
+      );
+      expect(result).toContain("auto_merge_queued:");
+    });
+
+    it.each([
+      [
+        "failing checks",
+        { statusCheckRollup: [{ name: "build", conclusion: "FAILURE" }] },
+        "current PR checks are failing",
+      ],
+      [
+        "unknown checks",
+        { statusCheckRollup: undefined },
+        "current PR checks are unknown",
+      ],
+      [
+        "malformed checks",
+        { statusCheckRollup: [null] },
+        "current PR checks are unknown",
+      ],
+      [
+        "a conflicting branch",
+        { mergeable: "CONFLICTING" },
+        "PR is not mergeable",
+      ],
+    ])(
+      "still refuses auto-merge with %s",
+      async (_label, patch, reason) => {
+        mockedGhJson.mockResolvedValue({ ...verifiedPr, ...patch });
+        await expect(
+          prCommand(["merge", "10", "--auto"], ctx),
+        ).rejects.toThrow(reason);
+        expect(mockedGhExec).not.toHaveBeenCalled();
+      },
+    );
+
+    it("still refuses auto-merge when the recorded head moved", async () => {
+      mockedGhJson.mockResolvedValue({
+        ...verifiedPr,
+        headRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        statusCheckRollup: [{ name: "build", status: "IN_PROGRESS" }],
+      });
+
+      await expect(
+        prCommand(["merge", "10", "--expected-head", head, "--auto"], ctx),
+      ).rejects.toThrow("PR head changed");
+      expect(mockedGhExec).not.toHaveBeenCalled();
+    });
+
     it("reports queued auto-merge distinctly for non-task callers", async () => {
       mockedGhJson
         .mockResolvedValueOnce(verifiedPr)
