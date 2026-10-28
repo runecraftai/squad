@@ -771,6 +771,43 @@ test_spawn_pi_resolves_status_extension_from_default_home_path() {
   pass "sq-spawn.sh --backend orca: resolves the managed status extension from its documented default HOME path"
 }
 
+test_spawn_pi_launch_survives_unset_home() {
+  local proj wt data state config id out log launch arglog
+  id="orcaspawnz4"
+  proj="$TMP_ROOT/no-home-project"
+  wt="$TMP_ROOT/no-home-wt"
+  data="$TMP_ROOT/no-home-data"
+  state="$TMP_ROOT/no-home-state"
+  config="$TMP_ROOT/no-home-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
+  touch "$state/.last-sentry-beat"
+  orca_case spawn-no-home
+  make_pi_argv_recorder "$FB"
+  log="$LOG"
+  printf '1\n' > "$RESP/1.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-no-home"}}}\n' > "$RESP/2.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-no-home","path":"%s"},"terminal":{"handle":"term-no-home"}}}\n' "$wt" > "$RESP/3.out"
+  out=$( env -u HOME -u ORCA_OMP_STATUS_EXTENSION PATH="$FB:$PATH" \
+    SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" pi --mode drill --yolo off --backend orca 2>&1 )
+  expect_code 0 $? "an unset HOME must not block an Orca Pi spawn"$'\n'"$out"
+  launch=$(orca_launch_text "$log" 'encode launch-brief') \
+    || fail "spawn did not send a typed launch-brief command through the Orca terminal"
+  assert_not_contains "$launch" "__ORCASTATUS__" \
+    "unset HOME left a placeholder in the Orca Pi launch"
+  arglog="$CASE_DIR/pi-argv"
+  SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
+    || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
+  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" \
+    "$(expected_launch_brief "$data/$id/brief.md")"
+  rm -rf "/tmp/sq-$id"
+  pass "sq-spawn.sh --backend orca: an unset HOME still launches Pi unchanged without the status extension"
+}
+
 test_spawn_refuses_orca_XO_before_home_mutation() {
   local home subhome data state config id out status
   id="orcasmz1"
@@ -1662,6 +1699,7 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails
 test_spawn_writes_orca_metadata_and_launches_harness
 test_spawn_pi_launch_omits_status_extension_when_absent
 test_spawn_pi_resolves_status_extension_from_default_home_path
+test_spawn_pi_launch_survives_unset_home
 test_spawn_refuses_orca_XO_before_home_mutation
 test_spawn_refuses_orca_when_runtime_not_ready
 test_spawn_refuses_orca_nonisolated_worktree
