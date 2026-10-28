@@ -78,20 +78,11 @@ SEP=' · '
 
 # shellcheck source=bin/sq-backend.sh
 . "$SCRIPT_DIR/sq-backend.sh"
+# shellcheck source=bin/sq-classify-lib.sh
+. "$SCRIPT_DIR/sq-classify-lib.sh"
 
 usage() {
   printf 'usage: sq-window-state.sh publish|list\n' >&2
-}
-
-# Canonical crew-state verb from the reconciler's one line
-# ("state: <verb> · source: <src> · <detail>"). Anything malformed or missing
-# reports unknown so a row is never silently dropped.
-crew_state_verb() {  # <crew-state-line>
-  local line=$1
-  case "$line" in
-    state:*) line=${line#state: }; printf '%s' "${line%% *}" ;;
-    *) printf 'unknown' ;;
-  esac
 }
 
 # Detail prose after the "source: <src>" marker, tabs/newlines collapsed so

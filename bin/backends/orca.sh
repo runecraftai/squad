@@ -493,12 +493,13 @@ fm_backend_orca_kill() {  # <terminal-id>
 }
 
 # Print the exact presence of a recorded terminal in its hosting workspace:
-# absent, present, or mismatch. unknown means the inventory could not answer,
-# so a caller must fall back to an exact live observation instead of assuming
-# absence. A complete inventory must cover every host, not only the reachable
-# ones, so an omitted remote host is never read as absence.
-# Handles are runtime-scoped, so this is how a tab that is gone from its
-# hosting workspace is found without requiring a live terminal show.
+# present, mismatch, absent, incomplete, or unknown. absent means a complete
+# inventory proved the handle is not in that workspace; incomplete means the
+# inventory answered but did not cover every terminal or host, so absence from
+# it is not proof on its own. unknown means the inventory could not answer, so a
+# caller must fall back to an exact live observation. Handles are runtime-scoped,
+# so this is how a tab that is gone from its hosting workspace is found without
+# requiring a live terminal show.
 fm_backend_orca_terminal_presence() {  # <hosting-workspace-id> <terminal-id>
   local worktree_id=$1 terminal=$2 out
   fm_backend_orca_tool_check >/dev/null 2>&1 || { printf 'unknown'; return 0; }
@@ -514,8 +515,8 @@ if (!Array.isArray(r.terminals)) process.exit(1);
 const hits = r.terminals.filter((t) => t && String(t.handle) === terminal);
 if (hits.length === 0) {
   const omitted = (r.hostScope || {}).omittedHostIds;
-  if (r.truncated !== false || (Array.isArray(omitted) && omitted.length > 0)) process.exit(1);
-  process.stdout.write("absent");
+  const complete = r.truncated === false && !(Array.isArray(omitted) && omitted.length > 0);
+  process.stdout.write(complete ? "absent" : "incomplete");
   process.exit(0);
 }
 process.stdout.write(hits.length === 1 && String(hits[0].worktreeId) === host ? "present" : "mismatch");

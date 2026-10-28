@@ -18,6 +18,16 @@ ID=${1:-} STATE_NAME=${2:-} FORCE=${3:-}
 case "$ID" in ''|*[!a-zA-Z0-9_-]*) echo 'error: invalid Orca task id' >&2; exit 2 ;; esac
 case "$STATE_NAME" in done|failed|sync) ;; *) echo 'error: invalid Orca tab state' >&2; exit 2 ;; esac
 case "$FORCE" in ''|--force) ;; *) echo 'error: invalid Orca tab option' >&2; exit 2 ;; esac
+
+preserve_tab() {  # <reason>
+  if [ "$FORCE" = --force ]; then
+    echo "warning: $1; continuing because teardown was forced" >&2
+    exit 0
+  fi
+  echo "error: $1; preserving tab" >&2
+  exit 1
+}
+
 # shellcheck source=bin/sq-backend.sh
 . "$SCRIPT_DIR/sq-backend.sh"
 META="$STATE/$ID.meta"
@@ -26,12 +36,16 @@ META="$STATE/$ID.meta"
 # Keeping them as separate exact identities is what stops a close or send from
 # reaching a terminal in the wrong place.
 HOST=$(fm_backend_meta_exact_value "$META" orca_host_workspace_id) || exit 0
-MISSION=$(fm_backend_meta_exact_value "$META" orca_worktree_id) || { echo 'error: Orca tab has no exact mission worktree identity' >&2; exit 1; }
-[ "$HOST" != "$MISSION" ] || { echo "error: Orca hosting workspace and mission worktree are one identity for sq-$ID; preserving tab" >&2; exit 1; }
+MISSION=$(fm_backend_meta_exact_value "$META" orca_worktree_id) \
+  || preserve_tab "Orca tab has no exact mission worktree identity for sq-$ID"
+[ "$HOST" != "$MISSION" ] \
+  || preserve_tab "Orca hosting workspace and mission worktree are one identity for sq-$ID"
 TERMINAL_COUNT=$(grep -c '^terminal=' "$META" 2>/dev/null || true)
 [ "$TERMINAL_COUNT" -ne 0 ] || exit 0
-TERMINAL=$(fm_backend_meta_exact_value "$META" terminal) || { echo 'error: Orca tab has no exact terminal identity' >&2; exit 1; }
-[ "$(fm_backend_meta_exact_value "$META" window)" = "sq-$ID" ] || exit 1
+TERMINAL=$(fm_backend_meta_exact_value "$META" terminal) \
+  || preserve_tab "Orca tab has no exact terminal identity for sq-$ID"
+[ "$(fm_backend_meta_exact_value "$META" window)" = "sq-$ID" ] \
+  || preserve_tab "Orca tab window alias for sq-$ID is missing, ambiguous, or not sq-$ID"
 fm_backend_source orca
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
@@ -39,7 +53,8 @@ LOCK="$STATE/.orca-tab-$ID.lock"
 fm_lock_acquire_wait "$LOCK"
 trap 'fm_lock_release "$LOCK"' EXIT
 # Re-read under the lock so a concurrent relaunch cannot redirect an old event.
-[ "$(fm_backend_meta_exact_value "$META" terminal)" = "$TERMINAL" ] || exit 1
+[ "$(fm_backend_meta_exact_value "$META" terminal)" = "$TERMINAL" ] \
+  || preserve_tab "Orca tab terminal identity for sq-$ID changed while acquiring its close lock"
 RECEIPT="$STATE/.orca-tab-$ID"
 PREVIOUS=$(cat "$RECEIPT" 2>/dev/null || true)
 [ "$PREVIOUS" != "$TERMINAL closed" ] || exit 0
@@ -49,15 +64,6 @@ record_closed_receipt() {
   tmp=$(umask 077; mktemp "$RECEIPT.XXXXXX")
   printf '%s closed\n' "$TERMINAL" > "$tmp"
   mv -f -- "$tmp" "$RECEIPT"
-}
-
-preserve_tab() {  # <reason>
-  if [ "$FORCE" = --force ]; then
-    echo "warning: $1; continuing because teardown was forced" >&2
-    exit 0
-  fi
-  echo "error: $1; preserving tab" >&2
-  exit 1
 }
 
 if [ "$STATE_NAME" = sync ]; then
@@ -71,30 +77,31 @@ if [ "$STATE_NAME" = sync ]; then
   esac
   # Never let a finished status line supersede a live validation run or busy turn.
   CURRENT=$("$SCRIPT_DIR/sq-crew-state.sh" "$ID" 2>/dev/null) || true
-  VERDICT=${CURRENT#state: }; VERDICT=${VERDICT%% ·*}
-  case "$VERDICT" in
+  case "$(crew_state_verb "$CURRENT")" in
     working|parked|blocked|paused) exit 0 ;;
   esac
 fi
 # Handles are runtime-scoped: a tab the commander already closed, or a handle left
-# by a previous Orca runtime, must never block the worktree release. Absence from a
-# complete hosting-workspace inventory only means the tab is not in that workspace,
-# so one exact observation must also show the terminal gone before a close is
-# recorded; only an unobservable runtime refuses an ordinary close.
+# by a previous Orca runtime, must never block the worktree release. An inventory
+# that omits the handle only says the tab is not in that workspace, so one exact
+# observation must also show the terminal gone before a close is recorded; when
+# the inventory itself could not be read, an unobservable terminal still refuses
+# an ordinary close.
 TAB_PRESENCE=$(fm_backend_orca_terminal_presence "$HOST" "$TERMINAL")
 case "$TAB_PRESENCE" in
   present) ;;
   mismatch)
     preserve_tab "Orca terminal $TERMINAL is not a tab in hosting workspace $HOST for sq-$ID" ;;
+  absent|incomplete)
+    LIVE_HOST=$(fm_backend_orca_terminal_observe "$TERMINAL") || LIVE_HOST=
+    [ -z "$LIVE_HOST" ] || [ "$LIVE_HOST" = "$HOST" ] \
+      || preserve_tab "Orca terminal $TERMINAL is a tab in hosting workspace $LIVE_HOST, not $HOST, for sq-$ID"
+    [ -n "$LIVE_HOST" ] || { record_closed_receipt; exit 0; } ;;
   *)
     LIVE_HOST=$(fm_backend_orca_terminal_observe "$TERMINAL") || LIVE_HOST=
-    if [ -n "$LIVE_HOST" ]; then
-      [ "$LIVE_HOST" = "$HOST" ] || preserve_tab "Orca terminal $TERMINAL is a tab in hosting workspace $LIVE_HOST, not $HOST, for sq-$ID"
-    else
-      [ "$TAB_PRESENCE" = absent ] || preserve_tab "Orca cannot observe the tab for sq-$ID"
-      record_closed_receipt
-      exit 0
-    fi ;;
+    [ -z "$LIVE_HOST" ] || [ "$LIVE_HOST" = "$HOST" ] \
+      || preserve_tab "Orca terminal $TERMINAL is a tab in hosting workspace $LIVE_HOST, not $HOST, for sq-$ID"
+    [ -n "$LIVE_HOST" ] || preserve_tab "Orca cannot observe the tab for sq-$ID" ;;
 esac
 fm_backend_orca_close "$TERMINAL" || preserve_tab "Orca did not confirm close of sq-$ID"
 record_closed_receipt
