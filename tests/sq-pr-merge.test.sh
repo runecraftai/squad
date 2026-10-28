@@ -564,16 +564,29 @@ test_teardown_receives_resolved_state_dir() {
   case_dir=$(make_case teardown-state)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" dddddddddddddddddddddddddddddddddddddddd
+  cat > "$case_dir/fakebin/sq-teardown" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${SQUAD_STATE_OVERRIDE-unset}" > "$SQUAD_TEST_TEARDOWN_STATE_LOG"
+SH
+  chmod +x "$case_dir/fakebin/sq-teardown"
   : > "$case_dir/sq-gh.log"
 
   set +e
-  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/21 \
+  env -u SQUAD_STATE_OVERRIDE \
+    SQUAD_ROOT_OVERRIDE="$ROOT" \
+    SQUAD_BASE="$case_dir" \
+    SQUAD_DATA_OVERRIDE="$case_dir/data" \
+    SQUAD_TEST_SQ_GH_LOG="$case_dir/sq-gh.log" \
+    SQUAD_TEST_TEARDOWN_STATE_LOG="$case_dir/teardown-state.log" \
+    SQUAD_TEARDOWN_BIN="$case_dir/fakebin/sq-teardown" \
+    PATH="$case_dir/fakebin:$PATH" \
+    "$PR_MERGE" task-x1 https://github.com/example/repo/pull/21 \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
 
   expect_code 0 "$rc" "teardown-state: a landed merge must succeed"
-  [ "$(cat "$case_dir/teardown-state.log")" = "$case_dir/state" ] \
+  [ "$(<"$case_dir/teardown-state.log")" = "$case_dir/state" ] \
     || fail "teardown-state: the post-merge teardown did not receive the resolved state dir: $(<"$case_dir/teardown-state.log")"
   pass "sq-pr-merge hands the resolved state dir to the post-merge teardown"
 }
