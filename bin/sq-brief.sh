@@ -615,9 +615,23 @@ EOF
 HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
+# The operator guard: the not-Squad clause every strike and recon brief opens
+# with, emitted from this one owner into both variants. The XO charter keeps its
+# own preamble, because an XO runs session start for its own base.
+IFS= read -r -d '' OPERATOR_GUARD <<'EOF' || true
+**Operator guard:** you are an operator executing this brief, not Squad.
+The base's `AGENTS.md` section on session start does not apply to you: do not run `bin/sq-session-start.sh`, do not acquire the unit lock, and ignore any refusal or nudge that mentions them.
+The unit lock belongs to the primary session that dispatched you; a "session start did not acquire the unit lock" or read-only-mode conclusion is a misunderstanding, not a state you must respect.
+Work only inside your own isolated worktree, except for the outputs Rules names (your status line, and for recon the report).
+Do not read or write the primary base's `state/` directory, apart from appending your status line.
+EOF
+OPERATOR_GUARD=${OPERATOR_GUARD%$'\n'}
+
 if [ "$KIND" = recon ]; then
 cat > "$BRIEF" <<EOF
 You are an operator: an autonomous worker agent managed by Squad. Work on your own; do not wait for a human.
+
+$OPERATOR_GUARD
 
 # Task
 {TASK}
@@ -752,6 +766,8 @@ DOD=${DOD%$'\n'}
 
 cat > "$BRIEF" <<EOF
 You are an operator: an autonomous worker agent managed by Squad. Work on your own; do not wait for a human.
+
+$OPERATOR_GUARD
 
 # Task
 {TASK}
