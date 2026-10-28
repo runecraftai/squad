@@ -154,12 +154,19 @@ try {
   r=cli('stop'); assert.equal(r.status,0,r.stderr);
   await emit('session_shutdown');
   check('explicit Orca selection wins over a different runtime-issued handle in receiver and launcher');
+  const adoptionCalls=calls();
+  assert.equal(adoptionCalls.some(a=>a[1]==='send'||a[0]==='worktree'||a.includes('--tab')),false,'adoption issued a send, worktree or --tab call');
+  const adoptionCreates=adoptionCalls.filter(a=>a[1]==='create');
+  assert.equal(adoptionCreates.length,2,'adoption did not create exactly one daemon terminal per start');
+  assert.equal(adoptionCreates.every(a=>!a.includes('--focus')),true,'an adopted create requested focus');
   delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
   assert.deepEqual(publishedReadiness(),[],'precondition: no readiness is published before the negative cases');
   for (const [handle, worktree, label] of [
     [runtimeIdentity.handle, 'repo::/definitely/not/the/base', 'mismatched worktree path'],
     ['malformed-handle', runtimeIdentity.worktree, 'malformed runtime handle'],
     ['', runtimeIdentity.worktree, 'missing runtime handle'],
+    [runtimeIdentity.handle, '', 'missing worktree identity'],
+    [runtimeIdentity.handle, 'repo::', 'empty worktree path'],
   ]) {
     process.env.ORCA_TERMINAL_HANDLE=handle; process.env.ORCA_WORKTREE_ID=worktree;
     await emit('session_start',{},context); await tick();
@@ -171,7 +178,7 @@ try {
     assert.equal(count('create'),createsBefore,`${label} created a daemon terminal`);
     await emit('session_shutdown');
   }
-  check('mismatched path, malformed handle and missing handle publish nothing and refuse start');
+  check('mismatched path, partial identity, malformed handle and missing handle publish nothing and refuse start');
   process.env.SQUAD_SUPERVISOR_BACKEND=baseSelection.backend; process.env.SQUAD_SUPERVISOR_TARGET=baseSelection.target;
   process.env.ORCA_TERMINAL_HANDLE=runtimeIdentity.handle; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
   rmSync(`${state}/.away-handoff`,{recursive:true,force:true});
