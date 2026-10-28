@@ -31,7 +31,7 @@ Enter e Ctrl-C são suportados; Escape não é.
 
 ## Formato de tarefa e metadados
 
-Cada tarefa tem um worktree git gerenciado pelo Orca e um terminal Orca.
+Cada tarefa tem um worktree git gerenciado pelo Orca, onde o agente roda, e uma aba de missão visível, que fica no workspace hospedeiro da base do Squad.
 O `sq-spawn.sh` não chama o FOB para tarefas Orca.
 As regras normais de isolamento e recusa de trabalho não-landado continuam valendo.
 
@@ -39,18 +39,23 @@ As regras normais de isolamento e recusa de trabalho não-landado continuam vale
 backend=orca
 window=sq-<id>
 terminal=<handle do terminal orca>
+orca_host_workspace_id=<id do workspace hospedeiro>
 orca_worktree_id=<id do worktree orca>
 worktree=<caminho absoluto do worktree Orca>
 ```
 
 `window=` permanece o alias do Squad voltado ao chamador.
 `terminal=` e `orca_worktree_id=` são a autoridade do backend usada pelos caminhos de operação e limpeza.
+`orca_host_workspace_id=` nomeia o workspace que possui a aba; ele nunca é o worktree da missão, então um envio ou fechamento não pode resolver para o lugar errado.
 Em builds macOS o `orca_worktree_id=` registra um átomo simples (UUID).
 Em builds Linux (verificado contra v1.4.188) ele registra a forma composta `<repo-id>::<caminho-absoluto>`, que a limpeza aceita junto da forma simples e valida estruturalmente.
 
 ## Ciclo de vida e segurança atuais
 
-O spawn registra o repositório, cria um worktree independente, reutiliza apenas o `result.terminal.handle` verificado devolvido pelo Orca ou cria um terminal explicitamente, instala os hooks do harness, grava metadados e lança o harness selecionado.
+O spawn valida que qualquer arquivo de metadados existente é regular, resolve o workspace hospedeiro, registra o repositório, cria um worktree independente, fecha o terminal que o Orca devolveu para esse worktree, abre uma aba de missão visível no workspace hospedeiro com título exatamente `sq-<id>`, instala os hooks do harness, grava metadados e lança o harness selecionado dentro do worktree.
+Um handle de fundo oculto é fechado e recusado, nunca usado para hospedar uma missão.
+O título da aba não carrega estado; o próprio Orca mostra o status do agente.
+Quando uma missão chega a `done` ou `failed`, a aba fecha uma vez pelo helper da aba de missão, que verifica que o terminal pertence ao workspace hospedeiro antes de fechá-lo e registra apenas um fechamento confirmado.
 Flags exatas de comando e parsing de resposta são de propriedade do `bin/backends/orca.sh` e do help do script.
 O spawn também passa a extensão de status gerenciada pelo próprio Orca a um lançamento de operador Pi ou pi-signed como um `-e` extra, para que a UI do Orca mostre o estado ao vivo daquele operador; a extensão reporta ao Orca e não é lida pela sentinela do Squad.
 A resolução de caminho e a regra de arquivo opcional são de propriedade do `bin/sq-spawn.sh --help`: um arquivo ausente deixa aquele lançamento exatamente como em qualquer outro backend, e nenhum outro backend ou harness recebe o argumento extra.

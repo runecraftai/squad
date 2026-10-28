@@ -697,8 +697,10 @@ if [ "$BACKEND" = tuios ] && [ "$KIND" = xo ]; then
   echo "error: backend=tuios does not support --xo spawns yet" >&2
   exit 1
 fi
+ORCA_HOST_WORKSPACE_ID=
 if [ "$BACKEND" = orca ]; then
   fm_backend_orca_runtime_check || exit 1
+  ORCA_HOST_WORKSPACE_ID=$(fm_backend_orca_host_workspace "$SQUAD_BASE") || exit 1
 fi
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
@@ -776,6 +778,7 @@ spawn_abort_cleanup() {
             echo "effort=${EFFORT:-default}"
             echo "backend=orca"
             echo "orca_worktree_id=$ORCA_WORKTREE_ID"
+            echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
             [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
           } > "$STATE/$ID.meta" 2>/dev/null || true
         fi
@@ -2082,9 +2085,13 @@ EOF
       exit 1
     fi
     validate_spawn_worktree "orca worktree create" "$W"
-    if [ -z "$ORCA_TERMINAL" ]; then
-      ORCA_TERMINAL=$(fm_backend_orca_terminal_create "$ORCA_WORKTREE_ID" "$W") || exit 1
+    # Worktree creation must not substitute its own terminal for the shared host
+    # tab. Close only the exact returned endpoint before creating the mission tab.
+    if [ -n "$ORCA_TERMINAL" ]; then
+      fm_backend_orca_close "$ORCA_TERMINAL" || exit 1
+      ORCA_TERMINAL=
     fi
+    ORCA_TERMINAL=$(fm_backend_orca_terminal_create "$ORCA_HOST_WORKSPACE_ID" "$W") || exit 1
     T="$ORCA_TERMINAL"
     ;;
 esac
@@ -2978,6 +2985,7 @@ META_WINDOW=$T
   fi
   if [ "$BACKEND" = orca ]; then
     echo "orca_worktree_id=$ORCA_WORKTREE_ID"
+    echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
     echo "terminal=$ORCA_TERMINAL"
   fi
   if [ "$BACKEND" = cmux ]; then
@@ -3094,6 +3102,11 @@ if [ -n "$SPAWN_TRACEPARENT" ]; then
       exit 1
     fi
   fi
+fi
+if [ "$BACKEND" = orca ]; then
+  # The tab belongs to the base workspace; execution belongs only to the isolated
+  # mission directory. A failed cd/assertion must never launch in the host copy.
+  LAUNCH="cd -- $(shell_quote "$WT") && test \"\$(pwd -P)\" = $(shell_quote "$(cd "$WT" && pwd -P)") && { $LAUNCH; }"
 fi
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"

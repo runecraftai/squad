@@ -504,6 +504,119 @@ test_kill_is_best_effort_close() {
   pass "fm_backend_orca_kill: calls terminal close and stays best-effort"
 }
 
+# run_orca_tab_helper <task-id> <done|failed|sync> <state-dir>: runs the mission
+# tab helper against the current fake Orca; sets TAB_OUT and TAB_STATUS.
+run_orca_tab_helper() {
+  TAB_STATUS=0
+  TAB_OUT=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_BASE="$CASE_DIR" SQUAD_STATE_OVERRIDE="$3" \
+    "$ROOT/bin/sq-orca-tab.sh" "$1" "$2" 2>&1 ) || TAB_STATUS=$?
+}
+
+test_tab_helper_closes_mission_tab_once_in_hosting_workspace() {
+  local id=orcatabz1 state
+  orca_case tab-close
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab","worktreeId":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/2.out"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 0 "$TAB_STATUS" "sq-orca-tab.sh done should close the mission tab"$'\n'"$TAB_OUT"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-tab'$'\x1f''--json' \
+    "done did not close the recorded mission terminal"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''rename' \
+    "the tab title carries no state label, so the helper must never rename it"
+  assert_grep "term-tab closed" "$state/.orca-tab-$id" "receipt did not record the confirmed close"
+  : > "$LOG"
+  run_orca_tab_helper "$id" "done" "$state"
+  [ ! -s "$LOG" ] || fail "a repeated done must not touch an already closed tab"
+  pass "sq-orca-tab.sh: closes the hosting-workspace mission tab once and never renames it"
+}
+
+test_tab_helper_preserves_tab_when_terminal_is_outside_hosting_workspace() {
+  local id=orcatabz2 state
+  orca_case tab-mismatch
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab","worktreeId":"wt-elsewhere"}}}\n' > "$RESP/1.out"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 1 "$TAB_STATUS" "a terminal outside the hosting workspace must be refused"$'\n'"$TAB_OUT"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
+    "a terminal outside the hosting workspace must not be closed"
+  assert_absent "$state/.orca-tab-$id" "a refused close must record nothing"
+  pass "sq-orca-tab.sh: refuses to close a terminal outside the hosting workspace"
+}
+
+test_tab_helper_keeps_receipt_absent_when_close_is_not_confirmed() {
+  local id=orcatabz3 state
+  orca_case tab-close-fail
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab","worktreeId":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 1 "$TAB_STATUS" "an unconfirmed close must fail closed"$'\n'"$TAB_OUT"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-tab' \
+    "the helper did not attempt the close"
+  assert_absent "$state/.orca-tab-$id" "an unconfirmed close must not be recorded as closed"
+  pass "sq-orca-tab.sh: an unconfirmed close is never recorded as closed"
+}
+
+test_tab_helper_is_inert_for_legacy_and_identity_collapsed_records() {
+  local id=orcatabz4 state
+  orca_case tab-inert
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-same" "orca_host_workspace_id=wt-same" "kind=strike"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 1 "$TAB_STATUS" "a hosting workspace equal to the mission worktree must be refused"$'\n'"$TAB_OUT"
+  [ ! -s "$LOG" ] || fail "a collapsed identity must refuse before any Orca call"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "kind=strike"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 0 "$TAB_STATUS" "a legacy record without a hosting workspace must be inert"$'\n'"$TAB_OUT"
+  [ ! -s "$LOG" ] || fail "a legacy record must not touch Orca"
+  pass "sq-orca-tab.sh: refuses collapsed identities and stays inert for legacy records"
+}
+
+test_tab_helper_sync_leaves_live_mission_tab_untouched() {
+  local id=orcatabz5 state
+  orca_case tab-sync
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf 'working: writing the patch\n' > "$state/$id.status"
+  run_orca_tab_helper "$id" sync "$state"
+  expect_code 0 "$TAB_STATUS" "a working mission must not fail the sync hook"$'\n'"$TAB_OUT"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
+    "a working mission must keep its tab open"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''rename' \
+    "a working mission must not change the tab title"
+  pass "sq-orca-tab.sh sync: a working mission keeps its tab with no close or title change"
+}
+
+test_terminal_create_refuses_hidden_background_handle() {
+  local out status
+  orca_case hidden-terminal
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-hidden","surface":"hidden","tabId":"tab-h","worktreeId":"wt-123"}}}\n' > "$RESP/1.out"
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_terminal_create wt-123 sq-task' "$ROOT" 2>&1 )
+  status=$?
+  expect_code 1 "$status" "a hidden background handle must never host a mission"$'\n'"$out"
+  assert_contains "$out" "refusing hidden launch" "hidden-handle refusal was not explained"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-hidden' \
+    "the hidden handle was not closed after refusal"
+  pass "fm_backend_orca_terminal_create: refuses and closes a hidden background handle"
+}
+
 test_remove_worktree_refuses_empty_id() {
   local out status
   orca_case remove-empty
@@ -572,7 +685,7 @@ test_worktree_and_terminal_helpers_parse_json() {
   printf '1\n' > "$RESP/1.exit"
   printf '{"ok":true,"result":{"repo":{"id":"repo-123"}}}\n' > "$RESP/2.out"
   printf '{"ok":true,"result":{"worktree":{"id":"wt-123","path":"/tmp/orca-wt"}}}\n' > "$RESP/3.out"
-  printf '{"ok":true,"result":{"terminal":{"handle":"term-123"}}}\n' > "$RESP/4.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-123","surface":"visible","tabId":"tab-1","worktreeId":"wt-123"}}}\n' > "$RESP/4.out"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_worktree_create /repo/path sq-task' "$ROOT" )
   wt_id=${out%%$'\t'*}
@@ -624,11 +737,12 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails() {
   printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
   orca_case pathless-cleanup-fail
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-pathless-cleanup"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-pathless-cleanup"}}}\n' > "$RESP/3.out"
-  printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/4.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-pathless-cleanup"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-pathless-cleanup"}}}\n' > "$RESP/4.out"
   printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/5.out"
+  printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/6.out"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
@@ -663,10 +777,13 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   make_pi_argv_recorder "$FB"
   status_extension="$CASE_DIR/orca-agent-status.ts"
   : > "$status_extension"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/1.out"
   log="$LOG"
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn","path":"%s"},"terminal":{"handle":"term-spawn"}}}\n' "$wt" > "$RESP/3.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn","path":"%s"},"terminal":{"handle":"term-implicit"}}}\n' "$wt" > "$RESP/4.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/5.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-spawn","surface":"visible","tabId":"tab-spawn","worktreeId":"wt-host"}}}\n' > "$RESP/6.out"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
@@ -678,12 +795,17 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   assert_grep "backend=orca" "$state/$id.meta" "meta missing backend=orca"
   assert_grep "window=sq-$id" "$state/$id.meta" "meta missing stable Orca window alias"
   assert_grep "terminal=term-spawn" "$state/$id.meta" "meta missing terminal handle"
+  assert_grep "orca_host_workspace_id=wt-host" "$state/$id.meta" "meta missing hosting workspace id"
   assert_grep "orca_worktree_id=wt-spawn" "$state/$id.meta" "meta missing Orca worktree id"
   assert_grep "worktree=$wt" "$state/$id.meta" "meta missing Orca worktree path"
-  assert_not_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''create' \
-    "spawn should reuse the implicit terminal returned by Orca worktree creation"
+  assert_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-implicit'$'\x1f''--json' \
+    "spawn should close the implicit worktree terminal instead of hosting the mission in it"
+  assert_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''create'$'\x1f''--worktree'$'\x1f''id:wt-host'$'\x1f''--title'$'\x1f'"sq-$id"$'\x1f''--json' \
+    "spawn should open the mission tab in the hosting workspace under the exact sq-<id> title"
   assert_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-spawn'$'\x1f''--text'$'\x1f''export GOTMPDIR=/tmp/sq-orcaspawnz1/gotmp'$'\x1f''--enter'$'\x1f''--json' \
     "spawn did not export GOTMPDIR through the Orca terminal"
+  assert_contains "$(cat "$log")" "&& { " \
+    "spawn did not guard the launch behind the mission worktree cd"
   launch=$(orca_launch_text "$log" 'encode launch-brief') \
     || fail "spawn did not send a typed launch-brief command through the Orca terminal"
   arglog="$CASE_DIR/pi-argv"
@@ -692,7 +814,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" -e "$status_extension" \
     "$(expected_launch_brief "$data/$id/brief.md")"
   rm -rf "/tmp/sq-$id"
-  pass "sq-spawn.sh --backend orca: reuses implicit terminal, records metadata, and passes the managed Pi status extension as its own argument"
+  pass "sq-spawn.sh --backend orca: opens a visible mission tab in the hosting workspace, records both identities, and passes the managed Pi status extension as its own argument"
 }
 
 test_spawn_pi_launch_omits_status_extension_when_absent() {
@@ -710,10 +832,13 @@ test_spawn_pi_launch_omits_status_extension_when_absent() {
   touch "$state/.last-sentry-beat"
   orca_case spawn-absent
   make_pi_argv_recorder "$FB"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host-absent"}}}\n' > "$RESP/1.out"
   log="$LOG"
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-absent"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-absent","path":"%s"},"terminal":{"handle":"term-absent"}}}\n' "$wt" > "$RESP/3.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-absent"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-absent","path":"%s"},"terminal":{"handle":"term-absent"}}}\n' "$wt" > "$RESP/4.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/5.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab-absent","surface":"visible","tabId":"tab-absent","worktreeId":"wt-host-absent"}}}\n' > "$RESP/6.out"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
@@ -750,10 +875,13 @@ test_spawn_pi_resolves_status_extension_from_default_home_path() {
   touch "$state/.last-sentry-beat"
   orca_case spawn-default-status
   make_pi_argv_recorder "$FB"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host-default-status"}}}\n' > "$RESP/1.out"
   log="$LOG"
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-default-status"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-default-status","path":"%s"},"terminal":{"handle":"term-default-status"}}}\n' "$wt" > "$RESP/3.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-default-status"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-default-status","path":"%s"},"terminal":{"handle":"term-default-status"}}}\n' "$wt" > "$RESP/4.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/5.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab-default-status","surface":"visible","tabId":"tab-default-status","worktreeId":"wt-host-default-status"}}}\n' > "$RESP/6.out"
   out=$( env -u ORCA_OMP_STATUS_EXTENSION HOME="$home" PATH="$FB:$PATH" \
     SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
@@ -785,10 +913,13 @@ test_spawn_pi_launch_survives_unset_home() {
   touch "$state/.last-sentry-beat"
   orca_case spawn-no-home
   make_pi_argv_recorder "$FB"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host-no-home"}}}\n' > "$RESP/1.out"
   log="$LOG"
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-no-home"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-no-home","path":"%s"},"terminal":{"handle":"term-no-home"}}}\n' "$wt" > "$RESP/3.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-no-home"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-no-home","path":"%s"},"terminal":{"handle":"term-no-home"}}}\n' "$wt" > "$RESP/4.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/5.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab-no-home","surface":"visible","tabId":"tab-no-home","worktreeId":"wt-host-no-home"}}}\n' > "$RESP/6.out"
   out=$( env -u HOME -u ORCA_OMP_STATUS_EXTENSION PATH="$FB:$PATH" \
     SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
@@ -876,9 +1007,10 @@ test_spawn_refuses_orca_nonisolated_worktree() {
   printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
   orca_case bad-spawn
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-bad"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-bad","path":"%s"},"terminal":{"handle":"term-bad"}}}\n' "$proj" > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-bad"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-bad","path":"%s"},"terminal":{"handle":"term-bad"}}}\n' "$proj" > "$RESP/4.out"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
@@ -910,10 +1042,11 @@ test_spawn_removes_orca_worktree_when_terminal_create_fails() {
   printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
   orca_case terminal-fail
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-terminal-fail"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-terminal-fail","path":"%s"}}}\n' "$wt" > "$RESP/3.out"
-  printf '1\n' > "$RESP/4.exit"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-terminal-fail"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-terminal-fail","path":"%s"}}}\n' "$wt" > "$RESP/4.out"
+  printf '1\n' > "$RESP/5.exit"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
@@ -921,8 +1054,8 @@ test_spawn_removes_orca_worktree_when_terminal_create_fails() {
   status=$?
   [ "$status" -ne 0 ] || fail "Orca spawn should fail when terminal creation fails"
   assert_absent "$state/$id.meta" "terminal-create abort should not record metadata after successful cleanup"
-  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''create'$'\x1f''--worktree'$'\x1f''id:wt-terminal-fail'$'\x1f''--title'$'\x1f'"sq-$id"$'\x1f''--json' \
-    "Orca spawn should attempt terminal creation before abort cleanup"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''create'$'\x1f''--worktree'$'\x1f''id:wt-host'$'\x1f''--title'$'\x1f'"sq-$id"$'\x1f''--json' \
+    "Orca spawn should attempt the mission tab in the hosting workspace before abort cleanup"
   assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm'$'\x1f''--worktree'$'\x1f''id:wt-terminal-fail'$'\x1f''--force'$'\x1f''--json' \
     "Orca spawn should remove the worktree when terminal creation fails"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
@@ -943,11 +1076,12 @@ test_spawn_preserves_orca_metadata_when_abort_cleanup_fails() {
   printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
   orca_case cleanup-fail
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-cleanup-fail"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-cleanup-fail","path":"%s"}}}\n' "$wt" > "$RESP/3.out"
-  printf '1\n' > "$RESP/4.exit"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-cleanup-fail"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-cleanup-fail","path":"%s"}}}\n' "$wt" > "$RESP/4.out"
   printf '1\n' > "$RESP/5.exit"
+  printf '1\n' > "$RESP/6.exit"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
@@ -976,10 +1110,11 @@ test_spawn_refuses_nonregular_metadata_before_resource_creation() {
   mkdir -p "$data/$id" "$state/$id.meta" "$config"
   printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
   orca_case meta-fail
-  printf '1\n' > "$RESP/1.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-meta-fail"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-meta-fail","path":"%s"}}}\n' "$wt" > "$RESP/3.out"
-  printf '{"ok":true,"result":{"terminal":{"handle":"term-meta-fail"}}}\n' > "$RESP/4.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-meta-fail"}}}\n' > "$RESP/3.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-meta-fail","path":"%s"}}}\n' "$wt" > "$RESP/4.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-meta-fail"}}}\n' > "$RESP/5.out"
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
@@ -1688,6 +1823,12 @@ test_send_key_enter_and_interrupt
 test_send_key_refuses_unknown_key
 test_send_key_refuses_escape_until_supported
 test_kill_is_best_effort_close
+test_terminal_create_refuses_hidden_background_handle
+test_tab_helper_closes_mission_tab_once_in_hosting_workspace
+test_tab_helper_preserves_tab_when_terminal_is_outside_hosting_workspace
+test_tab_helper_keeps_receipt_absent_when_close_is_not_confirmed
+test_tab_helper_is_inert_for_legacy_and_identity_collapsed_records
+test_tab_helper_sync_leaves_live_mission_tab_untouched
 test_remove_worktree_refuses_empty_id
 test_remove_worktree_rejects_orca_error_json
 test_worktree_path_resolves_id

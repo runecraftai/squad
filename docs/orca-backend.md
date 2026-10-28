@@ -29,7 +29,7 @@ Enter and Ctrl-C are supported; Escape is not.
 
 ## Task shape and metadata
 
-Each task has one Orca-managed git worktree and one Orca terminal.
+Each task has one Orca-managed git worktree, where the agent runs, and one visible mission tab, which lives in the Squad base's hosting workspace.
 `sq-spawn.sh` does not call FOB for Orca tasks.
 The normal isolation and unlanded-work refusal rules still apply.
 
@@ -37,18 +37,23 @@ The normal isolation and unlanded-work refusal rules still apply.
 backend=orca
 window=sq-<id>
 terminal=<orca terminal handle>
+orca_host_workspace_id=<hosting workspace id>
 orca_worktree_id=<orca worktree id>
 worktree=<absolute Orca worktree path>
 ```
 
 `window=` remains the caller-facing Squad alias.
 `terminal=` and `orca_worktree_id=` are the backend authority used by operation and cleanup paths.
+`orca_host_workspace_id=` names the workspace that owns the tab; it is never the mission worktree, so a send or close cannot resolve to the wrong place.
 On macOS builds `orca_worktree_id=` records a bare atom (UUID).
 On Linux builds (verified against v1.4.188) it records the composite form `<repo-id>::<absolute-path>`, which cleanup accepts alongside the bare form and validates structurally.
 
 ## Current lifecycle and safety
 
-Spawn validates that any existing metadata file is regular, registers the repository, creates an independent worktree, reuses only the verified `result.terminal.handle` returned by Orca or creates a terminal explicitly, installs harness hooks, records metadata, and launches the selected harness.
+Spawn validates that any existing metadata file is regular, resolves the hosting workspace, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
+A hidden background handle is closed and refused, never used to host a mission.
+The tab's title carries no state; Orca renders agent status itself.
+When a mission reaches `done` or `failed`, the tab closes once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
 Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any Orca resource is created.
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
 Spawn also passes Orca's own managed status extension to a Pi or pi-signed operator launch as one extra `-e`, so Orca's UI can show that operator's live state; the extension reports to Orca and is not read by Squad's sentry.

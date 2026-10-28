@@ -161,7 +161,23 @@ fm_backend_orca_worktree_create() {  # <project-path> <name>
   [ -z "$terminal" ] || printf '\t%s' "$terminal"
 }
 
-fm_backend_orca_terminal_create() {  # <worktree-id> <title>
+# Resolve the base workspace, not the caller's inherited mission workspace.
+# Refuse before mission allocation when the commander's hosting workspace is absent.
+fm_backend_orca_host_workspace() {  # <base-path>
+  local out id
+  fm_backend_orca_tool_check || return 1
+  out=$(orca worktree show --worktree "path:$1" --json) || {
+    echo "error: Orca hosting workspace unavailable for Squad base $1; open that workspace before spawning" >&2
+    return 1
+  }
+  id=$(printf '%s' "$out" | fm_backend_orca_json_get worktree-id) || {
+    echo "error: Orca hosting workspace has no identity for Squad base $1" >&2
+    return 1
+  }
+  printf '%s' "$id"
+}
+
+fm_backend_orca_terminal_create() {  # <hosting-workspace-id> <title>
   local worktree_id=$1 title=$2 out terminal
   fm_backend_orca_tool_check || return 1
   out=$(orca terminal create --worktree "id:$worktree_id" --title "$title" --json) || return 1
@@ -169,6 +185,17 @@ fm_backend_orca_terminal_create() {  # <worktree-id> <title>
     echo "error: orca terminal create did not return a terminal handle for $title" >&2
     return 1
   }
+  # terminal create may silently return a hidden background handle. Never launch
+  # a mission there: the visible tab and its exact hosting workspace are required.
+  if ! printf '%s' "$out" | node -e '
+const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const t = (d.result || {}).terminal || {};
+process.exit(t.surface === "visible" && t.tabId && t.worktreeId === process.argv[1] ? 0 : 1);
+' "$worktree_id"; then
+    fm_backend_orca_kill "$terminal" || true
+    echo "error: Orca did not create a visible mission tab in hosting workspace $worktree_id; refusing hidden launch" >&2
+    return 1
+  fi
   printf '%s' "$terminal"
 }
 
@@ -463,4 +490,11 @@ fm_backend_orca_send_text_submit() {  # <terminal-id> <text> <retries> <enter-sl
 fm_backend_orca_kill() {  # <terminal-id>
   fm_backend_orca_tool_check || return 0
   orca terminal close --terminal "$1" --json >/dev/null 2>&1 || true
+}
+
+# Strict close for lifecycle paths that must know whether the tab is really gone
+# before recording it closed or removing the worktree behind it.
+fm_backend_orca_close() {  # <terminal-id>
+  fm_backend_orca_tool_check || return 1
+  fm_backend_orca_run_json orca terminal close --terminal "$1" --json
 }
