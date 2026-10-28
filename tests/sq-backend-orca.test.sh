@@ -75,6 +75,54 @@ SH
   chmod +x "$fb/tmux"
 }
 
+# The fake Pi records the argv it is invoked with, so a test can run the exact
+# command Squad sends to the terminal and assert what Pi would actually receive.
+make_pi_argv_recorder() {  # <fakebin>
+  cat > "$1/pi" <<'SH'
+#!/usr/bin/env bash
+set -u
+: > "${SQUAD_FAKE_PI_ARGV_LOG:?}"
+for a in "$@"; do printf '%s\0' "$a" >> "$SQUAD_FAKE_PI_ARGV_LOG"; done
+exit 0
+SH
+  chmod +x "$1/pi"
+}
+
+# orca_launch_text <log> <marker>: the --text argument containing <marker>,
+# i.e. the exact command line Squad typed into the Orca terminal.
+orca_launch_text() {  # <log> <marker>
+  local log=$1 marker=$2 line i
+  local -a fields
+  while IFS= read -r line; do
+    IFS=$'\x1f' read -r -a fields <<< "$line"
+    for ((i = 0; i + 1 < ${#fields[@]}; i++)); do
+      [ "${fields[i]}" = "--text" ] || continue
+      case "${fields[i + 1]}" in
+        *"$marker"*) printf '%s\n' "${fields[i + 1]}"; return 0 ;;
+      esac
+    done
+  done < "$log"
+  return 1
+}
+
+expected_launch_brief() {  # <brief-file>
+  printf '\342\201\243SQUAD_OP: v1 launch-brief: %s' "$(cat "$1")"
+}
+
+assert_pi_argv() {  # <argv-log> <expected-arg>...
+  local arglog=$1
+  shift
+  local -a got=() want=("$@")
+  local a i
+  while IFS= read -r -d '' a; do got+=("$a"); done < "$arglog"
+  [ "${#got[@]}" -eq "${#want[@]}" ] || fail \
+    "pi launch received ${#got[@]} arguments, expected ${#want[@]}"$'\n'"actual argv: $(printf '<%s> ' "${got[@]}")"
+  for ((i = 0; i < ${#want[@]}; i++)); do
+    [ "${got[i]}" = "${want[i]}" ] || fail \
+      "pi launch argument $((i + 1)) is '${got[i]}', expected '${want[i]}'"
+  done
+}
+
 test_capture_reads_terminal_tail_json() {
   local out
   orca_case capture-tail
@@ -600,7 +648,7 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails() {
 }
 
 test_spawn_writes_orca_metadata_and_launches_harness() {
-  local proj wt data state config id out log status_extension
+  local proj wt data state config id out log status_extension launch arglog
   id="orcaspawnz1"
   proj="$TMP_ROOT/spawn-project"
   wt="$TMP_ROOT/spawn-wt"
@@ -612,7 +660,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
   orca_case spawn
-  fm_fake_exit0 "$FB" pi
+  make_pi_argv_recorder "$FB"
   status_extension="$CASE_DIR/orca-agent-status.ts"
   : > "$status_extension"
   log="$LOG"
@@ -636,10 +684,53 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
     "spawn should reuse the implicit terminal returned by Orca worktree creation"
   assert_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-spawn'$'\x1f''--text'$'\x1f''export GOTMPDIR=/tmp/sq-orcaspawnz1/gotmp'$'\x1f''--enter'$'\x1f''--json' \
     "spawn did not export GOTMPDIR through the Orca terminal"
-  assert_contains "$(cat "$log")" "-e '$status_extension'" \
-    "Orca Pi launch did not include its existing managed status extension"
+  launch=$(orca_launch_text "$log" 'encode launch-brief') \
+    || fail "spawn did not send a typed launch-brief command through the Orca terminal"
+  arglog="$CASE_DIR/pi-argv"
+  SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
+    || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
+  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" -e "$status_extension" \
+    "$(expected_launch_brief "$data/$id/brief.md")"
   rm -rf "/tmp/sq-$id"
-  pass "sq-spawn.sh --backend orca: reuses implicit terminal, records metadata, and adds the managed Pi status extension"
+  pass "sq-spawn.sh --backend orca: reuses implicit terminal, records metadata, and passes the managed Pi status extension as its own argument"
+}
+
+test_spawn_pi_launch_omits_status_extension_when_absent() {
+  local proj wt data state config id out log missing launch arglog
+  id="orcaspawnz2"
+  proj="$TMP_ROOT/absent-project"
+  wt="$TMP_ROOT/absent-wt"
+  data="$TMP_ROOT/absent-data"
+  state="$TMP_ROOT/absent-state"
+  config="$TMP_ROOT/absent-config"
+  missing="$TMP_ROOT/absent-status/orca-agent-status.ts"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
+  touch "$state/.last-sentry-beat"
+  orca_case spawn-absent
+  make_pi_argv_recorder "$FB"
+  log="$LOG"
+  printf '1\n' > "$RESP/1.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-spawn-absent"}}}\n' > "$RESP/2.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-spawn-absent","path":"%s"},"terminal":{"handle":"term-absent"}}}\n' "$wt" > "$RESP/3.out"
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
+    ORCA_OMP_STATUS_EXTENSION="$missing" \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" pi --mode drill --yolo off --backend orca 2>&1 )
+  expect_code 0 $? "sq-spawn.sh --backend orca should succeed when the status extension is absent"$'\n'"$out"
+  launch=$(orca_launch_text "$log" 'encode launch-brief') \
+    || fail "spawn did not send a typed launch-brief command through the Orca terminal"
+  assert_not_contains "$launch" "__ORCASTATUS__" \
+    "absent status extension left a placeholder in the Orca Pi launch"
+  arglog="$CASE_DIR/pi-argv"
+  SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
+    || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
+  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" \
+    "$(expected_launch_brief "$data/$id/brief.md")"
+  rm -rf "/tmp/sq-$id"
+  pass "sq-spawn.sh --backend orca: absent managed status extension leaves the Pi launch exactly as before"
 }
 
 test_spawn_refuses_orca_XO_before_home_mutation() {
@@ -1531,6 +1622,7 @@ test_worktree_and_terminal_helpers_parse_json
 test_worktree_create_removes_worktree_when_path_missing
 test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails
 test_spawn_writes_orca_metadata_and_launches_harness
+test_spawn_pi_launch_omits_status_extension_when_absent
 test_spawn_refuses_orca_XO_before_home_mutation
 test_spawn_refuses_orca_when_runtime_not_ready
 test_spawn_refuses_orca_nonisolated_worktree

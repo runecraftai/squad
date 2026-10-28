@@ -3031,7 +3031,7 @@ if [ "$BACKEND" = orca ] && { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ];
   orca_status_extension=${ORCA_OMP_STATUS_EXTENSION:-$HOME/.config/orca/omp-managed-status-extension/orca-agent-status.ts}
   if [ -f "$orca_status_extension" ]; then
     sq_orca_status_extension=$(shell_quote "$orca_status_extension")
-    LAUNCH=${LAUNCH//__ORCASTATUS__/-e $sq_orca_status_extension}
+    LAUNCH=${LAUNCH//__ORCASTATUS__/-e $sq_orca_status_extension }
   fi
 fi
 LAUNCH=${LAUNCH//__ORCASTATUS__/}
