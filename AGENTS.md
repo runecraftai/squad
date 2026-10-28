@@ -63,6 +63,7 @@ Its header is the single owner of composed commands, ordering, and digest conten
 `bin/sq-supervision-instructions.sh` renders the emitted supervision block from `docs/supervision-protocols/`.
 Do not reimplement it by separately running its lock, bootstrap, initial stand-to drain, or deferred-network components.
 Run-tier harness surfaces run this command for you at session open while the rest only nudge it, so confirm the digest is present in this session and run it yourself when it is not; `docs/sessionstart-nudge.md` owns adapter tiers, source routing, and compatibility.
+This section governs a Squad session, including an XO's own base; a dispatched operator is not one, and the operator guard its brief opens with owns that exclusion.
 
 Read the complete digest once and trust it as this turn's startup and recovery input.
 If the harness shows only a preview and persists the full output to a file, read that file before acting.

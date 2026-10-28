@@ -1035,6 +1035,53 @@ test_scout_and_XO_scaffold() {
   pass "sq-brief: recon and XO code paths still scaffold well-formed briefs"
 }
 
+# assert_operator_guard <brief> <label>: a strike or recon brief opens with the
+# operator guard exactly once, above the task body, and states every point an
+# operator needs so a session-start refusal never reads as a reason to stop.
+assert_operator_guard() {
+  local brief="$1" label="$2" count guard_line task_line
+  assert_present "$brief" "$label brief was not scaffolded"
+  count=$(grep -cF "Operator guard" "$brief")
+  [ "$count" -eq 1 ] || fail "$label brief must carry the operator guard exactly once (found $count)"
+  guard_line=$(grep -nF "Operator guard" "$brief" | head -1 | cut -d: -f1)
+  task_line=$(grep -nF "# Task" "$brief" | head -1 | cut -d: -f1)
+  [ "$guard_line" -lt "$task_line" ] || fail "$label brief must place the operator guard above the task body"
+  assert_grep "not Squad" "$brief" "$label brief must state that the operator is not Squad"
+  assert_grep "do not run \`bin/sq-session-start.sh\`" "$brief" "$label brief must forbid running session start"
+  assert_grep "do not acquire the unit lock" "$brief" "$label brief must forbid acquiring the unit lock"
+  assert_grep "The unit lock belongs to the primary session that dispatched you" "$brief" \
+    "$label brief must name the primary session as the lock owner"
+  assert_grep "is a misunderstanding, not a state you must respect" "$brief" \
+    "$label brief must treat a lock refusal as a misunderstanding"
+  assert_grep "Do not read or write the primary base's \`state/\` directory" "$brief" \
+    "$label brief must keep the primary base's state directory out of reach"
+}
+
+# Operator guard: every strike and recon brief carries the not-Squad guard from
+# the one shared emitter. The XO charter keeps its own preamble and stays
+# without it, because an XO runs session start for its own base.
+test_operator_guard_leads_strike_and_recon_briefs() {
+  local home brief
+  home="$TMP_ROOT/operator-guard-home"
+  mkdir -p "$home/data"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-guard-drill some-proj --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+    || fail "sq-brief.sh drill strike scaffold exited non-zero"
+  assert_operator_guard "$home/data/brief-guard-drill/brief.md" "drill strike"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-guard-recon some-proj --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+    || fail "sq-brief.sh recon scaffold exited non-zero"
+  assert_operator_guard "$home/data/brief-guard-recon/brief.md" "recon"
+
+  SQUAD_XO_CHARTER='Supervise the alpha domain.' \
+    SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-guard-xo --xo alpha >/dev/null 2>&1 \
+    || fail "sq-brief.sh XO scaffold exited non-zero"
+  brief="$home/data/brief-guard-xo/brief.md"
+  assert_present "$brief" "XO charter was not scaffolded"
+  assert_no_grep "Operator guard" "$brief" "XO charter must keep its own preamble, not the operator guard"
+  pass "sq-brief: strike and recon briefs open with the operator guard, the XO charter keeps its preamble"
+}
+
 # Status instruction enforcement: every scaffold must include the status
 # reporting instruction. The validation catches any future heredoc that
 # omits the >> ...status pattern. assert_grep uses -F (fixed string), so
@@ -1327,6 +1374,7 @@ test_XO_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_XO_load_decision_hold_policy
 test_scout_and_XO_scaffold
+test_operator_guard_leads_strike_and_recon_briefs
 test_status_instruction_is_present_in_all_scaffolds
 test_ambiguity_rule_stops_coding_and_asks
 test_status_instruction_enforcement_refuses_missing_pattern
