@@ -75,7 +75,9 @@ Ele nunca faz raw-delete de um worktree do Orca.
 
 ## Supervisão de away-mode
 
-Um primário hospedado no Orca é explicit-only: inicie o primário com `SQUAD_SUPERVISOR_BACKEND=orca` e `SQUAD_SUPERVISOR_TARGET=<handle exato de terminal emitido pelo runtime>` já definidos.
+Um primário hospedado no Orca adota automaticamente seu `ORCA_TERMINAL_HANDLE` emitido pelo runtime quando o caminho em `ORCA_WORKTREE_ID` corresponde fisicamente à base do Squad.
+Defina `SQUAD_SUPERVISOR_BACKEND=orca` e `SQUAD_SUPERVISOR_TARGET=<handle exato de terminal emitido pelo runtime>` como override explícito para um setup incomum; valores explícitos têm precedência.
+Identidade ausente ou malformada, ou um caminho de worktree que não corresponde fisicamente, não publica prontidão.
 O alvo precisa ser um terminal local conectado, gravável e não órfão cujo caminho de worktree seja o diretório físico `SQUAD_BASE`.
 Essa seleção é independente de `config/backend`; mudar o posicionamento de tarefas não é exigido.
 Não selecione uma aba ativa por nome, não anexe outro multiplexador como evidência de suporte mobile nativo e não inferira um primário do terminal do operador.

@@ -238,8 +238,12 @@ the operational prefix lets Squad distinguish it from a real commander message.
   then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then
   `"${TUIOS_SESSION}:${TUIOS_PANE_ID}"` under tuios, then a `Squad:0` fallback
   with a warning. Both resolution sources are logged at startup so a
-  wrong-but-resolving fallback is detectable. Orca is never auto-detected;
-  selecting it requires the explicit native-only setup in
+  wrong-but-resolving fallback is detectable. The daemon's own discovery has no
+  Orca candidate; `bin/sq-afk-launch.sh` and the Pi away-handoff receiver adopt
+  the `ORCA_TERMINAL_HANDLE`/`ORCA_WORKTREE_ID` identity issued to a primary whose
+  worktree path physically matches the Squad base, and `SQUAD_SUPERVISOR_BACKEND`
+  plus `SQUAD_SUPERVISOR_TARGET` remain an explicit override for an unusual setup
+  - see
   [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision).
   Other runtime backends, including zellij and cmux, are not yet supported as
   supervisor backends; the daemon refuses loudly at startup instead of

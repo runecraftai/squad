@@ -38,6 +38,9 @@ const realPs = ['/bin/ps', '/usr/bin/ps'].find(path => existsSync(path));
 assert.ok(realPs, 'no system ps found for the fake ps shim');
 writeFileSync(`${fake}/ps`, `#!/usr/bin/env bash\nif [ "\${ORCA_TEST_UNKNOWN:-}" = 1 ]; then case "$*" in *comm*) echo test ;; *ppid*) echo 1 ;; esac; else exec ${realPs} "$@"; fi\n`);
 chmodSync(`${fake}/ps`, 0o700);
+mkdirSync(`${fake}/nomux`);
+writeFileSync(`${fake}/nomux/tmux`, '#!/usr/bin/env bash\nexit 1\n');
+chmodSync(`${fake}/nomux/tmux`, 0o700);
 Object.assign(process.env, { SQUAD_BASE:home, SQUAD_STATE_OVERRIDE:state, SQUAD_SUPERVISOR_BACKEND:'orca', SQUAD_SUPERVISOR_TARGET:'term-primary', PI_CODING_AGENT:'true', ORCA_TEST_DB:db, ORCA_TEST_LOG:log, PATH:`${fake}:${process.env.PATH}` });
 delete process.env.CLAUDECODE; delete process.env.SQUAD_PI_HARNESS; delete process.env.ORCA_ENVIRONMENT; delete process.env.ORCA_PAIRING_CODE;
 const env = () => ({...process.env, SQUAD_AFK_LAUNCH_ENTRY:'/bin/true'});
@@ -60,6 +63,16 @@ const context = {mode:'tui',hasUI:true,isIdle:()=>idle,ui:{getEditorText:()=>dra
 const tick = async () => { for(const t of [...timers]) await t.fn(); await new Promise(r=>setImmediate(r)); };
 const nativeDir = (handle = 'term-primary') => script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' '${handle}'`).stdout.trim();
 const readyPath = handle => `${nativeDir(handle)}/ready.json`;
+const publishedReadiness = () => {
+  const handoff = `${state}/.away-handoff`;
+  if (!existsSync(handoff)) return [];
+  return readdirSync(handoff).flatMap(name => existsSync(`${handoff}/${name}/ready.json`) ? [`${name}/ready.json`] : []);
+};
+// Ambient multiplexer markers would make the launcher adopt a detected supervisor
+// pane instead of evaluating the runtime identity the case is proving, and a
+// reachable tmux server would settle its Squad:0 fallback. Both are neutralized so
+// only the runtime identity can resolve a supervisor.
+const noDetectedPane = { PATH:`${fake}/nomux:${process.env.PATH}`, TMUX_PANE:'', TMUX:'', HERDR_ENV:'', HERDR_PANE_ID:'', TUIOS_ENV:'', TUIOS_SESSION:'', TUIOS_PANE_ID:'' };
 const flush = (item = '') => script(`. '${root}/bin/sq-supervise-daemon.sh'; ${item ? `escalate_add '${state}' '${item}';` : ''} escalate_flush '${state}'`);
 try {
   // Every non-Pi adapter is refused by name before creating even its state dir.
@@ -131,6 +144,7 @@ try {
   await emit('session_shutdown');
   check('explicit Orca selection wins over a different runtime-issued handle in receiver and launcher');
   delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
+  assert.deepEqual(publishedReadiness(),[],'precondition: no readiness is published before the negative cases');
   for (const [handle, worktree, label] of [
     [runtimeIdentity.handle, 'repo::/definitely/not/the/base', 'mismatched worktree path'],
     ['malformed-handle', runtimeIdentity.worktree, 'malformed runtime handle'],
@@ -138,9 +152,9 @@ try {
   ]) {
     process.env.ORCA_TERMINAL_HANDLE=handle; process.env.ORCA_WORKTREE_ID=worktree;
     await emit('session_start',{},context); await tick();
-    assert.equal(existsSync(readyPath(handle || 'term-runtime-missing')),false,`${label} published readiness`);
+    assert.deepEqual(publishedReadiness(),[],`${label} published readiness`);
     const createsBefore=count('create');
-    r=cli('start'); assert.notEqual(r.status,0,`${label} unexpectedly allowed start`);
+    r=cli('start',noDetectedPane); assert.notEqual(r.status,0,`${label} unexpectedly allowed start`);
     assert.match(r.stderr,/could not resolve the commander supervisor pane|readiness is missing/);
     assert.equal(existsSync(`${state}/.afk`),false,`${label} mutated away-mode state`);
     assert.equal(count('create'),createsBefore,`${label} created a daemon terminal`);
