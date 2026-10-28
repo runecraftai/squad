@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Merge a task's PR only after sq-gh has freshly verified its recorded head,
-# checks, and mergeability, with GitHub binding the merge to that exact SHA.
+# Merge a task's PR only after sq-gh has freshly read its head, checks, and
+# mergeability, comparing against a recorded head when present and binding
+# the merge to the fresh SHA otherwise.
 # Record pr= and pr_head= through bin/sq-pr-check.sh only after merge succeeds.
 # The full canonical GitHub PR URL is parsed by bin/sq-pr-lib.sh and the derived
 # owner/repository and PR number are passed to sq-gh as separate arguments.
@@ -89,9 +90,9 @@ if [ ! -f "$META" ] || [ -L "$META" ]; then
 fi
 
 RECORDED_HEAD=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
-if ! fm_pr_head_valid "$RECORDED_HEAD"; then
-  echo "error: task metadata has no valid recorded PR head; run sq-pr-check before merging" >&2
-  exit 1
+head_args=()
+if [ -n "$RECORDED_HEAD" ]; then
+  head_args=(--expected-head "$RECORDED_HEAD")
 fi
 
 merge_args=()
@@ -100,7 +101,7 @@ if ! caller_has_merge_method "$@"; then
 fi
 
 merge_rc=0
-MERGE_RESULT=$(sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" --expected-head "$RECORDED_HEAD" "${merge_args[@]+"${merge_args[@]}"}" "$@") || merge_rc=$?
+MERGE_RESULT=$(sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${head_args[@]+"${head_args[@]}"}" "${merge_args[@]+"${merge_args[@]}"}" "$@") || merge_rc=$?
 if [ "$merge_rc" -ne 0 ]; then
   [ -z "$MERGE_RESULT" ] || printf '%s\n' "$MERGE_RESULT" >&2
   exit "$merge_rc"

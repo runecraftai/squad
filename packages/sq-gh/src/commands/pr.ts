@@ -572,8 +572,14 @@ const PR_MERGE_SNAPSHOT_FIELDS =
 
 async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   const num = takeNumber(args, "PR");
+  const hasExpectedHead = args.some(
+    (arg) => arg === "--expected-head" || arg.startsWith("--expected-head="),
+  );
   const expectedHead = takeFlag(args, "--expected-head");
-  if (!expectedHead || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(expectedHead)) {
+  if (
+    hasExpectedHead &&
+    (!expectedHead || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(expectedHead))
+  ) {
     throw new AxiError(
       "--expected-head must be a full recorded commit SHA",
       "VALIDATION_ERROR",
@@ -634,9 +640,9 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
       "VALIDATION_ERROR",
     );
   }
-  if (pr.headRefOid !== expectedHead) {
+  if (expectedHead !== undefined && pr.headRefOid !== expectedHead) {
     throw new AxiError(
-      `PR head changed: recorded ${expectedHead}, current ${pr.headRefOid}; re-run bin/sq-pr-check.sh <task-id> <pr-url> to record the current head before merging`,
+      `PR head changed: recorded ${expectedHead}, current ${pr.headRefOid}; refresh the recorded head before retrying`,
       "VALIDATION_ERROR",
     );
   }
@@ -694,7 +700,7 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
     "merge",
     String(num),
     "--match-head-commit",
-    expectedHead,
+    pr.headRefOid,
   ];
   if (method) ghArgs.push("--" + method);
   if (auto) ghArgs.push("--auto");

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for bin/sq-pr-merge.sh: the one path Squad uses to merge a task's
-# PR, which must refuse without a fresh, matching recorded pr_head= and only
+# PR, which must compare any recorded pr_head= against a fresh head and only
 # record pr= and the confirmed pr_head= into the task's meta after the guarded
 # merge succeeds, so sq-teardown.sh's landed-check has a PR reference to verify
 # against, even on repos with no PR CI where the usual "checks green"
@@ -192,15 +192,14 @@ test_extra_merge_args_forwarded() {
   pass "sq-pr-merge forwards extra flags to sq-gh pr merge after the -- separator"
 }
 
-test_missing_recorded_head_refuses_without_metadata_changes() {
-  local case_dir rc before after
+test_missing_recorded_head_delegates_fresh_head_lookup() {
+  local case_dir rc
   case_dir=$(make_case missing-recorded-head)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" dddddddddddddddddddddddddddddddddddddddd
   grep -v '^pr_head=' "$case_dir/state/task-x1.meta" > "$case_dir/meta.tmp"
   mv "$case_dir/meta.tmp" "$case_dir/state/task-x1.meta"
   : > "$case_dir/sq-gh.log"
-  before=$(sha256sum "$case_dir/state/task-x1.meta")
 
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/20 \
@@ -208,13 +207,43 @@ test_missing_recorded_head_refuses_without_metadata_changes() {
   rc=$?
   set -e
 
-  expect_code 1 "$rc" "missing-recorded-head: merge must refuse"
-  assert_grep 'no valid recorded PR head' "$case_dir/stderr" "missing-recorded-head: refusal was not actionable"
-  [ "$(awk 'END { print NR }' "$case_dir/stderr")" -eq 1 ] || fail "missing-recorded-head: refusal was not one line"
+  expect_code 0 "$rc" "missing-recorded-head: merge should use sq-gh's fresh-head guard"
+  grep -qxF 'pr merge 20 --repo example/repo --squash' "$case_dir/sq-gh.log" \
+    || fail "missing-recorded-head: expected a guarded merge without a recorded-head override"
+  assert_grep 'pr=https://github.com/example/repo/pull/20' "$case_dir/state/task-x1.meta" \
+    "missing-recorded-head: confirmed merge was not recorded"
+  assert_grep 'pr_head=dddddddddddddddddddddddddddddddddddddddd' "$case_dir/state/task-x1.meta" \
+    "missing-recorded-head: confirmed head was not refreshed"
+  pass "sq-pr-merge delegates fresh-head guarding when no recorded head exists"
+}
+
+test_unavailable_fresh_head_refuses_without_recorded_head() {
+  local case_dir rc before after
+  case_dir=$(make_case unavailable-fresh-head)
+  add_gh_mocks "$case_dir" dddddddddddddddddddddddddddddddddddddddd
+  grep -v '^pr_head=' "$case_dir/state/task-x1.meta" > "$case_dir/meta.tmp"
+  mv "$case_dir/meta.tmp" "$case_dir/state/task-x1.meta"
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
+printf 'error:\n  code: VALIDATION_ERROR\n  message: current PR head is unavailable or invalid\n'
+exit 2
+SH
+  chmod +x "$case_dir/fakebin/sq-gh"
+  before=$(sha256sum "$case_dir/state/task-x1.meta")
+
+  rc=0
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/20 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 2 "$rc" "unavailable-fresh-head: refusal must propagate"
+  assert_grep 'current PR head is unavailable or invalid' "$case_dir/stderr" \
+    "unavailable-fresh-head: refusal must identify the unknown forge head"
   after=$(sha256sum "$case_dir/state/task-x1.meta")
-  [ "$before" = "$after" ] || fail "missing-recorded-head: refusal changed task metadata"
-  [ ! -s "$case_dir/sq-gh.log" ] || fail "missing-recorded-head: merge was invoked"
-  pass "sq-pr-merge refuses without a recorded head and leaves metadata untouched"
+  [ "$before" = "$after" ] || fail "unavailable-fresh-head: refusal changed metadata"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "unavailable-fresh-head: refusal recorded a landing"
+  pass "sq-pr-merge preserves metadata and surfaces an unavailable fresh-head refusal"
 }
 
 test_missing_meta_refuses_before_merge() {
@@ -488,7 +517,8 @@ test_merge_failure_propagates_without_recording
 test_sq_gh_refusal_reason_is_surfaced
 test_extra_merge_args_forwarded
 test_missing_meta_refuses_before_merge
-test_missing_recorded_head_refuses_without_metadata_changes
+test_missing_recorded_head_delegates_fresh_head_lookup
+test_unavailable_fresh_head_refuses_without_recorded_head
 test_malformed_url_refuses_before_merge
 test_rejects_unsafe_url_segments_before_recording
 test_repo_override_args_refuse_before_recording

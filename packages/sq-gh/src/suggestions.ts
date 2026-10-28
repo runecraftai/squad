@@ -202,8 +202,7 @@ const table: SuggestionEntry[] = [
     lines: (c) => [
       `Run \`sq-gh${repoFlag(c)} pr checks ${c.id}\` to see CI status`,
       `Run \`sq-gh${repoFlag(c)} pr review ${c.id} --approve\` to approve`,
-      `Run \`bin/sq-pr-merge.sh <task-id> <pr-url>\` to merge a task's PR through the guarded head-verified path`,
-      `Run \`sq-gh${repoFlag(c)} pr merge ${c.id} --expected-head <sha>\` to merge a head you already verified`,
+      `Run \`sq-gh${repoFlag(c)} pr merge ${c.id}\` to merge after fresh head and check verification`,
     ],
   },
   {
@@ -253,8 +252,7 @@ const table: SuggestionEntry[] = [
     match: (c) => c.domain === "pr" && c.action === "checks",
     lines: (c) => [
       `Run \`sq-gh${repoFlag(c)} pr view ${c.id}\` to see PR details`,
-      `Run \`bin/sq-pr-merge.sh <task-id> <pr-url>\` to merge a task's PR through the guarded head-verified path`,
-      `Run \`sq-gh${repoFlag(c)} pr merge ${c.id} --expected-head <sha>\` to merge when ready`,
+      `Run \`sq-gh${repoFlag(c)} pr merge ${c.id}\` to merge when ready`,
     ],
   },
 

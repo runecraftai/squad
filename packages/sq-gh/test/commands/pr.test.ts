@@ -905,11 +905,68 @@ describe("prCommand", () => {
       expect(mockedGhJson).toHaveBeenCalledTimes(2);
     });
 
-    it("refuses missing expected head before reading or merging", async () => {
-      await expect(prCommand(["merge", "10"], ctx)).rejects.toThrow(
-        "--expected-head must be a full recorded commit SHA",
+    it("uses the freshly read head when no expected head was recorded", async () => {
+      mockedGhJson
+        .mockResolvedValueOnce(verifiedPr)
+        .mockResolvedValueOnce({ ...verifiedPr, state: "MERGED" });
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(["merge", "10"], ctx);
+
+      expect(mockedGhExec).toHaveBeenCalledWith(
+        ["pr", "merge", "10", "--match-head-commit", head],
+        ctx,
       );
+      expect(result.startsWith("merged:")).toBe(true);
+      expect(result).toContain("status: landed");
+      expect(mockedGhJson).toHaveBeenCalledTimes(2);
+    });
+
+    it.each(["", "short", "--squash"])(
+      "refuses an explicitly invalid expected head %j before reading or merging",
+      async (value) => {
+        await expect(
+          prCommand(["merge", "10", "--expected-head", value], ctx),
+        ).rejects.toThrow("--expected-head must be a full recorded commit SHA");
+        expect(mockedGhJson).not.toHaveBeenCalled();
+        expect(mockedGhExec).not.toHaveBeenCalled();
+      },
+    );
+
+    it("refuses a valueless expected-head flag instead of ignoring it", async () => {
+      await expect(
+        prCommand(["merge", "10", "--expected-head"], ctx),
+      ).rejects.toThrow("--expected-head must be a full recorded commit SHA");
       expect(mockedGhJson).not.toHaveBeenCalled();
+      expect(mockedGhExec).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["missing", undefined],
+      ["empty", ""],
+      ["unknown", "unknown"],
+      ["malformed", "a".repeat(39)],
+    ])(
+      "refuses a %s fresh head without a recorded head",
+      async (_label, freshHead) => {
+        mockedGhJson.mockResolvedValue({ ...verifiedPr, headRefOid: freshHead });
+        await expect(prCommand(["merge", "10"], ctx)).rejects.toThrow(
+          "current PR head is unavailable or invalid",
+        );
+        expect(mockedGhExec).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ["failed", { statusCheckRollup: [{ conclusion: "FAILURE" }] }],
+      ["pending", { statusCheckRollup: [{ status: "IN_PROGRESS" }] }],
+      ["unknown checks", { statusCheckRollup: undefined }],
+      ["unmergeable", { mergeable: "CONFLICTING" }],
+    ])("refuses %s without a recorded head", async (_label, patch) => {
+      mockedGhJson.mockResolvedValue({ ...verifiedPr, ...patch });
+      await expect(prCommand(["merge", "10"], ctx)).rejects.toBeInstanceOf(
+        AxiError,
+      );
       expect(mockedGhExec).not.toHaveBeenCalled();
     });
 
@@ -1015,7 +1072,7 @@ describe("prCommand", () => {
       [
         "head drift",
         { headRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
-        `PR head changed: recorded ${head}, current aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; re-run bin/sq-pr-check.sh`,
+        `PR head changed: recorded ${head}, current aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; refresh the recorded head`,
       ],
       ["unmergeable", { mergeable: "CONFLICTING" }, "not mergeable"],
     ])("refuses %s without invoking merge", async (_label, patch, reason) => {

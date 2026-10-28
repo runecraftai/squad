@@ -76,7 +76,7 @@ fi
 # output, which would need a JSON processor Squad does not require, so a
 # GitLab task records no pr_head. bin/sq-teardown.sh and
 # bin/sq-review-diff.sh can resolve a missing head when needed, but
-# bin/sq-pr-merge.sh requires a valid recorded pr_head for guarded task merges.
+# bin/sq-pr-merge.sh uses a fresh forge head when no pr_head was recorded.
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
 if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/dev/null 2>&1; then
