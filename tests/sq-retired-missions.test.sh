@@ -267,8 +267,25 @@ EOF
   pass "a different terminal handle is refused instead of refreshing the retirement record"
 }
 
+test_verified_runtime_survives_unverified_rerecord() {
+  local out record
+  make_terminal_case runtime-downgrade
+  run_terminal record "$ID" || fail "could not write the terminal retirement record"
+  record="$STATE/.retired-terminals/$ID.record"
+  assert_contains "$(<"$record")" "runtime_id=runtime-1" "verified runtime was not recorded"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="";fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  run_terminal record "$ID" || fail "re-recording while Orca is unavailable was refused"
+  assert_contains "$(<"$record")" "runtime_id=runtime-1" "an unverified runtime observation downgraded the recorded runtime"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="runtime-1";d.fail_close=false;fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  out=$(run_terminal retire-terminal "$ID") || fail "preserved runtime could not retire the terminal: $out"
+  assert_contains "$out" "retired terminal term-runtime-downgrade" "refreshed retirement was not reported"
+  assert_absent "$record" "preserved terminal retirement left its record behind"
+  pass "an unverified re-record keeps the verified runtime so the terminal can still be retired"
+}
+
 test_failed_terminal_close_is_retried_from_record
 test_unverified_runtime_record_is_refreshed_on_retry
+test_verified_runtime_survives_unverified_rerecord
 test_runtime_refresh_preserves_pending_close_attempt
 test_record_identity_drift_still_refuses
 test_live_terminal_metadata_wins

@@ -63,7 +63,7 @@ record_replace() {  # <file> <content>
 }
 
 record_write() {  # <dir> <id> <kind> <content>
-  local dir=$1 id=$2 kind=$3 content=$4 file
+  local dir=$1 id=$2 kind=$3 content=$4 file observed
   record_dir "$dir" || return 1
   file="$dir/$id.record"
   if [ -e "$file" ] || [ -L "$file" ]; then
@@ -73,6 +73,10 @@ record_write() {  # <dir> <id> <kind> <content>
     cmp -s <(grep -Ev '^(retired_at|close_attempted|runtime_id)=' "$file") \
       <(printf '%s\n' "$content" | grep -Ev '^(retired_at|close_attempted|runtime_id)=') \
       || return 1
+    observed=$(printf '%s\n' "$content" | sed -n 's/^runtime_id=//p')
+    if [ -n "$REC_RUNTIME" ] && [ "$REC_RUNTIME" != unknown ] && [ "$observed" = unknown ]; then
+      content=${content/runtime_id=unknown/runtime_id=$REC_RUNTIME}
+    fi
     if [ "$REC_CLOSE_ATTEMPTED" = 1 ]; then
       content=$(printf '%s\n' "$content" | sed 's/^close_attempted=.*/close_attempted=1/')
     fi
