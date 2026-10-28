@@ -600,7 +600,7 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails() {
 }
 
 test_spawn_writes_orca_metadata_and_launches_harness() {
-  local proj wt data state config id out log
+  local proj wt data state config id out log status_extension
   id="orcaspawnz1"
   proj="$TMP_ROOT/spawn-project"
   wt="$TMP_ROOT/spawn-wt"
@@ -612,6 +612,9 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
   touch "$state/.last-sentry-beat"
   orca_case spawn
+  fm_fake_exit0 "$FB" pi
+  status_extension="$CASE_DIR/orca-agent-status.ts"
+  : > "$status_extension"
   log="$LOG"
   printf '1\n' > "$RESP/1.exit"
   printf '{"ok":true,"result":{"repo":{"id":"repo-spawn"}}}\n' > "$RESP/2.out"
@@ -619,9 +622,10 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 )
+    ORCA_OMP_STATUS_EXTENSION="$status_extension" \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" pi --mode drill --yolo off --backend orca 2>&1 )
   expect_code 0 $? "sq-spawn.sh --backend orca should succeed with fake Orca"$'\n'"$out"
-  assert_contains "$out" "spawned $id harness=claude kind=strike mode=drill yolo=off window=sq-$id worktree=$wt" \
+  assert_contains "$out" "spawned $id harness=pi kind=strike mode=drill yolo=off window=sq-$id worktree=$wt" \
     "spawn output missing Orca window/worktree summary"
   assert_grep "backend=orca" "$state/$id.meta" "meta missing backend=orca"
   assert_grep "window=sq-$id" "$state/$id.meta" "meta missing stable Orca window alias"
@@ -632,10 +636,10 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
     "spawn should reuse the implicit terminal returned by Orca worktree creation"
   assert_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-spawn'$'\x1f''--text'$'\x1f''export GOTMPDIR=/tmp/sq-orcaspawnz1/gotmp'$'\x1f''--enter'$'\x1f''--json' \
     "spawn did not export GOTMPDIR through the Orca terminal"
-  assert_contains "$(cat "$log")" "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions" \
-    "spawn did not send the selected harness launch command through Orca"
+  assert_contains "$(cat "$log")" "-e '$status_extension'" \
+    "Orca Pi launch did not include its existing managed status extension"
   rm -rf "/tmp/sq-$id"
-  pass "sq-spawn.sh --backend orca: reuses implicit terminal, records metadata, launches harness"
+  pass "sq-spawn.sh --backend orca: reuses implicit terminal, records metadata, and adds the managed Pi status extension"
 }
 
 test_spawn_refuses_orca_XO_before_home_mutation() {

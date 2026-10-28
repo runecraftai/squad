@@ -509,7 +509,9 @@ test_pi_threads_model_and_max_effort() {
     "pi launch still exports the removed Calm input-reroute binding"
   assert_contains "$launch" "sq-operational-input.sh' encode launch-brief" \
     "pi launch lost the canonical typed launch-brief envelope"
-  pass "pi receives --model and --thinking max profile flags"
+  assert_not_contains "$launch" "orca-agent-status.ts" \
+    "non-Orca Pi launch must not receive Orca's managed status extension"
+  pass "pi receives --model and --thinking max profile flags without Orca extension on non-Orca backend"
 }
 
 test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
