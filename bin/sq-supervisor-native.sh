@@ -90,7 +90,7 @@ fm_supervisor_native_ready() {  # <state> <target> -> readiness JSON
   dir=$(fm_supervisor_native_safe_dir "$state" "$target") || { echo 'error: Orca Pi supervisor native readiness is missing; confirm the primary has a matching ORCA_TERMINAL_HANDLE and ORCA_WORKTREE_ID, or set SQUAD_SUPERVISOR_BACKEND=orca and SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>' >&2; return 1; }
   file="$dir/ready.json"
   [ -f "$file" ] && [ ! -L "$file" ] || {
-    echo 'error: Orca Pi supervisor native readiness record is missing or unreadable; load the project away-handoff extension in the exact local primary and confirm it owns this state directory' >&2; return 1;
+    echo 'error: Orca Pi supervisor native readiness record is missing or unreadable; load the project away-handoff extension in the exact local primary and confirm it owns this state directory, confirm the primary has a matching ORCA_TERMINAL_HANDLE and ORCA_WORKTREE_ID, or set SQUAD_SUPERVISOR_BACKEND=orca and SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>' >&2; return 1;
   }
   ready=$(jq -ce --argjson endpoint "$endpoint" --argjson now "$(date '+%s')" '
     select(.version == 1 and .provider == "pi" and .endpoint == $endpoint)

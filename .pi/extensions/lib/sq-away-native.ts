@@ -47,10 +47,17 @@ function command(timeout: number, ...args: string[]): string | null {
 function physical(path: string): string {
   try { return realpathSync(path); } catch { return ""; }
 }
+function detectedNonOrcaPane(): boolean {
+  const env = process.env;
+  return !!env.TMUX_PANE
+    || (env.HERDR_ENV === "1" && !!env.HERDR_PANE_ID)
+    || (env.TUIOS_ENV === "1" && !!env.TUIOS_SESSION && !!env.TUIOS_PANE_ID);
+}
 function nativeSelection(home: string): { backend: "orca"; target: string } | null {
-  const backend = process.env.SQUAD_SUPERVISOR_BACKEND;
-  const target = process.env.SQUAD_SUPERVISOR_TARGET;
-  if (backend !== undefined || target !== undefined) return backend === "orca" && target ? { backend: "orca", target } : null;
+  const backend = process.env.SQUAD_SUPERVISOR_BACKEND || "";
+  const target = process.env.SQUAD_SUPERVISOR_TARGET || "";
+  if (backend || target) return backend === "orca" && target ? { backend: "orca", target } : null;
+  if (detectedNonOrcaPane()) return null;
   const handle = process.env.ORCA_TERMINAL_HANDLE || "";
   const worktree = process.env.ORCA_WORKTREE_ID || "";
   const separator = worktree.lastIndexOf("::");

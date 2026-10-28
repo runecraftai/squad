@@ -95,9 +95,11 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 # shellcheck source=bin/sq-supervisor-target-lib.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
 
-# Adopt only identity issued to this process by Orca. Explicit supervisor
-# variables, including a partial or empty selection, remain authoritative.
-if [ -z "${SQUAD_SUPERVISOR_BACKEND+x}" ] && [ -z "${SQUAD_SUPERVISOR_TARGET+x}" ]; then
+# Adopt only identity issued to this process by Orca. Non-empty explicit
+# supervisor variables and any detected non-Orca pane remain authoritative, and
+# empty exported values count as unset.
+if [ -z "${SQUAD_SUPERVISOR_BACKEND:-}" ] && [ -z "${SQUAD_SUPERVISOR_TARGET:-}" ] \
+  && [ -z "$(_supervisor_pane_candidates)" ]; then
   SQUAD_AFK_ORCA_HANDLE=${ORCA_TERMINAL_HANDLE:-}
   SQUAD_AFK_ORCA_WORKTREE=${ORCA_WORKTREE_ID:-}
   SQUAD_AFK_ORCA_PATH=${SQUAD_AFK_ORCA_WORKTREE##*::}

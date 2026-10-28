@@ -76,7 +76,7 @@ It never raw-deletes an Orca worktree.
 
 An Orca-hosted primary automatically adopts its runtime-issued `ORCA_TERMINAL_HANDLE` when the path in `ORCA_WORKTREE_ID` physically matches the Squad base.
 That path is the `<repo-id>::<absolute-path>` component Linux builds record; a macOS primary records a bare worktree atom, so it has no path to compare and keeps using the explicit override.
-Set `SQUAD_SUPERVISOR_BACKEND=orca` and `SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>` as an explicit override for an unusual setup; explicit values take precedence.
+Set `SQUAD_SUPERVISOR_BACKEND=orca` and `SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>` as an explicit override for an unusual setup; non-empty explicit values take precedence, exported empty values count as unset, and a detected tmux, Herdr, or TUIOS pane outranks the inherited Orca identity.
 Missing or malformed identity, or a worktree path that does not physically match, publishes no readiness.
 The target must be a connected, writable, non-orphaned local terminal whose worktree path is the physical `SQUAD_BASE` directory.
 This selection is independent of `config/backend`; changing task placement is not required.

@@ -77,7 +77,7 @@ Ele nunca faz raw-delete de um worktree do Orca.
 
 Um primário hospedado no Orca adota automaticamente seu `ORCA_TERMINAL_HANDLE` emitido pelo runtime quando o caminho em `ORCA_WORKTREE_ID` corresponde fisicamente à base do Squad.
 Esse caminho é o componente `<repo-id>::<absolute-path>` que as builds Linux gravam; um primário macOS grava um átomo de worktree puro, então não há caminho para comparar e ele segue usando o override explícito.
-Defina `SQUAD_SUPERVISOR_BACKEND=orca` e `SQUAD_SUPERVISOR_TARGET=<handle exato de terminal emitido pelo runtime>` como override explícito para um setup incomum; valores explícitos têm precedência.
+Defina `SQUAD_SUPERVISOR_BACKEND=orca` e `SQUAD_SUPERVISOR_TARGET=<handle exato de terminal emitido pelo runtime>` como override explícito para um setup incomum; valores explícitos não vazios têm precedência, valores exportados vazios contam como ausentes, e um pane tmux, Herdr ou TUIOS detectado tem precedência sobre a identidade Orca herdada.
 Identidade ausente ou malformada, ou um caminho de worktree que não corresponde fisicamente, não publica prontidão.
 O alvo precisa ser um terminal local conectado, gravável e não órfão cujo caminho de worktree seja o diretório físico `SQUAD_BASE`.
 Essa seleção é independente de `config/backend`; mudar o posicionamento de tarefas não é exigido.

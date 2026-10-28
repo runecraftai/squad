@@ -78,6 +78,7 @@ const publishedReadiness = () => {
 // reachable tmux server would settle its Squad:0 fallback. Both are neutralized so
 // only the runtime identity can resolve a supervisor.
 const noDetectedPane = { PATH:`${fake}/nomux:${process.env.PATH}`, TMUX_PANE:'', TMUX:'', HERDR_ENV:'', HERDR_PANE_ID:'', TUIOS_ENV:'', TUIOS_SESSION:'', TUIOS_PANE_ID:'' };
+const clearDetectedPane = () => { for (const key of ['TMUX_PANE','TMUX','HERDR_ENV','HERDR_PANE_ID','TUIOS_ENV','TUIOS_SESSION','TUIOS_PANE_ID']) delete process.env[key]; };
 const flush = (item = '') => script(`. '${root}/bin/sq-supervise-daemon.sh'; ${item ? `escalate_add '${state}' '${item}';` : ''} escalate_flush '${state}'`);
 try {
   // Every non-Pi adapter is refused by name before creating even its state dir.
@@ -128,10 +129,13 @@ try {
   const bareDir=script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' term-primary`).stdout.trim();
   mkdirSync(`${state}/.away-handoff`,{mode:0o700});mkdirSync(bareDir,{mode:0o700});
   r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/readiness record is missing/);assert.equal(existsSync(`${state}/.afk`),false);
+  assert.match(r.stderr,/ORCA_TERMINAL_HANDLE/,'the unreadable-record refusal did not name the runtime identity route');
+  assert.match(r.stderr,/SQUAD_SUPERVISOR_BACKEND=orca/,'the unreadable-record refusal did not name the explicit override route');
   rmSync(bareDir,{recursive:true,force:true});rmSync(`${state}/.away-handoff`,{recursive:true,force:true});
   check('a handoff directory without a readiness record refuses with an actionable reason');
   writeFileSync(`${state}/.lock`,String(process.pid));
   const mod=await import(pathToFileURL(`${root}/.pi/extensions/sq-primary-away-handoff.ts`).href);mod.default(pi);
+  clearDetectedPane();
   // A plainly launched Orca primary should adopt its own runtime-issued identity.
   delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
   process.env.ORCA_TERMINAL_HANDLE=runtimeIdentity.handle; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
@@ -143,6 +147,40 @@ try {
   r=cli('stop'); assert.equal(r.status,0,r.stderr);
   check('runtime-issued identity publishes readiness and permits away-mode start without overrides');
   await emit('session_shutdown');
+  // The documented sample config exports both variables as empty strings.
+  process.env.SQUAD_SUPERVISOR_BACKEND=''; process.env.SQUAD_SUPERVISOR_TARGET='';
+  process.env.ORCA_TERMINAL_HANDLE=runtimeIdentity.handle; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
+  await emit('session_start',{},context); await tick();
+  assert.ok(existsSync(readyPath(runtimeIdentity.handle)),'exported empty supervisor values blocked readiness');
+  r=cli('start',noDetectedPane); assert.equal(r.status,0,r.stderr);
+  assert.equal(daemonRecord().extra.parent.target,runtimeIdentity.handle,'launcher did not adopt with exported empty supervisor values');
+  r=cli('stop'); assert.equal(r.status,0,r.stderr);
+  await emit('session_shutdown');
+  delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
+  check('exported empty supervisor values count as unset for adoption');
+  // Ambient runtime evidence outranks the inherited Orca identity, so the
+  // receiver must not publish Orca readiness and the launcher must keep the
+  // detected non-Orca target instead of adopting Orca.
+  process.env.ORCA_TERMINAL_HANDLE=runtimeIdentity.handle; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
+  for (const [markers, label] of [
+    [{TMUX_PANE:'%1', TMUX:'/tmp/fake-tmux,1,0'}, 'tmux'],
+    [{HERDR_ENV:'1', HERDR_PANE_ID:'pane-1'}, 'herdr'],
+    [{TUIOS_ENV:'1', TUIOS_SESSION:'tui-session', TUIOS_PANE_ID:'tui-pane'}, 'tuios'],
+  ]) {
+    Object.assign(process.env, markers);
+    await emit('session_start',{},context); await tick();
+    assert.deepEqual(publishedReadiness(),[],`${label} pane evidence still published Orca readiness`);
+    await emit('session_shutdown');
+    clearDetectedPane();
+  }
+  const createsBeforeDetected=count('create');
+  r=cli('start',{...noDetectedPane, TMUX_PANE:'%1', TMUX:'/tmp/fake-tmux,1,0'});
+  assert.notEqual(r.status,0,'launcher adopted Orca over a detected tmux pane');
+  assert.match(r.stderr,/TMUX_PANE target '%1'/,'launcher did not keep the detected tmux target');
+  assert.doesNotMatch(r.stderr,/native readiness is missing/,'launcher kept looking at Orca readiness over a detected tmux pane');
+  assert.equal(count('create'),createsBeforeDetected,'launcher created a daemon terminal over a detected tmux pane');
+  assert.equal(existsSync(`${state}/.afk`),false,'launcher mutated away-mode state over a detected tmux pane');
+  check('detected tmux, Herdr, and TUIOS panes outrank Orca runtime identity');
   // Explicit selection keeps precedence over a different runtime-issued handle.
   process.env.SQUAD_SUPERVISOR_BACKEND=baseSelection.backend; process.env.SQUAD_SUPERVISOR_TARGET=baseSelection.target;
   process.env.ORCA_TERMINAL_HANDLE='term-foreign'; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
@@ -157,7 +195,7 @@ try {
   const adoptionCalls=calls();
   assert.equal(adoptionCalls.some(a=>a[1]==='send'||a[0]==='worktree'||a.includes('--tab')),false,'adoption issued a send, worktree or --tab call');
   const adoptionCreates=adoptionCalls.filter(a=>a[1]==='create');
-  assert.equal(adoptionCreates.length,2,'adoption did not create exactly one daemon terminal per start');
+  assert.equal(adoptionCreates.length,3,'adoption did not create exactly one daemon terminal per start');
   assert.equal(adoptionCreates.every(a=>!a.includes('--focus')),true,'an adopted create requested focus');
   delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
   assert.deepEqual(publishedReadiness(),[],'precondition: no readiness is published before the negative cases');
@@ -284,11 +322,12 @@ try {
   const scopedIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${scopedPid}'`);assert.equal(scopedIdentity.status,0);
   writeFileSync(`${scopedLock}/pid-identity`,scopedIdentity.stdout.trim());writeFileSync(`${scopedLock}/orca-owner`,scopeTitle);
   const closesBeforeScope=count('close');
-  r=cli('stop',{SQUAD_SUPERVISOR_BACKEND:'',SQUAD_SUPERVISOR_TARGET:''});
+  const noRuntimeIdentity={SQUAD_SUPERVISOR_BACKEND:'',SQUAD_SUPERVISOR_TARGET:'',ORCA_TERMINAL_HANDLE:'',ORCA_WORKTREE_ID:''};
+  r=cli('stop',noRuntimeIdentity);
   assert.notEqual(r.status,0);assert.match(r.stderr,/no terminal ownership record/);assert.equal(scopedDaemon.exitCode,null);assert.ok(existsSync(`${state}/.afk`));assert.equal(count('close'),closesBeforeScope);
   scopedDaemon.kill('SIGTERM');await new Promise(resolve=>scopedDaemon.once('exit',resolve));tracked=tracked.filter(child=>child!==scopedDaemon);rmSync(scopedLock,{recursive:true});
   mkdirSync(`${state}/.away-handoff/unrecorded-request`,{recursive:true,mode:0o700});writeFileSync(`${state}/.away-handoff/unrecorded-request/request.json`,'{}');
-  r=cli('stop',{SQUAD_SUPERVISOR_BACKEND:'',SQUAD_SUPERVISOR_TARGET:''});
+  r=cli('stop',noRuntimeIdentity);
   assert.notEqual(r.status,0);assert.match(r.stderr,/unresolved without a recorded daemon terminal/);assert.ok(existsSync(`${state}/.afk`));assert.equal(count('close'),closesBeforeScope);
   rmSync(`${state}/.away-handoff/unrecorded-request`,{recursive:true,force:true});
   writeFileSync(`${state}/.afk-daemon-terminal`,scopeRecord);
