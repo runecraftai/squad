@@ -83,16 +83,18 @@
 #          refresh relays any completed sq-unit-sync.sh output before the
 #          aggregate timeout skip line with timeout and elapsed seconds.
 #          Set SQUAD_FLEET_PRUNE=0 to skip branch pruning during that refresh.
-#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the six MUTATING sweeps
+#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the seven MUTATING sweeps
 #          (PR-check migration, XO_sync, XO_liveness_sweep,
-#          XO_handoff_resume, x_mode_setup, fleet_sync) while still
+#          XO_handoff_resume, x_mode_setup, retired-mission record sweep,
+#          fleet_sync) while still
 #          printing every read-only detect line
 #          above; the TANGLE line switches to advisory-only wording with no
 #          checkout command. Used by
 #          sq-session-start.sh's read-only path when another live session holds
 #          the unit lock, so a second concurrent session never race-mutates
 #          PR-check artifacts, XO bases, pending handoff outboxes,
-#          X-mode artifacts, project clones, or repair instructions.
+#          X-mode artifacts, retirement records and worktree registrations,
+#          project clones, or repair instructions.
 #          Unset/0 (the default) runs every sweep exactly as before - this flag
 #          is purely additive.
 #          Set SQUAD_BOOTSTRAP_NETWORK to split this run by whether a step talks to

@@ -351,16 +351,17 @@ EOF
 }
 
 worktree_reachable() {  # <project> <path>
-  local project=$1 path=$2 head ref default found=0
+  local project=$1 path=$2 head name ref found=0
   head=$(git -C "$path" rev-parse --verify HEAD 2>/dev/null) || return 1
-  default=$(git -C "$project" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
-  if [ -n "$default" ] && git -C "$path" merge-base --is-ancestor "$head" "$default" 2>/dev/null; then return 0; fi
-  if [ -z "$default" ]; then
-    for default in main master; do
-      if git -C "$project" show-ref --verify --quiet "refs/heads/$default" \
-        && git -C "$path" merge-base --is-ancestor "$head" "refs/heads/$default" 2>/dev/null; then return 0; fi
+  name=$(git -C "$project" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [ -n "$name" ]; then
+    name=${name#origin/}
+  else
+    for ref in main master; do
+      if git -C "$project" show-ref --verify --quiet "refs/heads/$ref"; then name=$ref; break; fi
     done
   fi
+  if [ -n "$name" ] && git -C "$path" merge-base --is-ancestor "$head" "refs/heads/$name" 2>/dev/null; then return 0; fi
   while IFS= read -r ref; do
     [ -n "$ref" ] || continue
     if git -C "$path" merge-base --is-ancestor "$head" "$ref" 2>/dev/null; then found=1; break; fi

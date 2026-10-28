@@ -165,6 +165,26 @@ test_remote_tracking_reachable_orphan_is_removed() {
   pass "retired clean worktree reachable from a remote-tracking ref is removed safely"
 }
 
+test_local_default_branch_landing_is_reachable() {
+  local out
+  make_case local-default
+  git -C "$PROJECT" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  git -C "$WT" checkout -q -b "sq/$ID-change"
+  printf 'local-safe\n' >> "$WT/file"
+  git -C "$WT" add file
+  git -C "$WT" commit -qm local-safe
+  git -C "$PROJECT" merge --ff-only "sq/$ID-change" >/dev/null
+  run_record || fail "could not write the worktree retirement record"
+  rm "$STATE/$ID.meta"
+  out=$(run_sweep) || fail "worktree sweep failed: $out"
+  assert_contains "$out" "retired worktree $WT" "worktree landed on the local default branch was not reported retired"
+  assert_absent "$WT" "worktree landed on the local default branch was not removed"
+  if git -C "$PROJECT" worktree list --porcelain | grep -F "$WT" >/dev/null; then
+    fail "local-default-branch landing left its orphan registration behind"
+  fi
+  pass "local-only landing is reachable through the local default branch when origin/HEAD exists"
+}
+
 test_unmerged_unreachable_orphan_is_preserved() {
   local out
   make_case unreachable
@@ -365,6 +385,7 @@ test_record_identity_drift_still_refuses
 test_live_terminal_metadata_wins
 test_ambiguous_terminal_owner_is_preserved
 test_remote_tracking_reachable_orphan_is_removed
+test_local_default_branch_landing_is_reachable
 test_unmerged_unreachable_orphan_is_preserved
 test_dirty_orphan_is_preserved
 test_fob_pool_ownership_preserves_reusable_worktree

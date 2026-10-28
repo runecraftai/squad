@@ -19,7 +19,7 @@
 # standalone with unchanged default behavior - other flows (sq-bootstrap.sh
 # install <tools> after consent, /updatesquad, the afk daemon, existing
 # tests) still call them directly. The one seam this script needed -
-# bootstrap running its detect-only diagnostics without its six mutating
+# bootstrap running its detect-only diagnostics without its seven mutating
 # sweeps - is an opt-in SQUAD_BOOTSTRAP_DETECT_ONLY=1 flag on sq-bootstrap.sh
 # itself (default unset/0 = unchanged behavior), not a fork.
 #
@@ -30,10 +30,11 @@
 #                       mutating step runs.
 #   2. bootstrap      - base-local stale Herdr projection cleanup runs only
 #                       when this session actually holds the lock. Detect-only
-#                       diagnostics always run. Bootstrap's six MUTATING sweeps
+#                       diagnostics always run. Bootstrap's seven MUTATING sweeps
 #                       (legacy PR-check migration, XO convergence,
 #                       XO liveness, pending remote handoff retry,
-#                       X-mode artifact writes, unit sync) also run only when
+#                       X-mode artifact writes, the retired-mission record
+#                       sweep, unit sync) also run only when
 #                       locked; the four network sweeps run in the deferred
 #                       stage rather than this synchronous bootstrap section.
 #   3. stand-to drain     - mutates the durable stand-to queue, so it also only runs
@@ -118,7 +119,7 @@
 # and all of which are safe to compute without verified lock ownership.
 # It deliberately skips the network-only GitHub-auth probe because a read-only
 # session has no dispatch, spawn, steer, or merge action for that verdict to gate.
-# Only projection cleanup, the six bootstrap mutating sweeps, the
+# Only projection cleanup, the seven bootstrap mutating sweeps, the
 # stand-to queue drain, and the handoff surfacer (which read-only sessions
 # skip and only list instead) are omitted from the read-only path.
 # The context digest is always read-only, and the unit-state digest's only
@@ -197,9 +198,10 @@
 #   --reemit  This process ALREADY took the helm at its own startup and has
 #             only lost its context (a /clear or a compaction). Skip the
 #             mutating sweeps that startup already reconciled - the stale Herdr
-#             projection cleanup and bootstrap's six mutating sweeps (unit
+#             projection cleanup and bootstrap's seven mutating sweeps (unit
 #             sync, XO convergence and liveness, PR-check migration,
-#             pending remote handoff retry, X-mode artifact writes) - and
+#             pending remote handoff retry, X-mode artifact writes, the
+#             retired-mission record sweep) - and
 #             re-emit the rest. The stand-to queue drain is NOT skipped: queued
 #             records are this turn's work queue, they arrived after startup,
 #             and a session that owns the lock is exactly the session that must
@@ -521,7 +523,8 @@ if [ "$REEMIT" -eq 1 ]; then
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
   printf 'reprinted, but the sweeps startup already reconciled - project clone refresh,\n'
   printf 'XO convergence and liveness, PR-check migration, pending remote handoff\n'
-  printf 'retry, X-mode artifact writes, and stale Herdr child cleanup - are NOT repeated.\n'
+  printf 'retry, X-mode artifact writes, the retired-mission record sweep, and stale\n'
+  printf 'Herdr child cleanup - are NOT repeated.\n'
   printf 'Queued wakes ARE still drained: they arrived after startup and are this turn work.\n'
 else
   section "SESSION START - $SQUAD_BASE"
@@ -541,9 +544,10 @@ if [ "$LOCK_RC" -ne 0 ]; then
     printf '●  READ-ONLY SESSION - UNIT LOCK OWNERSHIP WAS NOT VERIFIED\n'
     printf '●  %s\n' "$LOCK_OUT"
     printf '●  Skipping every mutating step: PR-check migration, stale Herdr child cleanup,\n'
-    printf '●  XO convergence, XO liveness, pending remote handoff retry,\n'
-    printf '●  X-mode artifacts, unit sync, and stand-to queue drain. Detect-only bootstrap\n'
-    printf '●  diagnostics and the rest of this read-only-safe digest still ran below.\n'
+    printf '●  XO convergence, XO liveness, pending remote handoff retry, X-mode artifacts,\n'
+    printf '●  retired-mission record sweep, unit sync, and stand-to queue drain.\n'
+    printf '●  Detect-only bootstrap diagnostics and the rest of this read-only-safe digest\n'
+    printf '●  still ran below.\n'
     printf '●  Operate read-only until this resolves - do not spawn, steer, merge, or\n'
     printf '●  otherwise mutate unit state from this session.\n'
     printf '%s\n' "$BAR"
