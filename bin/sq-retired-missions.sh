@@ -22,9 +22,14 @@ valid_id() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
 }
 
+identity_dir() {
+  [ -n "$1" ] && [ -d "$1" ] || return 1
+  ( CDPATH='' cd -- "$1" && pwd -P )
+}
+
 canonical_dir() {
   [ -n "$1" ] && [ -d "$1" ] && [ ! -L "$1" ] || return 1
-  ( CDPATH='' cd -- "$1" && pwd -P )
+  identity_dir "$1"
 }
 
 single_link_file() {
@@ -129,7 +134,7 @@ record_task() {
   valid_id "$id" || { echo "error: invalid task id" >&2; return 1; }
   meta="$STATE/$id.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || { echo "error: live task metadata is unavailable" >&2; return 1; }
-  base=$(canonical_dir "$SQUAD_BASE") || { echo "error: base identity cannot be verified" >&2; return 1; }
+  base=$(identity_dir "$SQUAD_BASE") || { echo "error: base identity cannot be verified" >&2; return 1; }
   backend=$(meta_value "$meta" backend 2>/dev/null || true)
   terminal=$(meta_value "$meta" terminal 2>/dev/null || true)
   worktree_id=$(meta_value "$meta" orca_worktree_id 2>/dev/null || true)
@@ -153,7 +158,7 @@ record_task() {
 
   if [ -n "$worktree_path" ] && [ -n "$project" ] && [ "$backend" != orca ]; then
     canonical_wt=$(canonical_dir "$worktree_path" 2>/dev/null || true)
-    canonical_project=$(canonical_dir "$project" 2>/dev/null || true)
+    canonical_project=$(identity_dir "$project" 2>/dev/null || true)
     [ -n "$canonical_wt" ] || return 0
     [ "$(fob_path_state "$project" "$canonical_wt")" = pool-owned ] || return 0
     if [ -z "$canonical_project" ] || ! git -C "$canonical_project" rev-parse --git-dir >/dev/null 2>&1; then
@@ -186,12 +191,15 @@ record_update_close_attempted() {
 }
 
 record_references_live_meta() {  # <task-id> <field> <value>
-  local id=$1 field=$2 value=$3 meta
+  local id=$1 field=$2 value=$3 meta status
   if [ -e "$STATE/$id.meta" ] || [ -L "$STATE/$id.meta" ]; then return 0; fi
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || [ -L "$meta" ] || continue
     [ -f "$meta" ] && [ ! -L "$meta" ] || return 0
-    grep -qxF "$field=$value" "$meta" 2>/dev/null && return 0
+    status=0
+    grep -qxF "$field=$value" "$meta" 2>/dev/null || status=$?
+    [ "$status" -eq 0 ] && return 0
+    [ "$status" -eq 1 ] || return 0
   done
   return 1
 }
@@ -243,7 +251,7 @@ retire_live_terminal() {
   [ -f "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || { echo "preserved terminal $id: live task metadata is unavailable"; return 1; }
   record_load "$file" && [ "$REC_KIND" = terminal ] && [ "$REC_TASK_ID" = "$id" ] \
     || { echo "preserved terminal $id: retirement identity is unavailable"; return 1; }
-  base=$(canonical_dir "$SQUAD_BASE" 2>/dev/null || true)
+  base=$(identity_dir "$SQUAD_BASE" 2>/dev/null || true)
   [ -n "$base" ] && [ "$REC_BASE" = "$base" ] \
     || { echo "preserved terminal $REC_TERMINAL: base identity does not match"; return 1; }
   [ "$(meta_value "$STATE/$id.meta" terminal 2>/dev/null || true)" = "$REC_TERMINAL" ] \
@@ -284,7 +292,7 @@ sweep_terminals() {
       echo "preserved terminal record $id: malformed or unsafe record"
       continue
     fi
-    base=$(canonical_dir "$SQUAD_BASE" 2>/dev/null || true)
+    base=$(identity_dir "$SQUAD_BASE" 2>/dev/null || true)
     if [ -z "$base" ] || [ "$REC_BASE" != "$base" ]; then
       echo "preserved terminal $REC_TERMINAL: base identity does not match"
       continue
@@ -358,6 +366,15 @@ EOF
   [ "$found" -eq 1 ]
 }
 
+worktree_belongs_to_project() {  # <project> <path>
+  local expected actual
+  expected=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  actual=$(git -C "$2" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  expected=$(identity_dir "$expected" 2>/dev/null || true)
+  actual=$(identity_dir "$actual" 2>/dev/null || true)
+  [ -n "$expected" ] && [ -n "$actual" ] && [ "$expected" = "$actual" ]
+}
+
 worktree_reachable() {  # <project> <path>
   local project=$1 path=$2 head name ref found=0
   head=$(git -C "$path" rev-parse --verify HEAD 2>/dev/null) || return 1
@@ -388,7 +405,7 @@ sweep_worktrees() {
       echo "preserved worktree record $id: malformed or unsafe record"
       continue
     fi
-    base=$(canonical_dir "$SQUAD_BASE" 2>/dev/null || true)
+    base=$(identity_dir "$SQUAD_BASE" 2>/dev/null || true)
     if [ -z "$base" ] || [ "$REC_BASE" != "$base" ]; then
       echo "preserved worktree $REC_WORKTREE_PATH: base identity does not match"
       continue
@@ -398,7 +415,7 @@ sweep_worktrees() {
       continue
     fi
     path=$REC_WORKTREE_PATH; project=$REC_PROJECT
-    canonical=$(canonical_dir "$project" 2>/dev/null || true)
+    canonical=$(identity_dir "$project" 2>/dev/null || true)
     if [ -z "$canonical" ] || [ "$canonical" != "$project" ] || ! git -C "$project" rev-parse --git-dir >/dev/null 2>&1; then
       echo "preserved worktree $path: project repository identity is unavailable"
       continue
@@ -424,6 +441,10 @@ sweep_worktrees() {
     fi
     if ! worktree_registered_once "$project" "$path"; then
       echo "preserved worktree $path: exact git registration could not be verified"
+      continue
+    fi
+    if ! worktree_belongs_to_project "$project" "$path"; then
+      echo "preserved worktree $path: git worktree identity does not belong to the recorded project"
       continue
     fi
     dirty=$(git -C "$path" status --porcelain 2>/dev/null) || dirty=unknown

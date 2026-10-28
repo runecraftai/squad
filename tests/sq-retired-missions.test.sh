@@ -386,6 +386,50 @@ test_sweep_action_limit_does_not_starve_later_records() {
   pass "the sweep budget bounds actions so permanent records cannot starve later retirements"
 }
 
+test_symlinked_base_and_project_are_recorded_and_swept() {
+  local out record resolved_base resolved_project
+  make_case symlinked
+  ln -s "$PROJECT" "$CASE_DIR/project-link"
+  ln -s "$BASE" "$CASE_DIR/base-link"
+  cat > "$STATE/$ID.meta" <<EOF
+backend=tmux
+worktree=$WT
+project=$CASE_DIR/project-link
+kind=strike
+EOF
+  PATH="$CASE_DIR/fakebin:$PATH" HOME="$HOME" \
+    SQUAD_FAKE_FOB_STATUS="[{\"path\":\"$WT\",\"status\":\"in-use\"}]" \
+    SQUAD_BASE="$CASE_DIR/base-link" SQUAD_STATE_OVERRIDE="$STATE" SQUAD_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/sq-retired-missions.sh" record "$ID" \
+    || fail "a symlinked base or project blocked retirement recording"
+  record="$STATE/.retired-worktrees/$ID.record"
+  resolved_base=$(cd "$BASE" && pwd -P)
+  resolved_project=$(cd "$PROJECT" && pwd -P)
+  assert_contains "$(<"$record")" "base=$resolved_base" "the recorded base identity was not resolved"
+  assert_contains "$(<"$record")" "project=$resolved_project" "the recorded project identity was not resolved"
+  rm "$STATE/$ID.meta"
+  out=$(PATH="$CASE_DIR/fakebin:$PATH" HOME="$HOME" SQUAD_BASE="$CASE_DIR/base-link" \
+    SQUAD_STATE_OVERRIDE="$STATE" SQUAD_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/sq-retired-missions.sh" sweep) || fail "sweep failed with a symlinked base: $out"
+  assert_contains "$out" "retired worktree $WT" "a symlinked base prevented the recorded worktree retirement"
+  assert_absent "$WT" "a symlinked base left the retired worktree behind"
+  pass "symlinked base and project paths are resolved to stable identities instead of blocking retirement"
+}
+
+test_reused_worktree_path_is_preserved() {
+  local out
+  make_case reused-path
+  run_record || fail "could not write the worktree retirement record"
+  rm "$STATE/$ID.meta"
+  rm -rf "$WT"
+  init_git_repo "$WT"
+  out=$(run_sweep) || fail "worktree sweep errored for a reused path: $out"
+  assert_contains "$out" "git worktree identity does not belong" "a foreign checkout at the recorded path was not refused"
+  assert_present "$WT/.git" "a foreign checkout at the recorded worktree path was removed"
+  assert_present "$STATE/.retired-worktrees/$ID.record" "the refused record was discarded"
+  pass "a path reused by another repository is preserved through git identity verification"
+}
+
 test_failed_terminal_close_is_retried_from_record
 test_unverified_runtime_record_is_refreshed_on_retry
 test_verified_runtime_survives_unverified_rerecord
@@ -395,6 +439,8 @@ test_confirmed_absence_clears_record_without_close_attempt
 test_missing_worktree_scope_does_not_confirm_absence
 test_sweep_action_limit_does_not_starve_later_records
 test_non_pool_worktree_is_not_recorded
+test_reused_worktree_path_is_preserved
+test_symlinked_base_and_project_are_recorded_and_swept
 test_runtime_refresh_preserves_pending_close_attempt
 test_record_identity_drift_still_refuses
 test_live_terminal_metadata_wins
