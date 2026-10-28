@@ -1143,6 +1143,26 @@ describe("prCommand", () => {
       );
     });
 
+    it("merges a PR whose head has no CI checks, as GitHub reports it", async () => {
+      mockedGhJson
+        .mockResolvedValueOnce({ ...verifiedPr, statusCheckRollup: [] })
+        .mockResolvedValueOnce({
+          ...verifiedPr,
+          statusCheckRollup: [],
+          state: "MERGED",
+        });
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(["merge", "10"], ctx);
+
+      expect(mockedGhExec).toHaveBeenCalledWith(
+        ["pr", "merge", "10", "--match-head-commit", head],
+        ctx,
+      );
+      expect(result.startsWith("merged:")).toBe(true);
+      expect(result).toContain("status: landed");
+    });
+
     it.each([
       [
         "fresh failure after cached green",
@@ -1155,6 +1175,8 @@ describe("prCommand", () => {
         "checks are pending",
       ],
       ["unknown", { statusCheckRollup: undefined }, "checks are unknown"],
+      ["null", { statusCheckRollup: null }, "checks are unknown"],
+      ["non-array", { statusCheckRollup: {} }, "checks are unknown"],
       [
         "head drift",
         { headRefOid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },

@@ -670,6 +670,13 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
       ),
     ]);
   }
+  // A real zero-check head reports an empty rollup array, not null: the open PR
+  // https://github.com/90sRehem/runecraft-f7-pr-test/pull/1 at
+  // 3ce5a680d00d6fc0f29b722f830919ee074afc59 returned `statusCheckRollup: []`
+  // through this adapter with gh 2.103.2 while GitHub reported 0 check runs and
+  // no workflows, so an empty array means no CI checks are configured and is
+  // mergeable; null, omitted, non-array, or malformed rollup data is unreadable
+  // and still refuses.
   if (!Array.isArray(pr.statusCheckRollup)) {
     throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
   }
