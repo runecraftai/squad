@@ -834,12 +834,21 @@ describe("prCommand", () => {
       statusCheckRollup: [{ name: "build", conclusion: "SUCCESS" }],
     };
 
-    it("refuses automatic merge without reading or merging", async () => {
-      await expect(
-        prCommand(["merge", "10", "--expected-head", head, "--auto"], ctx),
-      ).rejects.toThrow("--auto is not allowed");
-      expect(mockedGhJson).not.toHaveBeenCalled();
-      expect(mockedGhExec).not.toHaveBeenCalled();
+    it("forwards automatic merge for non-task callers", async () => {
+      mockedGhJson.mockResolvedValue(verifiedPr);
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(
+        ["merge", "10", "--expected-head", head, "--auto"],
+        ctx,
+      );
+
+      expect(mockedGhExec).toHaveBeenCalledWith(
+        ["pr", "merge", "10", "--match-head-commit", head, "--auto"],
+        ctx,
+      );
+      expect(result).toContain("merged");
+      expect(PR_HELP).toContain("--auto");
     });
 
     it("refuses missing expected head before reading or merging", async () => {

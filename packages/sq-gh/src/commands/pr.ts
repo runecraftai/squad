@@ -258,7 +258,7 @@ flags{create}:
 flags{edit}:
   --title <text>, --body <text> or --body-file <path>, --add-label <name> (repeatable), --remove-label <name> (repeatable), --add-assignee <login> (repeatable), --remove-assignee <login> (repeatable), --add-reviewer <login> (repeatable), --remove-reviewer <login> (repeatable), --milestone
 flags{merge}:
-  --method <merge|squash|rebase>, --merge, --squash, --rebase, --delete-branch, --expected-head <sha>, --body <text> or --body-file <path>, --subject
+  --method <merge|squash|rebase>, --merge, --squash, --rebase, --auto, --delete-branch, --expected-head <sha>, --body <text> or --body-file <path>, --subject
 flags{review}:
   --approve, --request-changes, --comment, --body <text> or --body-file <path>
 flags{comment}:
@@ -607,12 +607,6 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
     );
   }
   const auto = takeBoolFlag(args, "--auto");
-  if (auto) {
-    throw new AxiError(
-      "--auto is not allowed on the guarded PR merge path",
-      "VALIDATION_ERROR",
-    );
-  }
   const deleteBranch = takeBoolFlag(args, "--delete-branch");
   const body = takeBody(args);
   const subject = takeFlag(args, "--subject");
@@ -695,6 +689,7 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
     expectedHead,
   ];
   if (method) ghArgs.push("--" + method);
+  if (auto) ghArgs.push("--auto");
   if (deleteBranch) ghArgs.push("--delete-branch");
   if (body !== undefined) ghArgs.push("--body", body);
   if (subject) ghArgs.push("--subject", subject);
