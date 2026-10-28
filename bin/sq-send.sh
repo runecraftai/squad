@@ -87,10 +87,12 @@
 # footer appears, so an immediate peek would otherwise see the stale idle pane.
 # The pause is sq-send-only; the shared submit core (used by the away-mode daemon,
 # which only needs "submitted") does not pay it, and the --key path is unaffected.
-# Pi and pi-signed task extensions also expose a private delivery dropbox. When
-# present, text uses Pi's sendUserMessage(..., { deliverAs: "followUp" }) so a
-# parked composer cannot swallow the steer. A missing or unavailable extension
-# falls back to the recorded backend's normal submit path.
+# Pi and pi-signed task extensions also expose a private delivery dropbox. Text
+# uses Pi's sendUserMessage(..., { deliverAs: "followUp" }) so a parked composer
+# cannot swallow the steer, but only while the dropbox registration still names
+# the same live process by pid plus start identity: a reused pid is a different
+# process and proves nothing about the recipient. A missing, unavailable, or
+# stale registration falls back to the recorded backend's normal submit path.
 set -eu
 
 fm_send_usage() {
