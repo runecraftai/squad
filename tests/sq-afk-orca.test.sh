@@ -63,6 +63,11 @@ const context = {mode:'tui',hasUI:true,isIdle:()=>idle,ui:{getEditorText:()=>dra
 const tick = async () => { for(const t of [...timers]) await t.fn(); await new Promise(r=>setImmediate(r)); };
 const nativeDir = (handle = 'term-primary') => script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' '${handle}'`).stdout.trim();
 const readyPath = handle => `${nativeDir(handle)}/ready.json`;
+const daemonRecord = () => {
+  const record = readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
+  const fields = record.split('\t');
+  return { backend: fields[0], extra: JSON.parse(fields[2]) };
+};
 const publishedReadiness = () => {
   const handoff = `${state}/.away-handoff`;
   if (!existsSync(handoff)) return [];
@@ -132,7 +137,10 @@ try {
   process.env.ORCA_TERMINAL_HANDLE=runtimeIdentity.handle; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
   await emit('session_start',{},context); await tick();
   assert.ok(existsSync(readyPath(runtimeIdentity.handle)));
-  r=cli('start'); assert.equal(r.status,0,r.stderr); r=cli('stop'); assert.equal(r.status,0,r.stderr);
+  r=cli('start',noDetectedPane); assert.equal(r.status,0,r.stderr);
+  assert.equal(daemonRecord().backend,'orca','launcher did not bind an Orca daemon terminal');
+  assert.equal(daemonRecord().extra.parent.target,runtimeIdentity.handle,'launcher did not supervise the adopted runtime handle');
+  r=cli('stop'); assert.equal(r.status,0,r.stderr);
   check('runtime-issued identity publishes readiness and permits away-mode start without overrides');
   await emit('session_shutdown');
   // Explicit selection keeps precedence over a different runtime-issued handle.
@@ -140,7 +148,10 @@ try {
   process.env.ORCA_TERMINAL_HANDLE='term-foreign'; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
   await emit('session_start',{},context); await tick();
   assert.ok(existsSync(`${nativeDir()}/ready.json`));
-  r=cli('start'); assert.equal(r.status,0,r.stderr); r=cli('stop'); assert.equal(r.status,0,r.stderr);
+  r=cli('start'); assert.equal(r.status,0,r.stderr);
+  assert.equal(daemonRecord().backend,'orca');
+  assert.equal(daemonRecord().extra.parent.target,'term-primary','launcher did not bind the explicit handle');
+  r=cli('stop'); assert.equal(r.status,0,r.stderr);
   await emit('session_shutdown');
   check('explicit Orca selection wins over a different runtime-issued handle in receiver and launcher');
   delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
@@ -155,7 +166,7 @@ try {
     assert.deepEqual(publishedReadiness(),[],`${label} published readiness`);
     const createsBefore=count('create');
     r=cli('start',noDetectedPane); assert.notEqual(r.status,0,`${label} unexpectedly allowed start`);
-    assert.match(r.stderr,/could not resolve the commander supervisor pane|readiness is missing/);
+    assert.match(r.stderr,/could not resolve the commander supervisor pane/);
     assert.equal(existsSync(`${state}/.afk`),false,`${label} mutated away-mode state`);
     assert.equal(count('create'),createsBefore,`${label} created a daemon terminal`);
     await emit('session_shutdown');

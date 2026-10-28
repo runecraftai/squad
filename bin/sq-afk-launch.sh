@@ -38,7 +38,8 @@
 #   sq-afk-launch.sh status   Print one read-only machine-readable health line and
 #                              return zero only when active state is healthy.
 #
-# Supported supervisor targets: herdr, tmux, TUIOS, and explicit native-only Orca.
+# Supported supervisor targets: herdr, tmux, TUIOS, and native-only Orca (adopted
+# from the runtime-issued identity or selected explicitly).
 # herdr (a `--no-focus` workspace) and tmux (a detached session) launch the daemon
 # terminal without touching the commander's active tab; TUIOS uses an exact
 # newly-created detached session and refuses all cleanup unless its recorded
