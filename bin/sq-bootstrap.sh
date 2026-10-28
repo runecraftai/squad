@@ -121,10 +121,14 @@
 #          Set SQUAD_BOOTSTRAP_LOCKED=1 alongside it when the sweeps are skipped
 #          because THIS session already ran them while holding the unit lock,
 #          rather than because it has no lock at all. The two cases differ in
-#          exactly one place: repair ownership. A locked session is told to
-#          restore a tangled primary checkout itself, while an unlocked one is
-#          told to leave that work to the lock holder. Unset/0 (the default)
-#          keeps detect-only meaning unlocked, exactly as before.
+#          repair ownership. A locked session is told to restore a tangled
+#          primary checkout itself, while an unlocked one is told to leave that
+#          work to the lock holder. The flag also declares lock ownership beyond
+#          detect-only: the bounded retired-mission record sweep runs only when it
+#          is 1, so every non-detect-only caller that holds the unit lock must set
+#          it too or orphan retirement records are silently left unreconciled.
+#          Unset/0 (the default) keeps detect-only meaning unlocked, exactly as
+#          before, and leaves that sweep unrun.
 #        sq-bootstrap.sh install <tool>...
 #          Install the named tools (only ones the commander approved).
 set -u
