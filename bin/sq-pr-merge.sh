@@ -7,7 +7,8 @@
 #
 # Merge method defaults to --squash when the caller passes none of --squash,
 # --merge, --rebase, or --method after the optional -- separator. Extra args
-# must not include --repo or -R because the repository comes only from the URL.
+# must not include --repo or -R because the repository comes only from the URL,
+# and --auto or --disable-auto are refused because neither completes a merge.
 # Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra sq-gh pr merge args>]
 set -eu
 
@@ -66,8 +67,12 @@ reject_repo_overrides() {
         echo "error: extra merge arguments must not override the verified PR head" >&2
         return 1
         ;;
-      --auto)
+      --auto|--auto=*)
         echo "error: automatic merge is not allowed by the guarded merge path" >&2
+        return 1
+        ;;
+      --disable-auto|--disable-auto=*)
+        echo "error: disabling auto-merge is not a landing operation, so the guarded merge path refuses it" >&2
         return 1
         ;;
     esac
@@ -96,8 +101,8 @@ fi
 
 MERGE_RESULT=$(sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" --expected-head "$RECORDED_HEAD" "${merge_args[@]+"${merge_args[@]}"}" "$@")
 printf '%s\n' "$MERGE_RESULT"
-if printf '%s\n' "$MERGE_RESULT" | grep -q '^auto_merge_queued:'; then
-  echo "error: auto-merge is queued; task merge was not recorded as landed" >&2
+if printf '%s\n' "$MERGE_RESULT" | grep -Eq '^(auto_)?merge_queued:'; then
+  echo "error: the merge was queued instead of completed; task merge was not recorded as landed" >&2
   exit 1
 fi
 if ! printf '%s\n' "$MERGE_RESULT" | grep -q '^merged:' \

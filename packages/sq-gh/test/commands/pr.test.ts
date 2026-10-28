@@ -853,7 +853,33 @@ describe("prCommand", () => {
       expect(result).toContain("status: queued");
       expect(result).not.toContain("\nmerged:");
       expect(mockedGhJson).toHaveBeenCalledTimes(2);
-      expect(PR_HELP).toContain("--auto");
+    });
+
+    it("reports a queued merge distinctly when gh leaves the PR open", async () => {
+      mockedGhJson
+        .mockResolvedValueOnce(verifiedPr)
+        .mockResolvedValueOnce({ ...verifiedPr, state: "OPEN" });
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(
+        ["merge", "10", "--expected-head", head, "--squash"],
+        ctx,
+      );
+
+      expect(mockedGhExec).toHaveBeenCalledTimes(1);
+      expect(result).toContain("merge_queued:");
+      expect(result).toContain("status: queued");
+      expect(result).not.toContain("\nmerged:");
+      expect(result).not.toContain("status: landed");
+      expect(mockedGhJson).toHaveBeenCalledTimes(2);
+    });
+
+    it("refuses unrecognized merge arguments before reading or merging", async () => {
+      await expect(
+        prCommand(["merge", "10", "--expected-head", head, "--admin"], ctx),
+      ).rejects.toThrow("unrecognized pr merge arguments: --admin");
+      expect(mockedGhJson).not.toHaveBeenCalled();
+      expect(mockedGhExec).not.toHaveBeenCalled();
     });
 
     it("reports auto-merge as landed only when the fresh read confirms it", async () => {
@@ -928,7 +954,9 @@ describe("prCommand", () => {
     ])(
       "maps %s shorthand to a gh merge method flag",
       async (input, ghFlag, method) => {
-        mockedGhJson.mockResolvedValue(verifiedPr);
+        mockedGhJson
+          .mockResolvedValueOnce(verifiedPr)
+          .mockResolvedValueOnce({ ...verifiedPr, state: "MERGED" });
         mockedGhExec.mockResolvedValue("");
 
         const result = await prCommand(
@@ -949,11 +977,14 @@ describe("prCommand", () => {
           ctx,
         );
         expect(result).toContain(`method: ${method}`);
+        expect(result).toContain("status: landed");
       },
     );
 
     it("keeps --method working", async () => {
-      mockedGhJson.mockResolvedValue(verifiedPr);
+      mockedGhJson
+        .mockResolvedValueOnce(verifiedPr)
+        .mockResolvedValueOnce({ ...verifiedPr, state: "MERGED" });
       mockedGhExec.mockResolvedValue("");
 
       await prCommand(
@@ -1049,12 +1080,14 @@ describe("prCommand", () => {
     it("uses file contents for pr merge", async () => {
       const head = "1234567890123456789012345678901234567890";
       await withBodyFile(markdownBody, async (file) => {
-        mockedGhJson.mockResolvedValue({
-          state: "OPEN",
-          headRefOid: head,
-          mergeable: "MERGEABLE",
-          statusCheckRollup: [{ name: "build", conclusion: "SUCCESS" }],
-        });
+        mockedGhJson
+          .mockResolvedValueOnce({
+            state: "OPEN",
+            headRefOid: head,
+            mergeable: "MERGEABLE",
+            statusCheckRollup: [{ name: "build", conclusion: "SUCCESS" }],
+          })
+          .mockResolvedValueOnce({ state: "MERGED", headRefOid: head });
         mockedGhExec.mockResolvedValue("");
 
         await prCommand(

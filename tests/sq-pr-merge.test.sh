@@ -15,7 +15,7 @@
 #   (f) malformed PR URL fails fast without calling sq-gh
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
-#   (i) --auto is refused and a synchronous --disable-auto merge still records its landing
+#   (i) --auto and --disable-auto are refused, and a queued merge is not recorded as landed
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -354,7 +354,7 @@ SH
 
   expect_code 1 "$rc" "queued-auto-merge: guarded wrapper must not claim a landing"
   assert_grep 'auto_merge_queued:' "$case_dir/stdout" "queued-auto-merge: distinct result was not preserved"
-  assert_grep 'auto-merge is queued' "$case_dir/stderr" "queued-auto-merge: refusal was not actionable"
+  assert_grep 'queued instead of completed' "$case_dir/stderr" "queued-auto-merge: refusal was not actionable"
   assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
     "queued-auto-merge: task outcome must not be recorded as landed"
   assert_no_grep 'pr=https://github.com/example/repo/pull/34' "$case_dir/state/task-x1.meta" \
@@ -398,25 +398,59 @@ PY
   pass "sq-pr-merge records confirmed landings and refuses automatic merges"
 }
 
-test_disable_auto_still_records_landing() {
-  local case_dir
+test_merge_queue_enqueue_is_not_recorded_as_landed() {
+  local case_dir rc
+  case_dir=$(make_case merge-queue)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
+printf 'merge_queued:\n  status: queued\n'
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/sq-gh"
+  : > "$case_dir/sq-gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/35 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "merge-queue: guarded wrapper must not claim a landing"
+  assert_grep 'merge_queued:' "$case_dir/stdout" "merge-queue: distinct result was not preserved"
+  assert_grep 'queued instead of completed' "$case_dir/stderr" "merge-queue: refusal was not actionable"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "merge-queue: task outcome must not be recorded as landed"
+  assert_no_grep 'pr=https://github.com/example/repo/pull/35' "$case_dir/state/task-x1.meta" \
+    "merge-queue: task metadata must not be refreshed as landed"
+  pass "sq-pr-merge refuses a merge-queue enqueue instead of claiming a landing"
+}
+
+test_disable_auto_refuses_before_merge() {
+  local case_dir rc before after
   case_dir=$(make_case disable-auto)
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" cccccccccccccccccccccccccccccccccccccccc
   : > "$case_dir/sq-gh.log"
+  before=$(sha256sum "$case_dir/state/task-x1.meta")
 
+  set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/33 -- --disable-auto \
-    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "disable-auto: sq-pr-merge failed"
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
 
-  grep -qxF 'pr merge 33 --repo example/repo --expected-head cccccccccccccccccccccccccccccccccccccccc --squash --disable-auto' "$case_dir/sq-gh.log" \
-    || fail "disable-auto: --disable-auto was not forwarded to sq-gh pr merge"
-  python3 - "$case_dir/data/task-x1/dispatch.jsonl" <<'PY'
-import json, sys
-rows = [json.loads(line) for line in open(sys.argv[1])]
-assert [(r['event'], r['source'], r['result']) for r in rows] == [
-    ('outcome', 'pr-merge', 'landed')], rows
-PY
-  pass "sq-pr-merge records the landing for a synchronous --disable-auto merge"
+  expect_code 1 "$rc" "disable-auto: guarded wrapper must refuse --disable-auto"
+  assert_grep 'disabling auto-merge is not a landing operation' "$case_dir/stderr" \
+    "disable-auto: refusal was not actionable"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "disable-auto: refusal must not record a landing"
+  after=$(sha256sum "$case_dir/state/task-x1.meta")
+  [ "$before" = "$after" ] || fail "disable-auto: refusal changed task metadata"
+  [ ! -s "$case_dir/sq-gh.log" ] || fail "disable-auto: merge command was invoked"
+  pass "sq-pr-merge refuses --disable-auto instead of claiming a synchronous landing"
 }
 
 test_records_pr_and_head_after_confirmed_merge
@@ -431,5 +465,6 @@ test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_auto_merge_is_not_recorded_as_landed
 test_queued_auto_merge_is_not_recorded_as_landed
-test_disable_auto_still_records_landing
+test_merge_queue_enqueue_is_not_recorded_as_landed
+test_disable_auto_refuses_before_merge
 test_parses_pr_url_for_gh_axi

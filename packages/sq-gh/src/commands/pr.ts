@@ -610,6 +610,12 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   const deleteBranch = takeBoolFlag(args, "--delete-branch");
   const body = takeBody(args);
   const subject = takeFlag(args, "--subject");
+  if (args.length > 0) {
+    throw new AxiError(
+      `unrecognized pr merge arguments: ${args.join(" ")}`,
+      "VALIDATION_ERROR",
+    );
+  }
 
   // Fresh merge-boundary read; cached PR/check evidence is never sufficient.
   const pr = await ghJson<PrMergeSnapshot>(
@@ -698,43 +704,56 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
 
   await ghExec(ghArgs, ctx);
 
-  if (auto) {
-    const afterMergeRequest = await ghJson<PrMergeSnapshot>(
-      ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
-      ctx,
+  // A zero exit only means gh acted; several paths (auto-merge, a base branch
+  // with a merge queue) leave the PR open, so a landing is confirmed only by a
+  // fresh read that reports MERGED.
+  const afterMergeRequest = await ghJson<PrMergeSnapshot>(
+    ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
+    ctx,
+  );
+  if (!afterMergeRequest || typeof afterMergeRequest !== "object") {
+    throw new AxiError(
+      "merge confirmation read returned unknown data",
+      "VALIDATION_ERROR",
     );
-    if (!afterMergeRequest || typeof afterMergeRequest !== "object") {
-      throw new AxiError(
-        "auto-merge request status is unknown",
-        "VALIDATION_ERROR",
-      );
-    }
-    const finalState = (afterMergeRequest.state ?? "").toUpperCase();
-    if (finalState !== "MERGED" && finalState !== "OPEN") {
-      throw new AxiError(
-        `auto-merge request left the PR in an unexpected state: ${finalState || "unknown"}`,
-        "VALIDATION_ERROR",
-      );
-    }
-    if (finalState === "OPEN") {
-      return renderOutput([
-        renderDetail(
-          "auto_merge_queued",
-          { number: num, status: "queued", method: method ?? "default" },
-          [field("number"), field("status"), field("method")],
-        ),
-        renderHelp(
-          getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
-        ),
-      ]);
-    }
+  }
+  const finalState = (afterMergeRequest.state ?? "").toUpperCase();
+  if (finalState === "OPEN") {
+    return renderOutput([
+      renderDetail(
+        auto ? "auto_merge_queued" : "merge_queued",
+        { number: num, status: "queued", method: method ?? "default" },
+        [field("number"), field("status"), field("method")],
+      ),
+      renderHelp(
+        getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
+      ),
+    ]);
+  }
+  if (finalState !== "MERGED") {
+    throw new AxiError(
+      `merge left the PR in an unexpected state: ${finalState || "unknown"}`,
+      "VALIDATION_ERROR",
+    );
   }
 
   return renderOutput([
     renderDetail(
       "merged",
-      { number: num, status: "landed", method: method ?? "default" },
-      [field("number"), field("status"), field("method")],
+      {
+        number: num,
+        status: "landed",
+        method: method ?? "default",
+        merged_by: afterMergeRequest.mergedBy?.login ?? null,
+        merged_at: afterMergeRequest.mergedAt ?? null,
+      },
+      [
+        field("number"),
+        field("status"),
+        field("method"),
+        field("merged_by"),
+        field("merged_at"),
+      ],
     ),
     renderHelp(
       getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
