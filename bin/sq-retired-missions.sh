@@ -78,10 +78,10 @@ record_write() {  # <dir> <id> <kind> <content>
   if [ -e "$file" ] || [ -L "$file" ]; then
     single_link_file "$file" || return 1
     record_load "$file" || return 1
-    [ "$REC_TASK_ID" = "$id" ] && [ "$REC_KIND" = "$kind" ] || return 1
-    cmp -s <(grep -Ev '^(retired_at|close_attempted|runtime_id)=' "$file") \
-      <(printf '%s\n' "$content" | grep -Ev '^(retired_at|close_attempted|runtime_id)=') \
-      || return 1
+    if ! record_identity_matches "$content"; then
+      record_drift_report "$file" "$content"
+      return 1
+    fi
     observed=$(printf '%s\n' "$content" | sed -n 's/^runtime_id=//p')
     if [ -n "$REC_RUNTIME" ] && [ "$REC_RUNTIME" != unknown ] && [ "$observed" = unknown ]; then
       content=${content/runtime_id=unknown/runtime_id=$REC_RUNTIME}
@@ -91,6 +91,47 @@ record_write() {  # <dir> <id> <kind> <content>
     fi
   fi
   record_replace "$file" "$content"
+}
+
+record_identity_value() {  # <key>
+  case "$1" in
+    kind) printf '%s' "$REC_KIND" ;;
+    task_id) printf '%s' "$REC_TASK_ID" ;;
+    base) printf '%s' "$REC_BASE" ;;
+    backend) printf '%s' "$REC_BACKEND" ;;
+    terminal) printf '%s' "$REC_TERMINAL" ;;
+    worktree_id) printf '%s' "$REC_WORKTREE_ID" ;;
+    worktree_path) printf '%s' "$REC_WORKTREE_PATH" ;;
+    project) printf '%s' "$REC_PROJECT" ;;
+    pool_backend) printf '%s' "$REC_POOL_BACKEND" ;;
+  esac
+}
+
+record_identity_matches() {  # <content>
+  local content=$1 key recorded observed
+  for key in kind task_id base backend terminal worktree_id worktree_path project pool_backend; do
+    recorded=$(record_identity_value "$key")
+    observed=$(printf '%s\n' "$content" | sed -n "s/^$key=//p")
+    [ "$recorded" = "$observed" ] || return 1
+  done
+  return 0
+}
+
+record_drift_report() {  # <file> <content>
+  local file=$1 content=$2 key recorded observed reported=0
+  for key in kind task_id base backend terminal worktree_id worktree_path project pool_backend; do
+    recorded=$(record_identity_value "$key")
+    observed=$(printf '%s\n' "$content" | sed -n "s/^$key=//p")
+    if [ "$recorded" != "$observed" ]; then
+      printf 'error: retirement record %s blocks teardown: %s recorded=%s observed=%s\n' \
+        "$file" "$key" "$recorded" "$observed" >&2
+      reported=1
+    fi
+  done
+  if [ "$reported" = 0 ]; then
+    printf 'error: retirement record %s blocks teardown: recorded identity format differs\n' "$file" >&2
+  fi
+  printf 'error: a new identity supersedes %s only after the recorded identity is proven absent; start a new Squad session so the locked bootstrap sweep retires and clears it, then rerun teardown; do not delete the record or retire the old identity manually\n' "$file" >&2
 }
 
 record_load() {
@@ -130,10 +171,12 @@ record_load() {
 }
 
 record_task() {
-  local id=$1 meta base backend terminal worktree_id worktree_path project retired_at runtime=unknown content canonical_project canonical_wt
+  local id=$1 meta base backend terminal worktree_id worktree_path project retired_at runtime=unknown content canonical_project canonical_wt kind
   valid_id "$id" || { echo "error: invalid task id" >&2; return 1; }
   meta="$STATE/$id.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || { echo "error: live task metadata is unavailable" >&2; return 1; }
+  kind=$(meta_value "$meta" kind 2>/dev/null || true)
+  [ "$kind" = xo ] && return 0
   base=$(identity_dir "$SQUAD_BASE") || { echo "error: base identity cannot be verified" >&2; return 1; }
   backend=$(meta_value "$meta" backend 2>/dev/null || true)
   terminal=$(meta_value "$meta" terminal 2>/dev/null || true)

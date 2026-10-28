@@ -272,7 +272,7 @@ test_runtime_refresh_preserves_pending_close_attempt() {
 }
 
 test_record_identity_drift_still_refuses() {
-  local record before
+  local record before out
   make_terminal_case drift
   run_terminal record "$ID" || fail "could not write the terminal retirement record"
   record="$STATE/.retired-terminals/$ID.record"
@@ -285,9 +285,36 @@ worktree=$WT
 project=$PROJECT
 kind=strike
 EOF
-  run_terminal record "$ID" && fail "a changed terminal handle was accepted as the same retirement identity"
+  out=$(run_terminal record "$ID" 2>&1) && fail "a changed terminal handle was accepted as the same retirement identity"
+  assert_contains "$out" "$record" "the blocking retirement record path was omitted"
+  assert_contains "$out" "terminal recorded=term-drift observed=term-foreign" "the drifted identity field and values were omitted"
+  assert_contains "$out" "start a new Squad session" "the recovery path for the blocking record was omitted"
+  assert_contains "$out" "supersedes" "the supersession rule for the blocking record was omitted"
   [ "$(<"$record")" = "$before" ] || fail "refused identity drift still modified the retirement record"
-  pass "a different terminal handle is refused instead of refreshing the retirement record"
+  pass "a different terminal handle is refused with the blocking record, drifted field, and recovery path"
+}
+
+test_xo_terminal_retirement_record_is_never_written() {
+  local record content
+  make_terminal_case xo
+  cat > "$STATE/$ID.meta" <<EOF
+backend=orca
+terminal=term-xo
+orca_worktree_id=repo::$WT
+worktree=$WT
+project=$PROJECT
+kind=xo
+EOF
+  run_terminal record "$ID" || fail "recording an XO task failed"
+  assert_absent "$STATE/.retired-terminals/$ID.record" "an XO terminal retirement record was written"
+  assert_absent "$STATE/.retired-worktrees/$ID.record" "an XO worktree retirement record was written"
+  mkdir -p "$STATE/.retired-terminals"
+  record="$STATE/.retired-terminals/$ID.record"
+  content=$(printf 'kind=terminal\ntask_id=%s\nbase=%s\nretired_at=2026-01-01T00:00:00Z\nbackend=orca\nterminal=term-legacy\nruntime_id=unknown\nclose_attempted=0\nworktree_id=repo::%s\nworktree_path=%s' "$ID" "$BASE" "$WT" "$WT")
+  printf '%s\n' "$content" > "$record"
+  run_terminal record "$ID" || fail "recording an XO task alongside an existing record failed"
+  [ "$(<"$record")" = "$content" ] || fail "recording an XO task modified an existing retirement record"
+  pass "XO tasks never write, refresh, or touch retirement records"
 }
 
 test_verified_runtime_survives_unverified_rerecord() {
@@ -443,6 +470,7 @@ test_reused_worktree_path_is_preserved
 test_symlinked_base_and_project_are_recorded_and_swept
 test_runtime_refresh_preserves_pending_close_attempt
 test_record_identity_drift_still_refuses
+test_xo_terminal_retirement_record_is_never_written
 test_live_terminal_metadata_wins
 test_ambiguous_terminal_owner_is_preserved
 test_remote_tracking_reachable_orphan_is_removed

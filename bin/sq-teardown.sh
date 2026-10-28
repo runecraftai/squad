@@ -66,7 +66,9 @@
 # task metadata while that handle is not confirmed gone, so a rerun can retry the
 # exact-handle close with every durable record intact. Orphaned fob worktrees
 # recorded this way are reconciled only by the bounded sweep that runs while
-# bootstrap holds the session lock.
+# bootstrap holds the session lock. XO tasks own their runtime lifecycle through
+# the dedicated Squad-home removal path, so teardown writes no retirement record
+# for them.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
 # only the exact task pane from ordinary endpoint metadata and never calls
 # `workspace close`. It retires the non-authoritative journal only when a
