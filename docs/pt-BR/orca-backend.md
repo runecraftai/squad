@@ -9,7 +9,7 @@ Os agentes do Squad carregam [`squad-orca`](../../.agents/skills/squad-orca/SKIL
 ## Setup
 
 Escolha o Orca quando você já usa o app Orca e quer worktrees e terminais gerenciados pelo Orca em vez de FOB mais um multiplexador de sessão.
-O Orca roda no macOS e Linux, é explicit-only, e não suporta spawns de XO.
+O Orca roda no macOS e Linux, é explicit-only como backend de tarefas, e não suporta spawns de XO.
 
 Pré-requisitos:
 
@@ -19,7 +19,7 @@ Pré-requisitos:
 - Os requisitos universais de harness e toolchain em [`configuration.md`](configuration.md#toolchain).
 
 Selecione o Orca com o `config/backend` local contendo `orca`, `SQUAD_BACKEND=orca` para um único lançamento, ou um pedido explícito ao Squad.
-Ele nunca é auto-detectado.
+Ele nunca é auto-detectado para posicionamento de tarefas.
 
 Antes que qualquer spawn mute o estado do repositório, o Squad exige que `orca status --json` reporte `reachable=true` e `state="ready"`.
 A primeira tarefa de um projeto registra aquele repositório com `orca repo add --path` quando necessário.
@@ -75,7 +75,10 @@ Ele nunca faz raw-delete de um worktree do Orca.
 
 ## Supervisão de away-mode
 
-Um primário hospedado no Orca é explicit-only: inicie o primário com `SQUAD_SUPERVISOR_BACKEND=orca` e `SQUAD_SUPERVISOR_TARGET=<handle exato de terminal emitido pelo runtime>` já definidos.
+Um primário hospedado no Orca adota automaticamente seu `ORCA_TERMINAL_HANDLE` emitido pelo runtime quando o caminho em `ORCA_WORKTREE_ID` corresponde fisicamente à base do Squad.
+Somente o id de worktree composto documentado em [Formato de tarefa e metadados](#formato-de-tarefa-e-metadados) carrega um caminho para comparar; um primário macOS grava um átomo de worktree puro, então não tem caminho e segue usando o override explícito.
+Defina `SQUAD_SUPERVISOR_BACKEND=orca` e `SQUAD_SUPERVISOR_TARGET=<handle exato de terminal emitido pelo runtime>` como override explícito para um setup incomum; valores explícitos não vazios têm precedência, valores exportados vazios contam como ausentes, e um marcador de painel tmux, Herdr ou TUIOS detectado tem precedência sobre a identidade Orca herdada.
+Identidade ausente ou malformada, ou um caminho de worktree que não corresponde fisicamente, não publica prontidão e faz `bin/sq-afk-launch.sh start` recusar.
 O alvo precisa ser um terminal local conectado, gravável e não órfão cujo caminho de worktree seja o diretório físico `SQUAD_BASE`.
 Essa seleção é independente de `config/backend`; mudar o posicionamento de tarefas não é exigido.
 Não selecione uma aba ativa por nome, não anexe outro multiplexador como evidência de suporte mobile nativo e não inferira um primário do terminal do operador.
@@ -131,7 +134,7 @@ Uma sonda real descartável no host exige, portanto, um perfil/runtime Orca comp
 
 ## Limites ativos
 
-- O Orca é explicit-only no macOS e Linux.
+- O Orca é explicit-only como backend de tarefas no macOS e Linux.
 - O runtime Orca precisa reportar pronto: o app desktop no macOS, ou `orca serve` no Linux.
 - Spawns de XO não são suportados.
 - Escape não é suportado.

@@ -629,7 +629,7 @@ Portable public-helper tests use a fake Orca CLI and the shipped Pi receiver:
 bash tests/sq-afk-orca.test.sh
 ```
 
-They cover named refusal for every unproven harness before mutation, unavailable readiness, mismatched targets, real process-identity/launch-token refusal, native busy/draft/modal deferral, exact consumed acknowledgements, submitting/queued/uncertain replay refusal, reconnect/session/runtime replacement, cancelled cleanup, exact terminal preservation, and lost-create-response reconciliation.
+They cover named refusal for every unproven harness before mutation, unavailable readiness, mismatched targets, runtime-identity adoption that publishes readiness and permits a start with no supervisor variables, explicit-override precedence, no publication or start when the runtime identity is missing, malformed, partial or path-mismatched, real process-identity/launch-token refusal, native busy/draft/modal deferral, exact consumed acknowledgements, submitting/queued/uncertain replay refusal, reconnect/session/runtime replacement, cancelled cleanup, exact terminal preservation, and lost-create-response reconciliation.
 The currently supported tmux, Herdr and TUIOS paths remain covered by `tests/sq-afk-launch.test.sh` and `tests/sq-daemon.test.sh`; real Herdr lifecycle is separately gated by the test's explicit opt-out and requires the normal isolated lab authorization.
 
 The real-Pi guard is registered in the `live-harness-optin` family and was run with:
