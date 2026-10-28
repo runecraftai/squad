@@ -52,6 +52,8 @@ Em builds Linux (verificado contra v1.4.188) ele registra a forma composta `<rep
 
 O spawn registra o repositório, cria um worktree independente, reutiliza apenas o `result.terminal.handle` verificado devolvido pelo Orca ou cria um terminal explicitamente, instala os hooks do harness, grava metadados e lança o harness selecionado.
 Flags exatas de comando e parsing de resposta são de propriedade do `bin/backends/orca.sh` e do help do script.
+O spawn também passa a extensão de status gerenciada pelo próprio Orca a um lançamento de operador Pi ou pi-signed como um `-e` extra, para que a UI do Orca mostre o estado ao vivo daquele operador; a extensão reporta ao Orca e não é lida pela sentinela do Squad.
+A resolução de caminho e a regra de arquivo opcional são de propriedade do `bin/sq-spawn.sh --help`: um arquivo ausente deixa aquele lançamento exatamente como em qualquer outro backend, e nenhum outro backend ou harness recebe o argumento extra.
 
 O `sq-peek.sh` lê com `orca terminal read`.
 Para alvos não-Pi, ou quando a entrega nativa do Pi está indisponível, o `sq-send.sh` digita e verifica a liberação do composer, segue o `oldestCursor` quando o Orca devolve uma página limitada, e repete o Enter sem redigitar quando um popup de slash primeiro preenche um placeholder de argumento.

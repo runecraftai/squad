@@ -150,6 +150,11 @@
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 #     __PITURNEND__ absolute path to .pi/extensions/sq-primary-turnend-guard.ts in a pi XO base
 #     __PIWATCH__   absolute path to .pi/extensions/sq-primary-pi-watch.ts in a pi XO base
+#     __ORCASTATUS__ optional "-e <path>" for Orca's managed Pi status extension, set only when
+#                  a Pi-family spawn on the Orca backend finds the file named by
+#                  ORCA_OMP_STATUS_EXTENSION or, when that is unset or empty, the documented
+#                  default $HOME/.config/orca/omp-managed-status-extension/orca-agent-status.ts;
+#                  an absent file leaves that launch unchanged
 #     __OPINPUT__   absolute path to the canonical operational-input encoder
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
 # Kimi uses one surgically installed Squad region in $HOME/.kimi-code/config.toml,
@@ -939,7 +944,7 @@ launch_template() {
       if [ "$kind" = xo ]; then
         printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PITURNEND__ -e __PIWATCH__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
-        printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PIEXT__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PIEXT__ __ORCASTATUS__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       fi
       ;;
     # grok (Grok Build TUI): a positional prompt starts the supervised interactive
@@ -3026,6 +3031,14 @@ LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
 LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}
 LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
+if [ "$BACKEND" = orca ] && { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; }; then
+  orca_status_extension=${ORCA_OMP_STATUS_EXTENSION:-${HOME:-}/.config/orca/omp-managed-status-extension/orca-agent-status.ts}
+  if [ -f "$orca_status_extension" ]; then
+    sq_orca_status_extension=$(shell_quote "$orca_status_extension")
+    LAUNCH=${LAUNCH//__ORCASTATUS__/-e $sq_orca_status_extension }
+  fi
+fi
+LAUNCH=${LAUNCH//__ORCASTATUS__/}
 LAUNCH=${LAUNCH//__OPINPUT__/$sq_opinput}
 # Operator panes are created by a long-lived tmux/herdr daemon that does not
 # inherit Squad's current environment, so a bare `claude` in the pane falls
