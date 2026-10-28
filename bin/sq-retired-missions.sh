@@ -150,10 +150,8 @@ record_task() {
   if [ -n "$worktree_path" ] && [ -n "$project" ] && [ "$backend" != orca ]; then
     canonical_wt=$(canonical_dir "$worktree_path" 2>/dev/null || true)
     canonical_project=$(canonical_dir "$project" 2>/dev/null || true)
-    case "$canonical_wt" in
-      "${HOME:-/nonexistent}"/.fob/pi-durable-host-*/*) ;;
-      *) return 0 ;;
-    esac
+    [ -n "$canonical_wt" ] || return 0
+    [ "$(fob_path_state "$project" "$canonical_wt")" = pool-owned ] || return 0
     if [ -z "$canonical_project" ] || ! git -C "$canonical_project" rev-parse --git-dir >/dev/null 2>&1; then
       echo "error: worktree project identity cannot be verified" >&2
       return 1
@@ -194,16 +192,17 @@ record_references_live_meta() {  # <task-id> <field> <value>
   return 1
 }
 
-orca_inventory_check() {  # <handle> <runtime-id> <worktree-id> <path> -> present|absent
+orca_inventory_check() {  # <handle> <runtime-id|unknown> <worktree-id> <path> -> present|absent
   local handle=$1 expected_runtime=$2 worktree_id=$3 path=$4 status inventory runtime
   status=$(orca status --json) || return 1
   runtime=$(printf '%s' "$status" | node -e '
 const fs=require("fs"),d=JSON.parse(fs.readFileSync(0,"utf8")),r=d.result&&d.result.runtime;
 const runtime=String((r&&r.runtimeId)||(d._meta&&d._meta.runtimeId)||"");
-if(d.ok!==true || !r || r.reachable!==true || r.state!=="ready" || runtime!==process.argv[1]) process.exit(1);
+if(d.ok!==true || !r || r.reachable!==true || r.state!=="ready" || !runtime) process.exit(1);
+if(process.argv[1]!=="unknown" && runtime!==process.argv[1]) process.exit(1);
 process.stdout.write(runtime);
 ' "$expected_runtime") || return 1
-  [ "$runtime" = "$expected_runtime" ] || return 1
+  [ -n "$runtime" ] || return 1
   inventory=$(orca terminal list --worktree "id:$worktree_id" --json) || return 1
   printf '%s' "$inventory" | node -e '
 const fs=require("fs"),d=JSON.parse(fs.readFileSync(0,"utf8")),a=d.result&&d.result.terminals;
@@ -212,7 +211,16 @@ const found=a.filter(t=>t.handle===process.argv[2]);
 if(found.length===0) { process.stdout.write("absent"); process.exit(0); }
 if(found.length!==1 || found[0].worktreeId!==process.argv[3] || found[0].worktreePath!==process.argv[4]) process.exit(2);
 process.stdout.write("present");
-' "$expected_runtime" "$handle" "$worktree_id" "$path"
+' "$runtime" "$handle" "$worktree_id" "$path"
+}
+
+terminal_state() {  # <handle> <recorded-runtime> <worktree-id> <path>
+  local state
+  state=$(orca_inventory_check "$1" "$2" "$3" "$4" 2>/dev/null) || state=ambiguous
+  if [ "$state" = ambiguous ] && [ "$2" != unknown ]; then
+    state=$(orca_inventory_check "$1" unknown "$3" "$4" 2>/dev/null) || state=ambiguous
+  fi
+  printf '%s\n' "$state"
 }
 
 remove_record() {
@@ -222,7 +230,7 @@ remove_record() {
 }
 
 retire_live_terminal() {
-  local id=$1 file="$STATE/.retired-terminals/$1.record" state base
+  local id=$1 file="$STATE/.retired-terminals/$1.record" state base current
   valid_id "$id" || return 1
   [ -f "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || { echo "preserved terminal $id: live task metadata is unavailable"; return 1; }
   record_load "$file" && [ "$REC_KIND" = terminal ] && [ "$REC_TASK_ID" = "$id" ] \
@@ -232,27 +240,23 @@ retire_live_terminal() {
     || { echo "preserved terminal $REC_TERMINAL: base identity does not match"; return 1; }
   [ "$(meta_value "$STATE/$id.meta" terminal 2>/dev/null || true)" = "$REC_TERMINAL" ] \
     || { echo "preserved terminal $REC_TERMINAL: task metadata identity differs"; return 1; }
-  [ "$REC_RUNTIME" != unknown ] \
-    || { echo "preserved terminal $REC_TERMINAL: runtime ownership could not be verified"; return 1; }
-  state=$(orca_inventory_check "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH" 2>/dev/null) \
-    || state=ambiguous
+  state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH")
   case "$state" in
     absent)
-      if [ "$REC_CLOSE_ATTEMPTED" = 1 ]; then
-        remove_record "$file" && { echo "retired terminal $REC_TERMINAL: exact handle absence confirmed"; return 0; }
-        echo "preserved terminal $REC_TERMINAL: retirement record could not be cleared"
-      else
-        echo "preserved terminal $REC_TERMINAL: exact handle was absent before a close could be verified"
-      fi
+      remove_record "$file" && { echo "retired terminal $REC_TERMINAL: exact handle absence confirmed"; return 0; }
+      echo "preserved terminal $REC_TERMINAL: retirement record could not be cleared"
       return 1
       ;;
     present) ;;
     *) echo "preserved terminal $REC_TERMINAL: Orca ownership inventory is ambiguous or unavailable"; return 1 ;;
   esac
+  current=$(orca_runtime_id 2>/dev/null || true)
+  [ -n "$current" ] \
+    || { echo "preserved terminal $REC_TERMINAL: runtime ownership could not be verified"; return 1; }
+  REC_RUNTIME=$current
   record_update_close_attempted "$file" || { echo "preserved terminal $REC_TERMINAL: could not durably record the close attempt"; return 1; }
   orca terminal close --terminal "$REC_TERMINAL" --json >/dev/null 2>&1 || true
-  state=$(orca_inventory_check "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH" 2>/dev/null) \
-    || state=ambiguous
+  state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH")
   if [ "$state" = absent ] && remove_record "$file"; then
     echo "retired terminal $REC_TERMINAL: exact handle closed and absence confirmed"
     return 0
@@ -262,17 +266,11 @@ retire_live_terminal() {
 }
 
 sweep_terminals() {
-  local base dir file count id state
+  local base dir file acted=0 limited=0 id state current
   dir="$STATE/.retired-terminals"
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
-  count=0
   for file in "$dir"/*.record; do
     [ -e "$file" ] || [ -L "$file" ] || continue
-    count=$((count + 1))
-    if [ "$count" -gt "$LIMIT" ]; then
-      echo "preserved terminal records: sweep limit $LIMIT reached"
-      break
-    fi
     id=${file##*/}; id=${id%.record}
     if ! record_load "$file" || [ "$REC_KIND" != terminal ] || [ "$REC_TASK_ID" != "$id" ]; then
       echo "preserved terminal record $id: malformed or unsafe record"
@@ -287,25 +285,32 @@ sweep_terminals() {
       echo "preserved terminal $REC_TERMINAL: live task metadata wins"
       continue
     fi
-    if [ "$REC_RUNTIME" = unknown ]; then
-      echo "preserved terminal $REC_TERMINAL: runtime ownership was not verified at retirement"
-      continue
-    fi
-    state=$(orca_inventory_check "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH" 2>/dev/null) || state=ambiguous
+    state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH")
     case "$state" in
       absent)
-        if [ "$REC_CLOSE_ATTEMPTED" = 1 ] && remove_record "$file"; then
-          echo "retired terminal $REC_TERMINAL: exact handle absence confirmed"
-        elif [ "$REC_CLOSE_ATTEMPTED" = 0 ]; then
-          echo "preserved terminal $REC_TERMINAL: exact handle was absent before a close could be verified"
+        if [ "$acted" -ge "$LIMIT" ]; then
+          limited=1
         else
-          echo "preserved terminal $REC_TERMINAL: could not remove retirement record"
+          acted=$((acted + 1))
+          if remove_record "$file"; then echo "retired terminal $REC_TERMINAL: exact handle absence confirmed"
+          else echo "preserved terminal $REC_TERMINAL: could not remove retirement record"; fi
         fi
         ;;
       present)
+        if [ "$acted" -ge "$LIMIT" ]; then
+          limited=1
+          continue
+        fi
+        acted=$((acted + 1))
+        current=$(orca_runtime_id 2>/dev/null || true)
+        if [ -z "$current" ]; then
+          echo "preserved terminal $REC_TERMINAL: runtime ownership could not be verified"
+          continue
+        fi
+        REC_RUNTIME=$current
         record_update_close_attempted "$file" || { echo "preserved terminal $REC_TERMINAL: could not durably record the close attempt"; continue; }
         orca terminal close --terminal "$REC_TERMINAL" --json >/dev/null 2>&1 || true
-        state=$(orca_inventory_check "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH" 2>/dev/null) || state=ambiguous
+        state=$(terminal_state "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH")
         if [ "$state" = absent ] && remove_record "$file"; then
           echo "retired terminal $REC_TERMINAL: exact handle closed and absence confirmed"
         else
@@ -315,6 +320,7 @@ sweep_terminals() {
       *) echo "preserved terminal $REC_TERMINAL: Orca ownership inventory is ambiguous or unavailable" ;;
     esac
   done
+  [ "$limited" = 0 ] || echo "preserved terminal records: sweep action limit $LIMIT reached"
 }
 
 fob_path_state() {  # <project> <path> -> pool-owned|not-owned|unknown
@@ -324,7 +330,9 @@ fob_path_state() {  # <project> <path> -> pool-owned|not-owned|unknown
   printf '%s' "$out" | node -e '
 const fs=require("fs");let d;try{d=JSON.parse(fs.readFileSync(0,"utf8"));}catch(_){process.exit(2);}
 if(!Array.isArray(d) || d.some(x=>!x || typeof x.path!=="string" || typeof x.status!=="string")) process.exit(2);
-const a=d.filter(x=>x.path===process.argv[1]); if(a.length>1) process.exit(2);
+let target;try{target=fs.realpathSync(process.argv[1]);}catch(_){process.exit(2);}
+const a=d.filter(x=>{try{return fs.realpathSync(x.path)===target;}catch(_){return false;}});
+if(a.length>1) process.exit(2);
 process.stdout.write(a.length ? "pool-owned" : "not-owned");
 ' "$path" 2>/dev/null || printf unknown
 }
@@ -361,17 +369,11 @@ worktree_reachable() {  # <project> <path>
 }
 
 sweep_worktrees() {
-  local dir file count id base dirty project path canonical status
+  local dir file acted=0 limited=0 id base dirty project path canonical status
   dir="$STATE/.retired-worktrees"
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
-  count=0
   for file in "$dir"/*.record; do
     [ -e "$file" ] || [ -L "$file" ] || continue
-    count=$((count + 1))
-    if [ "$count" -gt "$LIMIT" ]; then
-      echo "preserved worktree records: sweep limit $LIMIT reached"
-      break
-    fi
     id=${file##*/}; id=${id%.record}
     if ! record_load "$file" || [ "$REC_KIND" != worktree ] || [ "$REC_TASK_ID" != "$id" ]; then
       echo "preserved worktree record $id: malformed or unsafe record"
@@ -387,7 +389,6 @@ sweep_worktrees() {
       continue
     fi
     path=$REC_WORKTREE_PATH; project=$REC_PROJECT
-    case "$path" in "${HOME:-/nonexistent}"/.fob/pi-durable-host-*/*) ;; *) echo "preserved worktree $path: outside the recorded fob pool scope"; continue ;; esac
     canonical=$(canonical_dir "$project" 2>/dev/null || true)
     if [ -z "$canonical" ] || [ "$canonical" != "$project" ] || ! git -C "$project" rev-parse --git-dir >/dev/null 2>&1; then
       echo "preserved worktree $path: project repository identity is unavailable"
@@ -400,7 +401,9 @@ sweep_worktrees() {
     status=$(fob_path_state "$project" "$path")
     case "$status" in
       pool-owned)
-        remove_record "$file" && echo "preserved worktree $path: fob still owns the reusable worktree" || echo "preserved worktree $path: fob owns it but retirement record could not be cleared"
+        if [ "$acted" -ge "$LIMIT" ]; then limited=1
+        elif remove_record "$file"; then acted=$((acted + 1)); echo "preserved worktree $path: fob still owns the reusable worktree"
+        else acted=$((acted + 1)); echo "preserved worktree $path: fob owns it but retirement record could not be cleared"; fi
         continue
         ;;
       not-owned) ;;
@@ -423,6 +426,11 @@ sweep_worktrees() {
       echo "preserved worktree $path: HEAD is not reachable from the default branch or any remote-tracking ref"
       continue
     fi
+    if [ "$acted" -ge "$LIMIT" ]; then
+      limited=1
+      continue
+    fi
+    acted=$((acted + 1))
     if git -C "$project" worktree remove -- "$path" \
       && git -C "$project" worktree prune; then
       if remove_record "$file"; then echo "retired worktree $path: clean HEAD is reachable and exact registration was removed"
@@ -431,6 +439,7 @@ sweep_worktrees() {
       echo "preserved worktree $path: owning git worktree removal or prune failed"
     fi
   done
+  [ "$limited" = 0 ] || echo "preserved worktree records: sweep action limit $LIMIT reached"
 }
 
 sweep() {

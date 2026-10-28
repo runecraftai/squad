@@ -26,7 +26,7 @@ make_case() {
   HOME="$CASE_DIR/home"
   PROJECT="$CASE_DIR/project"
   ID="retired$1"
-  WT="$HOME/.fob/pi-durable-host-test/$ID"
+  WT="$HOME/.fob/squad-test/$ID"
   mkdir -p "$STATE" "$HOME/.fob"
   init_git_repo "$PROJECT"
   git -C "$PROJECT" worktree add -q -b "sq/$ID" "$WT"
@@ -47,8 +47,11 @@ SH
 }
 
 run_record() {
-  SQUAD_BASE="$BASE" SQUAD_STATE_OVERRIDE="$STATE" SQUAD_ROOT_OVERRIDE="$ROOT" \
-    SQUAD_RETIREMENT_PROJECT="$PROJECT" SQUAD_RETIREMENT_WORKTREE="$WT" \
+  local fob_status
+  fob_status=${SQUAD_FAKE_FOB_STATUS:-}
+  [ -n "$fob_status" ] || fob_status="[{\"path\":\"$WT\",\"status\":\"in-use\"}]"
+  PATH="$CASE_DIR/fakebin:$PATH" HOME="$HOME" SQUAD_FAKE_FOB_STATUS="$fob_status" \
+    SQUAD_BASE="$BASE" SQUAD_STATE_OVERRIDE="$STATE" SQUAD_ROOT_OVERRIDE="$ROOT" \
     "$ROOT/bin/sq-retired-missions.sh" record "$ID"
 }
 
@@ -283,9 +286,80 @@ test_verified_runtime_survives_unverified_rerecord() {
   pass "an unverified re-record keeps the verified runtime so the terminal can still be retired"
 }
 
+test_non_pool_worktree_is_not_recorded() {
+  make_case nonpool
+  SQUAD_FAKE_FOB_STATUS='[]' run_record || fail "recording refused a worktree fob does not manage"
+  assert_absent "$STATE/.retired-worktrees/$ID.record" \
+    "a worktree outside fob pool ownership was recorded for retirement"
+  pass "only worktrees fob reports as pool-owned are recorded for retirement"
+}
+
+test_unknown_runtime_record_is_reverified_and_retired() {
+  local out record
+  make_terminal_case unknown-runtime
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="";fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  run_terminal record "$ID" || fail "could not write the terminal record without a verified runtime"
+  record="$STATE/.retired-terminals/$ID.record"
+  assert_contains "$(<"$record")" "runtime_id=unknown" "unavailable Orca runtime was not recorded as unknown"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="runtime-1";d.fail_close=false;fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  out=$(run_terminal retire-terminal "$ID") || fail "retire-terminal could not re-verify the recorded handle: $out"
+  assert_contains "$out" "retired terminal term-unknown-runtime" "re-verified retirement was not reported"
+  assert_absent "$record" "re-verified terminal retirement left its record behind"
+  pass "a record written without a verified runtime is re-verified and retired once Orca is ready"
+}
+
+test_stale_runtime_record_is_reverified_by_sweep() {
+  local out record
+  make_terminal_case stale-runtime
+  run_terminal record "$ID" || fail "could not write the terminal retirement record"
+  record="$STATE/.retired-terminals/$ID.record"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="runtime-2";d.fail_close=false;fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  rm "$STATE/$ID.meta"
+  out=$(run_terminal sweep) || fail "terminal sweep failed after an Orca restart: $out"
+  assert_contains "$out" "retired terminal term-stale-runtime" "a stale recorded runtime was never re-verified"
+  assert_absent "$record" "re-verified terminal retirement left its record behind"
+  pass "a sweep re-verifies exact identity after an Orca runtime change instead of skipping forever"
+}
+
+test_confirmed_absence_clears_record_without_close_attempt() {
+  local out record
+  make_terminal_case absent-clear
+  run_terminal record "$ID" || fail "could not write the terminal retirement record"
+  record="$STATE/.retired-terminals/$ID.record"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.terminals=[];fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  rm "$STATE/$ID.meta"
+  out=$(run_terminal sweep) || fail "terminal sweep failed for a confirmed absence: $out"
+  assert_contains "$out" "retired terminal term-absent-clear" "confirmed absence was not retired"
+  assert_absent "$record" "a confirmed-absent terminal left a permanent retirement record"
+  pass "a terminal confirmed absent is cleared even when no close was ever attempted"
+}
+
+test_sweep_action_limit_does_not_starve_later_records() {
+  local out record
+  make_terminal_case action-budget
+  mkdir -p "$STATE/.retired-terminals"
+  printf 'kind=terminal\ntask_id=aaaforeign\nbase=/nonexistent/base\nretired_at=2026-01-01T00:00:00Z\nbackend=orca\nterminal=term-foreign\nruntime_id=runtime-1\nclose_attempted=0\nworktree_id=repo::/foreign\nworktree_path=/foreign\n' \
+    > "$STATE/.retired-terminals/aaaforeign.record"
+  run_terminal record "$ID" || fail "could not write the terminal retirement record"
+  record="$STATE/.retired-terminals/$ID.record"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.fail_close=false;fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  rm "$STATE/$ID.meta"
+  out=$(SQUAD_RETIRED_MISSIONS_SWEEP_LIMIT=1 run_terminal sweep) || fail "terminal sweep failed under a one-action budget: $out"
+  assert_contains "$out" "base identity does not match" "the permanent record was not inspected"
+  assert_contains "$out" "retired terminal term-action-budget" "a permanent record consumed the whole sweep budget"
+  assert_absent "$record" "a later retirement record was starved by permanent records"
+  assert_present "$STATE/.retired-terminals/aaaforeign.record" "the permanent record was removed"
+  pass "the sweep budget bounds actions so permanent records cannot starve later retirements"
+}
+
 test_failed_terminal_close_is_retried_from_record
 test_unverified_runtime_record_is_refreshed_on_retry
 test_verified_runtime_survives_unverified_rerecord
+test_unknown_runtime_record_is_reverified_and_retired
+test_stale_runtime_record_is_reverified_by_sweep
+test_confirmed_absence_clears_record_without_close_attempt
+test_sweep_action_limit_does_not_starve_later_records
+test_non_pool_worktree_is_not_recorded
 test_runtime_refresh_preserves_pending_close_attempt
 test_record_identity_drift_still_refuses
 test_live_terminal_metadata_wins

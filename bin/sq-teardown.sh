@@ -58,6 +58,14 @@
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state.
+# Before that cleanup can erase the task's metadata, teardown records the exact
+# terminal identity (handle, runtime, worktree id and path) and any fob worktree
+# identity through bin/sq-retired-missions.sh, and refuses rather than proceed
+# when that record cannot be persisted. The recorded terminal is then retired
+# through that exact handle, and a record whose Orca ownership is ambiguous or
+# unreachable is preserved for a later exact-handle retry. Orphaned fob worktrees
+# recorded this way are reconciled only by the bounded sweep that runs while
+# bootstrap holds the session lock.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
 # only the exact task pane from ordinary endpoint metadata and never calls
 # `workspace close`. It retires the non-authoritative journal only when a

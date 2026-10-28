@@ -133,7 +133,8 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-pr-poll.sh`          | Fornecer o programa byte-estático de sentinela para sidecars validados de poll de PR/MR           |
 | `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução e reconstruir apenas polls canônicos       |
 | `sq-pr-check.sh`         | Registrar valores validados de `pr=` e `pr_head=`, então armar atomicamente um poll estático de merge |
-| `sq-pr-merge.sh`         | Mesclar a URL completa canônica GitHub do PR da tarefa contra o head fresco (igual ao registrado, se houver), checks frescos e mergeability; registrar metadados do PR somente após sucesso |
+| `sq-pr-merge.sh`         | Mesclar a URL completa canônica GitHub do PR da tarefa contra o head fresco (igual ao registrado, se houver), checks frescos e mergeability; registrar metadados do PR somente após sucesso, então derrubar a tarefa landada |
+| `sq-retired-missions.sh` | Registrar a identidade exata de aposentadoria do terminal Orca e do worktree fob antes da remoção dos metadados, aposentar o terminal exato e reconciliar registros órfãos no sweep do bootstrap travado |
 | `sq-verification.sh`     | Registrar o momento de descoberta de um defeito escapado, o PR mesclado afetado e o SHA completo, a reprodução ou um motivo explícito de desconhecido, o cenário de regressão, e o gate pré-merge que não o pegou na issue GitHub existente dele, e reportar todo defeito registrado de um repo |
 | `sq-verification.py`     | Implementação Python dos comandos de registro e relatório de defeitos escapados, lendo e escrevendo corpos de issue verbatim pelo decodificador TOON do `sq-gh` |
 | `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de perfil |

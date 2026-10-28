@@ -11,6 +11,10 @@
 # must not include --repo or -R because the repository comes only from the URL,
 # --expected-head because the comparison head comes only from task metadata, or
 # --auto or --disable-auto because neither completes a merge.
+# A direct merge then tears the landed task down with bin/sq-teardown.sh
+# (SQUAD_TEARDOWN_BIN overrides it). That teardown is best effort: its refusal is
+# reported as a warning and never changes the merge's success, because the
+# landing is already authoritative once sq-gh returns.
 # Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra sq-gh pr merge args>]
 set -eu
 
