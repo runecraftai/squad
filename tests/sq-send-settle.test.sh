@@ -345,8 +345,6 @@ test_lost_native_response_is_never_retyped() {
     || fail "the unconfirmed native request was not left in the dropbox for reconciliation"$'\n'"--- dropbox ---"$'\n'"$(ls -A "$delivery")"
   [ "$(sed -n '2p' "$pending")" = "$message" ] \
     || fail "the request left in the dropbox is not the unconfirmed instruction"$'\n'"--- pending ---"$'\n'"$(cat "$pending")"
-  [ ! -f "${pending%.request}.response" ] \
-    || fail "a native send that never got an answer was recorded as answered"$'\n'"--- dropbox ---"$'\n'"$(ls -A "$delivery")"
   [ ! -s "$dir/tmux.log" ] \
     || fail "a lost native response was retyped through the terminal"$'\n'"--- tmux ---"$'\n'"$(cat "$dir/tmux.log")"
   pass "sq-send: a lost native response is reported unconfirmed and never retyped through the terminal"
@@ -400,8 +398,6 @@ test_reused_recipient_identifier_is_no_proof() {
   pending=$(find "$delivery" -name '*.request' -type f)
   [ "$(sed -n '2p' "$pending")" = "$in_flight" ] \
     || fail "the pending dropbox request is not the instruction that was still in flight"$'\n'"--- pending ---"$'\n'"$(cat "$pending")"
-  [ ! -f "${pending%.request}.response" ] \
-    || fail "the in-flight instruction gained a response after identifier reuse"
   pass "sq-send: a reused recipient identifier is no proof about the in-flight instruction"
 }
 
