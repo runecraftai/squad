@@ -273,23 +273,31 @@ test_pi_native_delivery_avoids_tmux_for_parked_operator
 test_pi_native_failure_names_dropbox_path
 test_pi_fallback_to_tmux_when_extension_unavailable
 # make_lost_recipient_sleep <fakebin>: replaces the fake sleep with a stand-in native
-# recipient. sq-send calls sleep only while it waits for the native answer, after the
-# request is already in the dropbox, so that call is the controlled point. The stand-in
-# takes each admitted request, logs its message once, removes its registration so it
-# visibly goes away, and never answers. Inputs: SQUAD_RECIPIENT_DIR (the dropbox),
-# SQUAD_RECIPIENT_LOG (delivered messages), SQUAD_RECIPIENT_READY (the registration).
+# recipient that takes an admitted request and never answers. sq-send polls sleep from
+# its native wait loop after the request is already in the dropbox, so that call is the
+# controlled point that hands the request over; the terminal fallback's own settle and
+# enter waits reach the same stub and find nothing left to take. The stand-in marks
+# each request it takes (so one request is logged once), logs its message, removes the
+# registration so the recipient visibly goes away, and leaves the request in the
+# dropbox unanswered, exactly as the production path does for an unconfirmed send.
+# Termination is sq-send's own SQUAD_PI_DELIVERY_TIMEOUT deadline, not this stub, and
+# no assertion depends on how long that takes. Inputs: SQUAD_RECIPIENT_DIR (the
+# dropbox), SQUAD_RECIPIENT_LOG (delivered messages), SQUAD_RECIPIENT_READY (the
+# registration).
 make_lost_recipient_sleep() {  # <fakebin>
   cat > "$1/sleep" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "${1:-}" >> "$SQUAD_SLEEP_LOG"
 for request in "$SQUAD_RECIPIENT_DIR"/*.request; do
   [ -e "$request" ] || continue
+  [ ! -e "$request.taken" ] || continue
   {
     IFS= read -r _request_id
     IFS= read -r message
   } < "$request"
   printf '%s\n' "$message" >> "$SQUAD_RECIPIENT_LOG"
-  rm -f "$request" "$SQUAD_RECIPIENT_READY"
+  : > "$request.taken"
+  rm -f "$SQUAD_RECIPIENT_READY"
 done
 exit 0
 SH
@@ -312,7 +320,7 @@ lost_native_task() {
 }
 
 test_lost_native_response_is_never_retyped() {
-  local dir fb home delivery message out err rc
+  local dir fb home delivery message out err rc pending
   dir="$TMP_ROOT/pi-lost-response"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); make_lost_recipient_sleep "$fb"
   home="$dir/home"
@@ -332,13 +340,20 @@ test_lost_native_response_is_never_retyped() {
     "lost native response did not name the native dropbox"
   [ "$(cat "$dir/recipient.log")" = "$message" ] \
     || fail "the native recipient did not take the instruction exactly once"$'\n'"--- delivered ---"$'\n'"$(cat "$dir/recipient.log")"
+  pending=$(find "$delivery" -name '*.request' -type f)
+  [ "$(find "$delivery" -name '*.request' -type f | wc -l)" -eq 1 ] \
+    || fail "the unconfirmed native request was not left in the dropbox for reconciliation"$'\n'"--- dropbox ---"$'\n'"$(ls -A "$delivery")"
+  [ "$(sed -n '2p' "$pending")" = "$message" ] \
+    || fail "the request left in the dropbox is not the unconfirmed instruction"$'\n'"--- pending ---"$'\n'"$(cat "$pending")"
+  [ ! -f "${pending%.request}.response" ] \
+    || fail "a native send that never got an answer was recorded as answered"$'\n'"--- dropbox ---"$'\n'"$(ls -A "$delivery")"
   [ ! -s "$dir/tmux.log" ] \
     || fail "a lost native response was retyped through the terminal"$'\n'"--- tmux ---"$'\n'"$(cat "$dir/tmux.log")"
   pass "sq-send: a lost native response is reported unconfirmed and never retyped through the terminal"
 }
 
 test_reused_recipient_identifier_is_no_proof() {
-  local dir fb home delivery in_flight follow_up out err err2 rc rc2
+  local dir fb home delivery in_flight follow_up out err err2 rc rc2 pending
   dir="$TMP_ROOT/pi-reused-recipient"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); make_lost_recipient_sleep "$fb"
   home="$dir/home"
@@ -380,7 +395,12 @@ test_reused_recipient_identifier_is_no_proof() {
     || fail "the new instruction was not typed exactly once through the terminal fallback"$'\n'"--- tmux ---"$'\n'"$(cat "$dir/tmux.log")"
   [ "$(grep -c -- "$in_flight" "$dir/tmux.log")" -eq 0 ] \
     || fail "the in-flight instruction was retyped through the terminal after identifier reuse"$'\n'"--- tmux ---"$'\n'"$(cat "$dir/tmux.log")"
-  [ -z "$(find "$delivery" -name '*.response')" ] \
+  [ "$(find "$delivery" -name '*.request' -type f | wc -l)" -eq 1 ] \
+    || fail "the follow-up instruction was written into the native dropbox after identifier reuse"$'\n'"--- dropbox ---"$'\n'"$(ls -A "$delivery")"
+  pending=$(find "$delivery" -name '*.request' -type f)
+  [ "$(sed -n '2p' "$pending")" = "$in_flight" ] \
+    || fail "the pending dropbox request is not the instruction that was still in flight"$'\n'"--- pending ---"$'\n'"$(cat "$pending")"
+  [ ! -f "${pending%.request}.response" ] \
     || fail "the in-flight instruction gained a response after identifier reuse"
   pass "sq-send: a reused recipient identifier is no proof about the in-flight instruction"
 }
