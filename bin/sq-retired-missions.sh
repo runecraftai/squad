@@ -93,10 +93,18 @@ record_write() {  # <dir> <id> <kind> <content>
 }
 
 record_identity_value() {  # <key>
-  local name
-  name=$(printf 'REC_%s' "$1" | tr '[:lower:]' '[:upper:]')
-  [ -n "${!name+x}" ] || return 1
-  printf '%s' "${!name}"
+  case "$1" in
+    kind) printf '%s' "$REC_KIND" ;;
+    task_id) printf '%s' "$REC_TASK_ID" ;;
+    base) printf '%s' "$REC_BASE" ;;
+    backend) printf '%s' "$REC_BACKEND" ;;
+    terminal) printf '%s' "$REC_TERMINAL" ;;
+    worktree_id) printf '%s' "$REC_WORKTREE_ID" ;;
+    worktree_path) printf '%s' "$REC_WORKTREE_PATH" ;;
+    project) printf '%s' "$REC_PROJECT" ;;
+    pool_backend) printf '%s' "$REC_POOL_BACKEND" ;;
+    *) return 1 ;;
+  esac
 }
 
 record_identity_matches() {  # <content>
