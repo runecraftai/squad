@@ -583,7 +583,7 @@ elif [ "$REEMIT" -eq 1 ]; then
 else
   BOOT_OUT=$(
     "$SCRIPT_DIR/sq-herdr-session-cleanup.sh" 2>&1 || true
-    SQUAD_BOOTSTRAP_NETWORK=skip SQUAD_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
+    SQUAD_BOOTSTRAP_LOCKED=1 SQUAD_BOOTSTRAP_NETWORK=skip SQUAD_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
       "$SCRIPT_DIR/sq-bootstrap.sh" 2>&1
   )
 fi

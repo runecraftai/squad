@@ -2380,6 +2380,12 @@ if [ "$BACKEND" = herdr ]; then
   TEARDOWN_HERDR_PANE=$SQUAD_BACKEND_HERDR_PANE
 fi
 
+# Persist exact retirement identity before the task metadata can disappear.
+"$SCRIPT_DIR/sq-retired-missions.sh" record "$ID" || exit 1
+if [ "$BACKEND" = orca ] && [ -n "$T_ORCA" ]; then
+  "$SCRIPT_DIR/sq-retired-missions.sh" retire-terminal "$ID" || true
+fi
+
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
   if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
@@ -2406,9 +2412,6 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
     rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sq-turn-end.js" \
       "$WT/.opencode/plugins/sq-busy-state.js" \
       "$WT/.sq-grok-turnend" "$WT/.sq-kimi-turnend"
-  fi
-  if ! grep -q '^orca_host_workspace_id=' "$META"; then
-    [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "sq-$ID" 2>/dev/null || true
   fi
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
 elif [ -d "$WT" ] && [ "$KIND" != xo ]; then

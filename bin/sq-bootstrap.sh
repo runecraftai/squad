@@ -1320,6 +1320,9 @@ if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   fi
   # x_mode_setup writes local Relay artifacts only and never leaves the machine.
   local_phase && x_mode_setup
+  if local_phase && [ "${SQUAD_BOOTSTRAP_LOCKED:-0}" = 1 ]; then
+    "$SCRIPT_DIR/sq-retired-missions.sh" sweep
+  fi
   if network_phase && network_sweep_authorized 'project clone refresh'; then
     __fm_timing_stamp=$(fm_timing_now_ms)
     fleet_sync
