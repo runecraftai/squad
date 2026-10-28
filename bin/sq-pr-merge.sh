@@ -9,7 +9,8 @@
 # Merge method defaults to --squash when the caller passes none of --squash,
 # --merge, --rebase, or --method after the optional -- separator. Extra args
 # must not include --repo or -R because the repository comes only from the URL,
-# and --auto or --disable-auto are refused because neither completes a merge.
+# --expected-head because the comparison head comes only from task metadata, or
+# --auto or --disable-auto because neither completes a merge.
 # Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra sq-gh pr merge args>]
 set -eu
 
