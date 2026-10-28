@@ -457,6 +457,32 @@ test_reused_worktree_path_is_preserved() {
   pass "a path reused by another repository is preserved through git identity verification"
 }
 
+# A task id admitted by the shared creation validator (which allows a leading
+# '_' or '-') must be recordable and retirable, otherwise teardown cannot run
+# for such a task at all.
+test_shared_creation_validator_ids_are_retirable() {
+  local out record
+  make_terminal_case id-authority
+  rm -f "$STATE/$ID.meta"
+  ID='_probe'
+  cat > "$STATE/$ID.meta" <<EOF
+backend=orca
+terminal=term-id-authority
+orca_worktree_id=repo::$WT
+worktree=$WT
+project=$PROJECT
+kind=strike
+EOF
+  run_terminal record "$ID" || fail "a leading-underscore task id could not be recorded for retirement"
+  record="$STATE/.retired-terminals/$ID.record"
+  assert_present "$record" "the leading-underscore task retirement record was not written"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.fail_close=false;fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  out=$(run_terminal retire-terminal "$ID") || fail "a leading-underscore task id could not be retired: $out"
+  assert_contains "$out" "retired terminal term-id-authority" "the leading-underscore task terminal was not retired"
+  assert_absent "$record" "the leading-underscore task left its retirement record behind"
+  pass "task ids admitted by the shared creation validator are recorded and retired"
+}
+
 test_failed_terminal_close_is_retried_from_record
 test_unverified_runtime_record_is_refreshed_on_retry
 test_verified_runtime_survives_unverified_rerecord
@@ -473,6 +499,7 @@ test_record_identity_drift_still_refuses
 test_xo_terminal_retirement_record_is_never_written
 test_live_terminal_metadata_wins
 test_ambiguous_terminal_owner_is_preserved
+test_shared_creation_validator_ids_are_retirable
 test_remote_tracking_reachable_orphan_is_removed
 test_local_default_branch_landing_is_reachable
 test_unmerged_unreachable_orphan_is_preserved

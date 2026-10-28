@@ -11,16 +11,14 @@ RECORD_IDENTITY_KEYS=(kind task_id base backend terminal worktree_id worktree_pa
 
 # shellcheck source=bin/sq-gate-refuse-lib.sh
 . "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
 
 case "$LIMIT" in ''|*[!0-9]*) LIMIT=20 ;; esac
 [ "$LIMIT" -gt 0 ] || LIMIT=20
 
 usage() {
   echo 'usage: sq-retired-missions.sh record <task-id> | retire-terminal <task-id> | sweep' >&2
-}
-
-valid_id() {
-  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]
 }
 
 identity_dir() {
@@ -161,7 +159,7 @@ record_load() {
     esac
   done < "$file"
   [ -n "$REC_KIND" ] && [ -n "$REC_TASK_ID" ] && [ -n "$REC_BASE" ] \
-    && [ -n "$REC_RETIRED_AT" ] && valid_id "$REC_TASK_ID" || return 1
+    && [ -n "$REC_RETIRED_AT" ] && fm_task_id_creation_valid "$REC_TASK_ID" || return 1
   case "$REC_KIND" in
     terminal) [ "$REC_BACKEND" = orca ] && [ -n "$REC_TERMINAL" ] && [ -n "$REC_WORKTREE_ID" ] && [ -n "$REC_WORKTREE_PATH" ] && [ -n "$REC_RUNTIME" ] && { [ "$REC_CLOSE_ATTEMPTED" = 0 ] || [ "$REC_CLOSE_ATTEMPTED" = 1 ]; } ;;
     worktree) [ -n "$REC_PROJECT" ] && [ -n "$REC_WORKTREE_PATH" ] && [ -n "$REC_POOL_BACKEND" ] ;;
@@ -171,7 +169,7 @@ record_load() {
 
 record_task() {
   local id=$1 meta base backend terminal worktree_id worktree_path project retired_at runtime=unknown content canonical_project canonical_wt kind
-  valid_id "$id" || { echo "error: invalid task id" >&2; return 1; }
+  fm_task_id_creation_valid "$id" || { echo "error: invalid task id" >&2; return 1; }
   meta="$STATE/$id.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || { echo "error: live task metadata is unavailable" >&2; return 1; }
   kind=$(meta_value "$meta" kind 2>/dev/null || true)
@@ -289,7 +287,7 @@ remove_record() {
 
 retire_live_terminal() {
   local id=$1 file="$STATE/.retired-terminals/$1.record" state base current
-  valid_id "$id" || return 1
+  fm_task_id_creation_valid "$id" || return 1
   [ -f "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || { echo "preserved terminal $id: live task metadata is unavailable"; return 1; }
   record_load "$file" && [ "$REC_KIND" = terminal ] && [ "$REC_TASK_ID" = "$id" ] \
     || { echo "preserved terminal $id: retirement identity is unavailable"; return 1; }
