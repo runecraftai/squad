@@ -27,7 +27,11 @@ SH
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
-  'pr merge '*) exit "${SQ_TEST_MERGE_RC:-0}" ;;
+  'pr merge '*)
+    rc=${SQ_TEST_MERGE_RC:-0}
+    [ "$rc" -eq 0 ] && printf 'merged:\n  status: landed\n'
+    exit "$rc"
+    ;;
 esac
 exit 0
 SH
