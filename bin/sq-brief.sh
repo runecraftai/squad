@@ -66,7 +66,13 @@
 # "Delivery contract: mode=<mode>" line. bin/sq-spawn.sh reads that line and refuses
 # to launch a strike task whose explicit --mode disagrees, so an adjusted brief and the
 # recorded task metadata cannot drift apart.
-# Ship briefs begin with a worktree-isolation assertion before the branch step.
+# Every strike and recon brief opens with the operator guard from one shared
+# preamble, above the task body: the operator is not Squad, so the base's
+# session-start section and unit lock do not apply to it, the lock stays with the
+# primary session that dispatched it, and a session-start lock refusal is a
+# misunderstanding rather than a read-only state to respect. XO charters keep
+# their own preamble instead, because an XO runs session start for its own base.
+# Ship briefs also carry a worktree-isolation assertion before the branch step.
 # --mode is refused on recon and XO scaffolds: a recon's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
 # There is no --yolo flag here. The worker never owns approval decisions, so yolo is
