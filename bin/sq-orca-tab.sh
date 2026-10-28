@@ -15,7 +15,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE=${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}}
 STATE=${SQUAD_STATE_OVERRIDE:-$BASE/state}
 ID=${1:-} STATE_NAME=${2:-} FORCE=${3:-}
-case "$ID" in ''|*[!a-zA-Z0-9_-]*) echo 'error: invalid Orca task id' >&2; exit 2 ;; esac
+# The task-id charset is owned by one validator so a helper can never refuse an
+# id that spawn, teardown, and the sentry already accepted.
+# shellcheck source=bin/sq-pr-lib.sh
+. "$SCRIPT_DIR/sq-pr-lib.sh"
+fm_task_id_path_safe "$ID" || { echo 'error: invalid Orca task id' >&2; exit 2; }
 case "$STATE_NAME" in done|failed|sync) ;; *) echo 'error: invalid Orca tab state' >&2; exit 2 ;; esac
 case "$FORCE" in ''|--force) ;; *) echo 'error: invalid Orca tab option' >&2; exit 2 ;; esac
 

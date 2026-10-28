@@ -537,6 +537,25 @@ test_tab_helper_closes_mission_tab_once_in_hosting_workspace() {
   pass "sq-orca-tab.sh: closes the hosting-workspace mission tab once and never renames it"
 }
 
+# The helper must accept every task id the canonical validator accepts; a dotted
+# id used to exit 2 here, which left the tab open and made teardown fatal.
+test_tab_helper_accepts_a_dotted_task_id() {
+  local id='orca.1' state
+  orca_case tab-dotted
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-dotted" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '{"ok":true,"result":{"truncated":false,"terminals":[{"handle":"term-dotted","worktreeId":"wt-host","title":"sq-orca.1"}]}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/2.out"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 0 "$TAB_STATUS" "sq-orca-tab.sh done should accept a dotted task id"$'\n'"$TAB_OUT"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-dotted'$'\x1f''--json' \
+    "done did not close the dotted task's mission terminal"
+  assert_grep "term-dotted closed" "$state/.orca-tab-$id" "the dotted task's close was not recorded"
+  pass "sq-orca-tab.sh: accepts every task id the shared validator accepts"
+}
+
 test_tab_helper_preserves_tab_when_terminal_is_outside_hosting_workspace() {
   local id=orcatabz2 state
   orca_case tab-mismatch
@@ -1198,6 +1217,58 @@ test_spawn_preserves_orca_metadata_when_abort_cleanup_fails() {
   pass "sq-spawn.sh --backend orca: preserves metadata when abort cleanup fails"
 }
 
+# A mission tab created before an abort is the identity the preserved record must
+# carry, so the tab can still be closed and the record can still be torn down.
+test_spawn_preserves_the_mission_tab_when_abort_cleanup_fails() {
+  local proj wt data state config id out status
+  id="orcatababortz3"
+  proj="$TMP_ROOT/tab-abort-project"
+  wt="$TMP_ROOT/tab-abort-wt"
+  data="$TMP_ROOT/tab-abort-data"
+  state="$TMP_ROOT/tab-abort-state"
+  config="$TMP_ROOT/tab-abort-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
+  touch "$state/.last-sentry-beat"
+  cat > "$proj/WORKFLOW.md" <<'EOF'
+---
+schema_version: "1.0.0"
+hooks:
+  after_create:
+    command: ["bash", "-c", "exit 1"]
+    timeout_ms: 2000
+---
+EOF
+  orca_case tab-abort
+  printf '{"ok":true,"result":{"repo":{"id":"repo-squad-base"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/2.out"
+  printf '1\n' > "$RESP/3.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-tab-abort"}}}\n' > "$RESP/4.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-tab-abort","path":"%s"},"terminal":{"handle":"term-worktree"}}}\n' "$wt" > "$RESP/5.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/6.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab-abort","surface":"visible","tabId":"tab-abort","worktreeId":"wt-host"}}}\n' > "$RESP/7.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/8.out"
+  printf '1\n' > "$RESP/9.exit"
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "Orca spawn should fail when the after_create hook fails"
+  assert_contains "$out" "after_create hook failed" "the abort should name the failed workspace hook"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-tab-abort'$'\x1f''--json' \
+    "abort cleanup should close the mission tab it created"
+  assert_present "$state/$id.meta" "a failed worktree removal should preserve the record"
+  assert_grep "terminal=term-tab-abort" "$state/$id.meta" "preserved record lost the mission tab identity"
+  assert_grep "orca_host_workspace_id=wt-host" "$state/$id.meta" "preserved record lost the hosting workspace identity"
+  assert_no_grep "terminal=term-worktree" "$state/$id.meta" "preserved record must not name the worktree-bound terminal"
+  if ! ( . "$ROOT/bin/sq-backend.sh"; fm_backend_validate_task_endpoint "$state/$id.meta" "$id" ) >/dev/null 2>&1; then
+    fail "the preserved record must stay teardown-able"
+  fi
+  pass "sq-spawn.sh --backend orca: preserves the mission tab identity for teardown"
+}
+
 test_spawn_refuses_nonregular_metadata_before_resource_creation() {
   local proj wt data state config id out status
   id="orcametafailz9"
@@ -1227,7 +1298,7 @@ test_spawn_refuses_nonregular_metadata_before_resource_creation() {
   assert_contains "$out" "refusing relaunch" \
     "spawn should refuse relaunch for non-regular metadata"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''repo'$'\x1f''add' \
-    "non-regular metadata refusal should happen before Orca registers or creates anything"
+    "a base Orca already knows should not be registered again before the refusal"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''create' \
     "non-regular metadata refusal should happen before Orca creates a worktree"
   [ ! -f "$state/$id.meta" ] || fail "non-regular metadata refusal should not publish a regular metadata file"
@@ -1994,6 +2065,7 @@ test_host_workspace_skips_registration_when_base_is_already_registered
 test_host_workspace_survives_failed_registration_when_host_is_present
 test_host_workspace_still_refuses_a_missing_hosting_workspace
 test_tab_helper_closes_mission_tab_once_in_hosting_workspace
+test_tab_helper_accepts_a_dotted_task_id
 test_tab_helper_preserves_tab_when_terminal_is_outside_hosting_workspace
 test_tab_helper_keeps_receipt_absent_when_close_is_not_confirmed
 test_tab_helper_is_inert_for_legacy_and_identity_collapsed_records
@@ -2019,6 +2091,7 @@ test_spawn_refuses_orca_when_runtime_not_ready
 test_spawn_refuses_orca_nonisolated_worktree
 test_spawn_removes_orca_worktree_when_terminal_create_fails
 test_spawn_preserves_orca_metadata_when_abort_cleanup_fails
+test_spawn_preserves_the_mission_tab_when_abort_cleanup_fails
 test_spawn_refuses_nonregular_metadata_before_resource_creation
 test_peek_send_and_crew_state_route_through_orca_meta
 test_peek_and_crew_state_fail_closed_on_orca_error_json

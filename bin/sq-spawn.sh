@@ -778,12 +778,13 @@ spawn_abort_cleanup() {
             echo "model=${MODEL:-default}"
             echo "effort=${EFFORT:-default}"
             echo "backend=orca"
+            echo "endpoint_task_id=$ID"
             echo "orca_worktree_id=$ORCA_WORKTREE_ID"
-            echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
             # A record that names a hosting workspace may name only a mission tab, never
             # the worktree-bound endpoint Orca returned before that tab existed.
-            if [ -n "${ORCA_HOST_WORKSPACE_ID:-}" ]; then
-              [ -z "${ORCA_MISSION_TAB:-}" ] || echo "terminal=$ORCA_MISSION_TAB"
+            if [ -n "${ORCA_MISSION_TAB:-}" ]; then
+              echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
+              echo "terminal=$ORCA_MISSION_TAB"
             else
               [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
             fi
@@ -2099,6 +2100,7 @@ EOF
       ORCA_TERMINAL=
     fi
     ORCA_TERMINAL=$(fm_backend_orca_terminal_create "$ORCA_HOST_WORKSPACE_ID" "$W") || exit 1
+    ORCA_MISSION_TAB=$ORCA_TERMINAL
     T="$ORCA_TERMINAL"
     ;;
 esac

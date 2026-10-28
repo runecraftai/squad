@@ -50,12 +50,12 @@ On Linux builds (verified against v1.4.188) it records the composite form `<repo
 
 ## Current lifecycle and safety
 
-Spawn validates that any existing metadata file is regular, registers the Squad base with Orca when Orca does not know it yet, resolves the hosting workspace, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
+Spawn first resolves the Squad base's hosting workspace through Orca, registering the base with Orca when Orca does not know it yet, then validates that any existing metadata file is regular, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
 A hidden background handle is closed and refused, never used to host a mission.
 The tab's title carries no state; Orca renders agent status itself.
 When a mission reaches `done` or `failed`, the tab closes once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
 A tab the commander already closed, or a handle left by a previous Orca runtime, is proven absent by a complete hosting-workspace inventory plus an exact observation of the recorded handle instead of blocking the worktree release; an explicit `sq-teardown.sh --force` also lets an unobservable runtime through without recording an unconfirmed close.
-Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any Orca resource is created.
+Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any mission worktree, mission tab, or launch is created; the base hosting-workspace lookup and its best-effort base registration run before that refusal.
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
 Spawn also passes Orca's own managed status extension to a Pi or pi-signed operator launch as one extra `-e`, so Orca's UI can show that operator's live state; the extension reports to Orca and is not read by Squad's sentry.
 Path resolution and the optional-file rule are owned by `bin/sq-spawn.sh --help`: an absent file leaves that launch exactly as on every other backend, and no other backend or harness receives the extra argument.
