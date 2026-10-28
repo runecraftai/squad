@@ -32,6 +32,11 @@ make_case() {
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
   mkdir -p "$case_dir/state" "$fakebin"
+  cat > "$fakebin/sq-teardown" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_TEARDOWN_LOG"
+SH
+  chmod +x "$fakebin/sq-teardown"
   fm_write_meta "$case_dir/state/task-x1.meta" \
     "window=sq-task-x1" \
     "worktree=$case_dir/wt" \
@@ -95,6 +100,8 @@ run_pr_merge() {
   SQUAD_STATE_OVERRIDE="$case_dir/state" \
   SQUAD_DATA_OVERRIDE="$case_dir/data" \
   SQUAD_TEST_SQ_GH_LOG="$case_dir/sq-gh.log" \
+  SQUAD_TEST_TEARDOWN_LOG="$case_dir/teardown.log" \
+  SQUAD_TEARDOWN_BIN="$case_dir/fakebin/sq-teardown" \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_MERGE" "$@"
   rc=$?
@@ -123,6 +130,8 @@ test_records_pr_and_head_after_confirmed_merge() {
     "records-after-merge: pr= was not recorded"
   assert_grep 'pr_head=deadbeefcafefeed0000000000000000deadbeef' "$case_dir/state/task-x1.meta" \
     "records-after-merge: pr_head= was not recorded"
+  assert_contains "$(<"$case_dir/teardown.log")" "task-x1" \
+    "records-after-merge: landed direct merge did not trigger teardown"
   grep -qxF 'pr merge 9 --repo example/repo --expected-head deadbeefcafefeed0000000000000000deadbeef --squash' "$case_dir/sq-gh.log" \
     || fail "records-after-merge: sq-gh pr merge was not invoked with number, --repo, and default --squash"
   pass "sq-pr-merge records PR metadata after invoking the guarded merge"
@@ -439,6 +448,7 @@ test_auto_merge_is_not_recorded_as_landed() {
     "auto-merge: refusal must not record a landing"
   assert_no_grep 'pr=https://github.com/example/repo/pull/31' "$case_dir/state/task-x1.meta" \
     "auto-merge: refusal must leave task metadata untouched"
+  assert_absent "$case_dir/teardown.log" "auto-merge: refusal must not trigger teardown"
   [ ! -s "$case_dir/sq-gh.log" ] || fail "auto-merge: merge command was invoked"
 
   landed_dir=$(make_case real-merge)
@@ -508,6 +518,7 @@ test_disable_auto_refuses_before_merge() {
     "disable-auto: refusal must not record a landing"
   after=$(sha256sum "$case_dir/state/task-x1.meta")
   [ "$before" = "$after" ] || fail "disable-auto: refusal changed task metadata"
+  assert_absent "$case_dir/teardown.log" "disable-auto: refusal must not trigger teardown"
   [ ! -s "$case_dir/sq-gh.log" ] || fail "disable-auto: merge command was invoked"
   pass "sq-pr-merge refuses --disable-auto instead of claiming a synchronous landing"
 }

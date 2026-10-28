@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+TEARDOWN_BIN="${SQUAD_TEARDOWN_BIN:-$SCRIPT_DIR/sq-teardown.sh}"
 
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
@@ -127,3 +128,4 @@ grep -qxF "pr=$URL" "$META" || {
   echo "warning: PR merge was confirmed and landing recorded, but metadata refresh did not record the canonical PR URL" >&2
   exit 1
 }
+SQUAD_BASE="$SQUAD_BASE" "$TEARDOWN_BIN" "$ID"

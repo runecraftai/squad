@@ -24,7 +24,29 @@ next=$(( $(cat "$COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
   printf '\n'
 } >> "$LOG"
 if [ "${1:-}" = status ] && [ "${SQUAD_ORCA_STATUS_RESPONSE:-ready}" != sequence ]; then
-  printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}\n'
+  printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready","runtimeId":"runtime-test"}}}\n'
+  exit 0
+fi
+if [ "${1:-}" = terminal ] && [ "${2:-}" = list ]; then
+  selector=${4#id:}
+  handle= worktree_id= worktree_path=
+  if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
+    for meta in "$SQUAD_STATE_OVERRIDE"/*.meta; do
+      [ -f "$meta" ] || continue
+      candidate=$(awk -F= '$1=="orca_worktree_id" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
+      [ "$candidate" = "$selector" ] || continue
+      handle=$(awk -F= '$1=="terminal" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
+      worktree_id=$candidate
+      worktree_path=$(awk -F= '$1=="worktree" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
+      break
+    done
+  fi
+  node -e 'const fs=require("fs"),p=process.argv[1],h=process.argv[2],w=process.argv[3],x=process.argv[4],closed=fs.existsSync(p)?fs.readFileSync(p,"utf8").split(String.fromCharCode(10)):[];const terminals=h&&!closed.includes(h)?[{handle:h,worktreeId:w,worktreePath:x}]:[];console.log(JSON.stringify({ok:true,result:{terminals,truncated:false},_meta:{runtimeId:"runtime-test"}}));' "$RESP/.closed-terminals" "$handle" "$worktree_id" "$worktree_path"
+  exit 0
+fi
+if [ "${1:-}" = terminal ] && [ "${2:-}" = close ]; then
+  if [ "${SQUAD_ORCA_CLOSE_FAIL:-0}" = 1 ]; then exit 1; fi
+  printf '%s\n' "${4:-}" >> "$RESP/.closed-terminals"
   exit 0
 fi
 n=$next
@@ -510,8 +532,7 @@ test_send_key_refuses_escape_until_supported() {
 
 test_kill_is_best_effort_close() {
   orca_case kill
-  printf '1\n' > "$RESP/1.exit"
-  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+  PATH="$FB:$PATH" SQUAD_ORCA_CLOSE_FAIL=1 SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_kill term-123' "$ROOT"
   expect_code 0 $? "kill should stay best-effort when Orca close fails"
   assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-123'$'\x1f''--json' \
@@ -1867,8 +1888,7 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
     "backend=orca" "orca_worktree_id=wt-remove-error" \
     "decisions_reviewed=1" "decision_keys="
   orca_case remove-error-teardown
-  printf '{"ok":true,"result":{}}\n' > "$RESP/1.out"
-  printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/2.out"
+  printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/1.out"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
@@ -1876,7 +1896,7 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
     "$ROOT/bin/sq-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
-  [ "$rc" -ne 0 ] || fail "Orca teardown should fail when worktree removal returns ok:false JSON"
+  [ "$rc" -ne 0 ] || fail "Orca teardown should fail when worktree removal returns ok:false JSON; calls=$(cat "$LOG"); output=$out"
   assert_contains "$out" "worktree not removed" "teardown should surface the Orca removal error"
   assert_present "$state/$id.meta" "failed Orca removal should preserve task metadata"
   pass "sq-teardown.sh backend=orca: preserves metadata on remove ok:false JSON"

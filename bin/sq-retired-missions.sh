@@ -11,7 +11,7 @@ case "$LIMIT" in ''|*[!0-9]*) LIMIT=20 ;; esac
 [ "$LIMIT" -gt 0 ] || LIMIT=20
 
 usage() {
-  echo 'usage: sq-retired-missions.sh record <task-id> | sweep' >&2
+  echo 'usage: sq-retired-missions.sh record <task-id> | retire-terminal <task-id> | sweep' >&2
 }
 
 valid_id() {
@@ -58,7 +58,8 @@ record_write() {
   file="$dir/$id.record"
   if [ -e "$file" ] || [ -L "$file" ]; then
     single_link_file "$file" || return 1
-    cmp -s <(grep -v '^retired_at=' "$file") <(printf '%s\n' "$content" | grep -v '^retired_at=')
+    cmp -s <(grep -Ev '^(retired_at|close_attempted)=' "$file") \
+      <(printf '%s\n' "$content" | grep -Ev '^(retired_at|close_attempted)=')
     return $?
   fi
   tmp=$(umask 077; mktemp "$dir/.pending.XXXXXX") || return 1
@@ -75,9 +76,9 @@ record_write() {
 
 record_load() {
   local file=$1 line key value seen=' '
-  REC_KIND= REC_TASK_ID= REC_BASE= REC_RETIRED_AT=
-  REC_BACKEND= REC_TERMINAL= REC_RUNTIME= REC_CLOSE_ATTEMPTED= REC_WORKTREE_ID= REC_WORKTREE_PATH=
-  REC_PROJECT= REC_POOL_BACKEND=
+  REC_KIND='' REC_TASK_ID='' REC_BASE='' REC_RETIRED_AT=''
+  REC_BACKEND='' REC_TERMINAL='' REC_RUNTIME='' REC_CLOSE_ATTEMPTED='' REC_WORKTREE_ID='' REC_WORKTREE_PATH=''
+  REC_PROJECT='' REC_POOL_BACKEND=''
   single_link_file "$file" || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in *=*) key=${line%%=*}; value=${line#*=} ;; *) return 1 ;; esac
@@ -123,11 +124,13 @@ record_task() {
   retired_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ') || { echo "error: retirement time unavailable" >&2; return 1; }
 
   if [ "$backend" = orca ] && [ -n "$terminal" ]; then
-    field_safe "$terminal" && field_safe "$worktree_id" && field_safe "$worktree_path" \
-      || { echo "error: Orca terminal identity is malformed" >&2; return 1; }
-    if [ -n "$worktree_id" ] && [ -n "$worktree_path" ]; then
-      runtime=$(orca_runtime_id 2>/dev/null || printf unknown)
+    if ! field_safe "$terminal" || ! field_safe "$worktree_id" || ! field_safe "$worktree_path"; then
+      echo "error: Orca terminal identity is malformed" >&2
+      return 1
     fi
+    [ -n "$worktree_id" ] && [ -n "$worktree_path" ] \
+      || { echo "error: Orca terminal worktree identity is unavailable" >&2; return 1; }
+    runtime=$(orca_runtime_id 2>/dev/null || printf unknown)
     content=$(printf 'kind=terminal\ntask_id=%s\nbase=%s\nretired_at=%s\nbackend=orca\nterminal=%s\nruntime_id=%s\nclose_attempted=0\nworktree_id=%s\nworktree_path=%s' \
       "$id" "$base" "$retired_at" "$terminal" "$runtime" "$worktree_id" "$worktree_path")
     record_write "$STATE/.retired-terminals" "$id" "$content" \
@@ -141,8 +144,10 @@ record_task() {
       "${HOME:-/nonexistent}"/.fob/pi-durable-host-*/*) ;;
       *) return 0 ;;
     esac
-    [ -n "$canonical_project" ] && git -C "$canonical_project" rev-parse --git-dir >/dev/null 2>&1 \
-      || { echo "error: worktree project identity cannot be verified" >&2; return 1; }
+    if [ -z "$canonical_project" ] || ! git -C "$canonical_project" rev-parse --git-dir >/dev/null 2>&1; then
+      echo "error: worktree project identity cannot be verified" >&2
+      return 1
+    fi
     content=$(printf 'kind=worktree\ntask_id=%s\nbase=%s\nretired_at=%s\nproject=%s\nworktree_path=%s\npool_backend=fob' \
       "$id" "$base" "$retired_at" "$canonical_project" "$canonical_wt")
     record_write "$STATE/.retired-worktrees" "$id" "$content" \
@@ -155,8 +160,9 @@ orca_runtime_id() {
   status=$(orca status --json) || return 1
   printf '%s' "$status" | node -e '
 const fs=require("fs"),d=JSON.parse(fs.readFileSync(0,"utf8")),r=d.result&&d.result.runtime;
-if(d.ok!==true || !r || r.reachable!==true || r.state!=="ready" || typeof r.runtimeId!=="string" || !r.runtimeId) process.exit(1);
-process.stdout.write(r.runtimeId);
+const runtime=String((r&&r.runtimeId)||(d._meta&&d._meta.runtimeId)||"");
+if(d.ok!==true || !r || r.reachable!==true || r.state!=="ready" || !runtime) process.exit(1);
+process.stdout.write(runtime);
 '
 }
 
@@ -188,8 +194,9 @@ orca_inventory_check() {  # <handle> <runtime-id> <worktree-id> <path> -> presen
   status=$(orca status --json) || return 1
   runtime=$(printf '%s' "$status" | node -e '
 const fs=require("fs"),d=JSON.parse(fs.readFileSync(0,"utf8")),r=d.result&&d.result.runtime;
-if(d.ok!==true || !r || r.reachable!==true || r.state!=="ready" || String(r.runtimeId||"")!==process.argv[1]) process.exit(1);
-process.stdout.write(String(r.runtimeId));
+const runtime=String((r&&r.runtimeId)||(d._meta&&d._meta.runtimeId)||"");
+if(d.ok!==true || !r || r.reachable!==true || r.state!=="ready" || runtime!==process.argv[1]) process.exit(1);
+process.stdout.write(runtime);
 ' "$expected_runtime") || return 1
   [ "$runtime" = "$expected_runtime" ] || return 1
   inventory=$(orca terminal list --worktree "id:$worktree_id" --json) || return 1
@@ -250,7 +257,7 @@ retire_live_terminal() {
 }
 
 sweep_terminals() {
-  local base dir file count id state reason
+  local base dir file count id state
   dir="$STATE/.retired-terminals"
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
   count=0
@@ -349,7 +356,7 @@ worktree_reachable() {  # <project> <path>
 }
 
 sweep_worktrees() {
-  local dir file count id base live pool dirty project path canonical status
+  local dir file count id base dirty project path canonical status
   dir="$STATE/.retired-worktrees"
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
   count=0

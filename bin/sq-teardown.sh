@@ -2382,9 +2382,6 @@ fi
 
 # Persist exact retirement identity before the task metadata can disappear.
 "$SCRIPT_DIR/sq-retired-missions.sh" record "$ID" || exit 1
-if [ "$BACKEND" = orca ] && [ -n "$T_ORCA" ]; then
-  "$SCRIPT_DIR/sq-retired-missions.sh" retire-terminal "$ID" || true
-fi
 
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
@@ -2392,15 +2389,8 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
   fi
-  # Close the tab before the worktree behind it is touched; a refused close stops
-  # teardown here, except under --force, where an unobservable Orca runtime must
-  # not block the explicit discard.
-  if grep -q '^orca_host_workspace_id=' "$META"; then
-    if [ "$FORCE" = --force ]; then
-      "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" --force || exit 1
-    else
-      "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" || exit 1
-    fi
+  if [ -n "$T_ORCA" ]; then
+    "$SCRIPT_DIR/sq-retired-missions.sh" retire-terminal "$ID" || true
   fi
   if [ -d "$WT" ]; then
     branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
