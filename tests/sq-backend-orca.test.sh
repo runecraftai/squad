@@ -585,7 +585,13 @@ test_tab_helper_is_inert_for_legacy_and_identity_collapsed_records() {
   run_orca_tab_helper "$id" "done" "$state"
   expect_code 0 "$TAB_STATUS" "a legacy record without a hosting workspace must be inert"$'\n'"$TAB_OUT"
   [ ! -s "$LOG" ] || fail "a legacy record must not touch Orca"
-  pass "sq-orca-tab.sh: refuses collapsed identities and stays inert for legacy records"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 0 "$TAB_STATUS" "a record with no terminal has no tab and must stay inert"$'\n'"$TAB_OUT"
+  [ ! -s "$LOG" ] || fail "a record with no terminal must not touch Orca"
+  assert_absent "$state/.orca-tab-$id" "a record with no terminal must not record a close"
+  pass "sq-orca-tab.sh: refuses collapsed identities and stays inert for legacy or terminal-less records"
 }
 
 test_tab_helper_sync_leaves_live_mission_tab_untouched() {
@@ -612,13 +618,50 @@ test_tab_helper_retires_a_tab_the_commander_already_closed() {
   mkdir -p "$state"
   fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
     "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
-  printf '{"ok":true,"result":{"truncated":false,"terminals":[]}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":[]},"terminals":[]}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
   run_orca_tab_helper "$id" "done" "$state"
   expect_code 0 "$TAB_STATUS" "a stale handle for an already-closed tab must not block teardown"$'\n'"$TAB_OUT"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''show'$'\x1f''--terminal'$'\x1f''term-tab' \
+    "the absence proof did not confirm the handle is not live elsewhere"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
     "an absent tab must never be closed again"
   assert_grep "term-tab closed" "$state/.orca-tab-$id" "an absent tab did not retire the receipt"
   pass "sq-orca-tab.sh: an already-closed tab is proven absent, retired, and never re-closed"
+}
+
+test_tab_helper_preserves_a_tab_that_moved_to_another_workspace() {
+  local id=orcatabz8 state
+  orca_case tab-moved
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":[]},"terminals":[]}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab","worktreeId":"wt-other"}}}\n' > "$RESP/2.out"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 1 "$TAB_STATUS" "a live tab outside the hosting workspace must be preserved"$'\n'"$TAB_OUT"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
+    "a live tab outside the hosting workspace must not be closed"
+  assert_absent "$state/.orca-tab-$id" "a live tab must never be recorded closed"
+  pass "sq-orca-tab.sh: a live tab outside the hosting workspace is preserved, never recorded closed"
+}
+
+test_tab_helper_refuses_an_incomplete_workspace_inventory() {
+  local id=orcatabz9 state
+  orca_case tab-incomplete
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":["host-remote"]},"terminals":[]}}\n' > "$RESP/1.out"
+  printf '1\n' > "$RESP/2.exit"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 1 "$TAB_STATUS" "an inventory with omitted hosts must not prove absence"$'\n'"$TAB_OUT"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
+    "an incomplete inventory must not close anything"
+  assert_absent "$state/.orca-tab-$id" "an incomplete inventory must not record a close"
+  pass "sq-orca-tab.sh: an inventory that omits hosts never proves a tab absent"
 }
 
 test_tab_helper_force_releases_an_unobservable_tab() {
@@ -1874,6 +1917,8 @@ test_tab_helper_keeps_receipt_absent_when_close_is_not_confirmed
 test_tab_helper_is_inert_for_legacy_and_identity_collapsed_records
 test_tab_helper_sync_leaves_live_mission_tab_untouched
 test_tab_helper_retires_a_tab_the_commander_already_closed
+test_tab_helper_preserves_a_tab_that_moved_to_another_workspace
+test_tab_helper_refuses_an_incomplete_workspace_inventory
 test_tab_helper_force_releases_an_unobservable_tab
 test_remove_worktree_refuses_empty_id
 test_remove_worktree_rejects_orca_error_json

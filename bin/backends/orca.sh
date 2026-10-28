@@ -495,8 +495,10 @@ fm_backend_orca_kill() {  # <terminal-id>
 # Print the exact presence of a recorded terminal in its hosting workspace:
 # absent, present, or mismatch. unknown means the inventory could not answer,
 # so a caller must fall back to an exact live observation instead of assuming
-# absence. Handles are runtime-scoped, so this is how a closed tab or a handle
-# from a previous runtime is proven gone.
+# absence. A complete inventory must cover every host, not only the reachable
+# ones, so an omitted remote host is never read as absence.
+# Handles are runtime-scoped, so this is how a tab that is gone from its
+# hosting workspace is found without requiring a live terminal show.
 fm_backend_orca_terminal_presence() {  # <hosting-workspace-id> <terminal-id>
   local worktree_id=$1 terminal=$2 out
   fm_backend_orca_tool_check >/dev/null 2>&1 || { printf 'unknown'; return 0; }
@@ -511,12 +513,32 @@ const r = d.result || {};
 if (!Array.isArray(r.terminals)) process.exit(1);
 const hits = r.terminals.filter((t) => t && String(t.handle) === terminal);
 if (hits.length === 0) {
-  if (r.truncated !== false) process.exit(1);
+  const omitted = (r.hostScope || {}).omittedHostIds;
+  if (r.truncated !== false || (Array.isArray(omitted) && omitted.length > 0)) process.exit(1);
   process.stdout.write("absent");
   process.exit(0);
 }
 process.stdout.write(hits.length === 1 && String(hits[0].worktreeId) === host ? "present" : "mismatch");
 ' "$terminal" "$worktree_id" || printf 'unknown'
+}
+
+# Print the hosting workspace id of a live terminal, or fail when that terminal
+# cannot be observed. A failed read alone is never proof of absence, so callers
+# pair it with a complete workspace inventory before concluding a tab is gone.
+fm_backend_orca_terminal_observe() {  # <terminal-id>
+  local terminal=$1 out
+  fm_backend_orca_tool_check >/dev/null 2>&1 || return 1
+  out=$(orca terminal show --terminal "$terminal" --json 2>/dev/null) || return 1
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+const terminal = process.argv[1];
+let d;
+try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(1); }
+if (!d || d.ok === false) process.exit(1);
+const t = (d.result || {}).terminal || {};
+if (String(t.handle) !== terminal || t.worktreeId == null) process.exit(1);
+process.stdout.write(String(t.worktreeId));
+' "$terminal"
 }
 
 # Strict close for lifecycle paths that must know whether the tab is really gone

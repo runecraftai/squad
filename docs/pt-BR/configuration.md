@@ -116,7 +116,7 @@ Metadados de tarefa gravam `backend=` apenas para um backend não padrão; um `b
 Cada nova tarefa grava `endpoint_task_id=` como o vínculo de limpeza entre o nome do arquivo de metadados e seu endpoint de runtime opaco.
 Uma tarefa herdr adicionalmente grava `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=` e `herdr_pane_id=`.
 Uma tarefa zellij adicionalmente grava `zellij_session=`, `zellij_tab_id=` e `zellij_pane_id=`.
-Uma tarefa Orca adicionalmente grava `orca_worktree_id=` e `terminal=`, com `window=sq-<id>` mantido como o alias Squad compartilhado.
+Uma tarefa Orca adicionalmente grava `orca_host_workspace_id=`, `orca_worktree_id=` e `terminal=`, com `window=sq-<id>` mantido como o alias Squad compartilhado.
 Uma tarefa cmux adicionalmente grava `cmux_workspace_id=` e `cmux_surface_id=`.
 Uma tarefa TUIOS adicionalmente grava `tuios_session=`, `tuios_window_id=`, `tuios_workspace_id=` e `tuios_boot_id=`.
 Seletores de tarefa para `sq-peek.sh`, `sq-send.sh` e `sq-crew-state.sh` resolvem centralmente através de `fm_backend_resolve_selector`.

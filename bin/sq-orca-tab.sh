@@ -28,6 +28,8 @@ META="$STATE/$ID.meta"
 HOST=$(fm_backend_meta_exact_value "$META" orca_host_workspace_id) || exit 0
 MISSION=$(fm_backend_meta_exact_value "$META" orca_worktree_id) || { echo 'error: Orca tab has no exact mission worktree identity' >&2; exit 1; }
 [ "$HOST" != "$MISSION" ] || { echo "error: Orca hosting workspace and mission worktree are one identity for sq-$ID; preserving tab" >&2; exit 1; }
+TERMINAL_COUNT=$(grep -c '^terminal=' "$META" 2>/dev/null || true)
+[ "$TERMINAL_COUNT" -ne 0 ] || exit 0
 TERMINAL=$(fm_backend_meta_exact_value "$META" terminal) || { echo 'error: Orca tab has no exact terminal identity' >&2; exit 1; }
 [ "$(fm_backend_meta_exact_value "$META" window)" = "sq-$ID" ] || exit 1
 fm_backend_source orca
@@ -75,24 +77,24 @@ if [ "$STATE_NAME" = sync ]; then
   esac
 fi
 # Handles are runtime-scoped: a tab the commander already closed, or a handle left
-# by a previous Orca runtime, must never block the worktree release. Prove absence
-# from the hosting workspace inventory instead of requiring a live terminal show.
-case "$(fm_backend_orca_terminal_presence "$HOST" "$TERMINAL")" in
-  absent)
-    record_closed_receipt
-    exit 0 ;;
+# by a previous Orca runtime, must never block the worktree release. Absence from a
+# complete hosting-workspace inventory only means the tab is not in that workspace,
+# so one exact observation must also show the terminal gone before a close is
+# recorded; only an unobservable runtime refuses an ordinary close.
+TAB_PRESENCE=$(fm_backend_orca_terminal_presence "$HOST" "$TERMINAL")
+case "$TAB_PRESENCE" in
+  present) ;;
   mismatch)
     preserve_tab "Orca terminal $TERMINAL is not a tab in hosting workspace $HOST for sq-$ID" ;;
-  present) ;;
   *)
-    # The inventory could not answer: verify the exact live terminal instead.
-    OBSERVATION=$(orca terminal show --terminal "$TERMINAL" --json 2>/dev/null) || OBSERVATION=
-    [ -n "$OBSERVATION" ] || preserve_tab "Orca cannot observe the tab for sq-$ID"
-    printf '%s' "$OBSERVATION" | node -e '
-const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
-const t = (d.result || {}).terminal || {};
-process.exit(d.ok !== false && t.handle === process.argv[1] && t.worktreeId === process.argv[2] ? 0 : 1);
-' "$TERMINAL" "$HOST" || preserve_tab "Orca terminal/hosting workspace mismatch for sq-$ID" ;;
+    LIVE_HOST=$(fm_backend_orca_terminal_observe "$TERMINAL") || LIVE_HOST=
+    if [ -n "$LIVE_HOST" ]; then
+      [ "$LIVE_HOST" = "$HOST" ] || preserve_tab "Orca terminal $TERMINAL is a tab in hosting workspace $LIVE_HOST, not $HOST, for sq-$ID"
+    else
+      [ "$TAB_PRESENCE" = absent ] || preserve_tab "Orca cannot observe the tab for sq-$ID"
+      record_closed_receipt
+      exit 0
+    fi ;;
 esac
 fm_backend_orca_close "$TERMINAL" || preserve_tab "Orca did not confirm close of sq-$ID"
 record_closed_receipt
