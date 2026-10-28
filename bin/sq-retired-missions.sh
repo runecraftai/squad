@@ -7,6 +7,7 @@ SQUAD_ROOT=${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}
 SQUAD_BASE=${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}
 STATE=${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}
 LIMIT=${SQUAD_RETIRED_MISSIONS_SWEEP_LIMIT:-20}
+RECORD_IDENTITY_KEYS=(kind task_id base backend terminal worktree_id worktree_path project pool_backend)
 
 # shellcheck source=bin/sq-gate-refuse-lib.sh
 . "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
@@ -94,23 +95,16 @@ record_write() {  # <dir> <id> <kind> <content>
 }
 
 record_identity_value() {  # <key>
-  case "$1" in
-    kind) printf '%s' "$REC_KIND" ;;
-    task_id) printf '%s' "$REC_TASK_ID" ;;
-    base) printf '%s' "$REC_BASE" ;;
-    backend) printf '%s' "$REC_BACKEND" ;;
-    terminal) printf '%s' "$REC_TERMINAL" ;;
-    worktree_id) printf '%s' "$REC_WORKTREE_ID" ;;
-    worktree_path) printf '%s' "$REC_WORKTREE_PATH" ;;
-    project) printf '%s' "$REC_PROJECT" ;;
-    pool_backend) printf '%s' "$REC_POOL_BACKEND" ;;
-  esac
+  local name
+  name=$(printf 'REC_%s' "$1" | tr '[:lower:]' '[:upper:]')
+  [ -n "${!name+x}" ] || return 1
+  printf '%s' "${!name}"
 }
 
 record_identity_matches() {  # <content>
   local content=$1 key recorded observed
-  for key in kind task_id base backend terminal worktree_id worktree_path project pool_backend; do
-    recorded=$(record_identity_value "$key")
+  for key in "${RECORD_IDENTITY_KEYS[@]}"; do
+    recorded=$(record_identity_value "$key") || return 1
     observed=$(printf '%s\n' "$content" | sed -n "s/^$key=//p")
     [ "$recorded" = "$observed" ] || return 1
   done
@@ -119,8 +113,13 @@ record_identity_matches() {  # <content>
 
 record_drift_report() {  # <file> <content>
   local file=$1 content=$2 key recorded observed reported=0
-  for key in kind task_id base backend terminal worktree_id worktree_path project pool_backend; do
-    recorded=$(record_identity_value "$key")
+  for key in "${RECORD_IDENTITY_KEYS[@]}"; do
+    if ! recorded=$(record_identity_value "$key"); then
+      printf 'error: retirement record %s blocks teardown: identity key %s has no recorded value\n' \
+        "$file" "$key" >&2
+      reported=1
+      continue
+    fi
     observed=$(printf '%s\n' "$content" | sed -n "s/^$key=//p")
     if [ "$recorded" != "$observed" ]; then
       printf 'error: retirement record %s blocks teardown: %s recorded=%s observed=%s\n' \
