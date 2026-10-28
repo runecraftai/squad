@@ -1,5 +1,38 @@
 #!/usr/bin/env bash
 # Durable owner for task-retirement records and bounded orphan reconciliation.
+#
+# Usage:
+#   sq-retired-missions.sh record <task-id>
+#     Persist the task's exact retirement identity before teardown can remove
+#     state/<id>.meta: the Orca terminal handle, runtime, and worktree identity
+#     for a non-XO Orca task, and the fob worktree project and path while fob
+#     still owns that worktree. Malformed identity, a missing or symlinked
+#     metadata file, an unverified base, or a record that cannot be persisted
+#     refuses instead of continuing, so teardown never destroys the only handle a
+#     retry would need. XO tasks are skipped because their runtime lifecycle has
+#     its own removal path.
+#   sq-retired-missions.sh retire-terminal <task-id>
+#     Close that recorded exact handle and clear its record only after Orca
+#     reports the handle absent. Ambiguous or unreadable inventory, unverifiable
+#     runtime ownership, a missing or symlinked task metadata file, a recorded
+#     base or terminal that no longer matches, or any unconfirmed close preserves
+#     every durable record and exits nonzero, so a rerun retries the same handle.
+#   sq-retired-missions.sh sweep
+#     Bounded reconciliation that runs only while bootstrap holds the session
+#     lock. Recorded terminal handles retire exactly as above. A recorded fob
+#     worktree loses its git registration through `git worktree remove` only when
+#     no live task record references it, fob no longer owns it, the exact
+#     registration and project identity verify, it is clean, and its HEAD is
+#     reachable from the default branch or a remote-tracking ref; fob reclaiming
+#     the reusable worktree clears its record and keeps the worktree.
+#     Every ambiguous, dirty, unreachable, still-owned, or malformed candidate is
+#     preserved with its record, the sweep never deletes a worktree directory by
+#     hand, a branch, a ref, a patch, or a task record, and
+#     SQUAD_RETIRED_MISSIONS_SWEEP_LIMIT bounds the actions taken per kind.
+#     docs/configuration.md owns the exact state/.retired-terminals/ and
+#     state/.retired-worktrees/ record layout, and AGENTS.md section 2 owns when
+#     this sweep is authorized to run.
+# Every subcommand refuses inside the drill gate via bin/sq-gate-refuse-lib.sh.
 set -eu
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -85,7 +85,10 @@ Um recon ainda exige seu relatório e inventário completo de decisões.
 Um ship ainda recusa trabalho sujo ou não-landado.
 Antes do release, a limpeza resolve o id de worktree Orca registrado e verifica se o caminho dele bate com o caminho de worktree registrado.
 Uma identidade ausente, ilegível ou divergente preserva os metadados e para em vez de deletar qualquer coisa.
-Depois dessas checagens, o Squad fecha o terminal exato e libera o worktree exato com o comando de worktree do Orca.
+A limpeza então registra aquela identidade exata de terminal, junto da identidade de worktree registrada, através de `bin/sq-retired-missions.sh` antes que qualquer etapa seguinte possa remover os metadados da tarefa, e recusa continuar quando esse registro não pode ser persistido.
+O Squad fecha apenas pelo handle exato registrado, e recusa liberar o worktree ou remover os metadados enquanto aquele handle não estiver confirmado como ausente, então uma reexecução tenta de novo o mesmo handle com todo registro durável intacto.
+Um registro deixado por uma limpeza recusada ou interrompida permanece para essa retentativa e é reconciliado pelo sweep do bootstrap travado de início de sessão; [`configuration.md`](configuration.md) é dona do formato do registro.
+Depois dessas checagens, o Squad libera o worktree exato com o comando de worktree do Orca.
 Ele nunca faz raw-delete de um worktree do Orca.
 
 ## Supervisão de away-mode

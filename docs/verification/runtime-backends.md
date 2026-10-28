@@ -598,11 +598,13 @@ Speculative bare ids and nested terminal fields were deliberately rejected.
 tests/sq-backend-orca.test.sh
 tests/sq-backend.test.sh
 tests/sq-bootstrap.test.sh
+tests/sq-retired-missions.test.sh
 ```
 
 The fake-Orca suite covers readiness, registration, create response parsing, metadata routing, popup-safe submit, path-matched release refusal, and the managed Pi status extension's inclusion, absent-file launch, default `$HOME` path, and unset-`HOME` cases.
 That last group proves the exact argv Squad sends and this repository's own behavior, not Orca's own rendering of the extension, so no end-to-end status display is claimed.
 The suite also covers the mission-tab lifecycle: hosting-workspace resolution and refusal before allocation, the strict visible-tab creation gate and hidden-handle refusal, the guarded launch that never starts the agent in the base checkout, both recorded identities under the exact `sq-<id>` title, a single close on `done`, `failed`, or a finished sync with only a confirmed receipt, refusal to close a tab outside the hosting workspace, the absence proof for an already-closed tab, the refusal to treat an incomplete inventory as proof, preserving the record when a close is unconfirmed, and the terminal-less abort record released without `--force`.
+The fake-Orca retirement fixture covers the durable terminal record written before task metadata can disappear, the exact-handle close and its retained record across a failed or ambiguous close, and the locked-bootstrap sweep that preserves every still-owned, dirty, or unreachable worktree.
 
 ### Launch-script shell regression
 

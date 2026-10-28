@@ -84,7 +84,10 @@ A recon still requires its report and completed decision inventory.
 A ship still refuses dirty or unlanded work.
 Before release, cleanup resolves the recorded Orca worktree id and verifies its path matches the recorded worktree path.
 A missing, unreadable, or mismatched identity preserves metadata and stops rather than deleting anything.
-After those checks, Squad closes the exact terminal and releases the exact worktree with Orca's worktree command.
+Cleanup then records that exact terminal identity, plus the recorded worktree identity, through `bin/sq-retired-missions.sh` before any later step can remove the task metadata, and refuses to continue when that record cannot be persisted.
+Squad closes only through the recorded exact handle, and refuses to release the worktree or remove the metadata while that handle is not confirmed gone, so a rerun retries the same handle with every durable record intact.
+A record left by a refused or interrupted teardown stays for that retry and is reconciled by the locked session-start bootstrap sweep; [`configuration.md`](configuration.md) owns the record layout.
+After those checks, Squad releases the exact worktree with Orca's worktree command.
 It never raw-deletes an Orca worktree.
 
 ## Away-mode supervision
