@@ -48,6 +48,8 @@ const check = name => console.log('ok - '+name);
 const script = code => spawnSync('bash', ['-c', code], {env:env(),encoding:'utf8'});
 let timers = [];
 const oldSet = globalThis.setInterval, oldClear = globalThis.clearInterval;
+const baseSelection = { backend: process.env.SQUAD_SUPERVISOR_BACKEND, target: process.env.SQUAD_SUPERVISOR_TARGET };
+const runtimeIdentity = { handle: 'term-primary', worktree: `repo::${home}` };
 globalThis.setInterval = fn => { const t={fn,unref(){}};timers.push(t);return t; };
 globalThis.clearInterval = t => {timers=timers.filter(v=>v!==t);};
 let tracked = [];
@@ -56,7 +58,8 @@ const emit = async (name, ...args) => { for(const handler of handlers.get(name)|
 const pi = {on(name,fn){handlers.set(name,[...(handlers.get(name)||[]),fn]);},async sendUserMessage(message){sent.push(message);if(consume) await emit('before_agent_start',{prompt:structured?{content:[{type:'text',text:message}]}:message});if(failSend) throw Error('accepted then connection lost');}};
 const context = {mode:'tui',hasUI:true,isIdle:()=>idle,ui:{getEditorText:()=>draft}};
 const tick = async () => { for(const t of [...timers]) await t.fn(); await new Promise(r=>setImmediate(r)); };
-const nativeDir = () => script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' term-primary`).stdout.trim();
+const nativeDir = (handle = 'term-primary') => script(`bash '${root}/bin/sq-supervisor-native.sh' dir '${state}' '${handle}'`).stdout.trim();
+const readyPath = handle => `${nativeDir(handle)}/ready.json`;
 const flush = (item = '') => script(`. '${root}/bin/sq-supervise-daemon.sh'; ${item ? `escalate_add '${state}' '${item}';` : ''} escalate_flush '${state}'`);
 try {
   // Every non-Pi adapter is refused by name before creating even its state dir.
@@ -111,6 +114,43 @@ try {
   check('a handoff directory without a readiness record refuses with an actionable reason');
   writeFileSync(`${state}/.lock`,String(process.pid));
   const mod=await import(pathToFileURL(`${root}/.pi/extensions/sq-primary-away-handoff.ts`).href);mod.default(pi);
+  // A plainly launched Orca primary should adopt its own runtime-issued identity.
+  delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
+  process.env.ORCA_TERMINAL_HANDLE=runtimeIdentity.handle; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
+  await emit('session_start',{},context); await tick();
+  assert.ok(existsSync(readyPath(runtimeIdentity.handle)));
+  r=cli('start'); assert.equal(r.status,0,r.stderr); r=cli('stop'); assert.equal(r.status,0,r.stderr);
+  check('runtime-issued identity publishes readiness and permits away-mode start without overrides');
+  await emit('session_shutdown');
+  // Explicit selection keeps precedence over a different runtime-issued handle.
+  process.env.SQUAD_SUPERVISOR_BACKEND=baseSelection.backend; process.env.SQUAD_SUPERVISOR_TARGET=baseSelection.target;
+  process.env.ORCA_TERMINAL_HANDLE='term-foreign'; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
+  await emit('session_start',{},context); await tick();
+  assert.ok(existsSync(`${nativeDir()}/ready.json`));
+  r=cli('start'); assert.equal(r.status,0,r.stderr); r=cli('stop'); assert.equal(r.status,0,r.stderr);
+  await emit('session_shutdown');
+  check('explicit Orca selection wins over a different runtime-issued handle in receiver and launcher');
+  delete process.env.SQUAD_SUPERVISOR_BACKEND; delete process.env.SQUAD_SUPERVISOR_TARGET;
+  for (const [handle, worktree, label] of [
+    [runtimeIdentity.handle, 'repo::/definitely/not/the/base', 'mismatched worktree path'],
+    ['malformed-handle', runtimeIdentity.worktree, 'malformed runtime handle'],
+    ['', runtimeIdentity.worktree, 'missing runtime handle'],
+  ]) {
+    process.env.ORCA_TERMINAL_HANDLE=handle; process.env.ORCA_WORKTREE_ID=worktree;
+    await emit('session_start',{},context); await tick();
+    assert.equal(existsSync(readyPath(handle || 'term-runtime-missing')),false,`${label} published readiness`);
+    const createsBefore=count('create');
+    r=cli('start'); assert.notEqual(r.status,0,`${label} unexpectedly allowed start`);
+    assert.match(r.stderr,/could not resolve the commander supervisor pane|readiness is missing/);
+    assert.equal(existsSync(`${state}/.afk`),false,`${label} mutated away-mode state`);
+    assert.equal(count('create'),createsBefore,`${label} created a daemon terminal`);
+    await emit('session_shutdown');
+  }
+  check('mismatched path, malformed handle and missing handle publish nothing and refuse start');
+  process.env.SQUAD_SUPERVISOR_BACKEND=baseSelection.backend; process.env.SQUAD_SUPERVISOR_TARGET=baseSelection.target;
+  process.env.ORCA_TERMINAL_HANDLE=runtimeIdentity.handle; process.env.ORCA_WORKTREE_ID=runtimeIdentity.worktree;
+  rmSync(`${state}/.away-handoff`,{recursive:true,force:true});
+  model.terms=model.terms.filter(t=>!t.handle.startsWith('term-daemon-'));model.count=0;save();writeFileSync(log,'');
   mkdirSync(`${home}/outside`);symlinkSync(`${home}/outside`,`${state}/.away-handoff`);
   await emit('session_start',{},context);await tick();assert.deepEqual(readdirSync(`${home}/outside`),[]);
   await emit('session_shutdown');assert.ok(lstatSync(`${state}/.away-handoff`).isSymbolicLink());unlinkSync(`${state}/.away-handoff`);

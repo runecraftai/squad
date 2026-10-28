@@ -74,7 +74,9 @@ It never raw-deletes an Orca worktree.
 
 ## Away-mode supervision
 
-An Orca-hosted primary is explicit-only: launch the primary with `SQUAD_SUPERVISOR_BACKEND=orca` and `SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>` already set.
+An Orca-hosted primary automatically adopts its runtime-issued `ORCA_TERMINAL_HANDLE` when the path in `ORCA_WORKTREE_ID` physically matches the Squad base.
+Set `SQUAD_SUPERVISOR_BACKEND=orca` and `SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>` as an explicit override for an unusual setup; explicit values take precedence.
+Missing or malformed identity, or a worktree path that does not physically match, publishes no readiness.
 The target must be a connected, writable, non-orphaned local terminal whose worktree path is the physical `SQUAD_BASE` directory.
 This selection is independent of `config/backend`; changing task placement is not required.
 Do not select a currently active tab by name, attach another multiplexer as evidence of native mobile support, or infer a primary from an operator's terminal.

@@ -47,6 +47,17 @@ function command(timeout: number, ...args: string[]): string | null {
 function physical(path: string): string {
   try { return realpathSync(path); } catch { return ""; }
 }
+function nativeSelection(home: string): { backend: "orca"; target: string } | null {
+  const backend = process.env.SQUAD_SUPERVISOR_BACKEND;
+  const target = process.env.SQUAD_SUPERVISOR_TARGET;
+  if (backend !== undefined || target !== undefined) return backend === "orca" && target ? { backend: "orca", target } : null;
+  const handle = process.env.ORCA_TERMINAL_HANDLE || "";
+  const worktree = process.env.ORCA_WORKTREE_ID || "";
+  const separator = worktree.lastIndexOf("::");
+  if (!/^term[_-][A-Za-z0-9][A-Za-z0-9._-]*$/.test(handle) || separator < 0) return null;
+  const worktreePath = worktree.slice(separator + 2);
+  return worktreePath && physical(worktreePath) === physical(home) ? { backend: "orca", target: handle } : null;
+}
 function same(a: unknown, b: unknown): boolean { return JSON.stringify(a) === JSON.stringify(b); }
 function messageText(message: unknown): string {
   if (typeof message === "string") return message;
@@ -136,15 +147,17 @@ export function installNativeAway(pi: ExtensionAPI): void {
     generation += 1;
     if (timer) clearInterval(timer);
     timer = null; ctx = null; endpoint = null; receiver = null; dir = ""; prompts = 0; sending = false; bound_ok = false; next_check = 0;
-    // Deliberate selection only. The exact handle is supplied by the primary
-    // launch, never inferred from an active tab or the daemon's own terminal.
-    if (process.env.SQUAD_SUPERVISOR_BACKEND !== "orca" || !process.env.SQUAD_SUPERVISOR_TARGET || process.env.SQUAD_PI_HARNESS === "pi-signed") return;
+    // Select only from an explicit override or the exact identity issued to this
+    // primary by Orca, bound to the physical Squad base path.
+    if (process.env.SQUAD_PI_HARNESS === "pi-signed") return;
     if (context.mode !== "tui" || !context.hasUI) return;
     const home = process.env.SQUAD_BASE || process.env.SQUAD_HOME || process.env.SQUAD_ROOT_OVERRIDE;
     if (!home) return;
+    const selection = nativeSelection(home);
+    if (!selection) return;
     state = resolve(home, process.env.SQUAD_STATE_OVERRIDE || "state");
-    const raw = command(bind_timeout_ms, "endpoint", "orca", process.env.SQUAD_SUPERVISOR_TARGET);
-    const path = command(bind_timeout_ms, "dir", state, process.env.SQUAD_SUPERVISOR_TARGET);
+    const raw = command(bind_timeout_ms, "endpoint", selection.backend, selection.target);
+    const path = command(bind_timeout_ms, "dir", state, selection.target);
     const id = identity();
     if (!raw || !path || !id) return;
     try {

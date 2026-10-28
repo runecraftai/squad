@@ -93,6 +93,23 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 . "$SQUAD_AFK_LAUNCH_DIR/sq-afk-orca-launch.sh"
 # shellcheck source=bin/sq-supervisor-target-lib.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
+
+# Adopt only identity issued to this process by Orca. Explicit supervisor
+# variables, including a partial or empty selection, remain authoritative.
+if [ -z "${SQUAD_SUPERVISOR_BACKEND+x}" ] && [ -z "${SQUAD_SUPERVISOR_TARGET+x}" ]; then
+  SQUAD_AFK_ORCA_HANDLE=${ORCA_TERMINAL_HANDLE:-}
+  SQUAD_AFK_ORCA_WORKTREE=${ORCA_WORKTREE_ID:-}
+  SQUAD_AFK_ORCA_PATH=${SQUAD_AFK_ORCA_WORKTREE##*::}
+  if [[ "$SQUAD_AFK_ORCA_HANDLE" =~ ^term[_-][A-Za-z0-9][A-Za-z0-9._-]*$ && "$SQUAD_AFK_ORCA_WORKTREE" == *::* && -n "$SQUAD_AFK_ORCA_PATH" ]]; then
+    SQUAD_AFK_ORCA_PHYSICAL=$(CDPATH='' cd -- "$SQUAD_AFK_ORCA_PATH" 2>/dev/null && pwd -P) || SQUAD_AFK_ORCA_PHYSICAL=
+    SQUAD_AFK_BASE_PHYSICAL=$(CDPATH='' cd -- "$SQUAD_BASE" 2>/dev/null && pwd -P) || SQUAD_AFK_BASE_PHYSICAL=
+    if [ -n "$SQUAD_AFK_ORCA_PHYSICAL" ] && [ "$SQUAD_AFK_ORCA_PHYSICAL" = "$SQUAD_AFK_BASE_PHYSICAL" ]; then
+      SQUAD_SUPERVISOR_BACKEND=orca
+      SQUAD_SUPERVISOR_TARGET=$SQUAD_AFK_ORCA_HANDLE
+      export SQUAD_SUPERVISOR_BACKEND SQUAD_SUPERVISOR_TARGET
+    fi
+  fi
+fi
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
   case "${1:-start}" in
     start|start-native) fm_supervisor_native_ready_once "$SQUAD_AFK_LAUNCH_STATE" "${SQUAD_SUPERVISOR_TARGET:-}" >/dev/null || exit 1 ;;
