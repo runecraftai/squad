@@ -578,6 +578,7 @@ On Linux, readiness and the full task lifecycle were verified live on 2026-08-22
 `orca serve --port <port> --json` satisfied the same readiness gate without the desktop app.
 `orca worktree create` returned the composite id `<repo-id>::<absolute-path>` in `result.worktrees[].id`, which endpoint validation and teardown now accept alongside bare macOS ids.
 A scratch recon spawn through `bin/sq-spawn.sh --recon --harness pi --backend orca` passed peek, a mid-turn steer delivered and queued by pi, and a clean `bin/sq-teardown.sh` run that removed every Orca worktree with no manual CLI cleanup.
+That run predates the terminal-retirement records and the fail-closed exact-handle close described below, so it is not evidence for them.
 
 ```sh
 orca status --json
@@ -605,6 +606,10 @@ The fake-Orca suite covers readiness, registration, create response parsing, met
 That last group proves the exact argv Squad sends and this repository's own behavior, not Orca's own rendering of the extension, so no end-to-end status display is claimed.
 The suite also covers the mission-tab lifecycle: hosting-workspace resolution and refusal before allocation, the strict visible-tab creation gate and hidden-handle refusal, the guarded launch that never starts the agent in the base checkout, both recorded identities under the exact `sq-<id>` title, a single close on `done`, `failed`, or a finished sync with only a confirmed receipt, refusal to close a tab outside the hosting workspace, the absence proof for an already-closed tab, the refusal to treat an incomplete inventory as proof, preserving the record when a close is unconfirmed, and the terminal-less abort record released without `--force`.
 The fake-Orca retirement fixture covers the durable terminal record written before task metadata can disappear, the exact-handle close and its retained record across a failed or ambiguous close, and the locked-bootstrap sweep that preserves every still-owned, dirty, or unreachable worktree.
+
+No live Orca rerun was performed for that retirement change, so fixture coverage is the whole current evidence for it and proves nothing about real Orca behavior.
+The fixture establishes only this repository's own command shapes, record ordering, and fail-closed refusals against a fake CLI.
+A live Orca rerun would additionally prove that real Orca matches those shapes: that spawn and teardown still work on a real runtime, that `orca terminal close` on a recorded exact handle makes that handle absent in real inventory, that a real refused or ambiguous close leaves the handle observable so the recorded retry closes the same terminal, and that the locked-bootstrap sweep resolves real fob worktrees and their git registrations the way the fixture models them.
 
 ### Launch-script shell regression
 
