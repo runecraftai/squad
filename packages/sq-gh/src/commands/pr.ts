@@ -637,16 +637,18 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   if ((pr.state ?? "").toUpperCase() === "MERGED") {
     return renderOutput([
       renderDetail(
-        "pull_request",
+        "merged",
         {
           number: num,
-          state: "merged",
+          status: "landed",
+          method: method ?? "already_merged",
           merged_by: pr.mergedBy?.login ?? null,
           merged_at: pr.mergedAt ?? null,
         },
         [
           field("number"),
-          field("state"),
+          field("status"),
+          field("method"),
           field("merged_by"),
           field("merged_at"),
         ],
@@ -696,10 +698,42 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
 
   await ghExec(ghArgs, ctx);
 
+  if (auto) {
+    const afterMergeRequest = await ghJson<PrMergeSnapshot>(
+      ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
+      ctx,
+    );
+    if (!afterMergeRequest || typeof afterMergeRequest !== "object") {
+      throw new AxiError(
+        "auto-merge request status is unknown",
+        "VALIDATION_ERROR",
+      );
+    }
+    const finalState = (afterMergeRequest.state ?? "").toUpperCase();
+    if (finalState !== "MERGED" && finalState !== "OPEN") {
+      throw new AxiError(
+        `auto-merge request left the PR in an unexpected state: ${finalState || "unknown"}`,
+        "VALIDATION_ERROR",
+      );
+    }
+    if (finalState === "OPEN") {
+      return renderOutput([
+        renderDetail(
+          "auto_merge_queued",
+          { number: num, status: "queued", method: method ?? "default" },
+          [field("number"), field("status"), field("method")],
+        ),
+        renderHelp(
+          getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
+        ),
+      ]);
+    }
+  }
+
   return renderOutput([
     renderDetail(
       "merged",
-      { number: num, status: "ok", method: method ?? "default" },
+      { number: num, status: "landed", method: method ?? "default" },
       [field("number"), field("status"), field("method")],
     ),
     renderHelp(

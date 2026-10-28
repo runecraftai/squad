@@ -74,10 +74,9 @@ fi
 # pr_head is recorded only when the forge's CLI can supply it. gh exposes the
 # head commit as a selectable field; plain glab exposes it only inside its JSON
 # output, which would need a JSON processor Squad does not require, so a
-# GitLab task records no pr_head. Both consumers already treat it as optional:
-# bin/sq-teardown.sh reads the head from the forge at teardown rather than from
-# metadata and falls back to its provider-agnostic content check, and
-# bin/sq-review-diff.sh resolves the head from the remote when none is recorded.
+# GitLab task records no pr_head. bin/sq-teardown.sh and
+# bin/sq-review-diff.sh can resolve a missing head when needed, but
+# bin/sq-pr-merge.sh requires a valid recorded pr_head for guarded task merges.
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
 if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/dev/null 2>&1; then

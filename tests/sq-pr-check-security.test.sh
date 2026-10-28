@@ -80,7 +80,11 @@ SH
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
-exit "${SQUAD_TEST_GH_AXI_RC:-0}"
+rc=${SQUAD_TEST_GH_AXI_RC:-0}
+[ "$rc" -eq 0 ] || exit "$rc"
+case "${1:-} ${2:-}" in
+  "pr merge") printf 'merged:\n  status: landed\n' ;;
+esac
 SH
   # Plain glab, reproducing the pinned CLI's documented API contract and refusing
   # unsupported output-selector flags so tests cannot mask an invalid invocation.

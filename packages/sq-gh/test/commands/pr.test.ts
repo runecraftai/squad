@@ -834,8 +834,10 @@ describe("prCommand", () => {
       statusCheckRollup: [{ name: "build", conclusion: "SUCCESS" }],
     };
 
-    it("forwards automatic merge for non-task callers", async () => {
-      mockedGhJson.mockResolvedValue(verifiedPr);
+    it("reports queued auto-merge distinctly for non-task callers", async () => {
+      mockedGhJson
+        .mockResolvedValueOnce(verifiedPr)
+        .mockResolvedValueOnce(verifiedPr);
       mockedGhExec.mockResolvedValue("");
 
       const result = await prCommand(
@@ -847,8 +849,33 @@ describe("prCommand", () => {
         ["pr", "merge", "10", "--match-head-commit", head, "--auto"],
         ctx,
       );
-      expect(result).toContain("merged");
+      expect(result).toContain("auto_merge_queued:");
+      expect(result).toContain("status: queued");
+      expect(result).not.toContain("\nmerged:");
+      expect(mockedGhJson).toHaveBeenCalledTimes(2);
       expect(PR_HELP).toContain("--auto");
+    });
+
+    it("reports auto-merge as landed only when the fresh read confirms it", async () => {
+      mockedGhJson
+        .mockResolvedValueOnce(verifiedPr)
+        .mockResolvedValueOnce({
+          ...verifiedPr,
+          state: "MERGED",
+          mergedBy: { login: "alice" },
+          mergedAt: "2024-01-01T00:00:00Z",
+        });
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(
+        ["merge", "10", "--expected-head", head, "--auto"],
+        ctx,
+      );
+
+      expect(result).toContain("merged:");
+      expect(result).toContain("status: landed");
+      expect(result).not.toContain("auto_merge_queued:");
+      expect(mockedGhJson).toHaveBeenCalledTimes(2);
     });
 
     it("refuses missing expected head before reading or merging", async () => {

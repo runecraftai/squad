@@ -94,11 +94,24 @@ if ! caller_has_merge_method "$@"; then
   merge_args=(--squash)
 fi
 
-sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" --expected-head "$RECORDED_HEAD" "${merge_args[@]+"${merge_args[@]}"}" "$@"
-"$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"
-grep -qxF "pr=$URL" "$META" || {
-  echo "error: PR metadata recording failed after confirmed merge" >&2
+MERGE_RESULT=$(sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" --expected-head "$RECORDED_HEAD" "${merge_args[@]+"${merge_args[@]}"}" "$@")
+printf '%s\n' "$MERGE_RESULT"
+if printf '%s\n' "$MERGE_RESULT" | grep -q '^auto_merge_queued:'; then
+  echo "error: auto-merge is queued; task merge was not recorded as landed" >&2
   exit 1
-}
+fi
+if ! printf '%s\n' "$MERGE_RESULT" | grep -q '^merged:' \
+  || ! printf '%s\n' "$MERGE_RESULT" | grep -q 'status: landed'; then
+  echo "error: sq-gh did not confirm a completed merge; task metadata was not refreshed or recorded as landed" >&2
+  exit 1
+fi
 SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
   --source pr-merge --result landed || true
+if ! "$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"; then
+  echo "warning: PR merge was confirmed and landing recorded, but metadata refresh failed" >&2
+  exit 1
+fi
+grep -qxF "pr=$URL" "$META" || {
+  echo "warning: PR merge was confirmed and landing recorded, but metadata refresh did not record the canonical PR URL" >&2
+  exit 1
+}

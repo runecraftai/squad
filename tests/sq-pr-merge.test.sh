@@ -52,6 +52,7 @@ add_gh_mocks() {
   cat > "$case_dir/fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
+printf 'merged:\n  status: landed\n'
 exit 0
 SH
   cat > "$case_dir/fakebin/gh" <<SH
@@ -331,6 +332,36 @@ test_parses_pr_url_for_gh_axi() {
   pass "sq-pr-merge parses a GitHub PR URL into sq-gh number and --repo arguments"
 }
 
+test_queued_auto_merge_is_not_recorded_as_landed() {
+  local case_dir rc
+  case_dir=$(make_case queued-auto-merge)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
+printf 'auto_merge_queued:\n  status: queued\n'
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/sq-gh"
+  : > "$case_dir/sq-gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/34 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "queued-auto-merge: guarded wrapper must not claim a landing"
+  assert_grep 'auto_merge_queued:' "$case_dir/stdout" "queued-auto-merge: distinct result was not preserved"
+  assert_grep 'auto-merge is queued' "$case_dir/stderr" "queued-auto-merge: refusal was not actionable"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "queued-auto-merge: task outcome must not be recorded as landed"
+  assert_no_grep 'pr=https://github.com/example/repo/pull/34' "$case_dir/state/task-x1.meta" \
+    "queued-auto-merge: task metadata must not be refreshed as landed"
+  pass "sq-pr-merge distinguishes queued auto-merge from a completed landing"
+}
+
 test_auto_merge_is_not_recorded_as_landed() {
   local case_dir landed_dir
   case_dir=$(make_case auto-merge)
@@ -399,5 +430,6 @@ test_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_auto_merge_is_not_recorded_as_landed
+test_queued_auto_merge_is_not_recorded_as_landed
 test_disable_auto_still_records_landing
 test_parses_pr_url_for_gh_axi
