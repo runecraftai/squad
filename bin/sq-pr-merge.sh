@@ -122,7 +122,7 @@ if ! printf '%s\n' "$MERGE_RESULT" | grep -q '^merged:' \
   echo "error: sq-gh did not confirm a completed merge; task metadata was not refreshed or recorded as landed" >&2
   exit 1
 fi
-SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
   --source pr-merge --result landed || true
 if ! "$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"; then
   echo "warning: PR merge was confirmed and landing recorded, but metadata refresh failed" >&2
@@ -132,6 +132,6 @@ grep -qxF "pr=$URL" "$META" || {
   echo "warning: PR merge was confirmed and landing recorded, but metadata refresh did not record the canonical PR URL" >&2
   exit 1
 }
-if ! SQUAD_BASE="$SQUAD_BASE" "$TEARDOWN_BIN" "$ID"; then
+if ! SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" "$TEARDOWN_BIN" "$ID"; then
   echo "warning: task $ID: the PR merge landed but teardown refused; the landing stands, so rerun bin/sq-teardown.sh $ID once the refusal is resolved" >&2
 fi

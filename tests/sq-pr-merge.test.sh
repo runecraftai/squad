@@ -17,6 +17,7 @@
 #   (h) repo override args fail fast because the repo comes from the URL
 #   (i) --auto and --disable-auto are refused, and a queued merge is not recorded as landed
 #   (j) a teardown refusal after a landed merge keeps the merge successful
+#   (k) the post-merge teardown receives the state dir this script resolved
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -36,6 +37,7 @@ make_case() {
   cat > "$fakebin/sq-teardown" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SQUAD_TEST_TEARDOWN_LOG"
+printf '%s\n' "${SQUAD_STATE_OVERRIDE:-}" >> "$SQUAD_TEST_TEARDOWN_STATE_LOG"
 SH
   chmod +x "$fakebin/sq-teardown"
   fm_write_meta "$case_dir/state/task-x1.meta" \
@@ -102,6 +104,7 @@ run_pr_merge() {
   SQUAD_DATA_OVERRIDE="$case_dir/data" \
   SQUAD_TEST_SQ_GH_LOG="$case_dir/sq-gh.log" \
   SQUAD_TEST_TEARDOWN_LOG="$case_dir/teardown.log" \
+  SQUAD_TEST_TEARDOWN_STATE_LOG="$case_dir/teardown-state.log" \
   SQUAD_TEARDOWN_BIN="$case_dir/fakebin/sq-teardown" \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_MERGE" "$@"
@@ -556,6 +559,25 @@ SH
   pass "sq-pr-merge keeps a landed merge successful and reports a teardown refusal"
 }
 
+test_teardown_receives_resolved_state_dir() {
+  local case_dir rc
+  case_dir=$(make_case teardown-state)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" dddddddddddddddddddddddddddddddddddddddd
+  : > "$case_dir/sq-gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/21 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "teardown-state: a landed merge must succeed"
+  [ "$(cat "$case_dir/teardown-state.log")" = "$case_dir/state" ] \
+    || fail "teardown-state: the post-merge teardown did not receive the resolved state dir: $(<"$case_dir/teardown-state.log")"
+  pass "sq-pr-merge hands the resolved state dir to the post-merge teardown"
+}
+
 test_records_pr_and_head_after_confirmed_merge
 test_merge_failure_propagates_without_recording
 test_sq_gh_refusal_reason_is_surfaced
@@ -573,4 +595,5 @@ test_queued_auto_merge_is_not_recorded_as_landed
 test_merge_queue_enqueue_is_not_recorded_as_landed
 test_disable_auto_refuses_before_merge
 test_teardown_refusal_after_landing_keeps_merge_success
+test_teardown_receives_resolved_state_dir
 test_parses_pr_url_for_gh_axi
