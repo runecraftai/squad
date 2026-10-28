@@ -214,7 +214,7 @@ Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.
 ## Away-mode supervisor backend (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET / SQUAD_SUPERVISOR_HARNESS)
 
 The `/afk` sub-supervisor injects escalation digests into Squad's own pane independently of where new task endpoints are spawned.
-It supports `tmux`, `herdr`, `tuios`, and explicitly selected native-only `orca` supervisor panes.
+It supports `tmux`, `herdr`, `tuios`, and native-only `orca` supervisor panes.
 Set `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios|orca` and `SQUAD_SUPERVISOR_TARGET=<target>` to override both axes explicitly; the herdr target is `"<session>:<pane-id>"` and the TUIOS target is `"<session>:<window-id>"`.
 Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TUIOS_ENV=1` with `TUIOS_SESSION` and `TUIOS_PANE_ID`, then falls back to `tmux`.
 That keeps a tmux pane nested inside herdr or TUIOS on the tmux transport, matching the runtime backend's innermost-first rule.
@@ -222,6 +222,7 @@ Target detection uses `SQUAD_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HER
 A detected marker is a preference, not a verdict: backend and target are resolved together, each detected candidate is probed in that order, and the first target that actually exists wins.
 A preferred candidate whose target is gone - a stale inherited `HERDR_PANE_ID` inside a live TUIOS session, for example - is skipped with its source named in the daemon and launcher logs, so it can no longer block entering away mode.
 An explicit `SQUAD_SUPERVISOR_BACKEND` or `SQUAD_SUPERVISOR_TARGET` is authoritative and is never replaced by a detected marker; the daemon refuses loudly at startup when that explicit target does not resolve.
+An Orca-hosted primary needs no override: when `SQUAD_SUPERVISOR_BACKEND` and `SQUAD_SUPERVISOR_TARGET` are both empty (exported empty values count as unset) and no tmux, Herdr, or TUIOS pane marker is detected, `bin/sq-afk-launch.sh` and the Pi receiver adopt the runtime-issued `ORCA_TERMINAL_HANDLE` whose `ORCA_WORKTREE_ID` path physically resolves to the Squad base; missing, malformed, or mismatched identity selects nothing and publishes no readiness.
 An `orca` supervisor pane additionally needs a proven receiver adapter, selected by `SQUAD_SUPERVISOR_HARNESS`.
 Without it, `bin/sq-harness.sh` walks process ancestry and must resolve the exact Pi primary to `pi`; a lifecycle invoked from a shell outside that primary - an Orca terminal's own shell, for example - resolves `unknown` and refuses rather than typing a fallback.
 Set `SQUAD_SUPERVISOR_HARNESS=pi` there; every other value is refused by name before any away-mode state or endpoint exists, and the variable only names the adapter, so the primary's published readiness record still has to prove the receiver process, endpoint, and session identity.

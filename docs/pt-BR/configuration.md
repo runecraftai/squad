@@ -146,11 +146,12 @@ TUIOS usa a `SQUAD_TUIOS_SESSION` explicitamente configurada; cada tarefa recebe
 ## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET / SQUAD_SUPERVISOR_HARNESS)
 
 O sub-supervisor `/afk` injeta resumos de escalação no próprio painel do Squad independentemente de onde novos endpoints de tarefa são criados.
-Suporta painéis de supervisor `tmux`, `herdr`, `tuios` e `orca` nativo-somente quando explicitamente selecionado.
+Suporta painéis de supervisor `tmux`, `herdr`, `tuios` e `orca` native-only.
 Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios|orca` e `SQUAD_SUPERVISOR_TARGET=<alvo>` para sobrescrever explicitamente ambos os eixos; o alvo de herdr é `"<session>:<pane-id>"` e o de TUIOS é `"<session>:<window-id>"`.
 Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois `TUIOS_ENV=1` com `TUIOS_SESSION` e `TUIOS_PANE_ID`, depois recua para `tmux`.
 Isso mantém um painel tmux aninhado dentro de herdr ou TUIOS no transport tmux, correspondendo à regra de dentro para fora do backend de runtime.
 A detecção de alvo usa `SQUAD_SUPERVISOR_TARGET`, depois `$TMUX_PANE`, depois `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` sob herdr, depois `"$TUIOS_SESSION:$TUIOS_PANE_ID"` sob TUIOS, depois o fallback legado `Squad:0` do tmux com um aviso.
+Um primário hospedado no Orca não precisa de override: quando `SQUAD_SUPERVISOR_BACKEND` e `SQUAD_SUPERVISOR_TARGET` estão ambos vazios (valores exportados vazios contam como ausentes) e nenhum marcador de painel tmux, Herdr ou TUIOS é detectado, `bin/sq-afk-launch.sh` e o receptor Pi adotam o `ORCA_TERMINAL_HANDLE` emitido pelo runtime cujo caminho em `ORCA_WORKTREE_ID` resolve fisicamente para a base do Squad; identidade ausente, malformada ou que não corresponde não seleciona nada e não publica prontidão.
 Um painel de supervisor `orca` também precisa de um adaptador receptor comprovado, selecionado por `SQUAD_SUPERVISOR_HARNESS`.
 Sem ele, `bin/sq-harness.sh` percorre a ancestralidade de processos e precisa resolver o primário Pi exato como `pi`; um ciclo de vida invocado de um shell fora desse primário - o próprio shell de um terminal Orca, por exemplo - resolve `unknown` e recusa em vez de cair na digitação.
 Defina `SQUAD_SUPERVISOR_HARNESS=pi` nesse caso; qualquer outro valor é recusado pelo nome antes de existir estado de away-mode ou endpoint, e a variável apenas nomeia o adaptador, então o registro de prontidão publicado pelo primário ainda precisa provar o processo, o endpoint e a identidade de sessão do receptor.

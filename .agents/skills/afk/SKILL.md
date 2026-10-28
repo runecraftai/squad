@@ -47,7 +47,7 @@ batched digest rather than per-wake injections.
      active pane** (`herdr pane split`): a split co-tenants the tab and visibly
      shrinks the commander's pane (docs/herdr-backend.md "Away-mode supervisor
      support").
-   For an explicitly selected Orca primary, use the native-only coverage and lifecycle in [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision); its create call requests no focus flag, and whether the host focuses or hides the daemon terminal is unverified.
+   For an Orca primary - auto-adopted from its runtime identity or explicitly selected - use the native-only coverage and lifecycle in [`docs/orca-backend.md`](../../../docs/orca-backend.md#away-mode-supervision); its create call requests no focus flag, and whether the host focuses or hides the daemon terminal is unverified.
    Both paths share `bin/sq-afk-start.sh` as the daemon entry.
    The native path tells it that the launcher already prepared lifecycle state; the terminal-backed path lets the entry perform its existing state setup inside the new terminal.
    It exits immediately if the identity-backed daemon lock already names a live process, otherwise it execs `bin/sq-supervise-daemon.sh` in the foreground.

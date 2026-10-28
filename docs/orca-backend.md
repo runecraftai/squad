@@ -7,7 +7,7 @@ Squad agents load [`squad-orca`](../.agents/skills/squad-orca/SKILL.md) before o
 ## Setup
 
 Pick Orca when you already use the Orca app and want Orca-managed worktrees and terminals instead of FOB plus a session multiplexer.
-Orca runs on macOS and Linux, is explicit-only, and does not support XO spawns.
+Orca runs on macOS and Linux, is explicit-only as a task backend, and does not support XO spawns.
 
 Prerequisites:
 
@@ -17,7 +17,7 @@ Prerequisites:
 - The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
 
 Select Orca with local `config/backend` containing `orca`, `SQUAD_BACKEND=orca` for one launch, or an explicit request to Squad.
-It is never auto-detected.
+It is never auto-detected for task placement.
 
 Before any spawn mutates repository state, Squad requires `orca status --json` to report `reachable=true` and `state="ready"`.
 The first task for a project registers that repository with `orca repo add --path` when needed.
@@ -75,9 +75,9 @@ It never raw-deletes an Orca worktree.
 ## Away-mode supervision
 
 An Orca-hosted primary automatically adopts its runtime-issued `ORCA_TERMINAL_HANDLE` when the path in `ORCA_WORKTREE_ID` physically matches the Squad base.
-That path is the `<repo-id>::<absolute-path>` component Linux builds record; a macOS primary records a bare worktree atom, so it has no path to compare and keeps using the explicit override.
-Set `SQUAD_SUPERVISOR_BACKEND=orca` and `SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>` as an explicit override for an unusual setup; non-empty explicit values take precedence, exported empty values count as unset, and a detected tmux, Herdr, or TUIOS pane outranks the inherited Orca identity.
-Missing or malformed identity, or a worktree path that does not physically match, publishes no readiness.
+Only the composite worktree id documented under [Task shape and metadata](#task-shape-and-metadata) carries a path to compare; a macOS primary records a bare worktree atom, so it has no path and keeps using the explicit override.
+Set `SQUAD_SUPERVISOR_BACKEND=orca` and `SQUAD_SUPERVISOR_TARGET=<exact runtime-issued terminal handle>` as an explicit override for an unusual setup; non-empty explicit values take precedence, exported empty values count as unset, and a detected tmux, Herdr, or TUIOS pane marker outranks the inherited Orca identity.
+Missing or malformed identity, or a worktree path that does not physically match, publishes no readiness and makes `bin/sq-afk-launch.sh start` refuse.
 The target must be a connected, writable, non-orphaned local terminal whose worktree path is the physical `SQUAD_BASE` directory.
 This selection is independent of `config/backend`; changing task placement is not required.
 Do not select a currently active tab by name, attach another multiplexer as evidence of native mobile support, or infer a primary from an operator's terminal.
@@ -133,7 +133,7 @@ A disposable real-host probe therefore requires a proven independent Orca profil
 
 ## Active limits
 
-- Orca is explicit-only on macOS and Linux.
+- Orca is explicit-only as a task backend on macOS and Linux.
 - The Orca runtime must report ready: the desktop app on macOS, or `orca serve` on Linux.
 - XO spawns are unsupported.
 - Escape is unsupported.
