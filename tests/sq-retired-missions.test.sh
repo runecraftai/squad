@@ -215,7 +215,62 @@ test_live_meta_wins_over_worktree_record() {
   pass "live task metadata always wins over a retirement record"
 }
 
+test_unverified_runtime_record_is_refreshed_on_retry() {
+  local out record
+  make_terminal_case refresh-unknown
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="";fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  run_terminal record "$ID" || fail "could not write the terminal record without a verified runtime"
+  record="$STATE/.retired-terminals/$ID.record"
+  assert_contains "$(<"$record")" "runtime_id=unknown" "unavailable Orca runtime was not recorded as unknown"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="runtime-1";d.fail_close=false;fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  run_terminal record "$ID" || fail "re-recording with a verified runtime was refused"
+  assert_contains "$(<"$record")" "runtime_id=runtime-1" "verified runtime did not refresh the retirement record"
+  out=$(run_terminal retire-terminal "$ID") || fail "refreshed record could not retire the terminal: $out"
+  assert_contains "$out" "retired terminal term-refresh-unknown" "refreshed retirement was not reported"
+  assert_absent "$record" "refreshed terminal retirement left its record behind"
+  pass "a retirement recorded without a verified runtime is refreshed instead of locking teardown"
+}
+
+test_runtime_refresh_preserves_pending_close_attempt() {
+  local out record
+  make_terminal_case refresh-runtime
+  run_terminal record "$ID" || fail "could not write the terminal retirement record"
+  record="$STATE/.retired-terminals/$ID.record"
+  out=$(run_terminal retire-terminal "$ID") && fail "failing terminal close was treated as complete"
+  assert_contains "$(<"$record")" "close_attempted=1" "failed terminal close was not marked for retry"
+  node -e 'const fs=require("fs"),p=process.argv[1],d=JSON.parse(fs.readFileSync(p));d.runtime_id="runtime-2";d.fail_close=false;fs.writeFileSync(p,JSON.stringify(d));' "$CASE_DIR/orca.json"
+  run_terminal record "$ID" || fail "re-recording after an Orca restart was refused"
+  assert_contains "$(<"$record")" "runtime_id=runtime-2" "Orca restart did not refresh the recorded runtime"
+  assert_contains "$(<"$record")" "close_attempted=1" "refreshing the record dropped the pending close attempt"
+  out=$(run_terminal retire-terminal "$ID") || fail "refreshed record could not finish the retirement: $out"
+  assert_contains "$out" "retired terminal term-refresh-runtime" "refreshed retirement was not reported"
+  assert_absent "$record" "refreshed terminal retirement left its record behind"
+  pass "refreshing a record after an Orca restart keeps the pending close attempt and unblocks retirement"
+}
+
+test_record_identity_drift_still_refuses() {
+  local record before
+  make_terminal_case drift
+  run_terminal record "$ID" || fail "could not write the terminal retirement record"
+  record="$STATE/.retired-terminals/$ID.record"
+  before=$(<"$record")
+  cat > "$STATE/$ID.meta" <<EOF
+backend=orca
+terminal=term-foreign
+orca_worktree_id=repo::$WT
+worktree=$WT
+project=$PROJECT
+kind=strike
+EOF
+  run_terminal record "$ID" && fail "a changed terminal handle was accepted as the same retirement identity"
+  [ "$(<"$record")" = "$before" ] || fail "refused identity drift still modified the retirement record"
+  pass "a different terminal handle is refused instead of refreshing the retirement record"
+}
+
 test_failed_terminal_close_is_retried_from_record
+test_unverified_runtime_record_is_refreshed_on_retry
+test_runtime_refresh_preserves_pending_close_attempt
+test_record_identity_drift_still_refuses
 test_live_terminal_metadata_wins
 test_ambiguous_terminal_owner_is_preserved
 test_remote_tracking_reachable_orphan_is_removed

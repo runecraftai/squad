@@ -52,26 +52,32 @@ record_dir() {
   chmod 700 -- "$dir" || return 1
 }
 
-record_write() {
-  local dir=$1 id=$2 content=$3 file tmp
-  record_dir "$dir" || return 1
-  file="$dir/$id.record"
-  if [ -e "$file" ] || [ -L "$file" ]; then
-    single_link_file "$file" || return 1
-    cmp -s <(grep -Ev '^(retired_at|close_attempted)=' "$file") \
-      <(printf '%s\n' "$content" | grep -Ev '^(retired_at|close_attempted)=')
-    return $?
-  fi
-  tmp=$(umask 077; mktemp "$dir/.pending.XXXXXX") || return 1
-  if ! printf '%s\n' "$content" > "$tmp" || ! chmod 600 "$tmp"; then
-    rm -f -- "$tmp"
-    return 1
-  fi
-  if ! mv -- "$tmp" "$file"; then
+record_replace() {  # <file> <content>
+  local file=$1 content=$2 tmp
+  tmp=$(umask 077; mktemp "${file%/*}/.pending.XXXXXX") || return 1
+  if ! printf '%s\n' "$content" > "$tmp" || ! chmod 600 "$tmp" || ! mv -f -- "$tmp" "$file"; then
     rm -f -- "$tmp"
     return 1
   fi
   single_link_file "$file"
+}
+
+record_write() {  # <dir> <id> <kind> <content>
+  local dir=$1 id=$2 kind=$3 content=$4 file
+  record_dir "$dir" || return 1
+  file="$dir/$id.record"
+  if [ -e "$file" ] || [ -L "$file" ]; then
+    single_link_file "$file" || return 1
+    record_load "$file" || return 1
+    [ "$REC_TASK_ID" = "$id" ] && [ "$REC_KIND" = "$kind" ] || return 1
+    cmp -s <(grep -Ev '^(retired_at|close_attempted|runtime_id)=' "$file") \
+      <(printf '%s\n' "$content" | grep -Ev '^(retired_at|close_attempted|runtime_id)=') \
+      || return 1
+    if [ "$REC_CLOSE_ATTEMPTED" = 1 ]; then
+      content=$(printf '%s\n' "$content" | sed 's/^close_attempted=.*/close_attempted=1/')
+    fi
+  fi
+  record_replace "$file" "$content"
 }
 
 record_load() {
@@ -133,7 +139,7 @@ record_task() {
     runtime=$(orca_runtime_id 2>/dev/null || printf unknown)
     content=$(printf 'kind=terminal\ntask_id=%s\nbase=%s\nretired_at=%s\nbackend=orca\nterminal=%s\nruntime_id=%s\nclose_attempted=0\nworktree_id=%s\nworktree_path=%s' \
       "$id" "$base" "$retired_at" "$terminal" "$runtime" "$worktree_id" "$worktree_path")
-    record_write "$STATE/.retired-terminals" "$id" "$content" \
+    record_write "$STATE/.retired-terminals" "$id" terminal "$content" \
       || { echo "error: could not persist the Orca terminal retirement record" >&2; return 1; }
   fi
 
@@ -150,7 +156,7 @@ record_task() {
     fi
     content=$(printf 'kind=worktree\ntask_id=%s\nbase=%s\nretired_at=%s\nproject=%s\nworktree_path=%s\npool_backend=fob' \
       "$id" "$base" "$retired_at" "$canonical_project" "$canonical_wt")
-    record_write "$STATE/.retired-worktrees" "$id" "$content" \
+    record_write "$STATE/.retired-worktrees" "$id" worktree "$content" \
       || { echo "error: could not persist the fob worktree retirement record" >&2; return 1; }
   fi
 }
@@ -167,15 +173,10 @@ process.stdout.write(runtime);
 }
 
 record_update_close_attempted() {
-  local file=$1 content tmp
+  local file=$1 content
   content=$(printf 'kind=terminal\ntask_id=%s\nbase=%s\nretired_at=%s\nbackend=orca\nterminal=%s\nruntime_id=%s\nclose_attempted=1\nworktree_id=%s\nworktree_path=%s' \
     "$REC_TASK_ID" "$REC_BASE" "$REC_RETIRED_AT" "$REC_TERMINAL" "$REC_RUNTIME" "$REC_WORKTREE_ID" "$REC_WORKTREE_PATH")
-  tmp=$(umask 077; mktemp "${file%/*}/.pending.XXXXXX") || return 1
-  if ! printf '%s\n' "$content" > "$tmp" || ! chmod 600 "$tmp" || ! mv -f -- "$tmp" "$file"; then
-    rm -f -- "$tmp"
-    return 1
-  fi
-  single_link_file "$file"
+  record_replace "$file" "$content"
 }
 
 record_references_live_meta() {  # <task-id> <field> <value>

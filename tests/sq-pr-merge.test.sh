@@ -16,6 +16,7 @@
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
 #   (i) --auto and --disable-auto are refused, and a queued merge is not recorded as landed
+#   (j) a teardown refusal after a landed merge keeps the merge successful
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -523,6 +524,38 @@ test_disable_auto_refuses_before_merge() {
   pass "sq-pr-merge refuses --disable-auto instead of claiming a synchronous landing"
 }
 
+test_teardown_refusal_after_landing_keeps_merge_success() {
+  local case_dir rc
+  case_dir=$(make_case teardown-refuses)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" dddddddddddddddddddddddddddddddddddddddd
+  cat > "$case_dir/fakebin/sq-teardown" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_TEARDOWN_LOG"
+printf 'REFUSED: task still has uncommitted changes\n' >&2
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/sq-teardown"
+  : > "$case_dir/sq-gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/34 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "teardown-refuses: a landed merge must stay successful when teardown refuses"
+  grep -qxF 'pr merge 34 --repo example/repo --expected-head dddddddddddddddddddddddddddddddddddddddd --squash' "$case_dir/sq-gh.log" \
+    || fail "teardown-refuses: the merge itself was not performed"
+  assert_grep 'pr=https://github.com/example/repo/pull/34' "$case_dir/state/task-x1.meta" \
+    "teardown-refuses: the landed PR was not recorded"
+  assert_contains "$(<"$case_dir/teardown.log")" "task-x1" \
+    "teardown-refuses: teardown was not attempted after the landing"
+  assert_grep 'teardown refused' "$case_dir/stderr" \
+    "teardown-refuses: the refusal was not surfaced for the operator"
+  pass "sq-pr-merge keeps a landed merge successful and reports a teardown refusal"
+}
+
 test_records_pr_and_head_after_confirmed_merge
 test_merge_failure_propagates_without_recording
 test_sq_gh_refusal_reason_is_surfaced
@@ -539,4 +572,5 @@ test_auto_merge_is_not_recorded_as_landed
 test_queued_auto_merge_is_not_recorded_as_landed
 test_merge_queue_enqueue_is_not_recorded_as_landed
 test_disable_auto_refuses_before_merge
+test_teardown_refusal_after_landing_keeps_merge_success
 test_parses_pr_url_for_gh_axi

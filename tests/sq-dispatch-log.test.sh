@@ -122,15 +122,19 @@ import json, sys
 raw = open(sys.argv[1]).read()
 rows = [json.loads(line) for line in raw.splitlines()]
 assert [(r['source'], r['result']) for r in rows[4:]] == [
-    ('status-notify', 'done'), ('status-notify', 'failed'), ('pr-merge', 'landed')]
+    ('status-notify', 'done'), ('status-notify', 'failed'), ('pr-merge', 'landed'),
+    ('teardown', 'released')]
 assert 'PRIVATE_BRIEF_SENTINEL' not in raw and 'PRIVATE_SECRET_SENTINEL' not in raw
 PY
-# A failed merge must retain its exact exit code and must not log a landing.
+# A failed merge must retain its exact exit code and must not log a landing or
+# trigger the post-landing teardown.
+fm_write_meta "$dir/state/task.meta" 'window=Squad:sq-task' "worktree=$dir/wt" \
+  "project=$dir/project" 'kind=strike' 'mode=local-only'
 rc=0
 SQ_TEST_MERGE_RC=7 run_case "$dir" sq-pr-merge.sh task https://github.com/example/repo/pull/1 \
   > "$dir/failed-merge.out" 2> "$dir/failed-merge.err" || rc=$?
 expect_code 7 "$rc" 'merge failure must propagate'
-[ "$(wc -l < "$dir/data/task/dispatch.jsonl")" -eq 7 ] || fail 'failed merge logged landing'
+[ "$(wc -l < "$dir/data/task/dispatch.jsonl")" -eq 8 ] || fail 'failed merge logged landing'
 pass 'terminal notifications and successful landing append outcomes, not status text or failed landings'
 
 # Squad accepts model ids with printable variant punctuation (for example the
@@ -180,15 +184,17 @@ pass 'unsafe destinations and payloads are skipped with one non-sensitive warnin
 dir=$(make_case best-effort)
 mkdir "$dir/data/task/dispatch.jsonl"
 spawn "$dir" > "$dir/spawn.out" 2> "$dir/spawn.err" || fail 'log failure blocked spawn'
-printf 'pr_head=%s\n' "$MERGE_HEAD" >> "$dir/state/task.meta"
-run_case "$dir" sq-pr-merge.sh task https://github.com/example/repo/pull/2 \
-  > "$dir/merge.out" 2> "$dir/merge.err" || fail 'log failure blocked merge'
 run_case "$dir" sq-status-notify.sh scan "$dir"
 printf 'done: finished\n' >> "$dir/state/task.status"
 run_case "$dir" sq-status-notify.sh scan "$dir" 2> "$dir/status.err" || fail 'log failure blocked notification'
 run_case "$dir" sq-teardown.sh task > "$dir/teardown.out" 2> "$dir/teardown.err" \
   || fail 'log failure blocked teardown'
 assert_absent "$dir/state/task.meta" 'log failure prevented release'
+# The landing path now owns a teardown of its own, so give it a live task back.
+fm_write_meta "$dir/state/task.meta" 'window=Squad:sq-task' "worktree=$dir/wt" \
+  "project=$dir/project" 'kind=strike' 'mode=local-only' "pr_head=$MERGE_HEAD"
+run_case "$dir" sq-pr-merge.sh task https://github.com/example/repo/pull/2 \
+  > "$dir/merge.out" 2> "$dir/merge.err" || fail 'log failure blocked merge'
 for stage in spawn merge status teardown; do
   assert_grep 'sq-dispatch-log: could not append dispatch event' "$dir/$stage.err" \
     "missing $stage warning: $(< "$dir/$stage.err")"

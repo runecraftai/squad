@@ -128,4 +128,6 @@ grep -qxF "pr=$URL" "$META" || {
   echo "warning: PR merge was confirmed and landing recorded, but metadata refresh did not record the canonical PR URL" >&2
   exit 1
 }
-SQUAD_BASE="$SQUAD_BASE" "$TEARDOWN_BIN" "$ID"
+if ! SQUAD_BASE="$SQUAD_BASE" "$TEARDOWN_BIN" "$ID"; then
+  echo "warning: task $ID: the PR merge landed but teardown refused; the landing stands, so rerun bin/sq-teardown.sh $ID once the refusal is resolved" >&2
+fi
