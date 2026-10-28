@@ -51,6 +51,8 @@ On Linux builds (verified against v1.4.188) it records the composite form `<repo
 Spawn validates that any existing metadata file is regular, registers the repository, creates an independent worktree, reuses only the verified `result.terminal.handle` returned by Orca or creates a terminal explicitly, installs harness hooks, records metadata, and launches the selected harness.
 Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any Orca resource is created.
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
+Spawn also passes Orca's own managed status extension to a Pi or pi-signed operator launch as one extra `-e`, so Orca's UI can show that operator's live state; the extension reports to Orca and is not read by Squad's sentry.
+Path resolution and the optional-file rule are owned by `bin/sq-spawn.sh --help`: an absent file leaves that launch exactly as on every other backend, and no other backend or harness receives the extra argument.
 
 `sq-peek.sh` reads with `orca terminal read`.
 For non-Pi targets, or when native Pi delivery is unavailable, `sq-send.sh` types and verifies composer clearance, follows `oldestCursor` when Orca returns a limited page, and retries Enter without retyping when a slash popup first fills an argument placeholder.

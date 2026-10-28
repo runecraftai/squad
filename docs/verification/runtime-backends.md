@@ -600,7 +600,8 @@ tests/sq-backend.test.sh
 tests/sq-bootstrap.test.sh
 ```
 
-The fake-Orca suite covers readiness, registration, create response parsing, metadata routing, popup-safe submit, and path-matched release refusal.
+The fake-Orca suite covers readiness, registration, create response parsing, metadata routing, popup-safe submit, path-matched release refusal, and the managed Pi status extension's inclusion, absent-file launch, default `$HOME` path, and unset-`HOME` cases.
+That last group proves the exact argv Squad sends and this repository's own behavior, not Orca's own rendering of the extension, so no end-to-end status display is claimed.
 
 ### Native away-mode supervisor verification
 

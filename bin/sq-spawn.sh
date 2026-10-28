@@ -150,7 +150,11 @@
 #                  written by this script; outside the worktree to avoid pi's trust gate)
 #     __PITURNEND__ absolute path to .pi/extensions/sq-primary-turnend-guard.ts in a pi XO base
 #     __PIWATCH__   absolute path to .pi/extensions/sq-primary-pi-watch.ts in a pi XO base
-#     __ORCASTATUS__ optional Orca-managed Pi status extension argument (Orca backend only)
+#     __ORCASTATUS__ optional "-e <path>" for Orca's managed Pi status extension, set only when
+#                  a Pi-family spawn on the Orca backend finds the file named by
+#                  ORCA_OMP_STATUS_EXTENSION or, when that is unset or empty, the documented
+#                  default $HOME/.config/orca/omp-managed-status-extension/orca-agent-status.ts;
+#                  an absent file leaves that launch unchanged
 #     __OPINPUT__   absolute path to the canonical operational-input encoder
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
 # Kimi uses one surgically installed Squad region in $HOME/.kimi-code/config.toml,
