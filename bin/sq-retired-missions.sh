@@ -200,7 +200,7 @@ record_load() {
     esac
   done < "$file"
   [ -n "$REC_KIND" ] && [ -n "$REC_TASK_ID" ] && [ -n "$REC_BASE" ] \
-    && [ -n "$REC_RETIRED_AT" ] && fm_task_id_creation_valid "$REC_TASK_ID" || return 1
+    && [ -n "$REC_RETIRED_AT" ] && fm_pr_task_id_valid "$REC_TASK_ID" || return 1
   case "$REC_KIND" in
     terminal) [ "$REC_BACKEND" = orca ] && [ -n "$REC_TERMINAL" ] && [ -n "$REC_WORKTREE_ID" ] && [ -n "$REC_WORKTREE_PATH" ] && [ -n "$REC_RUNTIME" ] && { [ "$REC_CLOSE_ATTEMPTED" = 0 ] || [ "$REC_CLOSE_ATTEMPTED" = 1 ]; } ;;
     worktree) [ -n "$REC_PROJECT" ] && [ -n "$REC_WORKTREE_PATH" ] && [ -n "$REC_POOL_BACKEND" ] ;;
@@ -210,7 +210,7 @@ record_load() {
 
 record_task() {
   local id=$1 meta base backend terminal worktree_id worktree_path project retired_at runtime=unknown content canonical_project canonical_wt kind
-  fm_task_id_creation_valid "$id" || { echo "error: invalid task id" >&2; return 1; }
+  fm_pr_task_id_valid "$id" || { echo "error: invalid task id" >&2; return 1; }
   meta="$STATE/$id.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || { echo "error: live task metadata is unavailable" >&2; return 1; }
   kind=$(meta_value "$meta" kind 2>/dev/null || true)
@@ -328,7 +328,7 @@ remove_record() {
 
 retire_live_terminal() {
   local id=$1 file="$STATE/.retired-terminals/$1.record" state base current
-  fm_task_id_creation_valid "$id" || return 1
+  fm_pr_task_id_valid "$id" || return 1
   [ -f "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || { echo "preserved terminal $id: live task metadata is unavailable"; return 1; }
   record_load "$file" && [ "$REC_KIND" = terminal ] && [ "$REC_TASK_ID" = "$id" ] \
     || { echo "preserved terminal $id: retirement identity is unavailable"; return 1; }
