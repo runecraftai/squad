@@ -54,6 +54,7 @@ Spawn validates that any existing metadata file is regular, resolves the hosting
 A hidden background handle is closed and refused, never used to host a mission.
 The tab's title carries no state; Orca renders agent status itself.
 When a mission reaches `done` or `failed`, the tab closes once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
+A tab the commander already closed, or a handle left by a previous Orca runtime, is proven absent from the hosting workspace inventory instead of blocking the worktree release; an explicit `sq-teardown.sh --force` also lets an unobservable runtime through without recording an unconfirmed close.
 Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any Orca resource is created.
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
 Spawn also passes Orca's own managed status extension to a Pi or pi-signed operator launch as one extra `-e`, so Orca's UI can show that operator's live state; the extension reports to Orca and is not read by Squad's sentry.

@@ -56,6 +56,7 @@ O spawn valida que qualquer arquivo de metadados existente é regular, resolve o
 Um handle de fundo oculto é fechado e recusado, nunca usado para hospedar uma missão.
 O título da aba não carrega estado; o próprio Orca mostra o status do agente.
 Quando uma missão chega a `done` ou `failed`, a aba fecha uma vez pelo helper da aba de missão, que verifica que o terminal pertence ao workspace hospedeiro antes de fechá-lo e registra apenas um fechamento confirmado.
+Uma aba que o comandante já fechou, ou um handle deixado por um runtime Orca anterior, é provado ausente no inventário do workspace hospedeiro em vez de bloquear a liberação do worktree; um `sq-teardown.sh --force` explícito também deixa um runtime não observável passar, sem registrar um fechamento não confirmado.
 Flags exatas de comando e parsing de resposta são de propriedade do `bin/backends/orca.sh` e do help do script.
 O spawn também passa a extensão de status gerenciada pelo próprio Orca a um lançamento de operador Pi ou pi-signed como um `-e` extra, para que a UI do Orca mostre o estado ao vivo daquele operador; a extensão reporta ao Orca e não é lida pela sentinela do Squad.
 A resolução de caminho e a regra de arquivo opcional são de propriedade do `bin/sq-spawn.sh --help`: um arquivo ausente deixa aquele lançamento exatamente como em qualquer outro backend, e nenhum outro backend ou harness recebe o argumento extra.

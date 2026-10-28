@@ -42,7 +42,7 @@ Pass `--backend orca` for a one-off Orca task, or rely on the already-selected O
 After spawn, check the task with Squad helpers:
 
 - `bin/sq-peek.sh sq-<id>` for launch failures, trust dialogs, or first output.
-- `state/<id>.meta` for `backend=orca`, `terminal=`, `orca_worktree_id=`, and `worktree=`.
+- `state/<id>.meta` for `backend=orca`, `terminal=`, `orca_host_workspace_id=`, `orca_worktree_id=`, and `worktree=`.
 - `bin/sq-crew-state.sh <id>` when the current run state matters.
 - `bin/sq-sentry.sh` whenever there are tasks in flight and this session owns supervision.
 
@@ -57,7 +57,7 @@ Put long instructions in the task brief or a temporary file and point the operat
 
 When supervising, treat `state/<id>.meta` as the routing record and Orca's own ids as backend implementation details.
 The stable Squad alias is `sq-<id>`.
-The recorded `terminal=` and `orca_worktree_id=` fields are what backend helpers use under the hood.
+The recorded `terminal=`, `orca_host_workspace_id=`, and `orca_worktree_id=` fields are what backend helpers use under the hood.
 
 If `sq-send` fails to submit, do not immediately repeat the same long instruction.
 Peek first, then decide whether the target is busy, waiting on a prompt, stuck behind a popup, or genuinely wedged.
@@ -69,7 +69,7 @@ For a messy Orca-backed task:
 
 1. Read `state/<id>.meta` and the relevant status tail first.
 2. Confirm the task is actually Orca-backed before using Orca-specific assumptions.
-3. Use the recorded `terminal=`, `orca_worktree_id=`, and `worktree=` as the task identity.
+3. Use the recorded `terminal=`, `orca_host_workspace_id=`, `orca_worktree_id=`, and `worktree=` as the task identity.
 4. Prefer Squad helpers for peek, send, state, and teardown.
 5. Avoid raw deletion of Orca worktrees or manual branch cleanup.
 6. Stop and inspect if the recorded worktree path, Orca worktree id, or project checkout no longer matches expectations.
@@ -84,7 +84,7 @@ Keep Orca smoke tests focused on lifecycle plumbing:
 
 1. Select Orca intentionally for a disposable task or recon.
 2. Spawn through `bin/sq-spawn.sh`.
-3. Confirm metadata records the Orca backend, terminal, Orca worktree id, and isolated worktree path.
+3. Confirm metadata records the Orca backend, terminal, hosting workspace id, Orca worktree id, and isolated worktree path.
 4. Verify `bin/sq-peek.sh`, a short `bin/sq-send.sh` steer, sentry wake behavior, and `bin/sq-crew-state.sh`.
 5. Tear down through `bin/sq-teardown.sh` after the task is safely disposable or landed.
 6. Restore the previous backend selection if Orca was selected only for the smoke test.

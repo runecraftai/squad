@@ -2154,7 +2154,7 @@ cleanup_Squad_home_children() {
           return 1
         fi
       elif [ "$child_backend" = orca ] && grep -q '^orca_host_workspace_id=' "$child_meta"; then
-        SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$sub_state" "$SCRIPT_DIR/sq-orca-tab.sh" "$child_id" "done" || return 1
+        SQUAD_BASE="$home" SQUAD_STATE_OVERRIDE="$sub_state" "$SCRIPT_DIR/sq-orca-tab.sh" "$child_id" "done" --force || return 1
       elif [ "$child_backend" = zellij ]; then
         # Zellij titles are scoped by the owning base tag, so forced XO
         # cleanup must verify child tabs as that child base, not the parent.
@@ -2208,6 +2208,7 @@ cleanup_Squad_home_children() {
       "$sub_state/$child_id.meta" "$sub_state/$child_id.pi-ext.ts" \
       "$sub_state/$child_id.grok-turnend-token" "$sub_state/$child_id.kimi-turnend-token" \
       "$sub_state/$child_id.muse-session" "$sub_state/$child_id.muse-session-current"
+    rm -rf -- "$sub_state/.orca-tab-$child_id" "$sub_state/.orca-tab-$child_id.lock"
   done
 }
 
@@ -2385,9 +2386,15 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
   fi
-  # Close the tab before the worktree behind it is touched; a refused close stops teardown here.
+  # Close the tab before the worktree behind it is touched; a refused close stops
+  # teardown here, except under --force, where an unobservable Orca runtime must
+  # not block the explicit discard.
   if grep -q '^orca_host_workspace_id=' "$META"; then
-    "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" || exit 1
+    if [ "$FORCE" = --force ]; then
+      "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" --force || exit 1
+    else
+      "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" || exit 1
+    fi
   fi
   if [ -d "$WT" ]; then
     branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
@@ -2531,6 +2538,7 @@ rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.meta" \
   "$STATE/$ID.muse-session-current" \
   "$STATE/.$ID.open-decisions-cursor"
 rm -rf -- "$STATE/.pi-delivery/$ID"
+rm -rf -- "$STATE/.orca-tab-$ID" "$STATE/.orca-tab-$ID.lock"
 if [ "$KIND" != recon ] && [ "$KIND" != xo ] && [ "$MODE" != local-only ]; then
   "$SQUAD_ROOT/bin/sq-unit-sync.sh" "$PROJ" || true
 fi

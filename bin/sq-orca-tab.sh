@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 # Close a recorded Orca mission tab when its mission ends.
-# Usage: sq-orca-tab.sh <task-id> done|failed|sync
+# Usage: sq-orca-tab.sh <task-id> done|failed|sync [--force]
 # sync reconciles on a status/turn-end event and closes only after a finished turn
 # or run declared done or failed; teardown passes done.
 # The tab title is Orca's own, so nothing here renames it, and a live, waiting, or
 # blocked mission keeps its tab open with no Orca call at all.
 # Other backends and legacy records without orca_host_workspace_id are inert.
 # The per-terminal receipt serializes closes with teardown; only a confirmed
-# close is recorded. Runtime errors preserve the record for retry.
+# close is recorded. Runtime errors preserve the record for retry, except under
+# an explicit --force teardown, which lets an unobservable runtime through without
+# ever claiming a close that was not confirmed.
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE=${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}}
 STATE=${SQUAD_STATE_OVERRIDE:-$BASE/state}
-ID=${1:-} STATE_NAME=${2:-}
+ID=${1:-} STATE_NAME=${2:-} FORCE=${3:-}
 case "$ID" in ''|*[!a-zA-Z0-9_-]*) echo 'error: invalid Orca task id' >&2; exit 2 ;; esac
 case "$STATE_NAME" in done|failed|sync) ;; *) echo 'error: invalid Orca tab state' >&2; exit 2 ;; esac
+case "$FORCE" in ''|--force) ;; *) echo 'error: invalid Orca tab option' >&2; exit 2 ;; esac
 # shellcheck source=bin/sq-backend.sh
 . "$SCRIPT_DIR/sq-backend.sh"
 META="$STATE/$ID.meta"
@@ -38,32 +41,58 @@ trap 'fm_lock_release "$LOCK"' EXIT
 RECEIPT="$STATE/.orca-tab-$ID"
 PREVIOUS=$(cat "$RECEIPT" 2>/dev/null || true)
 [ "$PREVIOUS" != "$TERMINAL closed" ] || exit 0
+
+record_closed_receipt() {
+  local tmp
+  tmp=$(umask 077; mktemp "$RECEIPT.XXXXXX")
+  printf '%s closed\n' "$TERMINAL" > "$tmp"
+  mv -f -- "$tmp" "$RECEIPT"
+}
+
+preserve_tab() {  # <reason>
+  if [ "$FORCE" = --force ]; then
+    echo "warning: $1; continuing because teardown was forced" >&2
+    exit 0
+  fi
+  echo "error: $1; preserving tab" >&2
+  exit 1
+}
+
 if [ "$STATE_NAME" = sync ]; then
-  # Never let old status prose supersede a live validation run or busy turn.
+  # Cheap decision first: only a finished turn/run can close a tab, so a live,
+  # waiting, or blocked mission never pays for the crew-state probe.
+  # shellcheck source=bin/sq-classify-lib.sh
+  . "$SCRIPT_DIR/sq-classify-lib.sh"
+  case "$(status_line_verb "$(last_status_state_line "$STATE/$ID.status")")" in
+    done|failed) ;;
+    *) exit 0 ;;
+  esac
+  # Never let a finished status line supersede a live validation run or busy turn.
   CURRENT=$("$SCRIPT_DIR/sq-crew-state.sh" "$ID" 2>/dev/null) || true
   VERDICT=${CURRENT#state: }; VERDICT=${VERDICT%% ·*}
   case "$VERDICT" in
     working|parked|blocked|paused) exit 0 ;;
-    *)
-      # Terminal declarations are only acted on after a finished turn/run, not
-      # from a computed green-CI verdict before the worker reports its result.
-      # shellcheck source=bin/sq-classify-lib.sh
-      . "$SCRIPT_DIR/sq-classify-lib.sh"
-      VERB=$(status_line_verb "$(last_status_state_line "$STATE/$ID.status")")
-      case "$VERB" in
-        done|failed) ;;
-        *) exit 0 ;;
-      esac ;;
   esac
 fi
-# Handles are globally scoped; verify the hosting identity before any mutation.
-OBSERVATION=$(orca terminal show --terminal "$TERMINAL" --json) || exit 1
-printf '%s' "$OBSERVATION" | node -e '
+# Handles are runtime-scoped: a tab the commander already closed, or a handle left
+# by a previous Orca runtime, must never block the worktree release. Prove absence
+# from the hosting workspace inventory instead of requiring a live terminal show.
+case "$(fm_backend_orca_terminal_presence "$HOST" "$TERMINAL")" in
+  absent)
+    record_closed_receipt
+    exit 0 ;;
+  mismatch)
+    preserve_tab "Orca terminal $TERMINAL is not a tab in hosting workspace $HOST for sq-$ID" ;;
+  present) ;;
+  *)
+    # The inventory could not answer: verify the exact live terminal instead.
+    OBSERVATION=$(orca terminal show --terminal "$TERMINAL" --json 2>/dev/null) || OBSERVATION=
+    [ -n "$OBSERVATION" ] || preserve_tab "Orca cannot observe the tab for sq-$ID"
+    printf '%s' "$OBSERVATION" | node -e '
 const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const t = (d.result || {}).terminal || {};
 process.exit(d.ok !== false && t.handle === process.argv[1] && t.worktreeId === process.argv[2] ? 0 : 1);
-' "$TERMINAL" "$HOST" || { echo "error: Orca terminal/hosting workspace mismatch for sq-$ID; preserving tab" >&2; exit 1; }
-fm_backend_orca_close "$TERMINAL" || { echo "error: Orca did not confirm close of sq-$ID; preserving tab" >&2; exit 1; }
-TMP=$(umask 077; mktemp "$RECEIPT.XXXXXX")
-printf '%s closed\n' "$TERMINAL" > "$TMP"
-mv -f -- "$TMP" "$RECEIPT"
+' "$TERMINAL" "$HOST" || preserve_tab "Orca terminal/hosting workspace mismatch for sq-$ID" ;;
+esac
+fm_backend_orca_close "$TERMINAL" || preserve_tab "Orca did not confirm close of sq-$ID"
+record_closed_receipt

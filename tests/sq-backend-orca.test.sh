@@ -504,13 +504,13 @@ test_kill_is_best_effort_close() {
   pass "fm_backend_orca_kill: calls terminal close and stays best-effort"
 }
 
-# run_orca_tab_helper <task-id> <done|failed|sync> <state-dir>: runs the mission
-# tab helper against the current fake Orca; sets TAB_OUT and TAB_STATUS.
+# run_orca_tab_helper <task-id> <done|failed|sync> <state-dir> [--force]: runs
+# the mission tab helper against the current fake Orca; sets TAB_OUT and TAB_STATUS.
 run_orca_tab_helper() {
   TAB_STATUS=0
   TAB_OUT=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_BASE="$CASE_DIR" SQUAD_STATE_OVERRIDE="$3" \
-    "$ROOT/bin/sq-orca-tab.sh" "$1" "$2" 2>&1 ) || TAB_STATUS=$?
+    "$ROOT/bin/sq-orca-tab.sh" "$1" "$2" ${4:+"$4"} 2>&1 ) || TAB_STATUS=$?
 }
 
 test_tab_helper_closes_mission_tab_once_in_hosting_workspace() {
@@ -520,10 +520,12 @@ test_tab_helper_closes_mission_tab_once_in_hosting_workspace() {
   mkdir -p "$state"
   fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
     "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
-  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab","worktreeId":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"truncated":false,"terminals":[{"handle":"term-tab","worktreeId":"wt-host","title":"sq-orcatabz1"}]}}\n' > "$RESP/1.out"
   printf '{"ok":true,"result":{}}\n' > "$RESP/2.out"
   run_orca_tab_helper "$id" "done" "$state"
   expect_code 0 "$TAB_STATUS" "sq-orca-tab.sh done should close the mission tab"$'\n'"$TAB_OUT"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''list'$'\x1f''--worktree'$'\x1f''id:wt-host'$'\x1f''--json' \
+    "the close path did not consult the hosting workspace inventory"
   assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-tab'$'\x1f''--json' \
     "done did not close the recorded mission terminal"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''rename' \
@@ -542,7 +544,7 @@ test_tab_helper_preserves_tab_when_terminal_is_outside_hosting_workspace() {
   mkdir -p "$state"
   fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
     "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
-  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab","worktreeId":"wt-elsewhere"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"truncated":false,"terminals":[{"handle":"term-tab","worktreeId":"wt-elsewhere"}]}}\n' > "$RESP/1.out"
   run_orca_tab_helper "$id" "done" "$state"
   expect_code 1 "$TAB_STATUS" "a terminal outside the hosting workspace must be refused"$'\n'"$TAB_OUT"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
@@ -558,7 +560,7 @@ test_tab_helper_keeps_receipt_absent_when_close_is_not_confirmed() {
   mkdir -p "$state"
   fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
     "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
-  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab","worktreeId":"wt-host"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"truncated":false,"terminals":[{"handle":"term-tab","worktreeId":"wt-host"}]}}\n' > "$RESP/1.out"
   printf '1\n' > "$RESP/2.exit"
   run_orca_tab_helper "$id" "done" "$state"
   expect_code 1 "$TAB_STATUS" "an unconfirmed close must fail closed"$'\n'"$TAB_OUT"
@@ -601,6 +603,42 @@ test_tab_helper_sync_leaves_live_mission_tab_untouched() {
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''rename' \
     "a working mission must not change the tab title"
   pass "sq-orca-tab.sh sync: a working mission keeps its tab with no close or title change"
+}
+
+test_tab_helper_retires_a_tab_the_commander_already_closed() {
+  local id=orcatabz6 state
+  orca_case tab-stale
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '{"ok":true,"result":{"truncated":false,"terminals":[]}}\n' > "$RESP/1.out"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 0 "$TAB_STATUS" "a stale handle for an already-closed tab must not block teardown"$'\n'"$TAB_OUT"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
+    "an absent tab must never be closed again"
+  assert_grep "term-tab closed" "$state/.orca-tab-$id" "an absent tab did not retire the receipt"
+  pass "sq-orca-tab.sh: an already-closed tab is proven absent, retired, and never re-closed"
+}
+
+test_tab_helper_force_releases_an_unobservable_tab() {
+  local id=orcatabz7 state
+  orca_case tab-unobservable
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf '1\n' > "$RESP/1.exit"
+  printf '1\n' > "$RESP/2.exit"
+  run_orca_tab_helper "$id" "done" "$state"
+  expect_code 1 "$TAB_STATUS" "an unobservable runtime must still refuse an ordinary teardown"$'\n'"$TAB_OUT"
+  assert_absent "$state/.orca-tab-$id" "an unobservable tab must not be recorded as closed"
+  : > "$LOG"
+  rm -f "$RESP/.count"
+  run_orca_tab_helper "$id" "done" "$state" --force
+  expect_code 0 "$TAB_STATUS" "an explicit force discard must release an unobservable tab"$'\n'"$TAB_OUT"
+  assert_absent "$state/.orca-tab-$id" "a forced release must not claim an unconfirmed close"
+  pass "sq-orca-tab.sh: refuses an unobservable runtime unless teardown was forced"
 }
 
 test_terminal_create_refuses_hidden_background_handle() {
@@ -762,7 +800,7 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails() {
 }
 
 test_spawn_writes_orca_metadata_and_launches_harness() {
-  local proj wt data state config id out log status_extension launch arglog
+  local proj wt data state config id out log status_extension launch arglog guard_out
   id="orcaspawnz1"
   proj="$TMP_ROOT/spawn-project"
   wt="$TMP_ROOT/spawn-wt"
@@ -804,8 +842,6 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
     "spawn should open the mission tab in the hosting workspace under the exact sq-<id> title"
   assert_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-spawn'$'\x1f''--text'$'\x1f''export GOTMPDIR=/tmp/sq-orcaspawnz1/gotmp'$'\x1f''--enter'$'\x1f''--json' \
     "spawn did not export GOTMPDIR through the Orca terminal"
-  assert_contains "$(cat "$log")" "&& { " \
-    "spawn did not guard the launch behind the mission worktree cd"
   launch=$(orca_launch_text "$log" 'encode launch-brief') \
     || fail "spawn did not send a typed launch-brief command through the Orca terminal"
   arglog="$CASE_DIR/pi-argv"
@@ -813,8 +849,16 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
     || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
   assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" -e "$status_extension" \
     "$(expected_launch_brief "$data/$id/brief.md")"
+  mv "$wt" "$wt.guard-check"
+  rm -f "$arglog"
+  guard_out=$(SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" 2>&1) \
+    || fail "a failed launch guard must not break the typed launch command"$'\n'"guard: $launch"
+  mv "$wt.guard-check" "$wt"
+  [ ! -e "$arglog" ] || fail "the agent was started outside the mission worktree when the launch guard could not enter it"
+  assert_contains "$guard_out" "launch guard failed" \
+    "a failed launch guard left no visible error in the mission tab"
   rm -rf "/tmp/sq-$id"
-  pass "sq-spawn.sh --backend orca: opens a visible mission tab in the hosting workspace, records both identities, and passes the managed Pi status extension as its own argument"
+  pass "sq-spawn.sh --backend orca: opens a visible mission tab in the hosting workspace, records both identities, and refuses to launch outside the mission worktree"
 }
 
 test_spawn_pi_launch_omits_status_extension_when_absent() {
@@ -1829,6 +1873,8 @@ test_tab_helper_preserves_tab_when_terminal_is_outside_hosting_workspace
 test_tab_helper_keeps_receipt_absent_when_close_is_not_confirmed
 test_tab_helper_is_inert_for_legacy_and_identity_collapsed_records
 test_tab_helper_sync_leaves_live_mission_tab_untouched
+test_tab_helper_retires_a_tab_the_commander_already_closed
+test_tab_helper_force_releases_an_unobservable_tab
 test_remove_worktree_refuses_empty_id
 test_remove_worktree_rejects_orca_error_json
 test_worktree_path_resolves_id

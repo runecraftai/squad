@@ -3105,8 +3105,10 @@ if [ -n "$SPAWN_TRACEPARENT" ]; then
 fi
 if [ "$BACKEND" = orca ]; then
   # The tab belongs to the base workspace; execution belongs only to the isolated
-  # mission directory. A failed cd/assertion must never launch in the host copy.
-  LAUNCH="cd -- $(shell_quote "$WT") && test \"\$(pwd -P)\" = $(shell_quote "$(cd "$WT" && pwd -P)") && { $LAUNCH; }"
+  # mission directory. A failed cd/assertion must never launch in the host copy,
+  # and it must say so in the tab instead of looking like a running mission.
+  ORCA_GUARD_FAILURE="sq: launch guard failed for $ID; the mission worktree $WT was not entered, so the agent was not started."
+  LAUNCH="if cd -- $(shell_quote "$WT") && test \"\$(pwd -P)\" = $(shell_quote "$(cd "$WT" && pwd -P)"); then { $LAUNCH; }; else printf '\\n%s\\n\\n' $(shell_quote "$ORCA_GUARD_FAILURE"); fi"
 fi
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
