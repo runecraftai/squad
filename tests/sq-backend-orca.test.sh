@@ -29,7 +29,7 @@ if [ "${1:-}" = status ] && [ "${SQUAD_ORCA_STATUS_RESPONSE:-ready}" != sequence
 fi
 if [ "${1:-}" = terminal ] && [ "${2:-}" = list ]; then
   selector=${4#id:}
-  handle= worktree_id= worktree_path=
+  handle= worktree_id= worktree_path= matched=0
   if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
     for meta in "$SQUAD_STATE_OVERRIDE"/*.meta; do
       [ -f "$meta" ] || continue
@@ -38,16 +38,39 @@ if [ "${1:-}" = terminal ] && [ "${2:-}" = list ]; then
       handle=$(awk -F= '$1=="terminal" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
       worktree_id=$candidate
       worktree_path=$(awk -F= '$1=="worktree" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
+      matched=1
       break
     done
   fi
-  node -e 'const fs=require("fs"),p=process.argv[1],h=process.argv[2],w=process.argv[3],x=process.argv[4],closed=fs.existsSync(p)?fs.readFileSync(p,"utf8").split(String.fromCharCode(10)):[];const terminals=h&&!closed.includes(h)?[{handle:h,worktreeId:w,worktreePath:x}]:[];console.log(JSON.stringify({ok:true,result:{terminals,truncated:false},_meta:{runtimeId:"runtime-test"}}));' "$RESP/.closed-terminals" "$handle" "$worktree_id" "$worktree_path"
-  exit 0
+  # Only a selector the recorded metadata actually owns is answered from that
+  # metadata; every other inventory question falls through to the scripted
+  # response below, so a test can still script any workspace inventory it wants.
+  if [ "$matched" = 1 ]; then
+    node -e 'const fs=require("fs"),p=process.argv[1],h=process.argv[2],w=process.argv[3],x=process.argv[4],closed=fs.existsSync(p)?fs.readFileSync(p,"utf8").split(String.fromCharCode(10)):[];const terminals=h&&!closed.includes(h)?[{handle:h,worktreeId:w,worktreePath:x}]:[];console.log(JSON.stringify({ok:true,result:{terminals,truncated:false},_meta:{runtimeId:"runtime-test"}}));' "$RESP/.closed-terminals" "$handle" "$worktree_id" "$worktree_path"
+    exit 0
+  fi
 fi
 if [ "${1:-}" = terminal ] && [ "${2:-}" = close ]; then
-  if [ "${SQUAD_ORCA_CLOSE_FAIL:-0}" = 1 ]; then exit 1; fi
-  printf '%s\n' "${4:-}" >> "$RESP/.closed-terminals"
-  exit 0
+  # A scripted close response stays authoritative. A scripted response that
+  # belongs to another command (a worktree, repo, or terminal payload) is left
+  # for that call, so this close is modeled instead: it records the handle as
+  # gone, unless the case asked for a failed close.
+  scripted=0
+  if [ -f "$RESP/$next.exit" ]; then
+    scripted=1
+  elif [ -f "$RESP/$next.out" ] && node -e '
+const fs = require("fs");
+let d;
+try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch (err) { process.exit(1); }
+process.exit(d && d.ok === true && Object.keys(d.result || {}).length === 0 ? 0 : 1);
+' "$RESP/$next.out"; then
+    scripted=1
+  fi
+  if [ "$scripted" = 0 ]; then
+    if [ "${SQUAD_ORCA_CLOSE_FAIL:-0}" = 1 ]; then exit 1; fi
+    printf '%s\n' "${4:-}" >> "$RESP/.closed-terminals"
+    exit 0
+  fi
 fi
 n=$next
 echo "$n" > "$COUNT_FILE"
