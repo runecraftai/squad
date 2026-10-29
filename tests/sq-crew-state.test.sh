@@ -174,6 +174,22 @@ arm_idle_record() {  # <state-dir> <id>
     --source claude-hook --event stop
 }
 
+# The two pause readers state the same fact twice: an open declared pause and the
+# pause episode for it must always agree about the same status log.
+assert_pause_parity() {  # <status-file> <label>
+  local state episode
+  state=$(last_status_state_line "$1")
+  episode=$(status_pause_episode "$1")
+  if [ -n "$episode" ]; then
+    status_is_paused "$state" \
+      || fail "$2: pause episode $episode with a non-paused state line ($state)"
+  else
+    status_is_paused "$state" \
+      && fail "$2: paused state line ($state) with no pause episode"
+  fi
+  return 0
+}
+
 # Clear the fake-driver vars and (re-)mark them exported, so the per-test plain
 # assignments below stay exported into the fakes without an `export VAR=$(...)`
 # command-substitution assignment (SC2155).
@@ -1067,7 +1083,7 @@ test_resolved_key_supersedes_only_matching_pause() {
   mkdir -p "$d/wt"
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/mate.meta" "window=fm:sq-mate" "worktree=$d/wt" "kind=xo" "home=$d/wt"
-  printf 'working: investigating\npaused: awaiting commander decision for key=demo-key\nresolved [key=demo-key]: answered: fix it\n' > "$d/state/mate.status"
+  printf 'working: investigating\npaused [key=demo-key]: awaiting commander decision\nresolved [key=demo-key]: answered: fix it\n' > "$d/state/mate.status"
   SQUAD_FAKE_AXI_STATUS=""
   SQUAD_FAKE_BUSY=0
   local out; out=$(run_crew_state "$d" mate)
@@ -1075,7 +1091,7 @@ test_resolved_key_supersedes_only_matching_pause() {
   assert_not_contains "$out" "state: paused" "a resolved pause is not left as a live wait"
   [ -z "$(status_pause_episode "$d/state/mate.status")" ] || fail "a matching resolution left the pause episode active"
 
-  printf 'working: investigating\npaused: awaiting commander decision for key=demo-key\n' > "$d/state/mate.status"
+  printf 'working: investigating\npaused [key=demo-key]: awaiting commander decision\n' > "$d/state/mate.status"
   out=$(run_crew_state "$d" mate)
   assert_contains "$out" "state: paused" "an unresolved keyed pause remains paused"
 
@@ -1083,6 +1099,51 @@ test_resolved_key_supersedes_only_matching_pause() {
   out=$(run_crew_state "$d" mate)
   assert_contains "$out" "state: blocked" "a genuine blocked event remains blocked"
   pass "a matching resolution clears only its keyed pause, preserving open pauses and blocked state"
+}
+
+test_keyed_pauses_stay_in_parity_across_stacked_and_redeclared_events() {
+  reset_fakes
+  local d status out
+  d=$(new_case stacked-pauses)
+  mkdir -p "$d/wt"
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/mate.meta" "window=fm:sq-mate" "worktree=$d/wt" "kind=xo" "home=$d/wt"
+  status="$d/state/mate.status"
+  SQUAD_FAKE_AXI_STATUS=""
+  SQUAD_FAKE_BUSY=0
+
+  printf 'working: investigating\npaused [key=a]: waiting on a\npaused [key=b]: waiting on b\nresolved [key=b]: b answered\n' > "$status"
+  assert_pause_parity "$status" "stacked pauses, newest resolved"
+  out=$(run_crew_state "$d" mate)
+  assert_contains "$out" "state: paused" "an inner stacked resolution leaves the older pause live"
+  assert_contains "$out" "waiting on a" "the still-open pause reason is carried"
+  [ "$(last_status_state_line "$status")" = 'paused [key=a]: waiting on a' ] \
+    || fail "a resolution of the newer stacked key masked the older open pause"
+  [ "$(status_pause_episode "$status")" = 2 ] \
+    || fail "the still-open stacked pause lost its identity: $(status_pause_episode "$status")"
+
+  printf 'resolved [key=a]: a answered\n' >> "$status"
+  assert_pause_parity "$status" "stacked pauses, both resolved"
+  assert_not_contains "$(run_crew_state "$d" mate)" "state: paused" \
+    "resolving the last open stacked key must end the pause"
+
+  printf 'paused [key=demo]: waiting\npaused [key=demo]: waiting\nresolved [key=demo]: answered\n' > "$status"
+  assert_pause_parity "$status" "re-declared identical pause"
+  assert_not_contains "$(run_crew_state "$d" mate)" "state: paused" \
+    "one matching resolution must close a re-declared identical pause"
+
+  printf 'paused [key=a]: waiting on a\nresolved [key=other]: unrelated decision\n' > "$status"
+  assert_pause_parity "$status" "unrelated key resolved"
+  [ "$(last_status_state_line "$status")" = 'paused [key=a]: waiting on a' ] \
+    || fail "an unrelated keyed resolution ended a genuinely open pause"
+  [ -n "$(status_pause_episode "$status")" ] \
+    || fail "an unrelated keyed resolution dropped a genuinely open pause identity"
+
+  printf 'blocked: waiting on infra\n' >> "$status"
+  assert_pause_parity "$status" "blocked after a cleared pause"
+  assert_contains "$(run_crew_state "$d" mate)" "state: blocked" \
+    "a genuine blocked event still wins after a pause is cleared"
+  pass "stacked and re-declared keyed pauses keep crew state and pause identity in parity"
 }
 
 test_no_run_idle_pane_custom_paused_verb() {
@@ -1606,6 +1667,7 @@ test_no_run_idle_pane_uses_log
 test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused
 test_resolved_key_supersedes_only_matching_pause
+test_keyed_pauses_stay_in_parity_across_stacked_and_redeclared_events
 test_no_run_idle_pane_custom_paused_verb
 test_no_run_idle_XO_resolved_event_not_state
 test_dead_window_ignores_stale_status_log

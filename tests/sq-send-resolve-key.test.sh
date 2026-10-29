@@ -118,7 +118,7 @@ test_answer_send_closes_open_decision() {
   fm_write_meta "$home/state/t1.meta" "window=sess:sq-t1" "kind=strike"
   printf 'needs-decision [key=api-shape]: pick REST or RPC\n' > "$home/state/t1.status"
   printf 'working: kept busy on an unrelated stream\n' >> "$home/state/t1.status"
-  printf 'paused: awaiting commander decision for key=api-shape\n' >> "$home/state/t1.status"
+  printf 'paused [key=api-shape]: awaiting commander decision\n' >> "$home/state/t1.status"
 
   out=$(drain_out "$home")
   printf '%s' "$out" | grep -F '[key=api-shape]' >/dev/null \
