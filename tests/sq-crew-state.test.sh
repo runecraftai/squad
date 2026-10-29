@@ -1061,6 +1061,30 @@ test_no_run_idle_pane_paused() {
   pass "no run + idle pane on a paused: status reports state: paused with its reason"
 }
 
+test_resolved_key_supersedes_only_matching_pause() {
+  reset_fakes
+  local d; d=$(new_case resolved-pause)
+  mkdir -p "$d/wt"
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/mate.meta" "window=fm:sq-mate" "worktree=$d/wt" "kind=xo" "home=$d/wt"
+  printf 'working: investigating\npaused: awaiting commander decision for key=demo-key\nresolved [key=demo-key]: answered: fix it\n' > "$d/state/mate.status"
+  SQUAD_FAKE_AXI_STATUS=""
+  SQUAD_FAKE_BUSY=0
+  local out; out=$(run_crew_state "$d" mate)
+  assert_contains "$out" "state: working" "a later matching resolution restores the prior real state"
+  assert_not_contains "$out" "state: paused" "a resolved pause is not left as a live wait"
+  [ -z "$(status_pause_episode "$d/state/mate.status")" ] || fail "a matching resolution left the pause episode active"
+
+  printf 'working: investigating\npaused: awaiting commander decision for key=demo-key\n' > "$d/state/mate.status"
+  out=$(run_crew_state "$d" mate)
+  assert_contains "$out" "state: paused" "an unresolved keyed pause remains paused"
+
+  printf 'blocked: waiting on infra\n' > "$d/state/mate.status"
+  out=$(run_crew_state "$d" mate)
+  assert_contains "$out" "state: blocked" "a genuine blocked event remains blocked"
+  pass "a matching resolution clears only its keyed pause, preserving open pauses and blocked state"
+}
+
 test_no_run_idle_pane_custom_paused_verb() {
   reset_fakes
   local d; d=$(new_case custom-paused)
@@ -1581,6 +1605,7 @@ test_no_run_herdr_idle_agent_status_and_idle_record_stays_idle
 test_no_run_idle_pane_uses_log
 test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused
+test_resolved_key_supersedes_only_matching_pause
 test_no_run_idle_pane_custom_paused_verb
 test_no_run_idle_XO_resolved_event_not_state
 test_dead_window_ignores_stale_status_log

@@ -109,15 +109,31 @@ last_status_line() {
   grep -v '^[[:space:]]*$' "$f" 2>/dev/null | tail -1
 }
 
-# Return the latest status event that establishes worker state. `resolved:` closes
-# a decision but does not say that an earlier declared external wait ended.
+# Return the latest status event that establishes worker state. A resolved event
+# also supersedes a keyed pause when its key matches the key named by that pause.
 last_status_state_line() {  # <status-file>
-  local f=$1 line effective=
+  local f=$1 line effective='' pause_line='' before_pause='' pause_key='' resolved_key
   [ -f "$f" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     [ -n "${line//[[:space:]]/}" ] || continue
-    [ "$(status_line_verb "$line")" = resolved ] && continue
+    if [ "$(status_line_verb "$line")" = resolved ]; then
+      resolved_key=$(_fm_decision_key "$line") || resolved_key=''
+      if [ -n "$pause_key" ] && [ "$resolved_key" = "$pause_key" ] && [ "$effective" = "$pause_line" ]; then
+        effective=$before_pause
+      fi
+      continue
+    fi
+    before_pause=$effective
     effective=$line
+    pause_line=''
+    pause_key=''
+    if status_is_paused "$line"; then
+      pause_line=$line
+      pause_key=$(_fm_decision_key "$line") || pause_key=''
+      if [ "$pause_key" = default ]; then
+        pause_key=$(status_line_note "$line" | grep -oE 'key=[A-Za-z0-9._-]+' | head -1 | cut -d= -f2- || true)
+      fi
+    fi
   done < "$f"
   printf '%s' "$effective"
 }
@@ -126,14 +142,25 @@ last_status_state_line() {  # <status-file>
 # A fresh declaration (even identical text) renews it; resolved events do not.
 # The ordinal survives restarts without making unrelated appends renew the wait.
 status_pause_episode() {  # <status-file> -> record ordinal, or empty
-  local f=$1 line episode='' n=0
+  local f=$1 line episode='' n=0 pause_key='' resolved_key
   [ -f "$f" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     [ -n "${line//[[:space:]]/}" ] || continue
-    [ "$(status_line_verb "$line")" = resolved ] && continue
+    if [ "$(status_line_verb "$line")" = resolved ]; then
+      resolved_key=$(_fm_decision_key "$line") || resolved_key=''
+      [ -z "$pause_key" ] || [ "$resolved_key" != "$pause_key" ] || episode=''
+      continue
+    fi
     episode=
-    status_is_paused "$line" && episode=$n
+    pause_key=''
+    if status_is_paused "$line"; then
+      episode=$n
+      pause_key=$(_fm_decision_key "$line") || pause_key=''
+      if [ "$pause_key" = default ]; then
+        pause_key=$(status_line_note "$line" | grep -oE 'key=[A-Za-z0-9._-]+' | head -1 | cut -d= -f2- || true)
+      fi
+    fi
   done < "$f"
   printf '%s' "$episode"
 }
