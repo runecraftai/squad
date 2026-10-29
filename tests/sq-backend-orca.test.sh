@@ -1305,6 +1305,97 @@ test_spawn_refuses_nonregular_metadata_before_resource_creation() {
   pass "sq-spawn.sh --backend orca: refuses non-regular metadata before resource creation"
 }
 
+# A relaunch must never mint a second sq-<id> tab beside the one its previous
+# attempt recorded. The relaunch gate is fail-closed for Orca until an endpoint
+# can be proven dead, so the observable invariant today is the refusal itself:
+# the recorded tab stays untouched and no new one is created.
+test_relaunch_refuses_a_second_orca_mission_tab() {
+  local proj wt data state config id out status
+  id="orcarelaunchz1"
+  proj="$TMP_ROOT/relaunch-project"
+  wt="$TMP_ROOT/relaunch-wt"
+  data="$TMP_ROOT/relaunch-data"
+  state="$TMP_ROOT/relaunch-state"
+  config="$TMP_ROOT/relaunch-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
+  touch "$state/.last-sentry-beat"
+  fm_write_meta "$state/$id.meta" \
+    "window=sq-$id" "endpoint_task_id=$id" "terminal=term-old" "worktree=$wt" "project=$proj" \
+    "harness=claude" "kind=strike" "mode=drill" "yolo=off" \
+    "backend=orca" "orca_host_workspace_id=wt-host" "orca_worktree_id=wt-old"
+  orca_case relaunch
+  printf '{"ok":true,"result":{"repo":{"id":"repo-squad-base"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/2.out"
+  status=0
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 ) || status=$?
+  [ "$status" -ne 0 ] || fail "an Orca relaunch must not be authorized while the recorded tab may still hold an agent"
+  assert_contains "$out" "refusing relaunch" "the refusal should say the relaunch was declined"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''create' \
+    "a refused relaunch must not open a second mission tab"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
+    "a refused relaunch must not close the tab it could not prove dead"
+  assert_grep "terminal=term-old" "$state/$id.meta" "a refused relaunch must leave the recorded tab identity untouched"
+  pass "sq-spawn.sh --backend orca: a relaunch never leaves two mission tabs"
+}
+
+# A spawn abort that never minted a mission tab records no hosting workspace, so
+# teardown must release the leaked worktree through the legacy path without
+# requiring --force.
+test_teardown_releases_a_terminal_less_orca_abort_record_without_force() {
+  local proj wt data state config id out status rc neutral
+  id="orcatablessz2"
+  proj="$TMP_ROOT/tabless-project"
+  wt="$TMP_ROOT/tabless-wt"
+  data="$TMP_ROOT/tabless-data"
+  state="$TMP_ROOT/tabless-state"
+  config="$TMP_ROOT/tabless-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
+  touch "$state/.last-sentry-beat"
+  orca_case tabless
+  printf '{"ok":true,"result":{"repo":{"id":"repo-squad-base"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/2.out"
+  printf '1\n' > "$RESP/3.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-tabless"}}}\n' > "$RESP/4.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-tabless","path":"%s"}}}\n' "$wt" > "$RESP/5.out"
+  printf '1\n' > "$RESP/6.exit"
+  printf '1\n' > "$RESP/7.exit"
+  status=0
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 ) || status=$?
+  [ "$status" -ne 0 ] || fail "Orca spawn should fail when terminal creation and worktree removal fail"
+  assert_present "$state/$id.meta" "the failed spawn should preserve the record of the leaked worktree"
+  assert_no_grep "^orca_host_workspace_id=" "$state/$id.meta" \
+    "a record with no mission tab must not claim a hosting workspace"
+  assert_no_grep "^terminal=" "$state/$id.meta" "a record with no mission tab must not invent a terminal"
+  assert_grep "orca_mission_tab=none" "$state/$id.meta" \
+    "the abort record must declare that it never minted a mission tab"
+  : > "$LOG"
+  rm -f "$RESP"/* "$RESP"/.count
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-tabless","path":"%s"}}}\n' "$wt" > "$RESP/1.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/2.out"
+  neutral=$(neutral_fm_root "$CASE_DIR/neutral")
+  rc=0
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    "$ROOT/bin/sq-teardown.sh" "$id" 2>&1 ) || rc=$?
+  expect_code 0 "$rc" "teardown should release a terminal-less Orca record without --force"$'\n'"$out"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm'$'\x1f''--worktree'$'\x1f''id:wt-tabless'$'\x1f''--force'$'\x1f''--json' \
+    "teardown did not remove the leaked Orca worktree"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
+    "a terminal-less record must never be closed through an empty handle"
+  assert_absent "$state/$id.meta" "a released abort record should be removed"
+  pass "sq-teardown.sh backend=orca: releases a terminal-less abort record without force"
+}
+
 test_peek_send_and_crew_state_route_through_orca_meta() {
   local wt state id out neutral
   id="orcaiopathz2"
@@ -2093,6 +2184,8 @@ test_spawn_removes_orca_worktree_when_terminal_create_fails
 test_spawn_preserves_orca_metadata_when_abort_cleanup_fails
 test_spawn_preserves_the_mission_tab_when_abort_cleanup_fails
 test_spawn_refuses_nonregular_metadata_before_resource_creation
+test_relaunch_refuses_a_second_orca_mission_tab
+test_teardown_releases_a_terminal_less_orca_abort_record_without_force
 test_peek_send_and_crew_state_route_through_orca_meta
 test_peek_and_crew_state_fail_closed_on_orca_error_json
 test_target_exists_rejects_orca_error_json

@@ -781,11 +781,14 @@ spawn_abort_cleanup() {
             echo "endpoint_task_id=$ID"
             echo "orca_worktree_id=$ORCA_WORKTREE_ID"
             # A record that names a hosting workspace may name only a mission tab, never
-            # the worktree-bound endpoint Orca returned before that tab existed.
+            # the worktree-bound endpoint Orca returned before that tab existed. A
+            # record that never minted one says so explicitly, because a missing
+            # terminal is otherwise the signal of incomplete metadata.
             if [ -n "${ORCA_MISSION_TAB:-}" ]; then
               echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
               echo "terminal=$ORCA_MISSION_TAB"
             else
+              echo "orca_mission_tab=none"
               [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
             fi
           } > "$STATE/$ID.meta" 2>/dev/null || true
@@ -2074,6 +2077,17 @@ EOF
     T="$CMUX_WORKSPACE_ID:$CMUX_SURFACE_ID"
     ;;
   orca)
+    # A relaunch recommissions this task, so the tab its previous attempt left
+    # behind is retired through the verified close path before a second sq-<id>
+    # tab can exist. A handle or hosting identity that no longer matches the
+    # record is refused here instead of being closed or shadowed.
+    if [ -n "$RELAUNCH_EXISTING_META" ]; then
+      SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" \
+        "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" || {
+          echo "error: the mission tab recorded for $ID could not be retired; refusing relaunch" >&2
+          exit 1
+        }
+    fi
     set +e
     ORCA_WT_RAW=$(fm_backend_orca_worktree_create "$PROJ_ABS" "$W")
     ORCA_WT_STATUS=$?

@@ -546,21 +546,34 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
       }
       terminal=$(fm_backend_meta_exact_value "$meta" terminal) || terminal=
       worktree_id=$(fm_backend_meta_exact_value "$meta" orca_worktree_id) || worktree_id=
-      [ -n "$terminal" ] || {
-        echo "REFUSED: missing terminal in $meta; cannot close Orca endpoint; preserving task state." >&2
-        return 1
-      }
       [ -n "$worktree_id" ] || {
         echo "REFUSED: missing orca_worktree_id in $meta; cannot remove Orca worktree; preserving task state." >&2
         return 1
       }
-      if [ "$window" != "sq-$id" ] \
-        || ! fm_backend_endpoint_atom_valid "$terminal" \
-        || ! fm_backend_orca_worktree_id_valid "$worktree_id"; then
-        echo "REFUSED: Orca endpoint metadata for task $id is malformed or inconsistent; preserving task state." >&2
-        return 1
+      # A mission tab is the only Orca endpoint this record can close, so a
+      # terminal-less record is accepted only when the abort writer declared that
+      # it never minted one and the record names no hosting workspace. Any other
+      # missing terminal is incomplete metadata, where a tab may still be live.
+      if [ -z "$terminal" ]; then
+        if grep -q '^orca_host_workspace_id=' "$meta" \
+          || [ "$(fm_backend_meta_exact_value "$meta" orca_mission_tab 2>/dev/null || true)" != none ]; then
+          echo "REFUSED: missing terminal in $meta; cannot close Orca endpoint; preserving task state." >&2
+          return 1
+        fi
+        if [ "$window" != "sq-$id" ] || ! fm_backend_orca_worktree_id_valid "$worktree_id"; then
+          echo "REFUSED: Orca endpoint metadata for task $id is malformed or inconsistent; preserving task state." >&2
+          return 1
+        fi
+        window=
+      else
+        if [ "$window" != "sq-$id" ] \
+          || ! fm_backend_endpoint_atom_valid "$terminal" \
+          || ! fm_backend_orca_worktree_id_valid "$worktree_id"; then
+          echo "REFUSED: Orca endpoint metadata for task $id is malformed or inconsistent; preserving task state." >&2
+          return 1
+        fi
+        window=$terminal
       fi
-      window=$terminal
       ;;
     cmux)
       [ "$binding" = "$id" ] || {
