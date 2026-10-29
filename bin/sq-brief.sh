@@ -27,8 +27,19 @@
 #   --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
 #   It adds the hard isolation contract backed by bin/sq-herdr-lab.sh.
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
-#   caller-supplied repo string cannot reliably identify this repo. Briefs made
-#   without it carry a loud declaration so an omitted contract cannot be silent.
+#   caller-supplied repo label says nothing about the task body: only the exact
+#   name "squad" or a path resolving to this base identifies this repo, and even
+#   then the task's Herdr surface stays unknown. Briefs made without it carry a
+#   loud declaration so an omitted contract cannot be silent.
+# A strike or recon brief scoped to this Squad base itself - the exact repo name
+# "squad" or a path resolving to this base checkout or another worktree of the
+# same repository - carries one repository guard line after the task body: this
+# is the Squad base, so work only in an isolated worktree and never in the
+# primary checkout. A drill strike states its delivery fact as well, because CI
+# requires drill's signature; direct-PR and local-only strikes and recons do not,
+# since nothing on those paths delivers through drill. Other repos carry no line.
+# A promoted recon keeps the base and worktree facts only; bin/sq-promote.sh
+# sends the mode-specific delivery instructions as a separate ship message.
 # A strike or recon brief must also record an explicit playbook decision:
 # either --playbook <id>@<version> selects a versioned execution playbook, or
 # --no-playbook "<reason>" states in one non-empty line why none applies.
@@ -72,6 +83,9 @@
 # primary session that dispatched it, and a session-start lock refusal is a
 # misunderstanding rather than a read-only state to respect. XO charters keep
 # their own preamble instead, because an XO runs session start for its own base.
+# A brief for this Squad base itself additionally carries the repository guard
+# line described above; any other repo's brief is byte-identical to a guard-free
+# scaffold, because an empty guard contributes no line and no blank line.
 # Ship briefs also carry a worktree-isolation assertion before the branch step.
 # --mode is refused on recon and XO scaffolds: a recon's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
@@ -587,10 +601,34 @@ fi
 exit 0
 fi
 
+# True when the caller's repo string names this Squad base itself: the exact
+# registered name, or a path that resolves to this checkout or another worktree
+# of the same repository. Every other string is an ordinary project repo.
+repo_is_squad() {  # <repo-name-or-path>
+  local label=$1 path root common_path common_root
+  [ "$label" = squad ] && return 0
+  [ -d "$label" ] || return 1
+  path=$(CDPATH='' cd -- "$label" 2>/dev/null && pwd -P) || return 1
+  root=$(CDPATH='' cd -- "$SQUAD_ROOT" 2>/dev/null && pwd -P) || return 1
+  [ "$path" = "$root" ] && return 0
+  command -v git >/dev/null 2>&1 || return 1
+  common_path=$(git -C "$path" rev-parse --git-common-dir 2>/dev/null) || return 1
+  common_root=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null) || return 1
+  [ -n "$common_path" ] && [ -n "$common_root" ] || return 1
+  case "$common_path" in /*) ;; *) common_path=$path/$common_path ;; esac
+  case "$common_root" in /*) ;; *) common_root=$root/$common_root ;; esac
+  [ "$(CDPATH='' cd -- "$common_path" 2>/dev/null && pwd -P)" = "$(CDPATH='' cd -- "$common_root" 2>/dev/null && pwd -P)" ]
+}
+
 REPO=${POS[1]}
 REPO_GUARD=
-if [ "$REPO" = squad ]; then
-  REPO_GUARD='Repository guard: this is the Squad base itself; work only in an isolated worktree, never the primary checkout, and deliver through drill because CI requires its signature.'
+REPO_GUARD_SECTION=
+if repo_is_squad "$REPO"; then
+  REPO_GUARD='Repository guard: this is the Squad base itself; work only in an isolated worktree, never the primary checkout.'
+  if [ "$KIND" = strike ] && [ "$MODE" = drill ]; then
+    REPO_GUARD="$REPO_GUARD Deliver through drill because CI requires its signature."
+  fi
+  REPO_GUARD_SECTION="$REPO_GUARD"$'\n\n'
 fi
 
 if [ "$HERDR_LAB" -eq 1 ]; then
@@ -646,9 +684,7 @@ $OPERATOR_GUARD
 # Task
 {TASK}
 
-$REPO_GUARD
-
-${PLAYBOOK_BLOCK}${PROFILE_BLOCK}$HERDR_SECTION
+${REPO_GUARD_SECTION}${PLAYBOOK_BLOCK}${PROFILE_BLOCK}$HERDR_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -784,9 +820,7 @@ $OPERATOR_GUARD
 # Task
 {TASK}
 
-$REPO_GUARD
-
-$HERDR_SECTION
+${REPO_GUARD_SECTION}$HERDR_SECTION
 
 ${PLAYBOOK_BLOCK}${PROFILE_BLOCK}# Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.

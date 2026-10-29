@@ -9,8 +9,8 @@
 5. Add a regression test that fails for the reproduced bug and passes for the fix.
 6. Run the relevant suite and keep it green.
 7. Re-exercise the original surface after the fix with the original reproduction.
-8. After the first review, run at most two repair rounds, addressing only criteria that lack `Proof:` or are marked `FAIL`; do not change criteria already proved or passing.
-9. If any criterion remains unresolved after the cap, escalate with the criterion and the reason it could not be repaired.
+8. After the first review, the pipeline runs at most two repair rounds, addressing only criteria that lack `Proof:` or are marked `FAIL`; criteria already proved or passing stay unchanged, and the operator must not hand-fix review findings while a run is active.
+9. If any criterion remains unresolved after the cap, the pipeline escalates with the criterion and the reason it could not be repaired.
 
 ## Required evidence
 
