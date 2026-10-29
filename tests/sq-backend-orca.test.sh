@@ -634,6 +634,33 @@ test_tab_helper_sync_leaves_live_mission_tab_untouched() {
   pass "sq-orca-tab.sh sync: a working mission keeps its tab with no close or title change"
 }
 
+# A terminated mission closes through the production sync entry point, and the
+# receipt keeps a repeated signal from closing it twice.
+test_tab_helper_sync_closes_a_finished_mission_tab_once() {
+  local id=orcatabz9 state closes
+  orca_case tab-sync-done
+  state="$CASE_DIR/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/$id.meta" "backend=orca" "window=sq-$id" "terminal=term-tab" \
+    "orca_worktree_id=wt-mission" "orca_host_workspace_id=wt-host" "kind=strike"
+  printf 'working: writing the patch\ndone: shipped\n' > "$state/$id.status"
+  printf '{"ok":true,"result":{"truncated":false,"terminals":[{"handle":"term-tab","worktreeId":"wt-host","title":"sq-%s"}]}}\n' "$id" > "$RESP/1.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/2.out"
+  run_orca_tab_helper "$id" sync "$state"
+  expect_code 0 "$TAB_STATUS" "a finished mission must close its tab through the sync hook"$'\n'"$TAB_OUT"
+  closes=$(grep -cF $'orca\x1f''terminal'$'\x1f''close' "$LOG")
+  [ "$closes" -eq 1 ] || fail "a finished mission must close its tab exactly once, saw $closes"
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-tab' \
+    "sync did not close the recorded mission terminal"
+  assert_grep "term-tab closed" "$state/.orca-tab-$id" "sync did not record the confirmed close"
+  : > "$LOG"
+  rm -f "$RESP"/* "$RESP"/.count
+  run_orca_tab_helper "$id" sync "$state"
+  expect_code 0 "$TAB_STATUS" "a repeated sync on a closed tab must stay harmless"$'\n'"$TAB_OUT"
+  [ ! -s "$LOG" ] || fail "a repeated sync must not touch an already closed tab"
+  pass "sq-orca-tab.sh sync: closes a finished mission tab once and records the receipt"
+}
+
 test_tab_helper_retires_a_tab_the_commander_already_closed() {
   local id=orcatabz6 state
   orca_case tab-stale
@@ -1283,6 +1310,56 @@ EOF
   pass "sq-spawn.sh --backend orca: preserves the mission tab identity for teardown"
 }
 
+# A mission tab that could not be confirmed closed must stay reachable through a
+# preserved record instead of leaking a visible tab with no identity behind it.
+test_spawn_preserves_the_mission_tab_when_abort_close_is_unconfirmed() {
+  local proj wt data state config id out status
+  id="orcatababortz4"
+  proj="$TMP_ROOT/tab-close-abort-project"
+  wt="$TMP_ROOT/tab-close-abort-wt"
+  data="$TMP_ROOT/tab-close-abort-data"
+  state="$TMP_ROOT/tab-close-abort-state"
+  config="$TMP_ROOT/tab-close-abort-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
+  touch "$state/.last-sentry-beat"
+  cat > "$proj/WORKFLOW.md" <<'EOF'
+---
+schema_version: "1.0.0"
+hooks:
+  after_create:
+    command: ["bash", "-c", "exit 1"]
+    timeout_ms: 2000
+---
+EOF
+  orca_case tab-close-abort
+  printf '{"ok":true,"result":{"repo":{"id":"repo-squad-base"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/2.out"
+  printf '1\n' > "$RESP/3.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-tab-close-abort"}}}\n' > "$RESP/4.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-tab-close-abort","path":"%s"},"terminal":{"handle":"term-worktree"}}}\n' "$wt" > "$RESP/5.out"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/6.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-tab-abort","surface":"visible","tabId":"tab-abort","worktreeId":"wt-host"}}}\n' > "$RESP/7.out"
+  printf '1\n' > "$RESP/8.exit"
+  status=0
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 ) || status=$?
+  [ "$status" -ne 0 ] || fail "Orca spawn should fail when the after_create hook fails"
+  assert_contains "$out" "mission tab close for $id was not confirmed" \
+    "the abort should name the unconfirmed mission tab close"
+  assert_present "$state/$id.meta" "an unconfirmed mission tab close must preserve the record"
+  assert_grep "terminal=term-tab-abort" "$state/$id.meta" "preserved record lost the mission tab identity"
+  assert_grep "orca_host_workspace_id=wt-host" "$state/$id.meta" "preserved record lost the hosting workspace identity"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm' \
+    "an unconfirmed tab close must not destroy the worktree the record still names"
+  if ! ( . "$ROOT/bin/sq-backend.sh"; fm_backend_validate_task_endpoint "$state/$id.meta" "$id" ) >/dev/null 2>&1; then
+    fail "the preserved record must stay teardown-able"
+  fi
+  pass "sq-spawn.sh --backend orca: preserves the record when the mission tab close is unconfirmed"
+}
 test_spawn_refuses_nonregular_metadata_before_resource_creation() {
   local proj wt data state config id out status
   id="orcametafailz9"
@@ -2175,6 +2252,7 @@ test_tab_helper_preserves_tab_when_terminal_is_outside_hosting_workspace
 test_tab_helper_keeps_receipt_absent_when_close_is_not_confirmed
 test_tab_helper_is_inert_for_legacy_and_identity_collapsed_records
 test_tab_helper_sync_leaves_live_mission_tab_untouched
+test_tab_helper_sync_closes_a_finished_mission_tab_once
 test_tab_helper_retires_a_tab_the_commander_already_closed
 test_tab_helper_preserves_a_tab_that_moved_to_another_workspace
 test_tab_helper_preserves_an_incomplete_inventory
@@ -2197,6 +2275,7 @@ test_spawn_refuses_orca_nonisolated_worktree
 test_spawn_removes_orca_worktree_when_terminal_create_fails
 test_spawn_preserves_orca_metadata_when_abort_cleanup_fails
 test_spawn_preserves_the_mission_tab_when_abort_cleanup_fails
+test_spawn_preserves_the_mission_tab_when_abort_close_is_unconfirmed
 test_spawn_refuses_nonregular_metadata_before_resource_creation
 test_relaunch_refuses_an_existing_orca_record_as_unverified
 test_teardown_releases_a_terminal_less_orca_abort_record_without_force

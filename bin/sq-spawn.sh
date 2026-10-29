@@ -759,40 +759,49 @@ spawn_abort_cleanup() {
   fi
   if [ "$ORCA_ABORT_CLEANUP" = 1 ]; then
     ORCA_ABORT_CLEANUP=0
+    ORCA_ABORT_PRESERVE_RECORD=0
     if [ -n "${ORCA_TERMINAL:-}" ]; then
-      fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null || true
+      if [ -n "${ORCA_MISSION_TAB:-}" ]; then
+        fm_backend_orca_close "$ORCA_TERMINAL" 2>/dev/null || ORCA_ABORT_PRESERVE_RECORD=1
+      else
+        fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null || true
+      fi
     fi
-    if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
-      if ! fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null; then
-        mkdir -p "$STATE" 2>/dev/null || true
-        if [ -d "$STATE" ]; then
-          {
-            echo "window=$W"
-            echo "worktree=${WT:-}"
-            echo "project=$PROJ_ABS"
-            echo "harness=$HARNESS"
-            echo "kind=$KIND"
-            [ -z "${MODE:-}" ] || echo "mode=$MODE"
-            [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
-            echo "tasktmp=${TASK_TMP:-}"
-            echo "model=${MODEL:-default}"
-            echo "effort=${EFFORT:-default}"
-            echo "backend=orca"
-            echo "endpoint_task_id=$ID"
-            echo "orca_worktree_id=$ORCA_WORKTREE_ID"
-            # A record that names a hosting workspace may name only a mission tab, never
-            # the worktree-bound endpoint Orca returned before that tab existed. A
-            # record that never minted one says so explicitly, because a missing
-            # terminal is otherwise the signal of incomplete metadata.
-            if [ -n "${ORCA_MISSION_TAB:-}" ]; then
-              echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
-              echo "terminal=$ORCA_MISSION_TAB"
-            else
-              echo "orca_mission_tab=none"
-              [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
-            fi
-          } > "$STATE/$ID.meta" 2>/dev/null || true
-        fi
+    if [ "$ORCA_ABORT_PRESERVE_RECORD" = 1 ]; then
+      echo "warning: Orca mission tab close for $ID was not confirmed; preserving its record for teardown" >&2
+    fi
+    if [ "$ORCA_ABORT_PRESERVE_RECORD" = 0 ] && [ -n "${ORCA_WORKTREE_ID:-}" ]; then
+      fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null || ORCA_ABORT_PRESERVE_RECORD=1
+    fi
+    if [ "$ORCA_ABORT_PRESERVE_RECORD" = 1 ] && [ -n "${ORCA_WORKTREE_ID:-}" ]; then
+      mkdir -p "$STATE" 2>/dev/null || true
+      if [ -d "$STATE" ]; then
+        {
+          echo "window=$W"
+          echo "worktree=${WT:-}"
+          echo "project=$PROJ_ABS"
+          echo "harness=$HARNESS"
+          echo "kind=$KIND"
+          [ -z "${MODE:-}" ] || echo "mode=$MODE"
+          [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
+          echo "tasktmp=${TASK_TMP:-}"
+          echo "model=${MODEL:-default}"
+          echo "effort=${EFFORT:-default}"
+          echo "backend=orca"
+          echo "endpoint_task_id=$ID"
+          echo "orca_worktree_id=$ORCA_WORKTREE_ID"
+          # A record that names a hosting workspace may name only a mission tab, never
+          # the worktree-bound endpoint Orca returned before that tab existed. A
+          # record that never minted one says so explicitly, because a missing
+          # terminal is otherwise the signal of incomplete metadata.
+          if [ -n "${ORCA_MISSION_TAB:-}" ]; then
+            echo "orca_host_workspace_id=$ORCA_HOST_WORKSPACE_ID"
+            echo "terminal=$ORCA_MISSION_TAB"
+          else
+            echo "orca_mission_tab=none"
+            [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
+          fi
+        } > "$STATE/$ID.meta" 2>/dev/null || true
       fi
     fi
   fi
