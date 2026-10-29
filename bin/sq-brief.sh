@@ -38,8 +38,10 @@
 # primary checkout. A drill strike states its delivery fact as well, because CI
 # requires drill's signature; direct-PR and local-only strikes and recons do not,
 # since nothing on those paths delivers through drill. Other repos carry no line.
-# A promoted recon keeps the base and worktree facts only; bin/sq-promote.sh
-# sends the mode-specific delivery instructions as a separate ship message.
+# A promoted recon keeps the base and worktree facts only: bin/sq-promote.sh
+# rewrites the task's mode and yolo fields and only suggests a separate ship
+# message instead of regenerating the brief, so that sent message must carry the
+# mode's delivery instruction, drill delivery included when the mode needs it.
 # A strike or recon brief must also record an explicit playbook decision:
 # either --playbook <id>@<version> selects a versioned execution playbook, or
 # --no-playbook "<reason>" states in one non-empty line why none applies.
