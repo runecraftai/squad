@@ -37,6 +37,10 @@
 #                              id and drop the record (recovery after a crash).
 #   sq-afk-launch.sh status   Print one read-only machine-readable health line and
 #                              return zero only when active state is healthy.
+#   sq-afk-launch.sh release-pending
+#                              Explicit commander-approved release of an
+#                              identity-bearing pending intent, only after its
+#                              handle is absent and no unclaimed binding matches.
 #   sq-afk-launch.sh release-handle-less
 #                              Release a pending Orca intent that recorded no
 #                              daemon identity, only after a read-only complete
@@ -192,7 +196,7 @@ fm_afk_launch_lock_release() {
 }
 
 fm_afk_launch_usage() {
-  sed -n '2,47p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # The command run inside the created terminal. Real launch runs the shared
@@ -840,47 +844,64 @@ fm_afk_launch_start_native() {
   return "$result"
 }
 
-fm_afk_launch_release_handle_less() {  # commander-approved release of a handle-less pending intent
-  local primary proof candidate
+fm_afk_launch_release_pending() {  # <handle-less|identity>; explicit commander approval required
+  local kind=${1:-handle-less} primary proof candidate target base
   fm_afk_launch_record_read || {
     fm_afk_launch_log 'no readable Orca creation intent is recorded; nothing to release'
     return 1
   }
-  if [ "$SQUAD_AFK_REC_BACKEND" != orca ] || [ "$SQUAD_AFK_REC_TARGET" != pending ] \
-    || ! printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e '.endpoint == null' >/dev/null; then
-    fm_afk_launch_log 'this action releases only a pending Orca creation intent that recorded no daemon identity; use start, stop, or reconcile for a recorded identity'
+  if [ "$SQUAD_AFK_REC_BACKEND" != orca ] || [ "$SQUAD_AFK_REC_TARGET" != pending ]; then
+    fm_afk_launch_log 'this action releases only a pending Orca creation intent; use start, stop, or reconcile for a settled identity'
+    return 1
+  fi
+  target=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.endpoint.target // empty') || return 1
+  if [ "$kind" = handle-less ] && [ -n "$target" ]; then
+    fm_afk_launch_log 'this action releases only a pending Orca creation intent that recorded no daemon identity; use release-pending for a recorded pending identity'
+    return 1
+  elif [ "$kind" = identity ] && [ -z "$target" ]; then
+    fm_afk_launch_log 'release-pending requires a recorded daemon identity; use the separately approved release-handle-less procedure'
+    return 1
+  fi
+  base=$(CDPATH='' cd -- "$SQUAD_BASE" && pwd -P) || return 1
+  if ! printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --arg base "$base" '.parent.path == $base' >/dev/null; then
+    fm_afk_launch_log "release branch=foreign-base handle=${target:-unrecorded}; preserving the pending intent"
     return 1
   fi
   if daemon_lock_held_by_live_daemon; then
-    fm_afk_launch_log 'a live daemon process still holds the session lock; refusing to release the handle-less intent'
+    fm_afk_launch_log "release branch=live-daemon-process handle=${target:-unrecorded}; a live daemon process still holds the session lock, refusing to release the pending intent"
     return 1
   fi
   primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er '.parent.target') || return 1
-  fm_afk_launch_orca_handle_less_evidence
+  fm_afk_launch_orca_release_evidence
   proof=$?
+  fm_afk_launch_log "release branch=$SQUAD_AFK_ORCA_RELEASE_BRANCH handle=${target:-unrecorded}"
   case "$proof" in
     0) ;;
     2)
       while IFS= read -r candidate; do
         [ -n "$candidate" ] || continue
-        fm_afk_launch_log "unclaimed live terminal candidate handle=$candidate could be the lost supervisor in this worktree/parent binding; preserving the handle-less intent"
+        fm_afk_launch_log "unclaimed live terminal candidate handle=$candidate could be the lost supervisor in this worktree/parent binding; preserving the pending intent"
       done <<EOF
 $SQUAD_AFK_ORCA_CANDIDATES
 EOF
       return 1
       ;;
     *)
-      fm_afk_launch_log 'the live terminal census or the recorded task-terminal cross-check is incomplete or uncertain; preserving the handle-less intent'
+      fm_afk_launch_log 'the live terminal census or the recorded task-terminal cross-check is incomplete or uncertain; preserving the pending intent'
       return 1
       ;;
   esac
-  fm_afk_launch_native_settle "$primary" 'Orca native request or buffer retirement remains unresolved; handle-less release is not complete' || return 1
+  fm_afk_launch_native_settle "$primary" 'Orca native request or buffer retirement remains unresolved; pending release is not complete' || return 1
   rm -f "$SQUAD_AFK_LAUNCH_RECORD" || return 1
   if ! rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk"; then
-    fm_afk_launch_log 'failed to clear away-mode flag after releasing the handle-less intent'
+    fm_afk_launch_log 'failed to clear away-mode flag after releasing the pending intent'
     return 1
   fi
-  fm_afk_launch_log 'released the handle-less Orca creation intent after a complete live census and recorded task-terminal cross-check found no unclaimed candidate'
+  if [ "$kind" = handle-less ]; then
+    fm_afk_launch_log 'released the handle-less Orca creation intent after a complete live census and recorded task-terminal cross-check found no unclaimed candidate'
+  else
+    fm_afk_launch_log "released the recorded Orca pending intent for absent handle=$target after a complete live census and task-terminal cross-check found no unclaimed candidate"
+  fi
 }
 
 fm_afk_launch_stop() {
@@ -1037,7 +1058,8 @@ fm_afk_launch_main() {
     start) fm_afk_launch_start ;;
     start-native) fm_afk_launch_start_native ;;
     stop) fm_afk_launch_stop ;;
-    release-handle-less) fm_afk_launch_release_handle_less ;;
+    release-handle-less) fm_afk_launch_release_pending handle-less ;;
+    release-pending) fm_afk_launch_release_pending identity ;;
     reconcile) fm_afk_launch_reconcile ;;
     -h|--help|help) fm_afk_launch_usage ;;
     *) fm_afk_launch_usage >&2; return 2 ;;

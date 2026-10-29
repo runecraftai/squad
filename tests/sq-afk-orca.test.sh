@@ -431,11 +431,61 @@ try {
     }
     pendingTerminal[field]=original;
   }
+  // Explicit approved release has ONE conjunctive proof: the recorded handle
+  // is absent AND no unclaimed terminal shares its recorded binding. A runtime
+  // or incarnation change is never itself evidence that the daemon is gone.
+  const releaseClaim=`${state}/release-task.meta`;
+  const claimForeign=()=>writeFileSync(releaseClaim,`backend=orca\nwindow=sq-release-task\nendpoint_task_id=release-task\nterminal=term-foreign\nworktree=${home}\nproject=${home}\n`);
+  claimForeign();save();
+  const beforeReleaseCreates=count('create'),beforeReleaseCloses=count('close');
+  r=cli('release-pending',{SQUAD_BASE:`${home}/outside`});assert.notEqual(r.status,0);assert.match(r.stderr,/release branch=foreign-base/);
+  for (const [runtime,incarnation] of [['runtime-1',pendingExtra.endpoint.incarnation],['runtime-rebound',pendingExtra.endpoint.incarnation],['runtime-rebound','recycled-incarnation']]) {
+    model.runtime=runtime;pendingTerminal.incarnationId=incarnation;save();
+    r=cli('release-pending');assert.notEqual(r.status,0);assert.match(r.stderr,/release branch=live-recorded-handle/);
+    assert.ok(r.stderr.includes(pendingExtra.endpoint.target),'live-handle refusal did not name the recorded handle');
+    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+    assert.equal(count('create'),beforeReleaseCreates);assert.equal(count('close'),beforeReleaseCloses);
+  }
+  check('approved release refuses a live recorded handle even across runtime and incarnation changes');
+  pendingTerminal.incarnationId=pendingExtra.endpoint.incarnation;
+  const originalTerms=[...model.terms];
+  model.terms=model.terms.filter(t=>t.handle!==pendingExtra.endpoint.target);
+  model.terms.push(endpoint('term-binding-candidate','unrelated display title'));model.runtime='runtime-1';save();await tick();
+  for (const action of ['release-pending','start','stop','reconcile']) {
+    r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/branch=candidate-binding-exists/);
+    assert.ok(r.stderr.includes('term-binding-candidate'),'candidate refusal omitted its handle');
+    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+    assert.equal(count('create'),beforeReleaseCreates);assert.equal(count('close'),beforeReleaseCloses);
+  }
+  model.terms=model.terms.filter(t=>t.handle!=='term-binding-candidate');model.runtime='runtime-rebound';
+  for (const field of ['worktreeId','worktreePath']) {
+    const foreign=model.terms.find(t=>t.handle==='term-foreign'),original=foreign[field];
+    foreign[field]='';save();
+    r=cli('release-pending');assert.notEqual(r.status,0);assert.match(r.stderr,/release branch=incomplete-evidence/);
+    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+    foreign[field]=original;
+  }
+  for (const field of ['unreadable','truncated','omitted']) {
+    model[field]=true;save();r=cli('release-pending');assert.notEqual(r.status,0);assert.match(r.stderr,/release branch=incomplete-evidence/);
+    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+    model[field]=false;
+  }
+  save();const inventoryBeforeRelease=JSON.stringify(model.terms);
+  r=cli('release-pending');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/release branch=absent-handle-no-candidates/);
+  assert.ok(r.stderr.includes(`absent handle=${pendingExtra.endpoint.target}`));
+  assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);assert.equal(existsSync(`${state}/.afk`),false);
+  reload();assert.equal(JSON.stringify(model.terms),inventoryBeforeRelease,'release mutated a live terminal');
+  assert.equal(count('create'),beforeReleaseCreates);assert.equal(count('close'),beforeReleaseCloses);
+  check('approved release requires absent handle and no binding candidate, and rejects empty worktree or incomplete census evidence');
+  // Restore only this synthetic fixture to continue adoption coverage; no real
+  // operation edits or invents a runtime identity.
+  model.terms=originalTerms;model.runtime='runtime-1';save();rmSync(releaseClaim);
+  writeFileSync(`${state}/.afk-daemon-terminal`,pendingBytes);writeFileSync(`${state}/.afk`,String(Math.floor(Date.now()/1000)));
   // A mutable title is neither positive nor negative ownership evidence.
-  pendingTerminal.title='zsh in squad';save();
+  model.terms.find(t=>t.handle===pendingExtra.endpoint.target).title='zsh in squad';save();await tick();
   r=cli('start');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/adopted the exact Orca daemon terminal/);
   assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
-  r=cli('release-handle-less');assert.notEqual(r.status,0);assert.match(r.stderr,/releases only a pending Orca creation intent that recorded no daemon identity/);
+  r=cli('release-handle-less');assert.notEqual(r.status,0);assert.match(r.stderr,/releases only a pending Orca creation intent/);
   assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
   assert.notEqual(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t')[1],'pending');
   r=cli('stop');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
@@ -494,6 +544,9 @@ try {
   const knownExtra={...unknownExtra,endpoint:{backend:'orca',target:lost.handle,runtime:model.runtime,incarnation:lost.incarnationId,worktree:lost.worktreeId,path:lost.worktreePath}};
   writeFileSync(`${state}/.afk-daemon-terminal`,'orca\tpending\t'+JSON.stringify(knownExtra)+'\n');
   model.lostCreate=false;model.terms=model.terms.filter(t=>t.handle!==lost.handle);save();
+  // The known absent identity can be released only after every other live
+  // terminal in its binding is accounted for by a recorded task.
+  writeFileSync(foreignMeta,`backend=orca\nwindow=sq-task-foreign\nendpoint_task_id=task-foreign\nterminal=term-foreign\nworktree=${home}\nproject=${home}\n`);
   r=cli('stop');assert.equal(r.status,0,r.stderr);
   check('handle-less lost responses stay pending with either a matching title or zero terminals');
   // A complete inventory excluding the recorded handle permits one create,
@@ -527,6 +580,7 @@ try {
   r=cli('stop');assert.equal(r.status,0,r.stderr);assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);
   assert.equal(existsSync(`${state}/.afk`),false);
   await tick();r=cli('start');assert.equal(r.status,0,r.stderr);r=cli('stop');assert.equal(r.status,0,r.stderr);
+  rmSync(foreignMeta);
   // A record from the previous launcher has no .owner token; its stored title
   // marker may only verify the process the exact terminal identity already binds.
   await tick();r=cli('start');assert.equal(r.status,0,r.stderr);reload();

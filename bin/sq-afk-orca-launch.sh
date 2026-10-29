@@ -50,7 +50,17 @@ fm_afk_launch_orca_pending_match() {  # read-only: 0 exact single live match; 2 
   fi
   count=$(printf '%s' "$terminal" | jq -r 'length') || return 1
   case "$count" in
-    0) return 2 ;;
+    0)
+      # Absence of the recorded handle alone is insufficient if an unclaimed
+      # live terminal still matches its binding. Use the same conjunctive proof
+      # as the explicitly approved release path, without changing any record.
+      if fm_afk_launch_orca_release_evidence; then
+        fm_afk_launch_log "pending release proof branch=$SQUAD_AFK_ORCA_RELEASE_BRANCH handle=$(printf '%s' "$extra" | jq -r .endpoint.target)"
+        return 2
+      fi
+      fm_afk_launch_log "pending release refused branch=$SQUAD_AFK_ORCA_RELEASE_BRANCH handle=$(printf '%s' "$extra" | jq -r .endpoint.target) candidates=${SQUAD_AFK_ORCA_CANDIDATES:-unknown}; preserving the pending intent"
+      return 1
+      ;;
     1) ;;
     *) fm_afk_launch_log 'Orca pending identity matches multiple terminal candidates; preserving the pending intent without touching any terminal'; return 1 ;;
   esac
@@ -111,24 +121,39 @@ fm_afk_launch_orca_claimed_terminals() {  # read-only task-recorded terminal tar
   printf '%s' "$claimed"
 }
 
-# Read-only proof for the commander-approved handle-less release: a complete
-# live census cross-checked against every recorded task terminal. 0 means no
-# unclaimed terminal could be the lost supervisor in this worktree/parent
-# binding; 2 names candidates in SQUAD_AFK_ORCA_CANDIDATES; 1 is incomplete.
-fm_afk_launch_orca_handle_less_evidence() {
-  local extra=$SQUAD_AFK_REC_EXTRA parent runtime status inventory claimed
+# Read-only proof for an explicitly approved pending release: a complete live
+# census cross-checked against every task terminal. A recorded handle must be
+# absent AND no unclaimed terminal may match its binding. Runtime/incarnation
+# changes alone never prove absence. 0: release proof; 2: named candidates;
+# 1: incomplete evidence. The caller logs SQUAD_AFK_ORCA_RELEASE_BRANCH.
+fm_afk_launch_orca_release_evidence() {
+  local extra=$SQUAD_AFK_REC_EXTRA parent runtime status inventory claimed target
   SQUAD_AFK_ORCA_CANDIDATES=
+  SQUAD_AFK_ORCA_RELEASE_BRANCH=incomplete-evidence
   parent=$(printf '%s' "$extra" | jq -ce '.parent') || return 1
-  runtime=$(printf '%s' "$parent" | jq -er '.runtime | select(type == "string" and length > 0)') || return 1
+  target=$(printf '%s' "$extra" | jq -r '.endpoint.target // empty') || return 1
   status=$(orca status --json) || return 1
-  printf '%s' "$status" | jq -e --arg runtime "$runtime" '.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready" and .result.runtime.runtimeId == $runtime' >/dev/null || return 1
+  runtime=$(printf '%s' "$status" | jq -er '
+    select(.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready")
+    | .result.runtime.runtimeId | select(type == "string" and length > 0)') || return 1
+  # The existing handle-less procedure still requires its original runtime.
+  # An identity-bearing record instead needs actual absence in the current
+  # runtime; a surviving handle blocks release even across a runtime change.
+  if [ -z "$target" ]; then
+    printf '%s' "$parent" | jq -e --arg runtime "$runtime" '.runtime == $runtime' >/dev/null || return 1
+  fi
   inventory=$(orca terminal list --limit 10000 --json) || return 1
   printf '%s' "$inventory" | jq -e --arg runtime "$runtime" '
     .ok == true and ._meta.runtimeId == $runtime and .result.truncated == false
     and (.result.hostScope.omittedHostIds | type == "array" and length == 0)
     and (.result.terminals | type == "array")
     and all(.result.terminals[]; (.handle | type == "string" and length > 0)
-      and (.worktreeId | type == "string") and (.worktreePath | type == "string"))' >/dev/null || return 1
+      and (.worktreeId | type == "string" and length > 0) and (.worktreePath | type == "string" and length > 0))' >/dev/null || return 1
+  if [ -n "$target" ] && printf '%s' "$inventory" | jq -e --arg target "$target" 'any(.result.terminals[]; .handle == $target)' >/dev/null; then
+    SQUAD_AFK_ORCA_CANDIDATES=$target
+    SQUAD_AFK_ORCA_RELEASE_BRANCH=live-recorded-handle
+    return 2
+  fi
   claimed=$(fm_afk_launch_orca_claimed_terminals) || return 1
   SQUAD_AFK_ORCA_CANDIDATES=$(printf '%s' "$inventory" | jq -r --argjson parent "$parent" --argjson claimed "$claimed" '
     [ .result.terminals[]
@@ -136,8 +161,16 @@ fm_afk_launch_orca_handle_less_evidence() {
       | select((.worktreeId == $parent.worktree) or (.worktreePath == $parent.path))
       | select(.handle as $handle | $claimed | index($handle) | not)
       | .handle ] | unique | .[]') || return 1
-  [ -z "$SQUAD_AFK_ORCA_CANDIDATES" ] && return 0
-  return 2
+  if [ -n "$SQUAD_AFK_ORCA_CANDIDATES" ]; then
+    SQUAD_AFK_ORCA_RELEASE_BRANCH=candidate-binding-exists
+    return 2
+  fi
+  if [ -n "$target" ]; then
+    SQUAD_AFK_ORCA_RELEASE_BRANCH=absent-handle-no-candidates
+  else
+    SQUAD_AFK_ORCA_RELEASE_BRANCH=handle-less-no-candidates
+  fi
+  return 0
 }
 
 fm_afk_launch_orca_scope() {  # recorded/daemon state owns this; the caller's environment is not authority
