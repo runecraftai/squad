@@ -52,7 +52,9 @@ On Linux builds (verified against v1.4.188) it records the composite form `<repo
 ## Current lifecycle and safety
 
 Spawn first resolves the Squad base's hosting workspace through Orca, registering the base with Orca when Orca does not know it yet, then validates that any existing metadata file is regular, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
-The launch is guarded: when the mission worktree cannot be entered and verified, the tab reports that failure instead of starting the agent in the base checkout.
+The guarded launch runs from a generated shell script rather than a long inline terminal command, so interactive-shell parsing does not depend on the harness arguments.
+When the mission worktree cannot be entered and physically verified, the script reports the failure and exits nonzero without starting the agent in the base checkout.
+If the launch script cannot be written, spawn reports the error and sends no launch command.
 A hidden background handle is closed and refused, never used to host a mission.
 The tab's title carries no state; Orca renders agent status itself.
 When a mission reaches `done` or `failed`, the next sentry signal scan after that status line or the teardown closes the tab once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.

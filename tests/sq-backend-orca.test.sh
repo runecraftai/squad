@@ -83,13 +83,14 @@ make_pi_argv_recorder() {  # <fakebin>
 set -u
 : > "${SQUAD_FAKE_PI_ARGV_LOG:?}"
 for a in "$@"; do printf '%s\0' "$a" >> "$SQUAD_FAKE_PI_ARGV_LOG"; done
+if [ -n "${SQUAD_FAKE_PI_CWD_LOG:-}" ]; then pwd -P > "$SQUAD_FAKE_PI_CWD_LOG"; fi
 exit 0
 SH
   chmod +x "$1/pi"
 }
 
-# orca_launch_text <log> <marker>: the --text argument containing <marker>,
-# i.e. the exact command line Squad typed into the Orca terminal.
+# orca_launch_text <log> <marker>: the script invocation (or legacy command
+# containing <marker>), i.e. the exact command Squad typed into the terminal.
 orca_launch_text() {  # <log> <marker>
   local log=$1 marker=$2 line i
   local -a fields
@@ -98,7 +99,7 @@ orca_launch_text() {  # <log> <marker>
     for ((i = 0; i + 1 < ${#fields[@]}; i++)); do
       [ "${fields[i]}" = "--text" ] || continue
       case "${fields[i + 1]}" in
-        *"$marker"*) printf '%s\n' "${fields[i + 1]}"; return 0 ;;
+        *"$marker"*|sh\ *'/launch.sh'*) printf '%s\n' "${fields[i + 1]}"; return 0 ;;
       esac
     done
   done < "$log"
@@ -961,8 +962,9 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
     "$(expected_launch_brief "$data/$id/brief.md")"
   mv "$wt" "$wt.guard-check"
   rm -f "$arglog"
-  guard_out=$(SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" 2>&1) \
-    || fail "a failed launch guard must not break the typed launch command"$'\n'"guard: $launch"
+  if guard_out=$(SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" sh -c "$launch" 2>&1); then
+    fail "a failed launch guard must exit non-zero"
+  fi
   mv "$wt.guard-check" "$wt"
   [ ! -e "$arglog" ] || fail "the agent was started outside the mission worktree when the launch guard could not enter it"
   assert_contains "$guard_out" "launch guard failed" \
@@ -1094,6 +1096,99 @@ test_spawn_pi_launch_survives_unset_home() {
     "$(expected_launch_brief "$data/$id/brief.md")"
   rm -rf "/tmp/sq-$id"
   pass "sq-spawn.sh --backend orca: an unset HOME still launches Pi unchanged without the status extension"
+}
+
+# Drive the real spawn executable and capture its terminal protocol, rather than
+# reimplementing the launch builder in the test.
+spawn_launch_fixture() {  # <id> <raw-launch> [write-failure]
+  local id=$1 raw=$2 fault=${3:-} data state config out status
+  orca_case "$id"
+  LAUNCH_PROJ="$CASE_DIR/project"
+  LAUNCH_WT="$CASE_DIR/mission's directory"
+  data="$CASE_DIR/data"
+  state="$CASE_DIR/state"
+  config="$CASE_DIR/config"
+  fm_git_worktree "$LAUNCH_PROJ" "$LAUNCH_WT" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
+  touch "$state/.last-sentry-beat"
+  make_pi_argv_recorder "$FB"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-base"}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/2.out"
+  printf '1\n' > "$RESP/3.exit"
+  printf '{"ok":true,"result":{"repo":{"id":"repo-mission"}}}\n' > "$RESP/4.out"
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-mission","path":"%s"}}}\n' "$LAUNCH_WT" > "$RESP/5.out"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-mission","surface":"visible","tabId":"tab-mission","worktreeId":"wt-host"}}}\n' > "$RESP/6.out"
+  # A directory at the output filename deterministically denies writes even as root.
+  [ "$fault" != write-failure ] || mkdir -p "/tmp/sq-$id/launch.sh"
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$LAUNCH_PROJ" "$raw" --mode drill --yolo off --backend orca 2>&1 )
+  status=$?
+  if [ "$fault" = write-failure ]; then
+    [ "$status" -ne 0 ] || fail "spawn succeeded without writing its launch script"
+    assert_contains "$out" "could not write the Orca launch script" "script write failure was not explained"
+    if orca_launch_text "$LOG" 'pi ' >/dev/null; then
+      fail "spawn sent a launch command after failing to write the script"
+    fi
+  else
+    expect_code 0 "$status" "launch fixture spawn failed"$'\n'"$out"
+    LAUNCH_COMMAND=$(orca_launch_text "$LOG" 'pi ') || fail "spawn sent no launch command"
+  fi
+}
+
+test_spawn_script_runs_in_real_shells_and_keeps_terminal_command_short() {
+  local shell arglog cwdlog guard_out short_length payload status
+  local -a shells=(sh)
+  if command -v zsh >/dev/null 2>&1; then shells+=(zsh); else printf 'skip - zsh is not installed; sh still exercises launch\n'; fi
+  # A valid trailing semicolon must not become a doubled semicolon in an inline
+  # brace group. This also reproduces the old shape's parse failure in real sh/zsh.
+  spawn_launch_fixture orcalaunchz1 'pi short;'
+  short_length=${#LAUNCH_COMMAND}
+  arglog="$CASE_DIR/argv"
+  cwdlog="$CASE_DIR/cwd"
+  for shell in "${shells[@]}"; do
+    SQUAD_FAKE_PI_ARGV_LOG="$arglog" SQUAD_FAKE_PI_CWD_LOG="$cwdlog" PATH="$FB:$PATH" "$shell" -c "$LAUNCH_COMMAND" \
+      || fail "the delivered launch command did not execute in $shell"
+    assert_pi_argv "$arglog" short
+    [ "$(cat "$cwdlog")" = "$(cd "$LAUNCH_WT" && pwd -P)" ] || fail "$shell launched outside the mission directory"
+    mv "$LAUNCH_WT" "$LAUNCH_WT.saved"
+    rm -f "$arglog" "$cwdlog"
+    guard_out=$(SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" "$shell" -c "$LAUNCH_COMMAND" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$shell accepted a missing worktree"
+    assert_contains "$guard_out" "launch guard failed" "missing worktree failure was silent"
+    [ ! -e "$arglog" ] || fail "$shell started the harness with a missing worktree"
+    # cd succeeds, but the physical directory is now different from the one
+    # captured at spawn time. The second guard must independently refuse it.
+    ln -s "$LAUNCH_WT.saved" "$LAUNCH_WT"
+    guard_out=$(SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" "$shell" -c "$LAUNCH_COMMAND" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$shell accepted a physical-directory mismatch"
+    assert_contains "$guard_out" "launch guard failed" "physical-directory mismatch was silent"
+    [ ! -e "$arglog" ] || fail "$shell started the harness in a substituted directory"
+    rm "$LAUNCH_WT"
+    mv "$LAUNCH_WT.saved" "$LAUNCH_WT"
+  done
+  [ "$short_length" -lt 128 ] || fail "terminal received a long inline launch ($short_length bytes)"
+  rm -rf /tmp/sq-orcalaunchz1
+  payload=$(printf '%20000s' '' | tr ' ' x)
+  spawn_launch_fixture orcalaunchz2 "pi '$payload';"
+  [ "${#LAUNCH_COMMAND}" -eq "$short_length" ] || fail "harness arguments changed terminal command length"
+  arglog="$CASE_DIR/argv"
+  for shell in "${shells[@]}"; do
+    SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" "$shell" -c "$LAUNCH_COMMAND" || fail "$shell could not run long harness arguments"
+    assert_pi_argv "$arglog" "$payload"
+  done
+  rm -rf /tmp/sq-orcalaunchz2
+  pass "Orca launch: real shells run short and long commands in the mission directory and refuse both guard failures"
+}
+
+test_spawn_refuses_an_unwritable_launch_script() {
+  spawn_launch_fixture orcalaunchz3 'pi must-not-run;' write-failure
+  rm -rf /tmp/sq-orcalaunchz3
+  pass "Orca launch: script write failure stops spawn before delivering a harness command"
 }
 
 test_spawn_refuses_orca_XO_before_home_mutation() {
@@ -2265,6 +2360,8 @@ test_json_get_ignores_undocumented_terminal_id_shapes
 test_worktree_and_terminal_helpers_parse_json
 test_worktree_create_removes_worktree_when_path_missing
 test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails
+test_spawn_script_runs_in_real_shells_and_keeps_terminal_command_short
+test_spawn_refuses_an_unwritable_launch_script
 test_spawn_writes_orca_metadata_and_launches_harness
 test_spawn_pi_launch_omits_status_extension_when_absent
 test_spawn_pi_resolves_status_extension_from_default_home_path

@@ -3132,7 +3132,26 @@ if [ "$BACKEND" = orca ]; then
   # mission directory. A failed cd/assertion must never launch in the host copy,
   # and it must say so in the tab instead of looking like a running mission.
   ORCA_GUARD_FAILURE="sq: launch guard failed for $ID; the mission worktree $WT was not entered, so the agent was not started."
-  LAUNCH="if cd -- $(shell_quote "$WT") && test \"\$(pwd -P)\" = $(shell_quote "$(cd "$WT" && pwd -P)"); then { $LAUNCH; }; else printf '\\n%s\\n\\n' $(shell_quote "$ORCA_GUARD_FAILURE"); fi"
+  # The guard cannot travel inline: a long quoted one-liner with a brace group is
+  # fragile once it reaches the interactive shell through the terminal-create path,
+  # and a parse failure there leaves a tab with no agent. Write the guarded launch
+  # to a script and hand the terminal one short command instead.
+  ORCA_LAUNCH_SCRIPT="$TASK_TMP/launch.sh"
+  {
+    printf '#!/bin/sh\n'
+    printf 'if ! cd -- %s; then printf "\\n%%s\\n\\n" %s; exit 1; fi\n' \
+      "$(shell_quote "$WT")" "$(shell_quote "$ORCA_GUARD_FAILURE")"
+    # Expand pwd only when the generated script runs in the terminal.
+    # shellcheck disable=SC2016
+    printf 'if [ "$(pwd -P)" != %s ]; then printf "\\n%%s\\n\\n" %s; exit 1; fi\n' \
+      "$(shell_quote "$(cd "$WT" && pwd -P)")" "$(shell_quote "$ORCA_GUARD_FAILURE")"
+    printf '%s\n' "$LAUNCH"
+  } > "$ORCA_LAUNCH_SCRIPT" || {
+    echo "error: could not write the Orca launch script for $ID" >&2
+    exit 1
+  }
+  chmod 700 "$ORCA_LAUNCH_SCRIPT" 2>/dev/null || true
+  LAUNCH="sh $(shell_quote "$ORCA_LAUNCH_SCRIPT")"
 fi
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
