@@ -202,6 +202,8 @@ test_playbook_selection_and_legacy_compatibility() {
   brief="$home/data/playbook-good/brief.md"
   [ "$(grep -c '^Execution playbook: id=bug-fix version=1$' "$brief")" -eq 1 ] || fail "bug-fix@1 identity must occur exactly once"
   assert_grep "Reproduction before fix" "$brief" "playbook brief missing reproduction evidence"
+  assert_grep "at most two repair rounds" "$brief" "bug-fix playbook must bound repairs to missing or failed criteria"
+  assert_grep "criterion remains unresolved after the cap" "$brief" "bug-fix playbook must escalate unresolved criteria with a reason"
   assert_grep "diagnostic-reasoning" "$brief" "playbook brief missing diagnostic-reasoning"
   assert_grep "tlc-implement" "$brief" "playbook brief missing tlc-implement"
   baseline="$home/legacy.md"
@@ -1141,6 +1143,30 @@ test_ambiguity_rule_stops_coding_and_asks() {
   pass "sq-brief.sh: strike and recon briefs tell the operator to ask instead of coding through ambiguity"
 }
 
+test_repo_squad_guard_and_recon_action_line() {
+  local home brief guard
+  home="$TMP_ROOT/repo-squad-guard-home"
+  mkdir -p "$home/data"
+  guard='Repository guard: this is the Squad base itself; work only in an isolated worktree, never the primary checkout, and deliver through drill because CI requires its signature.'
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" repo-squad-strike squad --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
+  brief="$home/data/repo-squad-strike/brief.md"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=squad strike must carry the repository guard exactly once"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" repo-squad-recon squad --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
+  brief="$home/data/repo-squad-recon/brief.md"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=squad recon must carry the repository guard exactly once"
+  # shellcheck disable=SC2016 # literal backticks are part of the emitted sentence
+  assert_grep 'for each recommended strike, include the exact `sq-*` command (or equivalent action) that would start it' "$brief" \
+    "recon brief must require an actionable strike command"
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" repo-other-strike another-repo --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
+  assert_no_grep "$guard" "$home/data/repo-other-strike/brief.md" "repository guard must not appear for another repo"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" repo-other-recon another-repo --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1
+  assert_no_grep "$guard" "$home/data/repo-other-recon/brief.md" "repository guard must not appear for another recon repo"
+  pass "sq-brief.sh: Squad-repo guard is conditional and recon recommendations name their launch action"
+}
+
 test_autonomous_policy_refusals_and_topology_boundaries() {
   local home name out status
   home="$TMP_ROOT/autonomous-policy-home"
@@ -1377,4 +1403,5 @@ test_scout_and_XO_scaffold
 test_operator_guard_leads_strike_and_recon_briefs
 test_status_instruction_is_present_in_all_scaffolds
 test_ambiguity_rule_stops_coding_and_asks
+test_repo_squad_guard_and_recon_action_line
 test_status_instruction_enforcement_refuses_missing_pattern

@@ -588,6 +588,10 @@ exit 0
 fi
 
 REPO=${POS[1]}
+REPO_GUARD=
+if [ "$REPO" = squad ]; then
+  REPO_GUARD='Repository guard: this is the Squad base itself; work only in an isolated worktree, never the primary checkout, and deliver through drill because CI requires its signature.'
+fi
 
 if [ "$HERDR_LAB" -eq 1 ]; then
 HERDR_LAB_HELPER=$(shell_quote "$SQUAD_ROOT/bin/sq-herdr-lab.sh")
@@ -642,6 +646,8 @@ $OPERATOR_GUARD
 # Task
 {TASK}
 
+$REPO_GUARD
+
 ${PLAYBOOK_BLOCK}${PROFILE_BLOCK}$HERDR_SECTION
 
 # Setup
@@ -679,7 +685,7 @@ Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
 Before reporting done, read and follow \`$SQUAD_ROOT/.agents/skills/decision-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
-If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; Squad may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
+If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; for each recommended strike, include the exact \`sq-*\` command (or equivalent action) that would start it; Squad may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
 # Recon status instruction enforcement: refuse to scaffold a brief
 # that lacks the status reporting instruction.
@@ -777,6 +783,8 @@ $OPERATOR_GUARD
 
 # Task
 {TASK}
+
+$REPO_GUARD
 
 $HERDR_SECTION
 
