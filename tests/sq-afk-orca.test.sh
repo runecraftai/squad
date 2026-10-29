@@ -28,8 +28,8 @@ fs.appendFileSync(process.env.ORCA_TEST_LOG, JSON.stringify(a)+'\\n');
 const value = k => a[a.indexOf(k)+1]; const out = result => console.log(JSON.stringify({ok:true,result,_meta:{runtimeId:d.runtime}}));
 if(a[0]==='status') { if(d.failStatus) process.exit(1); out({runtime:{runtimeId:d.runtime,reachable:d.ready,state:d.ready?'ready':'stopped',appVersion:'FAKE'}}); }
 else if(a[0]==='terminal' && a[1]==='show') { if(d.failShow) process.exit(1); const t = d.terms.find(t=>t.handle===value('--terminal')); if(t) out({terminal: d.mismatch ? {...t,handle:'term-other'}:t}); else { console.log(JSON.stringify({ok:false,error:{code:'terminal_handle_not_found'}})); process.exitCode=1; } }
-else if(a[0]==='terminal' && a[1]==='list') { if(d.unreadable) process.exit(1); out({terminals:d.terms,truncated:false}); }
-else if(a[0]==='terminal' && a[1]==='create') { const t = {handle:'term-daemon-'+(++d.count),title:value('--title'),incarnationId:'daemon-inc-'+d.count,worktreeId:'repo::'+process.env.SQUAD_BASE,worktreePath:process.env.SQUAD_BASE,connected:true,writable:true,orphaned:false,executionHostId:'local'}; d.terms.push(t); if(d.executeCommand) { const env={...process.env}; delete env.PI_CODING_AGENT; delete env.TMUX_PANE; delete env.TMUX; const child=require('child_process').spawn('bash',['-c',value('--command')],{detached:true,stdio:['ignore',fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a'),fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a')],env});d.spawnedPid=child.pid;child.unref(); } fs.writeFileSync(p,JSON.stringify(d)); if(d.lostCreate) process.exit(1); out({terminal:t}); }
+else if(a[0]==='terminal' && a[1]==='list') { if(d.unreadable) process.exit(1); out({terminals:d.terms,truncated:!!d.truncated,hostScope:{omittedHostIds:d.omitted?['local']:[]}}); }
+else if(a[0]==='terminal' && a[1]==='create') { const t = {handle:'term-daemon-'+(++d.count),title:value('--title'),incarnationId:'daemon-inc-'+d.count,worktreeId:'repo::'+process.env.SQUAD_BASE,worktreePath:process.env.SQUAD_BASE,connected:true,writable:true,orphaned:false,executionHostId:'local'}; d.terms.push(t); if(d.executeCommand) { const env={...process.env}; delete env.PI_CODING_AGENT; delete env.TMUX_PANE; delete env.TMUX; const child=require('child_process').spawn('bash',['-c',value('--command')],{detached:true,stdio:['ignore',fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a'),fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a')],env});d.spawnedPid=child.pid;child.unref(); } fs.writeFileSync(p,JSON.stringify(d)); if(d.lostCreate) process.exit(1); out({terminal:{...t,worktreePath:undefined}}); }
 else if(a[0]==='terminal' && a[1]==='close') { if(d.cancelClose) {out({cancelled:true});} else {d.terms=d.terms.filter(t=>t.handle!==value('--terminal'));fs.writeFileSync(p,JSON.stringify(d));out({});} }
 else { console.error('forbidden fake Orca operation '+JSON.stringify(a)); process.exit(99); }
 `);
@@ -313,14 +313,14 @@ try {
   // unrecorded live daemon and an unresolved native request instead of
   // reporting torn-down cleanup.
   const scopeRecord=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
-  const scopeTitle=JSON.parse(scopeRecord.split('\t').slice(2).join('\t')).title;
+  const scopeOwner=JSON.parse(scopeRecord.split('\t').slice(2).join('\t')).owner;
   rmSync(`${state}/.afk-daemon-terminal`);
   const scopedDaemon=spawn('bash',['-c','sleep 60 & echo $!; wait'],{stdio:['ignore','pipe','ignore']});tracked.push(scopedDaemon);
   const scopedPid=Number((await once(scopedDaemon.stdout,'data'))[0].toString().trim());assert.ok(scopedPid>1);
   const scopedLock=`${state}/.supervise-daemon.lock`;mkdirSync(scopedLock);
   writeFileSync(`${scopedLock}/pid`,String(scopedPid));
   const scopedIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${scopedPid}'`);assert.equal(scopedIdentity.status,0);
-  writeFileSync(`${scopedLock}/pid-identity`,scopedIdentity.stdout.trim());writeFileSync(`${scopedLock}/orca-owner`,scopeTitle);
+  writeFileSync(`${scopedLock}/pid-identity`,scopedIdentity.stdout.trim());writeFileSync(`${scopedLock}/orca-owner`,scopeOwner);
   const closesBeforeScope=count('close');
   const noRuntimeIdentity={SQUAD_SUPERVISOR_BACKEND:'',SQUAD_SUPERVISOR_TARGET:'',ORCA_TERMINAL_HANDLE:'',ORCA_WORKTREE_ID:''};
   r=cli('stop',noRuntimeIdentity);
@@ -368,16 +368,106 @@ try {
   writeFileSync(`${liveLock}/pid`,String(fakeDaemonPid));
   const daemonIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${fakeDaemonPid}'`);assert.equal(daemonIdentity.status,0);
   writeFileSync(`${liveLock}/pid-identity`,daemonIdentity.stdout.trim());
-  writeFileSync(`${liveLock}/orca-owner`,consumedRecord.title);
+  writeFileSync(`${liveLock}/orca-owner`,consumedRecord.owner);
   r=cli('stop');assert.equal(r.status,0,r.stderr);
   let daemonAlive=false;try{process.kill(fakeDaemonPid,0);daemonAlive=true;}catch{daemonAlive=false;}assert.equal(daemonAlive,false);
   assert.equal(existsSync(`${dir}/request.json`),false);assert.equal(existsSync(`${state}/.afk`),false);assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);
   assert.equal(count('close'),closesBefore+1);reload();assert.equal(model.terms.length,2);
   rmSync(liveLock,{recursive:true});tracked=tracked.filter(child=>child!==fakeDaemon);
   check('stop retires an already-consumed request through the live daemon shutdown flush');
-  await tick();model.lostCreate=true;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/create outcome remains uncertain/);assert.doesNotMatch(r.stderr,/integer expression expected/);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
-  reload();model.unreadable=false;save();r=cli('reconcile');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
-  check('lost create response persists intent, refuses duplicate create, and recovers exact title/identity only');
+  await tick();model.lostCreate=false;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/create outcome remains uncertain/);assert.doesNotMatch(r.stderr,/integer expression expected/);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
+  reload();model.unreadable=false;save();
+  const pendingBytes=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
+  const pendingExtra=JSON.parse(pendingBytes.split('\t')[2]);
+  const closesBeforeAdopt=count('close');
+  assert.ok(pendingExtra.endpoint.target,'create receipt was not persisted before inventory lookup');
+  // Parent binding and base identity must agree independently of the title.
+  for (const overrides of [{SQUAD_SUPERVISOR_TARGET:'term-foreign'}, {SQUAD_BASE:`${home}/outside`}]) {
+    r=cli('start',overrides);assert.notEqual(r.status,0);assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
+    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+  }
+  model.terms[0].incarnationId='changed-primary';save();
+  r=cli('stop');assert.notEqual(r.status,0);assert.match(r.stderr,/pending parent identity/);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+  model.terms[0].incarnationId='inc-term-primary';save();
+  // Even one valid match cannot hide another terminal with the same identity.
+  const pendingTerminal=model.terms.find(t=>t.handle===pendingExtra.endpoint.target);
+  const duplicate={...pendingTerminal};
+  model.terms.push(duplicate);save();
+  for (const action of ['start','stop','reconcile']) {
+    r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/identity matches multiple terminal candidates/);
+    assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
+    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+  }
+  check('multiple matches refuse start, stop and reconciliation without creating, closing or rewriting anything');
+  model.terms.pop();
+  for (const field of ['incarnationId','worktreeId','worktreePath']) {
+    const original=pendingTerminal[field];pendingTerminal[field]='foreign-identity';save();
+    for (const action of ['start','stop']) {
+      r=cli(action);assert.notEqual(r.status,0);assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
+      assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+    }
+    pendingTerminal[field]=original;
+  }
+  // A mutable title is neither positive nor negative ownership evidence.
+  pendingTerminal.title='zsh in squad';save();
+  r=cli('start');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/adopted the exact Orca daemon terminal/);
+  assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
+  assert.notEqual(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t')[1],'pending');
+  r=cli('stop');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
+  check('recorded identity adopts one renamed terminal; changed incarnation/worktree/path never permits adoption or retry');
+  // An entirely lost create response has no daemon identity. Even a matching
+  // title or a complete empty inventory cannot authorize adoption or a retry.
+  model.lostCreate=true;save();await tick();r=cli('start');assert.notEqual(r.status,0);reload();
+  const unknownBytes=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
+  const unknownExtra=JSON.parse(unknownBytes.split('\t')[2]);assert.equal(unknownExtra.endpoint,undefined);
+  const unknownCreates=count('create'),unknownCloses=count('close');
+  for (const terms of [model.terms, model.terms.filter(t=>!t.handle.startsWith('term-daemon-'))]) {
+    const previous=model.terms;model.terms=terms;save();
+    for (const action of ['start','stop','reconcile']) {
+      r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/no daemon identity was recorded/);
+      assert.equal(count('create'),unknownCreates);assert.equal(count('close'),unknownCloses);
+      assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),unknownBytes);
+    }
+    model.terms=previous;
+  }
+  // Test-only fixture supplies the fake runtime's exact receipt after proving
+  // no automatic path changed the unknown record. This is not production recovery.
+  const lost=model.terms.find(t=>t.handle.startsWith('term-daemon-'));
+  const knownExtra={...unknownExtra,endpoint:{backend:'orca',target:lost.handle,runtime:model.runtime,incarnation:lost.incarnationId,worktree:lost.worktreeId,path:lost.worktreePath}};
+  writeFileSync(`${state}/.afk-daemon-terminal`,'orca\tpending\t'+JSON.stringify(knownExtra)+'\n');
+  model.lostCreate=false;model.terms=model.terms.filter(t=>t.handle!==lost.handle);save();
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
+  check('handle-less lost responses stay pending with either a matching title or zero terminals');
+  // A complete inventory excluding the recorded handle permits one create,
+  // even if an unrelated terminal has the old display title.
+  model.unreadable=true;save();await tick();
+  let beforeAbsent=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),beforeAbsent+1);reload();
+  assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);
+  const absentBytes=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
+  const absentExtra=JSON.parse(absentBytes.split('\t')[2]);
+  model.terms=model.terms.filter(t=>t.handle!==absentExtra.endpoint.target);
+  model.terms[1].title=absentExtra.title;model.unreadable=false;save();
+  for (const field of ['unreadable','truncated','omitted']) {
+    model[field]=true;save();
+    for (const action of ['start','stop']) {
+      r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/create outcome remains uncertain/);
+      assert.equal(count('create'),beforeAbsent+1);assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),absentBytes);
+    }
+    model[field]=false;save();
+  }
+  beforeAbsent=count('create');await tick();r=cli('start');assert.equal(r.status,0,r.stderr);assert.equal(count('create'),beforeAbsent+1);
+  reload();assert.equal(model.terms.filter(t=>t.handle.startsWith('term-daemon-')).length,1);
+  r=cli('stop');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
+  check('absent recorded identity allows exactly one retry despite an unrelated matching display title');
+  model.terms[1].title='foreign';model.unreadable=true;save();await tick();
+  r=cli('start');assert.notEqual(r.status,0);reload();
+  const toRelease=JSON.parse(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t')[2]);
+  model.terms=model.terms.filter(t=>t.handle!==toRelease.endpoint.target);model.unreadable=false;save();
+  r=cli('stop');assert.equal(r.status,0,r.stderr);assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);
+  assert.equal(existsSync(`${state}/.afk`),false);
+  await tick();r=cli('start');assert.equal(r.status,0,r.stderr);r=cli('stop');assert.equal(r.status,0,r.stderr);
+  check('proven identity absence releases pending state on stop and permits subsequent start/stop');
   // A redundant start while an escalation is in flight and the daemon is alive
   // must refresh the flag instead of claiming another away session is needed: a
   // refresh creates no terminal and no delivery.
@@ -392,7 +482,7 @@ try {
   writeFileSync(`${refreshLock}/pid`,String(refreshPid));
   const refreshIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${refreshPid}'`);assert.equal(refreshIdentity.status,0);
   writeFileSync(`${refreshLock}/pid-identity`,refreshIdentity.stdout.trim());
-  writeFileSync(`${refreshLock}/orca-owner`,inflightRecord.title);
+  writeFileSync(`${refreshLock}/orca-owner`,inflightRecord.owner);
   r=cli('start');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/refreshed away-mode flag/);
   assert.equal(count('create'),createsBeforeRefresh);assert.ok(existsSync(`${state}/.afk`));
   process.kill(refreshPid,'SIGTERM');await once(refreshDaemon,'exit');rmSync(refreshLock,{recursive:true});

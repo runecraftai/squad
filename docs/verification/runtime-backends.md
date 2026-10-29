@@ -673,7 +673,7 @@ limit - Orca CLI identity was fake; no real Orca runtime, daemon terminal lifecy
 
 Only Pi is enabled for the new native receiver contract.
 Pi-signed and every other harness refuse until individually proven; the existing TUIOS-native Pi path is unchanged.
-Combined real Orca + Pi AFK lifecycle, macOS supervisor behavior, Chat UI support, and physical Android acceptance remain unverified.
+The combined real Orca + Pi daemon lifecycle was subsequently verified below; combined real-host message consumption, macOS supervisor behavior, Chat UI support, and physical Android acceptance remain unverified.
 [`orca-backend.md`](../orca-backend.md#away-mode-supervision) owns current selection, lifecycle, recovery and delivery limits.
 
 ### 2026-10-25 - read-only Orca host observation
@@ -681,7 +681,53 @@ Combined real Orca + Pi AFK lifecycle, macOS supervisor behavior, Chat UI suppor
 On 2026-10-25, read-only observation of the installed Orca 1.4.188 host returned, for the worktree-filtered terminal list, ok=true, exactly one terminal matching the recorded worktree, totalCount=1, truncated=false, local host scope with no omitted host ids, and the same runtime identity as the earlier host.
 The installed create help advertises worktree, title, command, focus and json flags and qualifies no-focus behaviour with 'when possible'.
 Filter semantics, real terminal creation, cleanup, focus behaviour and Android operation remain UNVERIFIED.
-No real lifecycle test was executed.
+No real lifecycle test was executed in that read-only observation.
+
+### 2026-10-29 - identity-bound daemon lifecycle
+
+Linux Orca 1.4.243 and interactive Pi 1.4.0 passed the actual launcher lifecycle in an authorized disposable task copy, using private lifecycle state and an exact lab-owned primary terminal.
+The primary loaded the shipped `.pi/extensions/sq-primary-away-handoff.ts`; a lab fixture recorded that real Pi process's PID as its private session owner, and no model prompt was sent.
+Only the lab primary and launcher-created daemon terminals were created/closed; no shared configuration, worktree lifecycle, host restart, or unrelated terminal was touched.
+
+With `SQUAD_BASE` set to the disposable copy, `SQUAD_STATE_OVERRIDE` to its private state, `SQUAD_SUPERVISOR_BACKEND=orca`, `SQUAD_SUPERVISOR_TARGET` to the exact lab-primary handle, and `SQUAD_SUPERVISOR_HARNESS=pi`, the commands were:
+
+```sh
+bin/sq-afk-launch.sh start
+bin/sq-afk-launch.sh status
+orca terminal list --worktree "id:$ORCA_WORKTREE_ID" --json
+bin/sq-afk-launch.sh start
+orca terminal list --worktree "id:$ORCA_WORKTREE_ID" --json
+bin/sq-afk-launch.sh stop
+bin/sq-afk-launch.sh status
+```
+
+The complete sequence passed twice; the two inventories around the repeated start had identical handle sets, including exactly one recorded daemon identity.
+The shell changed both daemon display titles to `zsh in sq-afk-orca-daemon-terminal-create` during startup, without preventing identity-based ownership, refresh, or cleanup.
+Relevant exact output:
+
+```text
+sq-afk-launch: daemon already running; refreshed away-mode flag (no new terminal)
+active=1 terminal=alive daemon=alive housekeeping_age=na scan_age=na
+sq-afk-launch: away mode stopped; daemon terminal torn down and .afk cleared
+active=0 terminal=absent daemon=dead housekeeping_age=16 scan_age=16
+PASS: real Orca + real Pi start/status/idempotent start/stop, twice; active=0
+```
+
+Inactive `status` intentionally returned 1; successful start/refresh/stop returned 0, and the complete assertion driver exited 0.
+The final cleanup confirmed no daemon record or away flag remained and closed only the exact lab primary.
+A second real-host run also injected one unavailable inventory response after the real create receipt was persisted and the real daemon started.
+The failed call retained `pending` plus the exact daemon identity; the next `start` adopted it, and the before/after inventory handle sets were identical.
+No Orca identity response was faked, and no replacement terminal was created.
+The assertion driver reported:
+
+```text
+PASS: real Orca + real Pi pending-identity adoption without replacement, start/status/idempotent start/stop, twice; active=0
+```
+
+Focus behavior, a fully lost real create receipt, and combined real-host message consumption were not tested.
+
+Refresh the portable recovery proof with `bash tests/sq-afk-orca.test.sh`: it covers a renamed identity match, one create after recorded-identity absence despite an unrelated matching title, duplicate-identity refusal without terminal mutation, changed parent/base/incarnation/worktree refusal, incomplete inventory refusal, and preservation of handle-less lost responses with either zero or matching-title terminals.
+The launcher's `bin/sq-afk-orca-launch.sh` owns the identity-recovery contract; a handle-less legacy record needs separately authorized live verification, never title-based automatic adoption or retry.
 
 ### 2026-10-28 - live Orca 1.4.243 terminal create observation
 
