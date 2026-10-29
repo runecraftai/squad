@@ -252,7 +252,7 @@ While a run is still active, it reports `state: pipeline_owned`, the exact submi
 `--recover` verifies the run is terminal, anchors the preserved head under `refs/drill/recover/<run>` in the invoking repository, and stamps custody returned so a fresh run can start.
 The anchor is skipped only for the orphaned-record release above.
 For equal or ahead worktrees where the preserved head is already locally reachable, recovery writes that anchor locally without gate access.
-For behind or diverged worktrees whose gate branch still names the preserved head, recovery verifies it there and fetches it into the anchor before moving or refusing.
+For behind or diverged worktrees, recovery verifies the preserved head at the local gate branch and fetches it into the anchor before moving or refusing.
 A clean behind worktree fast-forwards.
 A diverged worktree is adopted only when the preserved head provably carries every local change, proven by an executable three-way merge whose result is exactly the preserved head's tree.
 This covers a pipeline rebase onto a newer base once a later pipeline commit has also advanced the gate branch to the preserved head.
@@ -261,8 +261,6 @@ That adoption anchors the pre-recovery local head under `refs/drill/recover-loca
 The proof is deliberately narrow and never uses patch identity, which discards hunk locations and whitespace and so cannot tell a genuine replay from a same-shaped edit elsewhere.
 Anything it cannot decide - unlanded local commits, or a rebase whose fix rounds also rewrote your own lines - still refuses with the anchor named, because only escalation can tell a deliberate pipeline fix apart from a dropped change.
 A dirty worktree refuses with explicit choices.
-When the gate branch has moved to your local head while the recorded preserved head survives as an object in the validated gate, recovery still refuses with `safety: blocked_recover_gate_diverged` and changes nothing.
-That refusal carries `next_action.code: anchor_preserved_head` with the exact `git fetch` of the preserved head into `refs/drill/recover/<run>`, and running that fetch followed by `drill axi sync --recover --keep-local` returns custody at your current head without adopting the diverged gate.
 When you explicitly keep a behind or diverged local head instead of taking the preserved head, `--keep-local` returns custody at the current head without touching the worktree and atomically points the gate branch at it, so a concurrent gate push wins and the recovery refuses instead.
 `drill rerun` is the alternative exit that resumes validating the preserved head instead of taking the branch back.
 A recovered never-pushed run reports `state: custody_returned`, and so does a pushed run released as an orphaned record; a pushed run recovered by taking a preserved head that still exists reports its ordinary classification against the last push binding, typically `local_ahead`.
