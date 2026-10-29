@@ -2358,17 +2358,22 @@ fi
 # later, and teardown cleans one deterministic path. GOTMPDIR (not TMPDIR) is the
 # targeted knob: TMPDIR is too broad (affects every program's temp, not just Go's).
 TASK_TMP="/tmp/sq-$ID"
-# /tmp/sq-<id> is predictable and the Orca launch script is executed from it, so
-# only a private directory this user owns may serve as the task temp root.
-if ! mkdir -p "$TASK_TMP" \
-   || [ -L "$TASK_TMP" ] || [ ! -d "$TASK_TMP" ] || [ ! -O "$TASK_TMP" ] \
-   || ! chmod 700 "$TASK_TMP" 2>/dev/null; then
-  echo "error: task temp path $TASK_TMP is not a private directory owned by the current user; refusing to use it" >&2
-  exit 1
-fi
-if ! mkdir -p "$TASK_TMP/gotmp"; then
-  echo "error: could not create the task temp directory $TASK_TMP/gotmp" >&2
-  exit 1
+# Only the Orca branch executes a generated launch script from this predictable
+# path, so only Orca requires a private, user-owned task temp root. Every other
+# backend deliberately keeps its previous temp-root handling unchanged.
+if [ "$BACKEND" = orca ]; then
+  if ! mkdir -p "$TASK_TMP" \
+     || [ -L "$TASK_TMP" ] || [ ! -d "$TASK_TMP" ] || [ ! -O "$TASK_TMP" ] \
+     || ! chmod 700 "$TASK_TMP" 2>/dev/null; then
+    echo "error: task temp path $TASK_TMP is not a private directory owned by the current user; refusing to use it" >&2
+    exit 1
+  fi
+  if ! mkdir -p "$TASK_TMP/gotmp"; then
+    echo "error: could not create the task temp directory $TASK_TMP/gotmp" >&2
+    exit 1
+  fi
+else
+  mkdir -p "$TASK_TMP/gotmp"
 fi
 
 # Per-harness turn-end hook where enabled: a file that touches

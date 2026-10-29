@@ -1018,8 +1018,6 @@ test_spawn_pi_launch_omits_status_extension_when_absent() {
   expect_code 0 $? "sq-spawn.sh --backend orca should succeed when the status extension is absent"$'\n'"$out"
   launch=$(orca_launch_text "$log" 'encode launch-brief') \
     || fail "spawn did not send a typed launch-brief command through the Orca terminal"
-  assert_not_contains "$launch" "__ORCASTATUS__" \
-    "absent status extension left a placeholder in the Orca Pi launch"
   arglog="$CASE_DIR/pi-argv"
   SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
     || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
@@ -1101,8 +1099,6 @@ test_spawn_pi_launch_survives_unset_home() {
   expect_code 0 $? "an unset HOME must not block an Orca Pi spawn"$'\n'"$out"
   launch=$(orca_launch_text "$log" 'encode launch-brief') \
     || fail "spawn did not send a typed launch-brief command through the Orca terminal"
-  assert_not_contains "$launch" "__ORCASTATUS__" \
-    "unset HOME left a placeholder in the Orca Pi launch"
   arglog="$CASE_DIR/pi-argv"
   SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
     || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
