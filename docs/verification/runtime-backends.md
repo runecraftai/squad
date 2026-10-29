@@ -620,6 +620,7 @@ ok - Orca launch: a task temp root this user does not control is refused before 
 
 The tests execute the delivered command with `sh -c` and, when installed, `zsh -c`, recording harness arguments and its physical working directory.
 They cover quoted paths, a trailing-semicolon launch, missing and physically substituted mission directories, invariant terminal-command length with 20KB harness arguments, an unwritable launch script whose failed attempt is left queued for retry, and a task temp root this user does not control, which spawn refuses instead of writing an executable script there.
+A task temp root owned by another user is refused even for a privileged spawn, because a privileged `chmod` would otherwise appear to succeed; that case runs only as root and is reported as skipped elsewhere.
 This proves shell execution and this repository's launch protocol, not Orca's GUI transport or a real harness session.
 
 ### Native away-mode supervisor verification
