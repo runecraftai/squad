@@ -1146,6 +1146,57 @@ test_keyed_pauses_stay_in_parity_across_stacked_and_redeclared_events() {
   pass "stacked and re-declared keyed pauses keep crew state and pause identity in parity"
 }
 
+# A pause with no key folds under the synthesized "default" key, and an explicit
+# [key=default] is that same ordinary key - never a wildcard. A later
+# resolved [key=default] must end either spelling, while a bare resolved: still
+# only closes a decision and leaves a declared external wait alone.
+test_default_key_pauses_clear_on_matching_resolution() {
+  reset_fakes
+  local d status out
+  d=$(new_case default-key-pauses)
+  mkdir -p "$d/wt"
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/mate.meta" "window=fm:sq-mate" "worktree=$d/wt" "kind=xo" "home=$d/wt"
+  status="$d/state/mate.status"
+  SQUAD_FAKE_AXI_STATUS=""
+  SQUAD_FAKE_BUSY=0
+
+  printf 'working: investigating\npaused [key=default]: awaiting commander decision\nresolved [key=default]: answered: go with it\n' > "$status"
+  assert_pause_parity "$status" "explicit default key resolved"
+  out=$(run_crew_state "$d" mate)
+  assert_contains "$out" "state: working" \
+    "an explicit [key=default] pause clears on its matching resolution"
+  assert_not_contains "$out" "state: paused" \
+    "the resolved explicit default pause is not left live"
+  [ -z "$(status_pause_episode "$status")" ] \
+    || fail "the resolved explicit default pause kept its episode"
+
+  printf 'working: investigating\npaused: awaiting commander decision\nresolved [key=default]: answered: go with it\n' > "$status"
+  assert_pause_parity "$status" "unkeyed pause resolved by explicit default"
+  out=$(run_crew_state "$d" mate)
+  assert_contains "$out" "state: working" \
+    "an unkeyed pause clears on a resolved [key=default]"
+  [ -z "$(status_pause_episode "$status")" ] \
+    || fail "the resolved synthesized default pause kept its episode"
+
+  printf 'working: investigating\npaused: awaiting commander decision\nresolved: answered a separate decision\n' > "$status"
+  assert_pause_parity "$status" "unkeyed pause with bare resolution"
+  [ "$(last_status_state_line "$status")" = 'paused: awaiting commander decision' ] \
+    || fail "a bare resolved: ended a declared external wait it never named"
+  [ -n "$(status_pause_episode "$status")" ] \
+    || fail "a bare resolved: dropped the open pause episode"
+
+  printf 'working: investigating\npaused [key=other]: awaiting a vendor\nresolved [key=default]: answered a separate decision\n' > "$status"
+  assert_pause_parity "$status" "default resolution against another key"
+  [ "$(last_status_state_line "$status")" = 'paused [key=other]: awaiting a vendor' ] \
+    || fail "a resolved [key=default] ended an unrelated open pause"
+
+  printf 'blocked: waiting on infra\n' > "$status"
+  assert_contains "$(run_crew_state "$d" mate)" "state: blocked" \
+    "a genuine blocked event remains blocked"
+  pass "default-key pauses are ordinary keys: matching resolutions clear them, bare and unrelated ones do not"
+}
+
 test_no_run_idle_pane_custom_paused_verb() {
   reset_fakes
   local d; d=$(new_case custom-paused)
@@ -1668,6 +1719,7 @@ test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused
 test_resolved_key_supersedes_only_matching_pause
 test_keyed_pauses_stay_in_parity_across_stacked_and_redeclared_events
+test_default_key_pauses_clear_on_matching_resolution
 test_no_run_idle_pane_custom_paused_verb
 test_no_run_idle_XO_resolved_event_not_state
 test_dead_window_ignores_stale_status_log

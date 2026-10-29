@@ -137,6 +137,44 @@ test_answer_send_closes_open_decision() {
   pass "sq-send --resolve-key: the answer send itself closes the open decision"
 }
 
+# "default" is a documented slug, not a reserved word: an answer sent with
+# --resolve-key default must clear a paused [key=default] declaration in the real
+# state reader, just as the same probe with any other key does.
+test_default_key_answer_clears_default_key_pause() {
+  local dir fb log home out rc
+  dir="$TMP_ROOT/default-key"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home default-key)
+  mkdir -p "$home/wt" "$home/data"
+  printf 'window=Squad:sq-t1\nendpoint_task_id=t1\nworktree=%s/wt\nharness=echo\nkind=xo\nhome=%s/wt\n' \
+    "$home" "$home" > "$home/state/t1.meta"
+  printf 'needs-decision [key=default]: pick REST or RPC\nworking: investigating\npaused [key=default]: awaiting commander decision\n' \
+    > "$home/state/t1.status"
+
+  out=$(env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" \
+    SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
+    "$ROOT/bin/sq-crew-state.sh" t1 2>/dev/null)
+  assert_contains "$out" "state: paused" \
+    "precondition: the explicit default-key pause is live before the answer"
+
+  run_send "$fb" "$home" "$log" t1 --resolve-key default "go with REST"; rc=$?
+  expect_code 0 "$rc" "an answer send with --resolve-key default should succeed"
+  grep -F 'resolved [key=default]: answered: go with REST' "$home/state/t1.status" >/dev/null \
+    || fail "sq-send did not append the closing resolved line:"$'\n'"$(cat "$home/state/t1.status")"
+
+  out=$(env PATH="$fb:$PATH" SQUAD_ROOT_OVERRIDE="$home" SQUAD_BASE="$home" \
+    SQUAD_STATE_OVERRIDE="$home/state" SQUAD_DATA_OVERRIDE="$home/data" \
+    "$ROOT/bin/sq-crew-state.sh" t1 2>/dev/null)
+  assert_contains "$out" "state: working" \
+    "the matching resolved [key=default] clears the explicit default-key pause"
+  assert_not_contains "$out" "state: paused" \
+    "the answered default-key pause is not left live"
+  out=$(drain_out "$home")
+  printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null \
+    && fail "the answered default-key decision still lists as open: $out"
+  pass "sq-send --resolve-key default clears the explicit default-key pause and decision"
+}
+
 test_send_and_drain_agree_on_colon_then_bracket_key() {
   local dir fb log home out rc
   dir="$TMP_ROOT/colon-key"; mkdir -p "$dir"
@@ -452,6 +490,7 @@ test_flag_misuse_refuses() {
 }
 
 test_answer_send_closes_open_decision
+test_default_key_answer_clears_default_key_pause
 test_send_and_drain_agree_on_colon_then_bracket_key
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
