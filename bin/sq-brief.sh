@@ -40,8 +40,7 @@
 # since nothing on those paths delivers through drill. Other repos carry no line.
 # A promoted recon keeps the base and worktree facts only: bin/sq-promote.sh
 # rewrites the task's mode and yolo fields and only suggests a separate ship
-# message instead of regenerating the brief, so that sent message must carry the
-# mode's delivery instruction, drill delivery included when the mode needs it.
+# message instead of regenerating the brief.
 # A strike or recon brief must also record an explicit playbook decision:
 # either --playbook <id>@<version> selects a versioned execution playbook, or
 # --no-playbook "<reason>" states in one non-empty line why none applies.
