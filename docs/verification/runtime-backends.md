@@ -604,6 +604,25 @@ The fake-Orca suite covers readiness, registration, create response parsing, met
 That last group proves the exact argv Squad sends and this repository's own behavior, not Orca's own rendering of the extension, so no end-to-end status display is claimed.
 The suite also covers the mission-tab lifecycle: hosting-workspace resolution and refusal before allocation, the strict visible-tab creation gate and hidden-handle refusal, the guarded launch that never starts the agent in the base checkout, both recorded identities under the exact `sq-<id>` title, a single close on `done`, `failed`, or a finished sync with only a confirmed receipt, refusal to close a tab outside the hosting workspace, the absence proof for an already-closed tab, the refusal to treat an incomplete inventory as proof, preserving the record when a close is unconfirmed, and the terminal-less abort record released without `--force`.
 
+### Launch-script shell regression
+
+Verified on 2026-10-29 with GNU Bash 5.3.20 (`sh`) and zsh 5.9.2 on Linux, using the fake-Orca CLI to capture the command emitted by the real spawn executable:
+
+```sh
+bin/sq-test-run.sh tests/sq-backend-orca.test.sh
+```
+
+```text
+ok - Orca launch: real shells run short and long commands in the mission directory and refuse both guard failures
+ok - Orca launch: script write failure stops spawn before delivering a harness command
+ok - Orca launch: a task temp root this user does not control is refused before launch
+```
+
+The tests execute the delivered command with `sh -c` and, when installed, `zsh -c`, recording harness arguments and its physical working directory.
+They cover quoted paths, a trailing-semicolon launch, missing and physically substituted mission directories, invariant terminal-command length with 20KB harness arguments, an unwritable launch script whose failed attempt is left queued for retry, and a task temp root this user does not control, which spawn refuses instead of writing an executable script there.
+A task temp root owned by another user is refused even for a privileged spawn, because a privileged `chmod` would otherwise appear to succeed; that case runs only as root and is reported as skipped elsewhere.
+This proves shell execution and this repository's launch protocol, not Orca's GUI transport or a real harness session.
+
 ### Native away-mode supervisor verification
 
 Verified on 2026-10-24 with Linux Orca 1.4.188 and Pi 1.1.0, with separate proof boundaries rather than a combined real-runtime claim.
