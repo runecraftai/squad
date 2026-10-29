@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Merge a task's PR after recording pr= and any available pr_head= through
-# bin/sq-pr-check.sh, so teardown can verify landed work after squash merges.
+# Merge a task's PR only after sq-gh has freshly read its head, checks, and
+# mergeability, comparing against a recorded head when present and binding
+# the merge to the fresh SHA otherwise.
+# Record pr= and pr_head= through bin/sq-pr-check.sh only after merge succeeds.
 # The full canonical GitHub PR URL is parsed by bin/sq-pr-lib.sh and the derived
 # owner/repository and PR number are passed to sq-gh as separate arguments.
 #
 # Merge method defaults to --squash when the caller passes none of --squash,
 # --merge, --rebase, or --method after the optional -- separator. Extra args
-# must not include --repo or -R because the repository comes only from the URL.
+# must not include --repo or -R because the repository comes only from the URL,
+# --expected-head because the comparison head comes only from task metadata, or
+# --auto or --disable-auto because neither completes a merge.
 # Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra sq-gh pr merge args>]
 set -eu
 
@@ -61,6 +65,18 @@ reject_repo_overrides() {
         echo "error: extra merge arguments must not override the repository" >&2
         return 1
         ;;
+      --expected-head|--expected-head=*)
+        echo "error: extra merge arguments must not override the verified PR head" >&2
+        return 1
+        ;;
+      --auto|--auto=*)
+        echo "error: automatic merge is not allowed by the guarded merge path" >&2
+        return 1
+        ;;
+      --disable-auto|--disable-auto=*)
+        echo "error: disabling auto-merge is not a landing operation, so the guarded merge path refuses it" >&2
+        return 1
+        ;;
     esac
   done
 }
@@ -74,26 +90,40 @@ if [ ! -f "$META" ] || [ -L "$META" ]; then
   exit 1
 fi
 
-"$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"
-grep -qxF "pr=$URL" "$META" || {
-  echo "error: PR metadata recording failed" >&2
-  exit 1
-}
+RECORDED_HEAD=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
+head_args=()
+if [ -n "$RECORDED_HEAD" ]; then
+  head_args=(--expected-head "$RECORDED_HEAD")
+fi
 
 merge_args=()
 if ! caller_has_merge_method "$@"; then
   merge_args=(--squash)
 fi
 
-auto_merge=0
-for arg in "$@"; do
-  case "$arg" in
-    --auto|--disable-auto) auto_merge=1 ;;
-  esac
-done
-
-sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
-if [ "$auto_merge" -eq 0 ]; then
-  SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
-    --source pr-merge --result landed || true
+merge_rc=0
+MERGE_RESULT=$(sq-gh pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${head_args[@]+"${head_args[@]}"}" "${merge_args[@]+"${merge_args[@]}"}" "$@") || merge_rc=$?
+if [ "$merge_rc" -ne 0 ]; then
+  [ -z "$MERGE_RESULT" ] || printf '%s\n' "$MERGE_RESULT" >&2
+  exit "$merge_rc"
 fi
+printf '%s\n' "$MERGE_RESULT"
+if printf '%s\n' "$MERGE_RESULT" | grep -Eq '^(auto_)?merge_queued:'; then
+  echo "error: the merge was queued instead of completed; task merge was not recorded as landed" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$MERGE_RESULT" | grep -q '^merged:' \
+  || ! printf '%s\n' "$MERGE_RESULT" | grep -q 'status: landed'; then
+  echo "error: sq-gh did not confirm a completed merge; task metadata was not refreshed or recorded as landed" >&2
+  exit 1
+fi
+SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+  --source pr-merge --result landed || true
+if ! "$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"; then
+  echo "warning: PR merge was confirmed and landing recorded, but metadata refresh failed" >&2
+  exit 1
+fi
+grep -qxF "pr=$URL" "$META" || {
+  echo "warning: PR merge was confirmed and landing recorded, but metadata refresh did not record the canonical PR URL" >&2
+  exit 1
+}

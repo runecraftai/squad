@@ -200,6 +200,26 @@ describe("getSuggestions", () => {
     expect(lines.every((l) => !l.includes("sq-gh -R"))).toBe(true);
   });
 
+  it.each(["view", "checks"])(
+    "returns pasteable standalone merge guidance after PR %s",
+    (action) => {
+      const lines = getSuggestions({
+        domain: "pr",
+        action,
+        state: "open",
+        id: 10,
+        repo: { owner: "octo", name: "repo", nwo: "octo/repo", source: "flag" },
+      });
+      const commands = lines.flatMap((line) =>
+        [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
+      );
+      expect(commands).toContain("sq-gh pr merge 10 -R octo/repo");
+      expect(commands.every((command) => command.startsWith("sq-gh "))).toBe(
+        true,
+      );
+    },
+  );
+
   it("returns PR merge suggestions", () => {
     const lines = getSuggestions({ domain: "pr", action: "merge", id: 10 });
     expect(lines.some((l) => l.includes("revert"))).toBe(true);

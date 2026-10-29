@@ -258,7 +258,7 @@ flags{create}:
 flags{edit}:
   --title <text>, --body <text> or --body-file <path>, --add-label <name> (repeatable), --remove-label <name> (repeatable), --add-assignee <login> (repeatable), --remove-assignee <login> (repeatable), --add-reviewer <login> (repeatable), --remove-reviewer <login> (repeatable), --milestone
 flags{merge}:
-  --method <merge|squash|rebase>, --merge, --squash, --rebase, --auto, --delete-branch, --body <text> or --body-file <path>, --subject
+  --method <merge|squash|rebase>, --merge, --squash, --rebase, --auto, --delete-branch, --expected-head <sha>, --body <text> or --body-file <path>, --subject
 flags{review}:
   --approve, --request-changes, --comment, --body <text> or --body-file <path>
 flags{comment}:
@@ -272,7 +272,7 @@ examples:
   sq-gh pr view 42 --comments
   sq-gh pr view 42 --reviews
   sq-gh pr comment 42 --body-file review.md
-  sq-gh pr merge 42 --squash --delete-branch`;
+  sq-gh pr merge 42 --expected-head <sha> --squash --delete-branch`;
 
 // ---------------------------------------------------------------------------
 // Subcommands
@@ -561,8 +561,30 @@ async function prClose(args: string[], ctx?: RepoContext): Promise<string> {
   ]);
 }
 
+type PrMergeSnapshot = Pick<PrItem, "state" | "mergedBy" | "mergedAt"> & {
+  headRefOid?: string;
+  mergeable?: string;
+  statusCheckRollup?: StatusCheck[];
+};
+
+const PR_MERGE_SNAPSHOT_FIELDS =
+  "state,mergedBy,mergedAt,headRefOid,mergeable,statusCheckRollup";
+
 async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   const num = takeNumber(args, "PR");
+  const hasExpectedHead = args.some(
+    (arg) => arg === "--expected-head" || arg.startsWith("--expected-head="),
+  );
+  const expectedHead = takeFlag(args, "--expected-head");
+  if (
+    hasExpectedHead &&
+    (!expectedHead || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(expectedHead))
+  ) {
+    throw new AxiError(
+      "--expected-head must be a full recorded commit SHA",
+      "VALIDATION_ERROR",
+    );
+  }
   const explicitMethod = takeFlag(args, "--method");
   const shorthandMethods = ["merge", "squash", "rebase"].filter((candidate) =>
     takeBoolFlag(args, `--${candidate}`),
@@ -594,25 +616,51 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   const deleteBranch = takeBoolFlag(args, "--delete-branch");
   const body = takeBody(args);
   const subject = takeFlag(args, "--subject");
+  if (args.length > 0) {
+    throw new AxiError(
+      `unrecognized pr merge arguments: ${args.join(" ")}`,
+      "VALIDATION_ERROR",
+    );
+  }
 
-  // Idempotent: check if already merged
-  const pr = await ghJson<Pick<PrItem, "state" | "mergedBy" | "mergedAt">>(
-    ["pr", "view", String(num), "--json", "state,mergedBy,mergedAt"],
+  // Fresh merge-boundary read; cached PR/check evidence is never sufficient.
+  const pr = await ghJson<PrMergeSnapshot>(
+    ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
     ctx,
   );
+  if (!pr || typeof pr !== "object") {
+    throw new AxiError(
+      "current PR read returned unknown data",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (!pr.headRefOid || !/^[0-9a-f]{40}$|^[0-9a-f]{64}$/.test(pr.headRefOid)) {
+    throw new AxiError(
+      "current PR head is unavailable or invalid",
+      "VALIDATION_ERROR",
+    );
+  }
+  if (expectedHead !== undefined && pr.headRefOid !== expectedHead) {
+    throw new AxiError(
+      `PR head changed: recorded ${expectedHead}, current ${pr.headRefOid}; refresh the recorded head before retrying`,
+      "VALIDATION_ERROR",
+    );
+  }
   if ((pr.state ?? "").toUpperCase() === "MERGED") {
     return renderOutput([
       renderDetail(
-        "pull_request",
+        "merged",
         {
           number: num,
-          state: "merged",
+          status: "landed",
+          method: method ?? "already_merged",
           merged_by: pr.mergedBy?.login ?? null,
           merged_at: pr.mergedAt ?? null,
         },
         [
           field("number"),
-          field("state"),
+          field("status"),
+          field("method"),
           field("merged_by"),
           field("merged_at"),
         ],
@@ -622,8 +670,48 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
       ),
     ]);
   }
+  // A real zero-check head reports an empty rollup array, not null: the open PR
+  // https://github.com/90sRehem/runecraft-f7-pr-test/pull/1 at
+  // 3ce5a680d00d6fc0f29b722f830919ee074afc59 returned `statusCheckRollup: []`
+  // through this adapter with gh 2.103.2 while GitHub reported 0 check runs and
+  // no workflows, so an empty array means no CI checks are configured and is
+  // mergeable; null, omitted, non-array, or malformed rollup data is unreadable
+  // and still refuses.
+  if (!Array.isArray(pr.statusCheckRollup)) {
+    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
+  }
+  if (
+    pr.statusCheckRollup.some((check) => !check || typeof check !== "object")
+  ) {
+    throw new AxiError("current PR checks are unknown", "VALIDATION_ERROR");
+  }
+  const checkStates = pr.statusCheckRollup.map(classifyCheck);
+  if (checkStates.includes("fail")) {
+    throw new AxiError("current PR checks are failing", "VALIDATION_ERROR");
+  }
+  // Enqueuing auto-merge does not merge, so checks that are still running are
+  // not a reason to refuse; failing checks and unreadable check data still are.
+  if (checkStates.includes("pending") && !auto) {
+    throw new AxiError(
+      "current PR checks are pending or unknown",
+      "VALIDATION_ERROR",
+    );
+  }
+  const mergeable = (pr.mergeable ?? "").toUpperCase();
+  if (auto ? mergeable === "CONFLICTING" : mergeable !== "MERGEABLE") {
+    throw new AxiError(
+      `PR is not mergeable (mergeability: ${pr.mergeable ?? "unknown"})`,
+      "VALIDATION_ERROR",
+    );
+  }
 
-  const ghArgs = ["pr", "merge", String(num)];
+  const ghArgs = [
+    "pr",
+    "merge",
+    String(num),
+    "--match-head-commit",
+    pr.headRefOid,
+  ];
   if (method) ghArgs.push("--" + method);
   if (auto) ghArgs.push("--auto");
   if (deleteBranch) ghArgs.push("--delete-branch");
@@ -632,11 +720,56 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
 
   await ghExec(ghArgs, ctx);
 
+  // A zero exit only means gh acted; several paths (auto-merge, a base branch
+  // with a merge queue) leave the PR open, so a landing is confirmed only by a
+  // fresh read that reports MERGED.
+  const afterMergeRequest = await ghJson<PrMergeSnapshot>(
+    ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
+    ctx,
+  );
+  if (!afterMergeRequest || typeof afterMergeRequest !== "object") {
+    throw new AxiError(
+      "merge confirmation read returned unknown data",
+      "VALIDATION_ERROR",
+    );
+  }
+  const finalState = (afterMergeRequest.state ?? "").toUpperCase();
+  if (finalState === "OPEN") {
+    return renderOutput([
+      renderDetail(
+        auto ? "auto_merge_queued" : "merge_queued",
+        { number: num, status: "queued", method: method ?? "default" },
+        [field("number"), field("status"), field("method")],
+      ),
+      renderHelp(
+        getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
+      ),
+    ]);
+  }
+  if (finalState !== "MERGED") {
+    throw new AxiError(
+      `merge left the PR in an unexpected state: ${finalState || "unknown"}`,
+      "VALIDATION_ERROR",
+    );
+  }
+
   return renderOutput([
     renderDetail(
       "merged",
-      { number: num, status: "ok", method: method ?? "default" },
-      [field("number"), field("status"), field("method")],
+      {
+        number: num,
+        status: "landed",
+        method: method ?? "default",
+        merged_by: afterMergeRequest.mergedBy?.login ?? null,
+        merged_at: afterMergeRequest.mergedAt ?? null,
+      },
+      [
+        field("number"),
+        field("status"),
+        field("method"),
+        field("merged_by"),
+        field("merged_at"),
+      ],
     ),
     renderHelp(
       getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),

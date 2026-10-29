@@ -202,7 +202,7 @@ const table: SuggestionEntry[] = [
     lines: (c) => [
       `Run \`sq-gh${repoFlag(c)} pr checks ${c.id}\` to see CI status`,
       `Run \`sq-gh${repoFlag(c)} pr review ${c.id} --approve\` to approve`,
-      `Run \`sq-gh${repoFlag(c)} pr merge ${c.id}\` to merge`,
+      `Run \`sq-gh${repoFlag(c)} pr merge ${c.id}\` to merge after fresh head and check verification`,
     ],
   },
   {

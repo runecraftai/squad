@@ -132,7 +132,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-artifact-guard.sh` | Warn when a PR changed-file list names this task's own Squad-base artifact paths      |
-| `sq-pr-merge.sh`         | Record PR metadata, then merge a task's canonical full GitHub URL                    |
+| `sq-pr-merge.sh`         | Merge a task's canonical full GitHub URL against a fresh head (matching any recorded head), checks, and mergeability; record PR metadata only after success |
 | `sq-verification.sh`     | Record one escaped defect's discovery time, affected merged PR and full SHA, reproduction or explicit unknown reason, regression scenario, and missed pre-merge gate on its existing GitHub issue, and report every recorded defect for one repo |
 | `sq-verification.py`     | Python implementation of the escaped-defect record and report commands, reading and writing issue bodies verbatim through the `sq-gh` TOON decoder |
 | `sq-playbook-validate.sh` | Validate structural completion evidence for a materialized execution playbook; `bin/sq-brief.sh` owns the selectable playbook and profile identities |

@@ -80,7 +80,11 @@ SH
   cat > "$fakebin/sq-gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
-exit "${SQUAD_TEST_GH_AXI_RC:-0}"
+rc=${SQUAD_TEST_GH_AXI_RC:-0}
+[ "$rc" -eq 0 ] || exit "$rc"
+case "${1:-} ${2:-}" in
+  "pr merge") printf 'merged:\n  status: landed\n' ;;
+esac
 SH
   # Plain glab, reproducing the pinned CLI's documented API contract and refusing
   # unsupported output-selector flags so tests cannot mask an invalid invocation.
@@ -567,7 +571,7 @@ test_valid_recording_and_merge_derivation() {
   : > "$dir/sq-gh.log"
   run_merge_entry "$dir" task-a https://github.com/my-org/repo_name.with-dots/pull/37 -- --merge \
     >/dev/null 2>/dev/null || fail "valid merge wrapper failed"
-  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge' "$dir/sq-gh.log" \
+  grep -qxF "pr merge 37 --repo my-org/repo_name.with-dots --expected-head $expected --merge" "$dir/sq-gh.log" \
     || fail "merge wrapper did not preserve repository derivation and method"
   set +e
   SQUAD_TEST_GH_STATE=MERGED run_sentry_bounded "$dir/home" "$dir/fakebin" > "$dir/merged-watch.out" 2> "$dir/merged-watch.err"
@@ -590,6 +594,8 @@ test_valid_recording_and_merge_derivation() {
 
   dir=$(make_case lifecycle-compatible-id)
   write_task_meta "$dir" Task_A.1
+  SQUAD_TEST_GH_HEAD=$expected run_check_entry "$dir" Task_A.1 https://github.com/o/r/pull/3 \
+    >/dev/null 2>/dev/null || fail "lifecycle-compatible task PR check failed"
   run_merge_entry "$dir" Task_A.1 https://github.com/o/r/pull/3 \
     > "$dir/stdout" 2> "$dir/stderr" \
     || fail "safe lifecycle-compatible task ID could not use the PR merge flow"
@@ -644,9 +650,12 @@ SH
       --carry-count 0 --carry-ts 1700000000 --carry-platform x --carry-max 280 \
       > "$dir/x-link.out" 2> "$dir/x-link.err" \
       || fail "path-safe legacy task ID could not link an X request"
+    SQUAD_TEST_GH_HEAD=$expected run_check_entry "$dir" "$id" https://github.com/o/r/pull/4 \
+      >/dev/null 2>/dev/null || fail "path-safe legacy task PR check failed"
+    printf 'pr_head=%s\n' "$expected" >> "$dir/home/state/$id.meta"
     run_merge_entry "$dir" "$id" https://github.com/o/r/pull/4 \
       > "$dir/merge.out" 2> "$dir/merge.err" \
-      || fail "path-safe legacy task ID could not use the PR merge flow"
+      || fail "path-safe legacy task ID could not use the PR merge flow: $(cat "$dir/merge.err")"
     fm_pr_poll_artifacts_valid "$dir/home/state" "$id" "$POLL" \
       || fail "path-safe legacy task ID did not publish an authenticated poll"
     SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" PATH="$dir/fakebin:$BASE_PATH" \
