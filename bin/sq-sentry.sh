@@ -1064,7 +1064,7 @@ retire_terminal_agentless_signal() {  # <signal-file>
 # supervises: it is dropped with its .seen-* marker here, so a late turn-end
 # touch cannot keep waking Squad for a task that no longer exists.
 scan_signals() {
-  local f sig sf
+  local f sig sf task
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
     [ -e "$f" ] || continue
     sf="$STATE/.seen-$(basename "$f" | tr '.' '_')"
@@ -1074,6 +1074,10 @@ scan_signals() {
     fi
     sig=$(stat_sig "$f") || continue
     [ "$sig" = "$(cat "$sf" 2>/dev/null)" ] && continue
+    task=$(basename "$f"); task=${task%.*}
+    if grep -q '^orca_host_workspace_id=' "$STATE/$task.meta" 2>/dev/null; then
+      "$SCRIPT_DIR/sq-orca-tab.sh" "$task" sync >&2 || triage_log "Orca tab update deferred for $task"
+    fi
     retire_terminal_agentless_signal "$f" && continue
     printf '%s\t%s\t%s\n' "$sf" "$sig" "$f"
   done

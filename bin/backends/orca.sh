@@ -161,7 +161,28 @@ fm_backend_orca_worktree_create() {  # <project-path> <name>
   [ -z "$terminal" ] || printf '\t%s' "$terminal"
 }
 
-fm_backend_orca_terminal_create() {  # <worktree-id> <title>
+# Resolve the base workspace, not the caller's inherited mission workspace.
+# Refuse before mission allocation when the commander's hosting workspace is absent.
+fm_backend_orca_host_workspace() {  # <base-path>
+  local out id
+  fm_backend_orca_tool_check || return 1
+  # A fresh install has no Orca repo entry for this base yet. repo_ensure shows
+  # before it adds, so an already-registered base is a no-op, and the call is best
+  # effort: when registration is unnecessary or cannot run, the worktree show below
+  # stays the authority that refuses a truly missing hosting workspace.
+  fm_backend_orca_repo_ensure "$1" >/dev/null 2>&1 || true
+  out=$(orca worktree show --worktree "path:$1" --json) || {
+    echo "error: Orca hosting workspace unavailable for Squad base $1; open that workspace before spawning" >&2
+    return 1
+  }
+  id=$(printf '%s' "$out" | fm_backend_orca_json_get worktree-id) || {
+    echo "error: Orca hosting workspace has no identity for Squad base $1" >&2
+    return 1
+  }
+  printf '%s' "$id"
+}
+
+fm_backend_orca_terminal_create() {  # <hosting-workspace-id> <title>
   local worktree_id=$1 title=$2 out terminal
   fm_backend_orca_tool_check || return 1
   out=$(orca terminal create --worktree "id:$worktree_id" --title "$title" --json) || return 1
@@ -169,6 +190,21 @@ fm_backend_orca_terminal_create() {  # <worktree-id> <title>
     echo "error: orca terminal create did not return a terminal handle for $title" >&2
     return 1
   }
+  # terminal create may silently return a hidden background handle. Never launch
+  # a mission there: the visible tab and its exact hosting workspace are required.
+  # The observed live Orca 1.4.243 create response is recorded by
+  # docs/verification/runtime-backends.md#orca, which owns the evidence of record.
+  # This gate requires surface, tabId, and worktreeId exactly as that response
+  # carries them.
+  if ! printf '%s' "$out" | node -e '
+const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
+const t = (d.result || {}).terminal || {};
+process.exit(t.surface === "visible" && t.tabId && t.worktreeId === process.argv[1] ? 0 : 1);
+' "$worktree_id"; then
+    fm_backend_orca_kill "$terminal" || true
+    echo "error: Orca did not create a visible mission tab in hosting workspace $worktree_id; refusing hidden launch" >&2
+    return 1
+  fi
   printf '%s' "$terminal"
 }
 
@@ -463,4 +499,61 @@ fm_backend_orca_send_text_submit() {  # <terminal-id> <text> <retries> <enter-sl
 fm_backend_orca_kill() {  # <terminal-id>
   fm_backend_orca_tool_check || return 0
   orca terminal close --terminal "$1" --json >/dev/null 2>&1 || true
+}
+
+# Print the exact presence of a recorded terminal in its hosting workspace:
+# present, mismatch, absent, incomplete, or unknown. absent means a complete
+# inventory proved the handle is not in that workspace; incomplete means the
+# inventory answered but did not cover every terminal or host, so absence from
+# it is not proof on its own. unknown means the inventory could not answer, so a
+# caller must fall back to an exact live observation. Handles are runtime-scoped,
+# so this is how a tab that is gone from its hosting workspace is found without
+# requiring a live terminal show.
+fm_backend_orca_terminal_presence() {  # <hosting-workspace-id> <terminal-id>
+  local worktree_id=$1 terminal=$2 out
+  fm_backend_orca_tool_check >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  out=$(orca terminal list --worktree "id:$worktree_id" --json 2>/dev/null) || { printf 'unknown'; return 0; }
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+const [terminal, host] = process.argv.slice(1);
+let d;
+try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(1); }
+if (!d || d.ok === false) process.exit(1);
+const r = d.result || {};
+if (!Array.isArray(r.terminals)) process.exit(1);
+const hits = r.terminals.filter((t) => t && String(t.handle) === terminal);
+if (hits.length === 0) {
+  const omitted = (r.hostScope || {}).omittedHostIds;
+  const complete = r.truncated === false && !(Array.isArray(omitted) && omitted.length > 0);
+  process.stdout.write(complete ? "absent" : "incomplete");
+  process.exit(0);
+}
+process.stdout.write(hits.length === 1 && String(hits[0].worktreeId) === host ? "present" : "mismatch");
+' "$terminal" "$worktree_id" || printf 'unknown'
+}
+
+# Print the hosting workspace id of a live terminal, or fail when that terminal
+# cannot be observed. A failed read alone is never proof of absence, so callers
+# pair it with a complete workspace inventory before concluding a tab is gone.
+fm_backend_orca_terminal_observe() {  # <terminal-id>
+  local terminal=$1 out
+  fm_backend_orca_tool_check >/dev/null 2>&1 || return 1
+  out=$(orca terminal show --terminal "$terminal" --json 2>/dev/null) || return 1
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+const terminal = process.argv[1];
+let d;
+try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(1); }
+if (!d || d.ok === false) process.exit(1);
+const t = (d.result || {}).terminal || {};
+if (String(t.handle) !== terminal || t.worktreeId == null) process.exit(1);
+process.stdout.write(String(t.worktreeId));
+' "$terminal"
+}
+
+# Strict close for lifecycle paths that must know whether the tab is really gone
+# before recording it closed or removing the worktree behind it.
+fm_backend_orca_close() {  # <terminal-id>
+  fm_backend_orca_tool_check || return 1
+  fm_backend_orca_run_json orca terminal close --terminal "$1" --json
 }

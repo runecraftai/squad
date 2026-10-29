@@ -590,7 +590,7 @@ result.runtime.reachable=true
 result.runtime.state=ready
 ```
 
-`orca terminal create --json` returned `result.terminal.handle`.
+`orca terminal create --json` returned `result.terminal.handle`. The strict visible-tab gate now shipped was not in place for that build; the [live 1.4.243 creation observation](#2026-10-28---live-orca-14243-terminal-create-observation) below records the response shape it requires.
 `orca worktree create` returned `result.worktree.id` and `result.worktree.path`.
 Speculative bare ids and nested terminal fields were deliberately rejected.
 
@@ -602,6 +602,7 @@ tests/sq-bootstrap.test.sh
 
 The fake-Orca suite covers readiness, registration, create response parsing, metadata routing, popup-safe submit, path-matched release refusal, and the managed Pi status extension's inclusion, absent-file launch, default `$HOME` path, and unset-`HOME` cases.
 That last group proves the exact argv Squad sends and this repository's own behavior, not Orca's own rendering of the extension, so no end-to-end status display is claimed.
+The suite also covers the mission-tab lifecycle: hosting-workspace resolution and refusal before allocation, the strict visible-tab creation gate and hidden-handle refusal, the guarded launch that never starts the agent in the base checkout, both recorded identities under the exact `sq-<id>` title, a single close on `done`, `failed`, or a finished sync with only a confirmed receipt, refusal to close a tab outside the hosting workspace, the absence proof for an already-closed tab, the refusal to treat an incomplete inventory as proof, preserving the record when a close is unconfirmed, and the terminal-less abort record released without `--force`.
 
 ### Native away-mode supervisor verification
 
@@ -621,7 +622,7 @@ No non-null `agentWait` record has been observed, so the blocked-prompt poll's r
 That identity schema is not proof of draft/modal safety or message consumption.
 Two read-only shapes the Orca launcher and its lost-create reconciliation depend on - the worktree-filtered `orca terminal list --worktree id:<worktree> --json` response including `result.truncated`, `result.hostScope.omittedHostIds` and `result.terminals[].title/worktreeId/worktreePath`, and the `orca terminal create --worktree/--command` flags - were observed read-only on 2026-10-25 and are recorded in the [read-only host observation](#2026-10-25---read-only-orca-host-observation) below.
 That single shape observation leaves their worktree-filter and recovery semantics UNVERIFIED and claims no real create or cleanup path; an unexpected or unreadable inventory still keeps the recorded creation intent uncertain instead of recovering an endpoint.
-No terminal input, creation, close, worktree operation, host restart, or configuration change was performed on the shared real Orca runtime.
+No terminal input, creation, close, worktree operation, host restart, or configuration change was performed on the shared real Orca runtime during those read-only observations.
 An independent user-data/profile boundary could not be established from the installed host's documented `serve` options, so the real-runtime lifecycle probe was not attempted.
 
 Portable public-helper tests use a fake Orca CLI and the shipped Pi receiver:
@@ -655,6 +656,28 @@ On 2026-10-25, read-only observation of the installed Orca 1.4.188 host returned
 The installed create help advertises worktree, title, command, focus and json flags and qualifies no-focus behaviour with 'when possible'.
 Filter semantics, real terminal creation, cleanup, focus behaviour and Android operation remain UNVERIFIED.
 No real lifecycle test was executed.
+
+### 2026-10-28 - live Orca 1.4.243 terminal create observation
+
+Observed live on Orca 1.4.243 (Linux) on 2026-10-28.
+`orca terminal create --worktree id:<hosting-workspace-id> --title sq-<task-id> --json` returned `ok=true` with `result.terminal` carrying:
+
+```text
+result.terminal.executionHostId=<host id>
+result.terminal.handle=<terminal handle>
+result.terminal.hostPlatform=linux
+result.terminal.incarnationId=<incarnation id>
+result.terminal.paneKey=<pane key>
+result.terminal.processId=<process id>
+result.terminal.ptyId=<pty id>
+result.terminal.surface=visible
+result.terminal.tabId=<tab id>
+result.terminal.title=sq-<task-id>
+result.terminal.worktreeId=<hosting-workspace-id>
+```
+
+This observation is the evidence of record for the strict creation gate in `bin/backends/orca.sh`: a creation is accepted only when `result.terminal.surface` is `visible`, `result.terminal.tabId` is present, and `result.terminal.worktreeId` is exactly the hosting workspace that was requested, and any other handle is closed and refused.
+Only this create response was observed live. Terminal input, close, worktree lifecycle, relaunch, and Android operation remain unverified against this host and are covered by the fake-Orca suite rather than by a real-runtime claim; Orca relaunch is refused on purpose until it has its own design.
 
 ## cmux
 

@@ -313,6 +313,17 @@ status_line_note() {  # <status-line> -> text after the first colon, trimmed
     *) printf '%s' "$1" ;;
   esac
 }
+
+# Canonical crew-state verb from the reconciler's one line
+# ("state: <verb> · source: <src> · <detail>"). Anything malformed or missing
+# reports unknown so a consumer never drops or misreads a row.
+crew_state_verb() {  # <crew-state-line> -> canonical verb, or unknown
+  local line=$1
+  case "$line" in
+    state:*) line=${line#state: }; printf '%s' "${line%% *}" ;;
+    *) printf 'unknown' ;;
+  esac
+}
 _fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
   local line=$1 prefix k
   prefix=${line%%:*}

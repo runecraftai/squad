@@ -22,6 +22,7 @@ It is never auto-detected for task placement.
 Before any spawn mutates repository state, Squad requires `orca status --json` to report `reachable=true` and `state="ready"`.
 The first task for a project registers that repository with `orca repo add --path` when needed.
 No manual repository registration is required.
+Spawn also resolves the Squad base itself as Orca's hosting workspace, best-effort registering the base first, and refuses before allocating a worktree or tab when Orca still cannot show that workspace.
 
 Open the Orca app to watch a task's terminal.
 Routine supervision uses the recorded endpoint through `bin/sq-peek.sh <id>` and `SQUAD_BASE=<home> bin/sq-send.sh <id> '<text>'`.
@@ -29,7 +30,7 @@ Enter and Ctrl-C are supported; Escape is not.
 
 ## Task shape and metadata
 
-Each task has one Orca-managed git worktree and one Orca terminal.
+Each task has one Orca-managed git worktree, where the agent runs, and one visible mission tab, which lives in the Squad base's hosting workspace.
 `sq-spawn.sh` does not call FOB for Orca tasks.
 The normal isolation and unlanded-work refusal rules still apply.
 
@@ -37,19 +38,28 @@ The normal isolation and unlanded-work refusal rules still apply.
 backend=orca
 window=sq-<id>
 terminal=<orca terminal handle>
+orca_host_workspace_id=<hosting workspace id>
 orca_worktree_id=<orca worktree id>
 worktree=<absolute Orca worktree path>
 ```
 
 `window=` remains the caller-facing Squad alias.
 `terminal=` and `orca_worktree_id=` are the backend authority used by operation and cleanup paths.
+`orca_host_workspace_id=` names the workspace that owns the tab; it is never the mission worktree, so a send or close cannot resolve to the wrong place.
 On macOS builds `orca_worktree_id=` records a bare atom (UUID).
 On Linux builds (verified against v1.4.188) it records the composite form `<repo-id>::<absolute-path>`, which cleanup accepts alongside the bare form and validates structurally.
 
 ## Current lifecycle and safety
 
-Spawn validates that any existing metadata file is regular, registers the repository, creates an independent worktree, reuses only the verified `result.terminal.handle` returned by Orca or creates a terminal explicitly, installs harness hooks, records metadata, and launches the selected harness.
-Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any Orca resource is created.
+Spawn first resolves the Squad base's hosting workspace through Orca, registering the base with Orca when Orca does not know it yet, then validates that any existing metadata file is regular, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
+The launch is guarded: when the mission worktree cannot be entered and verified, the tab reports that failure instead of starting the agent in the base checkout.
+A hidden background handle is closed and refused, never used to host a mission.
+The tab's title carries no state; Orca renders agent status itself.
+When a mission reaches `done` or `failed`, the next sentry signal scan after that status line or the teardown closes the tab once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
+A relaunch of a recorded Orca task is refused as unverified on purpose: the mission tab identity is not yet verified for recommissioning, so Orca relaunch needs its own design and is tracked as a separate follow-up.
+A tab the commander already closed, or a handle left by a previous Orca runtime, is proven absent by a complete hosting-workspace inventory plus an exact observation of the recorded handle instead of blocking the worktree release; an explicit `sq-teardown.sh --force` also lets an unobservable runtime through without recording an unconfirmed close.
+A spawn that aborts before it mints a mission tab records `orca_mission_tab=none` and no `orca_host_workspace_id=`, so teardown releases its worktree through the legacy path and never closes an empty handle; a record that merely lacks a terminal without that declaration is refused as incomplete.
+Non-regular metadata (for example a directory left by a prior interrupted attempt) is refused before any mission worktree, mission tab, or launch is created; the base hosting-workspace lookup and its best-effort base registration run before that refusal.
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
 Spawn also passes Orca's own managed status extension to a Pi or pi-signed operator launch as one extra `-e`, so Orca's UI can show that operator's live state; the extension reports to Orca and is not read by Squad's sentry.
 Path resolution and the optional-file rule are owned by `bin/sq-spawn.sh --help`: an absent file leaves that launch exactly as on every other backend, and no other backend or harness receives the extra argument.
@@ -140,9 +150,9 @@ A disposable real-host probe therefore requires a proven independent Orca profil
 - XO spawns are unsupported.
 - Escape is unsupported.
 - Orca exposes no stable CLI version or protocol marker, so readiness is the compatibility gate rather than a version floor.
-- For spawn and cleanup identity, only the verified terminal-handle and worktree result fields are accepted and speculative response shapes there are rejected; the blocked-prompt `agentWait` read below is the single documented exception, and every position it probes is treated as unverified.
+- For spawn and cleanup identity, only the observed terminal, tab, and worktree result fields are accepted and speculative response shapes there are rejected: a mission tab is accepted only when `surface=visible`, `tabId` is present, and `worktreeId` is exactly the requested hosting workspace, as the [live 1.4.243 creation observation](verification/runtime-backends.md#2026-10-28---live-orca-14243-terminal-create-observation) records; the blocked-prompt `agentWait` read below is the single documented exception, and every position it probes is treated as unverified.
 - The worktree-filtered `orca terminal list` response (`truncated`, `hostScope`, `terminals[]`) and the installed `orca terminal create --help` flags were observed read-only on 2026-10-25 and that observation is retained in [`verification/runtime-backends.md`](verification/runtime-backends.md#orca).
-  Filter semantics, real create/cleanup, focus behaviour and every real lifecycle path stay unproven, so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
+  Filter semantics, real close and cleanup, focus behaviour, and every real lifecycle path stay unproven - only the create response shape has a live observation - so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 - Orca does not expose the event stream used by Herdr; blocked-prompt detection polls `agentWait` and degrades to the existing sentry fallback when that observation is not available.
   The non-null `agentWait` record's shape and meaning are **unverified**: only the absent value (`agentWait=null`) has been observed on a real terminal, so it is unknown whether every non-null record means a human must answer or whether it can also describe an operator parked at its composer between turns.

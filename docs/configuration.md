@@ -102,6 +102,7 @@ state/               volatile runtime signals; gitignored
   .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
   .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by sq-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
+  .orca-tab-<id> .orca-tab-<id>.lock  Orca mission-tab close receipt and its per-task close lock; only a confirmed close is recorded, a runtime error preserves the record for a retry, and teardown removes both (docs/orca-backend.md "Current lifecycle and safety")
   window-states      derived per-window tmux sidebar truth, one TSV line per tmux task window; contract owned by bin/sq-window-state.sh (docs/configuration.md "Operational base layout and state")
   .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
   .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
@@ -184,7 +185,7 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
 Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
 A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=`, and `herdr_pane_id=`.
 A zellij task additionally records `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
-An Orca task additionally records `orca_worktree_id=` and `terminal=`, with `window=sq-<id>` kept as the shared Squad alias.
+An Orca task additionally records `orca_host_workspace_id=`, `orca_worktree_id=`, and `terminal=`, with `window=sq-<id>` kept as the shared Squad alias; a spawn that aborts before minting a mission tab records `orca_mission_tab=none` and no `orca_host_workspace_id=`, so teardown releases the worktree through the legacy path (docs/orca-backend.md "Current lifecycle and safety").
 A cmux task additionally records `cmux_workspace_id=` and `cmux_surface_id=`.
 A TUIOS task additionally records `tuios_session=`, `tuios_window_id=`, `tuios_workspace_id=`, and `tuios_boot_id=`.
 Task selectors for `sq-peek.sh`, `sq-send.sh`, and `sq-crew-state.sh` resolve centrally through `fm_backend_resolve_selector`.

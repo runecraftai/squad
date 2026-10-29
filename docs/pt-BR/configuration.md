@@ -57,6 +57,7 @@ skills/              standalone public installer-facing skills, committed; not l
   .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
   .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by sq-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
+  .orca-tab-<id> .orca-tab-<id>.lock  recibo de fechamento da aba de missão Orca e seu lock de fechamento por tarefa; apenas um fechamento confirmado é gravado, um erro de runtime preserva o registro para uma nova tentativa, e o teardown remove ambos (docs/orca-backend.md "Ciclo de vida e segurança atuais")
   .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
   .claude-autoarm.lock .claude-autoarm-epoch .claude-autoarm-failure-notified .claude-autoarm-failure-alarmed .turnend-claude-blocks .turnend-claude-blocks.lock   Claude Stop auto-arm single-flight, epoch, failure-episode, attended-alarm, guard-budget, and budget-lock records; never touch
   .hash-* .count-*   sentry internals; never touch
@@ -116,7 +117,7 @@ Metadados de tarefa gravam `backend=` apenas para um backend não padrão; um `b
 Cada nova tarefa grava `endpoint_task_id=` como o vínculo de limpeza entre o nome do arquivo de metadados e seu endpoint de runtime opaco.
 Uma tarefa herdr adicionalmente grava `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=` e `herdr_pane_id=`.
 Uma tarefa zellij adicionalmente grava `zellij_session=`, `zellij_tab_id=` e `zellij_pane_id=`.
-Uma tarefa Orca adicionalmente grava `orca_worktree_id=` e `terminal=`, com `window=sq-<id>` mantido como o alias Squad compartilhado.
+Uma tarefa Orca adicionalmente grava `orca_host_workspace_id=`, `orca_worktree_id=` e `terminal=`, com `window=sq-<id>` mantido como o alias Squad compartilhado; um spawn que aborta antes de criar uma aba de missão grava `orca_mission_tab=none` e não grava `orca_host_workspace_id=`, então o teardown libera o worktree pelo caminho legado (docs/orca-backend.md "Ciclo de vida e segurança atuais").
 Uma tarefa cmux adicionalmente grava `cmux_workspace_id=` e `cmux_surface_id=`.
 Uma tarefa TUIOS adicionalmente grava `tuios_session=`, `tuios_window_id=`, `tuios_workspace_id=` e `tuios_boot_id=`.
 Seletores de tarefa para `sq-peek.sh`, `sq-send.sh` e `sq-crew-state.sh` resolvem centralmente através de `fm_backend_resolve_selector`.
