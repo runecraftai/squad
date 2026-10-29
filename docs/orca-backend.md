@@ -22,6 +22,7 @@ It is never auto-detected for task placement.
 Before any spawn mutates repository state, Squad requires `orca status --json` to report `reachable=true` and `state="ready"`.
 The first task for a project registers that repository with `orca repo add --path` when needed.
 No manual repository registration is required.
+Spawn also resolves the Squad base itself as Orca's hosting workspace, best-effort registering the base first, and refuses before allocating a worktree or tab when Orca still cannot show that workspace.
 
 Open the Orca app to watch a task's terminal.
 Routine supervision uses the recorded endpoint through `bin/sq-peek.sh <id>` and `SQUAD_BASE=<home> bin/sq-send.sh <id> '<text>'`.
@@ -51,9 +52,10 @@ On Linux builds (verified against v1.4.188) it records the composite form `<repo
 ## Current lifecycle and safety
 
 Spawn first resolves the Squad base's hosting workspace through Orca, registering the base with Orca when Orca does not know it yet, then validates that any existing metadata file is regular, registers the repository, creates an independent worktree, closes the terminal Orca returned for that worktree, opens a visible mission tab in the hosting workspace titled exactly `sq-<id>`, installs harness hooks, records metadata, and launches the selected harness inside the worktree.
+The launch is guarded: when the mission worktree cannot be entered and verified, the tab reports that failure instead of starting the agent in the base checkout.
 A hidden background handle is closed and refused, never used to host a mission.
 The tab's title carries no state; Orca renders agent status itself.
-When a mission reaches `done` or `failed`, the tab closes once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
+When a mission reaches `done` or `failed`, the next sentry signal scan after that status line or the teardown closes the tab once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
 A relaunch of a recorded Orca task is refused as unverified on purpose: the mission tab identity is not yet verified for recommissioning, so Orca relaunch needs its own design and is tracked as a separate follow-up.
 A tab the commander already closed, or a handle left by a previous Orca runtime, is proven absent by a complete hosting-workspace inventory plus an exact observation of the recorded handle instead of blocking the worktree release; an explicit `sq-teardown.sh --force` also lets an unobservable runtime through without recording an unconfirmed close.
 A spawn that aborts before it mints a mission tab records `orca_mission_tab=none` and no `orca_host_workspace_id=`, so teardown releases its worktree through the legacy path and never closes an empty handle; a record that merely lacks a terminal without that declaration is refused as incomplete.
@@ -148,9 +150,9 @@ A disposable real-host probe therefore requires a proven independent Orca profil
 - XO spawns are unsupported.
 - Escape is unsupported.
 - Orca exposes no stable CLI version or protocol marker, so readiness is the compatibility gate rather than a version floor.
-- For spawn and cleanup identity, only the verified terminal-handle and worktree result fields are accepted and speculative response shapes there are rejected; the blocked-prompt `agentWait` read below is the single documented exception, and every position it probes is treated as unverified.
+- For spawn and cleanup identity, only the observed terminal, tab, and worktree result fields are accepted and speculative response shapes there are rejected: a mission tab is accepted only when `surface=visible`, `tabId` is present, and `worktreeId` is exactly the requested hosting workspace, as the [live 1.4.243 creation observation](verification/runtime-backends.md#2026-10-28---live-orca-14243-terminal-create-observation) records; the blocked-prompt `agentWait` read below is the single documented exception, and every position it probes is treated as unverified.
 - The worktree-filtered `orca terminal list` response (`truncated`, `hostScope`, `terminals[]`) and the installed `orca terminal create --help` flags were observed read-only on 2026-10-25 and that observation is retained in [`verification/runtime-backends.md`](verification/runtime-backends.md#orca).
-  Filter semantics, real create/cleanup, focus behaviour and every real lifecycle path stay unproven, so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
+  Filter semantics, real close and cleanup, focus behaviour, and every real lifecycle path stay unproven - only the create response shape has a live observation - so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 - Orca does not expose the event stream used by Herdr; blocked-prompt detection polls `agentWait` and degrades to the existing sentry fallback when that observation is not available.
   The non-null `agentWait` record's shape and meaning are **unverified**: only the absent value (`agentWait=null`) has been observed on a real terminal, so it is unknown whether every non-null record means a human must answer or whether it can also describe an operator parked at its composer between turns.

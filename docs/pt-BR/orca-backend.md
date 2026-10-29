@@ -24,6 +24,7 @@ Ele nunca é auto-detectado para posicionamento de tarefas.
 Antes que qualquer spawn mute o estado do repositório, o Squad exige que `orca status --json` reporte `reachable=true` e `state="ready"`.
 A primeira tarefa de um projeto registra aquele repositório com `orca repo add --path` quando necessário.
 Nenhum registro manual de repositório é exigido.
+O spawn também resolve a própria base do Squad como o workspace hospedeiro no Orca, registrando a base best-effort primeiro, e recusa antes de alocar um worktree ou aba quando o Orca ainda não consegue mostrar esse workspace.
 
 Abra o app Orca para assistir ao terminal de uma tarefa.
 A supervisão rotineira usa o endpoint registrado via `bin/sq-peek.sh <id>` e `SQUAD_BASE=<home> bin/sq-send.sh <id> '<texto>'`.
@@ -53,9 +54,10 @@ Em builds Linux (verificado contra v1.4.188) ele registra a forma composta `<rep
 ## Ciclo de vida e segurança atuais
 
 O spawn primeiro resolve o workspace hospedeiro da base do Squad no Orca, registrando a base quando o Orca ainda não a conhece, depois valida que qualquer arquivo de metadados existente é regular, registra o repositório, cria um worktree independente, fecha o terminal que o Orca devolveu para esse worktree, abre uma aba de missão visível no workspace hospedeiro com título exatamente `sq-<id>`, instala os hooks do harness, grava metadados e lança o harness selecionado dentro do worktree.
+O lançamento é protegido: quando o worktree da missão não pode ser entrado e verificado, a aba reporta essa falha em vez de iniciar o agente no checkout da base.
 Um handle de fundo oculto é fechado e recusado, nunca usado para hospedar uma missão.
 O título da aba não carrega estado; o próprio Orca mostra o status do agente.
-Quando uma missão chega a `done` ou `failed`, a aba fecha uma vez pelo helper da aba de missão, que verifica que o terminal pertence ao workspace hospedeiro antes de fechá-lo e registra apenas um fechamento confirmado.
+Quando uma missão chega a `done` ou `failed`, a próxima varredura de sinais da sentinela após essa linha de status ou o teardown fecha a aba uma vez pelo helper da aba de missão, que verifica que o terminal pertence ao workspace hospedeiro antes de fechá-lo e registra apenas um fechamento confirmado.
 Um relaunch de uma tarefa Orca gravada é recusado como não verificado de propósito: a identidade da aba de missão ainda não é verificada para recommissionamento, então o relaunch Orca precisa de um design próprio e fica registrado como follow-up separado.
 Uma aba que o comandante já fechou, ou um handle deixado por um runtime Orca anterior, é provado ausente por um inventário completo do workspace hospedeiro mais uma observação exata do handle gravado, em vez de bloquear a liberação do worktree; um `sq-teardown.sh --force` explícito também deixa um runtime não observável passar, sem registrar um fechamento não confirmado.
 Um spawn que aborta antes de criar uma aba de missão grava `orca_mission_tab=none` e não grava `orca_host_workspace_id=`, então o teardown libera seu worktree pelo caminho legado e nunca fecha um handle vazio; um registro que apenas não tem terminal, sem essa declaração, é recusado como incompleto.
@@ -149,9 +151,9 @@ Uma sonda real descartável no host exige, portanto, um perfil/runtime Orca comp
 - Spawns de XO não são suportados.
 - Escape não é suportado.
 - O Orca expõe nenhum marcador estável de versão de CLI ou protocolo, então a prontidão é o gate de compatibilidade em vez de um piso de versão.
-- Para a identidade de spawn e limpeza, apenas os campos verificados de resultado de terminal-handle e worktree são aceitos e formatos especulativos de resposta são rejeitados ali; a leitura de `agentWait` para prompt bloqueado abaixo é a única exceção documentada, e toda posição que ela sonda é tratada como não verificada.
+- Para a identidade de spawn e limpeza, apenas os campos observados de resultado de terminal, aba e worktree são aceitos e formatos especulativos de resposta são rejeitados ali: uma aba de missão só é aceita quando `surface=visible`, `tabId` está presente e `worktreeId` é exatamente o workspace hospedeiro requisitado, como registra a [observação ao vivo da criação no 1.4.243](../verification/runtime-backends.md#2026-10-28---live-orca-14243-terminal-create-observation); a leitura de `agentWait` para prompt bloqueado abaixo é a única exceção documentada, e toda posição que ela sonda é tratada como não verificada.
 - A resposta de `orca terminal list` filtrada por worktree (`truncated`, `hostScope`, `terminals[]`) e as flags da ajuda instalada de `orca terminal create --help` foram observadas somente-leitura em 2026-10-25, e essa observação está retida em [`verification/runtime-backends.md`](../verification/runtime-backends.md#orca).
-  A semântica de filtro, a criação/limpeza real, o comportamento de foco e todo caminho real de ciclo de vida seguem não comprovados, então qualquer formato inesperado é um resultado incerto que preserva o registro pendente em vez de recuperar.
+  A semântica de filtro, o fechamento e a limpeza reais, o comportamento de foco e todo caminho real de ciclo de vida seguem não comprovados - apenas o formato da resposta de criação tem observação ao vivo - então qualquer formato inesperado é um resultado incerto que preserva o registro pendente em vez de recuperar.
 - Expiração de busy não pode ser avaliada: a leitura completa da viewport não foi verificada, então uma declaração busy estática registra uma limitação nominal e nunca escala a partir de uma cauda ([arquitetura](architecture.md)).
 - O Orca não expõe o stream de eventos usado pelo Herdr; a detecção de prompt bloqueado faz polling de `agentWait` e degrada para o fallback existente da sentinela quando aquela observação não está disponível.
   A forma e o significado do registro `agentWait` não-nulo são **não verificados**: apenas o valor ausente (`agentWait=null`) foi observado em um terminal real, então é desconhecido se todo registro não-nulo significa que um humano precisa responder ou se ele também pode descrever um operador parado no composer entre turnos.

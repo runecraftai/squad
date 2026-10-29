@@ -36,7 +36,8 @@ Before switching or spawning against Orca:
 
 ## Spawn
 
-Use `bin/sq-spawn.sh` so Squad creates the brief, worktree, terminal, metadata, status file, and sentry surface together.
+Use `bin/sq-spawn.sh` so Squad creates the brief, worktree, visible mission tab, metadata, status file, and sentry surface together.
+The mission tab is titled exactly `sq-<id>` and lives in the base's hosting workspace, while the agent always runs in the mission worktree and never in the base checkout.
 Pass `--backend orca` for a one-off Orca task, or rely on the already-selected Orca backend when that selection is intentional.
 
 After spawn, check the task with Squad helpers:
@@ -73,6 +74,8 @@ For a messy Orca-backed task:
 4. Prefer Squad helpers for peek, send, state, and teardown.
 5. Avoid raw deletion of Orca worktrees or manual branch cleanup.
 6. Stop and inspect if the recorded worktree path, Orca worktree id, or project checkout no longer matches expectations.
+
+A recorded Orca task is refused on relaunch until the mission-tab identity has its own verified design, so escalate a dead Orca operator instead of retrying the spawn.
 
 Teardown remains governed by the normal Squad landing rules.
 Recon work can be torn down after the report exists and the `decision-hold-lifecycle` completion gate passes.
