@@ -87,6 +87,8 @@ state/               volatile runtime signals; gitignored
   .pr-check-quarantine/  private non-runnable storage for checks neutralized by the non-executing migration
   .pr-check-migration.log  private per-task outcomes distinguishing rebuilt or canonically registered replacement polls, quarantined unarmed polls, and incomplete migrations
   .pr-check-migration-scan-v1  private marker proving the non-executing scan disabled every unsafe legacy check; .pr-check-migration-v1 separately records completed private repairs
+  .retired-terminals/  private Orca terminal retirement records, one `<id>.record` per teardown: kind=, task_id=, base=, retired_at=, backend=, terminal=, runtime_id=, close_attempted=, worktree_id=, worktree_path=; written by bin/sq-retired-missions.sh before teardown may remove task metadata, cleared only once that exact handle's absence is confirmed, and reconciled by the locked bootstrap sweep; never delete one by hand, because it is the only durable identity a later exact-handle retry has
+  .retired-worktrees/  private fob worktree retirement records, one `<id>.record` per teardown: kind=, task_id=, base=, retired_at=, project=, worktree_path=, pool_backend=; written by bin/sq-retired-missions.sh before teardown may remove task metadata, and cleared by the locked bootstrap sweep either when fob has taken that reusable worktree back or when no live task record references it, fob no longer owns it, its exact git registration and project identity verify, it is clean, and its HEAD is reachable from the default branch or a remote-tracking ref; a worktree failing any of those checks keeps both itself and its record, and a record is never deleted by hand
   x-sentry.check.sh  generated Relay poll shim; present only when opted in (AGENTS.md section 14)
   pending-replies/   parent-owned XO pending-reply records (correlation id, delivery vs reply, recovery, escalation); sq-pending-reply-lib.sh
   procevent/         registered process-to-event sources, one private record per canonical source id; written only by bin/sq-procevent.sh, and their presence alone keeps supervision required (AGENTS.md section 13)
@@ -756,6 +758,7 @@ CMUX_SOCKET_PASSWORD=   # cmux-only: socket password fallback when config/cmux-s
 SQUAD_SESSION_START_STATUS_TAIL=5   # state/*.status lines printed per task in the session-start digest; each line is capped by bin/sq-line-cap-lib.sh
 SQUAD_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-start digest; in-flight, held, and blocked rows are never bounded and done rows are never listed
 SQUAD_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
+SQUAD_BOOTSTRAP_LOCKED=0   # internal session-start flag declaring that this session already holds the unit lock: it switches the detect-only TANGLE wording to self-repair and is the only value that runs the retired-mission record sweep (bin/sq-bootstrap.sh)
 SQUAD_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/sq-bootstrap.sh
 SQUAD_STARTUP_NETWORK_TIMEOUT=120   # seconds bounding the whole deferred network stage; hitting it prints an actionable NETWORK_CHECKS line
 SQUAD_TASKS_AXI_COMPATIBLE=   # internal one-hop handoff of an already-computed sq-tasks compatibility verdict (0 or 1); consumed when bin/sq-tasks-lib.sh is sourced
@@ -831,6 +834,8 @@ SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS=1 # seconds sq-teardown.sh waits before ea
 SQUAD_TREEHOUSE_RETURN_LOCK_RETRIES=   # legacy alias for SQUAD_FOB_RETURN_LOCK_RETRIES when the new variable is unset
 SQUAD_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS= # legacy alias for SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS when the new variable is unset
 SQUAD_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=   # legacy alias for SQUAD_FOB_RETURN_LOCK_RETRY_WAIT_SECS when the new variable is unset
+SQUAD_RETIRED_MISSIONS_SWEEP_LIMIT=20   # actions the locked-bootstrap retired-mission sweep may take per retirement kind (bin/sq-retired-missions.sh); invalid or nonpositive values use 20
+SQUAD_TEARDOWN_BIN=bin/sq-teardown.sh   # teardown entrypoint sq-pr-merge.sh calls after a direct merge; set by tests to a fake teardown
 SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_RETRIES=3        # fetch retries after sq-unit-sync.sh hits the orphaned .git/packed-refs.lock signature
 SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_RETRY_WAIT_SECS=1 # seconds sq-unit-sync.sh waits before each of those retries
 SQUAD_UNIT_SYNC_PACKED_REFS_LOCK_AGE_SECS=30       # min mtime age before sq-unit-sync.sh treats a leftover packed-refs.lock as provably stale

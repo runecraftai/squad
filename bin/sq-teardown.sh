@@ -58,6 +58,17 @@
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state.
+# Before that cleanup can erase the task's metadata, teardown records the exact
+# terminal identity (handle, runtime, worktree id and path) and any fob worktree
+# identity through bin/sq-retired-missions.sh, and refuses rather than proceed
+# when that record cannot be persisted. The recorded terminal is then retired
+# through that exact handle, and refuses rather than remove the Orca worktree or
+# task metadata while that handle is not confirmed gone, so a rerun can retry the
+# exact-handle close with every durable record intact. Orphaned fob worktrees
+# recorded this way are reconciled only by the bounded sweep that runs while
+# bootstrap holds the session lock. XO tasks own their runtime lifecycle through
+# the dedicated Squad-home removal path, so teardown writes no retirement record
+# for them.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
 # only the exact task pane from ordinary endpoint metadata and never calls
 # `workspace close`. It retires the non-authoritative journal only when a
@@ -2380,20 +2391,19 @@ if [ "$BACKEND" = herdr ]; then
   TEARDOWN_HERDR_PANE=$SQUAD_BACKEND_HERDR_PANE
 fi
 
+# Persist exact retirement identity before the task metadata can disappear.
+"$SCRIPT_DIR/sq-retired-missions.sh" record "$ID" || exit 1
+
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
   if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
   fi
-  # Close the tab before the worktree behind it is touched; a refused close stops
-  # teardown here, except under --force, where an unobservable Orca runtime must
-  # not block the explicit discard.
-  if grep -q '^orca_host_workspace_id=' "$META"; then
-    if [ "$FORCE" = --force ]; then
-      "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" --force || exit 1
-    else
-      "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" || exit 1
+  if [ -n "$T_ORCA" ]; then
+    if ! "$SCRIPT_DIR/sq-retired-missions.sh" retire-terminal "$ID"; then
+      echo "error: Orca terminal $T_ORCA for $ID is not confirmed gone after its close was refused, skipped, or failed; retaining every durable task record - rerun teardown once the exact handle can be retired" >&2
+      exit 1
     fi
   fi
   if [ -d "$WT" ]; then
@@ -2406,9 +2416,6 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != xo ]; then
     rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/sq-turn-end.js" \
       "$WT/.opencode/plugins/sq-busy-state.js" \
       "$WT/.sq-grok-turnend" "$WT/.sq-kimi-turnend"
-  fi
-  if ! grep -q '^orca_host_workspace_id=' "$META"; then
-    [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "sq-$ID" 2>/dev/null || true
   fi
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
 elif [ -d "$WT" ] && [ "$KIND" != xo ]; then

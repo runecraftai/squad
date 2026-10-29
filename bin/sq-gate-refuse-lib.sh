@@ -62,7 +62,7 @@
 # tests/sq-gate-refuse.test.sh strips the bypass so it still verifies real refusal.
 #
 # Sourced by bin/sq-spawn.sh, bin/sq-send.sh, bin/sq-teardown.sh,
-# bin/sq-sessionstart-nudge.sh, and the tests.
+# bin/sq-retired-missions.sh, bin/sq-sessionstart-nudge.sh, and the tests.
 # No side effects on source. set -u / set -e safe. The refusal is a hard exit,
 # not a return, because there is no safe way to continue a unit mutation from a
 # gate context.

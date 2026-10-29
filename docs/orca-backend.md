@@ -58,7 +58,8 @@ If the launch script cannot be written, spawn reports the error and sends no lau
 The task temp directory that holds the script is created private to the current user, and spawn refuses to use a task temp path this user does not own or cannot make private, so no other local user can plant or swap the generated script.
 A hidden background handle is closed and refused, never used to host a mission.
 The tab's title carries no state; Orca renders agent status itself.
-When a mission reaches `done` or `failed`, the next sentry signal scan after that status line or the teardown closes the tab once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
+When a mission reaches `done` or `failed`, the next sentry signal scan after that status line closes the tab once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.
+Teardown closes that same recorded terminal through its own exact-handle retirement record instead of the tab helper.
 A relaunch of a recorded Orca task is refused as unverified on purpose: the mission tab identity is not yet verified for recommissioning, so Orca relaunch needs its own design and is tracked as a separate follow-up.
 A tab the commander already closed, or a handle left by a previous Orca runtime, is proven absent by a complete hosting-workspace inventory plus an exact observation of the recorded handle instead of blocking the worktree release; an explicit `sq-teardown.sh --force` also lets an unobservable runtime through without recording an unconfirmed close.
 A spawn that aborts before it mints a mission tab records `orca_mission_tab=none` and no `orca_host_workspace_id=`, so teardown releases its worktree through the legacy path and never closes an empty handle; a record that merely lacks a terminal without that declaration is refused as incomplete.
@@ -84,7 +85,10 @@ A recon still requires its report and completed decision inventory.
 A ship still refuses dirty or unlanded work.
 Before release, cleanup resolves the recorded Orca worktree id and verifies its path matches the recorded worktree path.
 A missing, unreadable, or mismatched identity preserves metadata and stops rather than deleting anything.
-After those checks, Squad closes the exact terminal and releases the exact worktree with Orca's worktree command.
+Cleanup then records that exact terminal identity, plus the recorded worktree identity, through `bin/sq-retired-missions.sh` before any later step can remove the task metadata, and refuses to continue when that record cannot be persisted.
+Squad closes only through the recorded exact handle, and refuses to release the worktree or remove the metadata while that handle is not confirmed gone, so a rerun retries the same handle with every durable record intact.
+A record left by a refused or interrupted teardown stays for that retry and is reconciled by the locked session-start bootstrap sweep; [`configuration.md`](configuration.md) owns the record layout.
+After those checks, Squad releases the exact worktree with Orca's worktree command.
 It never raw-deletes an Orca worktree.
 
 ## Away-mode supervision

@@ -24,8 +24,53 @@ next=$(( $(cat "$COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
   printf '\n'
 } >> "$LOG"
 if [ "${1:-}" = status ] && [ "${SQUAD_ORCA_STATUS_RESPONSE:-ready}" != sequence ]; then
-  printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}\n'
+  printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready","runtimeId":"runtime-test"}}}\n'
   exit 0
+fi
+if [ "${1:-}" = terminal ] && [ "${2:-}" = list ]; then
+  selector=${4#id:}
+  handle= worktree_id= worktree_path= matched=0
+  if [ -n "${SQUAD_STATE_OVERRIDE:-}" ]; then
+    for meta in "$SQUAD_STATE_OVERRIDE"/*.meta; do
+      [ -f "$meta" ] || continue
+      candidate=$(awk -F= '$1=="orca_worktree_id" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
+      [ "$candidate" = "$selector" ] || continue
+      handle=$(awk -F= '$1=="terminal" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
+      worktree_id=$candidate
+      worktree_path=$(awk -F= '$1=="worktree" { print substr($0,index($0,"=")+1); n++ } END { if (n!=1) exit 1 }' "$meta" 2>/dev/null) || continue
+      matched=1
+      break
+    done
+  fi
+  # Only a selector the recorded metadata actually owns is answered from that
+  # metadata; every other inventory question falls through to the scripted
+  # response below, so a test can still script any workspace inventory it wants.
+  if [ "$matched" = 1 ]; then
+    node -e 'const fs=require("fs"),p=process.argv[1],h=process.argv[2],w=process.argv[3],x=process.argv[4],closed=fs.existsSync(p)?fs.readFileSync(p,"utf8").split(String.fromCharCode(10)):[];const terminals=h&&!closed.includes(h)?[{handle:h,worktreeId:w,worktreePath:x}]:[];console.log(JSON.stringify({ok:true,result:{terminals,truncated:false},_meta:{runtimeId:"runtime-test"}}));' "$RESP/.closed-terminals" "$handle" "$worktree_id" "$worktree_path"
+    exit 0
+  fi
+fi
+if [ "${1:-}" = terminal ] && [ "${2:-}" = close ]; then
+  # A scripted close response stays authoritative. A scripted response that
+  # belongs to another command (a worktree, repo, or terminal payload) is left
+  # for that call, so this close is modeled instead: it records the handle as
+  # gone, unless the case asked for a failed close.
+  scripted=0
+  if [ -f "$RESP/$next.exit" ]; then
+    scripted=1
+  elif [ -f "$RESP/$next.out" ] && node -e '
+const fs = require("fs");
+let d;
+try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch (err) { process.exit(1); }
+process.exit(d && d.ok === true && Object.keys(d.result || {}).length === 0 ? 0 : 1);
+' "$RESP/$next.out"; then
+    scripted=1
+  fi
+  if [ "$scripted" = 0 ]; then
+    if [ "${SQUAD_ORCA_CLOSE_FAIL:-0}" = 1 ]; then exit 1; fi
+    printf '%s\n' "${4:-}" >> "$RESP/.closed-terminals"
+    exit 0
+  fi
 fi
 n=$next
 echo "$n" > "$COUNT_FILE"
@@ -510,8 +555,7 @@ test_send_key_refuses_escape_until_supported() {
 
 test_kill_is_best_effort_close() {
   orca_case kill
-  printf '1\n' > "$RESP/1.exit"
-  PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
+  PATH="$FB:$PATH" SQUAD_ORCA_CLOSE_FAIL=1 SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_kill term-123' "$ROOT"
   expect_code 0 $? "kill should stay best-effort when Orca close fails"
   assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-123'$'\x1f''--json' \
@@ -1867,8 +1911,7 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
     "backend=orca" "orca_worktree_id=wt-remove-error" \
     "decisions_reviewed=1" "decision_keys="
   orca_case remove-error-teardown
-  printf '{"ok":true,"result":{}}\n' > "$RESP/1.out"
-  printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/2.out"
+  printf '{"ok":false,"error":{"code":"worktree_not_removed","message":"worktree not removed"}}\n' > "$RESP/1.out"
   neutral=$(neutral_fm_root "$CASE_DIR/neutral")
   set +e
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
@@ -1876,10 +1919,44 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
     "$ROOT/bin/sq-teardown.sh" "$id" 2>&1 )
   rc=$?
   set -e
-  [ "$rc" -ne 0 ] || fail "Orca teardown should fail when worktree removal returns ok:false JSON"
+  [ "$rc" -ne 0 ] || fail "Orca teardown should fail when worktree removal returns ok:false JSON; calls=$(cat "$LOG"); output=$out"
   assert_contains "$out" "worktree not removed" "teardown should surface the Orca removal error"
   assert_present "$state/$id.meta" "failed Orca removal should preserve task metadata"
   pass "sq-teardown.sh backend=orca: preserves metadata on remove ok:false JSON"
+}
+
+test_teardown_retains_records_when_orca_close_unconfirmed() {
+  local proj wt data state config id out rc neutral
+  id="orcaclosefailz9"
+  proj="$TMP_ROOT/close-fail-project"
+  wt="$TMP_ROOT/close-fail-wt"
+  data="$TMP_ROOT/close-fail-data"
+  state="$TMP_ROOT/close-fail-state"
+  config="$TMP_ROOT/close-fail-config"
+  fm_git_worktree "$proj" "$wt" "sq/$id"
+  mkdir -p "$data/$id" "$state" "$config"
+  touch "$state/.last-sentry-beat"
+  fm_write_meta "$state/$id.meta" \
+    "window=sq-$id" "endpoint_task_id=$id" "terminal=term-close-fail" "worktree=$wt" "project=$proj" \
+    "harness=claude" "kind=strike" "mode=local-only" "yolo=off" \
+    "backend=orca" "orca_worktree_id=wt-close-fail"
+  orca_case close-fail-teardown
+  printf '{"ok":true,"result":{"worktree":{"id":"wt-close-fail","path":"%s"}}}\n' "$wt" > "$RESP/1.out"
+  neutral=$(neutral_fm_root "$CASE_DIR/neutral")
+  set +e
+  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" SQUAD_ORCA_CLOSE_FAIL=1 \
+    SQUAD_ROOT_OVERRIDE="$neutral" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
+    "$ROOT/bin/sq-teardown.sh" "$id" 2>&1 )
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "Orca teardown should refuse while the exact terminal is not confirmed gone; output=$out"
+  assert_contains "$out" "not confirmed gone" "teardown did not explain the unconfirmed Orca close"
+  assert_present "$state/$id.meta" "unconfirmed Orca close removed task metadata"
+  assert_present "$state/.retired-terminals/$id.record" "unconfirmed Orca close discarded its exact-handle retry record"
+  [ -d "$wt" ] || fail "unconfirmed Orca close removed the worktree that scopes the handle inventory"
+  assert_not_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm' \
+    "unconfirmed Orca close removed the Orca worktree"
+  pass "sq-teardown.sh backend=orca: an unconfirmed close retains the worktree, metadata, and exact-handle record"
 }
 
 test_scout_teardown_refuses_orca_missing_report_when_path_missing() {
@@ -2441,6 +2518,7 @@ test_scout_teardown_removes_orca_worktree_via_helper
 test_scout_teardown_refuses_orca_id_path_mismatch
 test_teardown_removes_orca_worktree_when_path_missing
 test_teardown_preserves_metadata_when_orca_remove_error_json
+test_teardown_retains_records_when_orca_close_unconfirmed
 test_scout_teardown_refuses_orca_missing_report_when_path_missing
 test_ship_teardown_refuses_orca_missing_worktree_path
 test_ship_teardown_removes_orca_worktree_when_id_path_matches

@@ -1070,6 +1070,28 @@ SH
   pass "bootstrap: SQUAD_BOOTSTRAP_NETWORK partitions one run into local and network halves"
 }
 
+test_retired_mission_sweep_runs_only_for_locked_bootstrap() {
+  local case_dir fakebin locked_out unlocked_out
+  case_dir="$TMP_ROOT/retired-missions"
+  mkdir -p "$case_dir/home/config" "$case_dir/home/state/.retired-terminals"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  printf 'malformed\n' > "$case_dir/home/state/.retired-terminals/probe.record"
+  fakebin=$(make_fake_toolchain "$case_dir")
+
+  locked_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=skip SQUAD_BOOTSTRAP_LOCKED=1 \
+    "$ROOT/bin/sq-bootstrap.sh")
+  assert_contains "$locked_out" "preserved terminal record probe: malformed or unsafe record" \
+    "locked bootstrap did not run the retired-mission sweep"
+
+  unlocked_out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 SQUAD_BOOTSTRAP_NETWORK=skip \
+    "$ROOT/bin/sq-bootstrap.sh")
+  assert_not_contains "$unlocked_out" "preserved terminal record probe" \
+    "unlocked bootstrap ran the retired-mission sweep"
+  pass "bootstrap runs retired-mission reconciliation only when the unit lock is held"
+}
+
 test_network_sweeps_recheck_lock_ownership() {
   local case_dir fakebin fake_root marker out
   case_dir="$TMP_ROOT/network-lock-handoff"
@@ -1323,6 +1345,7 @@ test_fleet_sync_timeout_is_computed_before_launch
 test_routine_bootstrap_confirmations_are_silent
 test_routine_bootstrap_contract_runs_under_system_bash
 test_network_phase_partitions_the_run
+test_retired_mission_sweep_runs_only_for_locked_bootstrap
 test_network_sweeps_recheck_lock_ownership
 test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once

@@ -22,7 +22,7 @@ Every other row in the table below is enforced by instruction and self-correctio
 | `bin/sq-session-start.sh` | Start or resume a session | Composes the lock, bootstrap, and wake-drain steps into one ordered, safe digest; running the pieces by hand risks acting on stale or partially locked state |
 | `sq-gh` (`npx -y @runecraft/sq-gh ...`) | Any GitHub operation: issues, PRs, CI runs, releases, labels, gists, Projects, secrets, variables | Token-efficient, structured output with contextual next-step hints, purpose-built for agent use; prefer it over raw `gh` and always over hand-parsed `git`/API calls |
 | `bin/sq-brief.sh` | Scaffold an operator brief, recon brief, or XO charter | Fills the standard Setup/Rules/Definition-of-done safety contract (worktree isolation assertion, status protocol, delivery-mode contract) that a hand-written brief would have to reproduce correctly from scratch |
-| `bin/sq-teardown.sh <id>` | Clean up a finished task | Refuses when work has not landed (uncommitted changes, or commits unreachable from any remote and not covered by a merged PR), then removes the runtime endpoint and volatile state; a manual `rm`/`kill` skips that landed-work safety check entirely |
+| `bin/sq-teardown.sh <id>` | Clean up a finished task | Refuses when work has not landed (uncommitted changes, or commits unreachable from any remote and not covered by a merged PR), then removes the runtime endpoint and volatile state; an Orca task additionally records its exact terminal identity before removing that endpoint and refuses to remove the endpoint or any record until the handle is confirmed gone, so resolve the refusal and rerun; a manual `rm`/`kill` skips that landed-work safety check entirely |
 
 ## Do not use raw commands for these operations
 

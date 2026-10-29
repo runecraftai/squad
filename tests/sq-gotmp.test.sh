@@ -63,6 +63,8 @@ make_fake_root() {
   ln -s "$ROOT/bin/sq-lock-lib.sh" "$fake/bin/sq-lock-lib.sh"
   # sq-gate-refuse-lib.sh: teardown sources it before any unit mutation.
   ln -s "$ROOT/bin/sq-gate-refuse-lib.sh" "$fake/bin/sq-gate-refuse-lib.sh"
+  # sq-retired-missions.sh: teardown records exact retirement identity before cleanup.
+  ln -s "$ROOT/bin/sq-retired-missions.sh" "$fake/bin/sq-retired-missions.sh"
   # sq-pr-lib.sh: teardown uses its canonical task-ID validator for poll cleanup.
   ln -s "$ROOT/bin/sq-pr-lib.sh" "$fake/bin/sq-pr-lib.sh"
   # sq-durable-custody.sh: teardown and sq-pr-lib.sh consult durable custody first.
@@ -145,6 +147,8 @@ test_teardown_skips_gracefully_without_tasktmp() {
   ln -s "$ROOT/bin/sq-lock-lib.sh" "$fake/bin/sq-lock-lib.sh"
   # sq-gate-refuse-lib.sh: teardown sources it before any unit mutation.
   ln -s "$ROOT/bin/sq-gate-refuse-lib.sh" "$fake/bin/sq-gate-refuse-lib.sh"
+  # sq-retired-missions.sh: teardown records exact retirement identity before cleanup.
+  ln -s "$ROOT/bin/sq-retired-missions.sh" "$fake/bin/sq-retired-missions.sh"
   # sq-pr-lib.sh: teardown uses its canonical task-ID validator for poll cleanup.
   ln -s "$ROOT/bin/sq-pr-lib.sh" "$fake/bin/sq-pr-lib.sh"
   # sq-durable-custody.sh: teardown and sq-pr-lib.sh consult durable custody first.

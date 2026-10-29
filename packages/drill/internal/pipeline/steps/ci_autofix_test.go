@@ -124,20 +124,18 @@ func TestCIStep_CIAutoFixDisabledWithZero(t *testing.T) {
 	sctx := newTestContext(t, ag, dir, baseSHA, headSHA, config.Commands{})
 	sctx.Env = env
 	sctx.Run.PRURL = &prURL
-	sctx.Config.CITimeout = 5 * time.Second
 	sctx.Config.AutoFix = config.AutoFix{CI: 0} // disabled
 	sctx.Config.CITimeout = 3 * time.Second
 
 	var logs []string
 	sctx.Log = func(s string) { logs = append(logs, s) }
 
-	pollCount := 0
-	step := &CIStep{
-		waitForNextPoll: func(ctx context.Context, interval time.Duration) error {
-			pollCount++
-			return nil
-		},
-	}
+	// This case must resolve on its first poll. Pin the clock and the
+	// default-branch tip probe so a live upstream fetch cannot consume the
+	// timeout before the checks are ever read, and fail loudly instead of
+	// spinning if the step does poll again.
+	step := &CIStep{waitForNextPoll: failOnExtraPoll}
+	pinCIMonitorClock(step)
 	outcome, err := step.Execute(sctx)
 	if err != nil {
 		t.Fatalf("expected approval outcome, got error: %v", err)

@@ -86,6 +86,10 @@ case "${1:-} ${2:-}" in
   "pr merge") printf 'merged:\n  status: landed\n' ;;
 esac
 SH
+  cat > "$fakebin/sq-teardown" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
   # Plain glab, reproducing the pinned CLI's documented API contract and refusing
   # unsupported output-selector flags so tests cannot mask an invalid invocation.
   cat > "$fakebin/glab" <<'SH'
@@ -109,7 +113,7 @@ case " $* " in
     ;;
 esac
 SH
-  chmod +x "$fakebin/gh" "$fakebin/sq-gh" "$fakebin/glab"
+  chmod +x "$fakebin/gh" "$fakebin/sq-gh" "$fakebin/glab" "$fakebin/sq-teardown"
   : > "$dir/gh.log"
   : > "$dir/sq-gh.log"
   : > "$dir/glab.log"
@@ -267,9 +271,13 @@ run_check_entry() {
 run_merge_entry() {
   local dir=$1
   shift
+  # A direct merge now tears the landed task down. This suite owns PR parsing,
+  # poll publication, and direct teardown behavior, so keep the post-merge
+  # teardown inert here; tests/sq-pr-merge.test.sh owns its wiring.
   SQUAD_ROOT_OVERRIDE="$dir/root" SQUAD_BASE="$dir/home" \
     SQUAD_TEST_GUARD_LOG="$dir/guard.log" SQUAD_TEST_GH_LOG="$dir/gh.log" \
     SQUAD_TEST_SQ_GH_LOG="$dir/sq-gh.log" SQUAD_TEST_GLAB_LOG="$dir/glab.log" \
+    SQUAD_TEARDOWN_BIN="$dir/fakebin/sq-teardown" \
     PATH="$dir/fakebin:$BASE_PATH" \
     "$PR_MERGE" "$@"
 }

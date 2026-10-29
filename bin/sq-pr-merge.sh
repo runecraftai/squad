@@ -11,6 +11,10 @@
 # must not include --repo or -R because the repository comes only from the URL,
 # --expected-head because the comparison head comes only from task metadata, or
 # --auto or --disable-auto because neither completes a merge.
+# A direct merge then tears the landed task down with bin/sq-teardown.sh
+# (SQUAD_TEARDOWN_BIN overrides it). That teardown is best effort: its refusal is
+# reported as a warning and never changes the merge's success, because the
+# landing is already authoritative once sq-gh returns.
 # Usage: sq-pr-merge.sh <task-id> <pr-url> [-- <extra sq-gh pr merge args>]
 set -eu
 
@@ -18,6 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+TEARDOWN_BIN="${SQUAD_TEARDOWN_BIN:-$SCRIPT_DIR/sq-teardown.sh}"
 
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
@@ -117,7 +122,7 @@ if ! printf '%s\n' "$MERGE_RESULT" | grep -q '^merged:' \
   echo "error: sq-gh did not confirm a completed merge; task metadata was not refreshed or recorded as landed" >&2
   exit 1
 fi
-SQUAD_BASE="$SQUAD_BASE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
+SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
   --source pr-merge --result landed || true
 if ! "$SCRIPT_DIR/sq-pr-check.sh" "$ID" "$URL"; then
   echo "warning: PR merge was confirmed and landing recorded, but metadata refresh failed" >&2
@@ -127,3 +132,6 @@ grep -qxF "pr=$URL" "$META" || {
   echo "warning: PR merge was confirmed and landing recorded, but metadata refresh did not record the canonical PR URL" >&2
   exit 1
 }
+if ! SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" "$TEARDOWN_BIN" "$ID"; then
+  echo "warning: task $ID: the PR merge landed but teardown refused; the landing stands, so rerun bin/sq-teardown.sh $ID once the refusal is resolved" >&2
+fi
