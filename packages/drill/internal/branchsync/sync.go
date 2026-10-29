@@ -502,7 +502,13 @@ func (s *Service) Apply(ctx context.Context) State {
 //     private anchor ref refs/drill/recover/<runID> locally without gate
 //     access; otherwise the preserved head is verified at the gate branch head
 //     and fetched into that anchor. The anchor keeps them reachable locally no
-//     matter what later happens to the gate.
+//     matter what later happens to the gate. When the gate branch no longer
+//     names P but instead equals the local head while P still survives in the
+//     gate's object store, the gate-divergence refusal also names the exact
+//     fetch of P (a forced private-ref update of refs/drill/recover/<runID>
+//     from the validated gate); running it and the existing explicit
+//     --keep-local retry returns custody. A diverged gate is never adopted
+//     automatically.
 //   - The only possible worktree mutation is a guarded move of a clean checked-out
 //     branch: a strict fast-forward, or an anchored move to a proven-containing
 //     head performed by Git operations that refuse on their own rather than by a
