@@ -580,7 +580,8 @@ try {
   model.createPrimary=true;save();await tick();
   const primaryCloses=count('close');
   r=cli('start');assert.notEqual(r.status,0,r.stderr);
-  assert.match(r.stderr,/returned the primary terminal handle instead of a daemon terminal/);
+  assert.match(r.stderr,/Orca create receipt was rejected \(handle term-primary is the primary terminal\)/);
+  assert.match(r.stderr,/returned handle=term-primary worktreeId=repo::/);
   assert.match(r.stderr,/no daemon identity was recorded/);
   assert.equal(count('close'),primaryCloses,'the primary was closed after a create receipt named it');
   assert.ok(model.terms.some(t=>t.handle==='term-primary'),'the primary terminal disappeared');

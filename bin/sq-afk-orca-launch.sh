@@ -109,7 +109,7 @@ fm_afk_launch_orca_absent() {  # <target> <record-json>
 }
 
 fm_afk_launch_create_orca() {  # <commander-target> <commander-backend>
-  local target=$1 ready parent title owner extra entry cmd out endpoint
+  local target=$1 ready parent title owner extra entry cmd out endpoint rejected
   ready=$(fm_supervisor_native_ready_once "$SQUAD_AFK_LAUNCH_STATE" "$target") || return 1
   parent=$(printf '%s' "$ready" | jq -c .endpoint) || return 1
   owner=$(node -e 'process.stdout.write(require("crypto").randomBytes(16).toString("hex"))') || return 1
@@ -135,8 +135,19 @@ fm_afk_launch_create_orca() {  # <commander-target> <commander-backend>
     | .result.terminal | select(.worktreeId == $parent.worktree and .handle != $parent.target)
     | select(all([.handle,.incarnationId][]; type == "string" and length > 0))
     | {backend:"orca",target:.handle,runtime:$parent.runtime,incarnation:.incarnationId,worktree:.worktreeId,path:$parent.path}' 2>/dev/null) || endpoint=
-  if [ -z "$endpoint" ] && printf '%s' "$out" | jq -e --argjson parent "$parent" '.ok == true and .result.terminal.handle == $parent.target' >/dev/null 2>&1; then
-    fm_afk_launch_log 'Orca create returned the primary terminal handle instead of a daemon terminal; refusing to adopt or close the primary and preserving the pending intent'
+  if [ -z "$endpoint" ] && rejected=$(printf '%s' "$out" | jq -r --argjson parent "$parent" '
+      def shown: if type == "string" and length > 0 then . else "missing" end;
+      select(.ok == true and (.result.terminal | type) == "object")
+      | .result.terminal as $t
+      | (if ._meta.runtimeId != $parent.runtime then "runtimeId \(._meta.runtimeId | shown) is not the recorded \($parent.runtime)"
+         elif ($t.handle | type) != "string" or ($t.handle | length) == 0 then "handle is not a usable string"
+         elif ($t.incarnationId | type) != "string" or ($t.incarnationId | length) == 0 then "incarnationId is not a usable string"
+         elif $t.handle == $parent.target then "handle \($t.handle | shown) is the primary terminal"
+         elif ($t.worktreeId | type) != "string" or $t.worktreeId != $parent.worktree then "worktreeId \($t.worktreeId | shown) is not the requested \($parent.worktree)"
+         else "the receipt does not identify a distinct daemon terminal"
+         end) as $reason
+      | "Orca create receipt was rejected (\($reason)); returned handle=\($t.handle | shown) worktreeId=\($t.worktreeId | shown) runtime=\(._meta.runtimeId | shown); preserving the pending intent without adopting or closing it"' 2>/dev/null) && [ -n "$rejected" ]; then
+    fm_afk_launch_log "$rejected"
   fi
   if [ -n "$endpoint" ]; then
     extra=$(printf '%s' "$extra" | jq -ce --argjson endpoint "$endpoint" '. + {endpoint:$endpoint}') || return 1
