@@ -621,7 +621,7 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 		// retry the existing, explicit keep-local recovery above.
 		if gateHead == local && git.ValidateBareRepository(ctx, gateDir) == nil && objectExists(ctx, gateDir, preserved) {
 			quotedGate := "'" + strings.ReplaceAll(gateDir, "'", "'\\''") + "'"
-			command := fmt.Sprintf("git fetch --no-tags --no-write-fetch-head -- %s %s:%s", quotedGate, preserved, anchorRef)
+			command := fmt.Sprintf("git fetch --no-tags --no-write-fetch-head -- %s +%s:%s", quotedGate, preserved, anchorRef)
 			blocked.Error += fmt.Sprintf("; to keep the current local head without losing the preserved pipeline commits, run `%s`, then `drill axi sync --recover --keep-local`; the preserved head remains anchored at %s", command, anchorRef)
 			blocked.NextAction = &NextAction{Code: "anchor_preserved_head", Command: command}
 		}

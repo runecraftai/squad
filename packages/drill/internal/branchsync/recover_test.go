@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -240,12 +241,18 @@ func TestRecoverMissingAnchorNeverReleasesExistingDivergentHead(t *testing.T) {
 // the diagnosis explains how to anchor that object and use existing recovery.
 func TestRecoverGateAtLocalHeadOffersExecutableKeepLocalExit(t *testing.T) {
 	t.Parallel()
-	for _, keepLocal := range []bool{false, true} {
-		name := "recover"
-		if keepLocal {
-			name = "keep-local"
-		}
-		t.Run(name, func(t *testing.T) {
+	cases := []struct {
+		name        string
+		keepLocal   bool
+		staleAnchor bool
+	}{
+		{name: "recover"},
+		{name: "keep-local", keepLocal: true},
+		{name: "stale-anchor", staleAnchor: true},
+		{name: "stale-anchor-keep-local", keepLocal: true, staleAnchor: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			f := newRecoverFixture(t, types.RunFailed)
 			// Include shell metacharacters: the displayed fetch must quote the
 			// local gate path rather than expand it when copied by an operator.
@@ -258,9 +265,15 @@ func TestRecoverGateAtLocalHeadOffersExecutableKeepLocalExit(t *testing.T) {
 			if objectExists(f.ctx, f.local, f.preserved) || !objectExists(f.ctx, f.gate, f.preserved) {
 				t.Fatal("fixture must have the preserved head only in the gate")
 			}
+			if tc.staleAnchor {
+				// A failed anchoring attempt can leave the private anchor at an
+				// unrelated commit that the preserved head does not descend from.
+				stale := mustRun(t, f.local, "commit-tree", f.submitted+"^{tree}", "-p", f.base, "-m", "stale anchor")
+				mustRun(t, f.local, "update-ref", f.anchorRef(), stale)
+			}
 			localRefs := mustRun(t, f.local, "show-ref")
 			gateRefs := mustRun(t, f.gate, "show-ref")
-			state := f.service.Recover(f.ctx, keepLocal)
+			state := f.service.Recover(f.ctx, tc.keepLocal)
 			if state.Recovered || state.Safety != "blocked_recover_gate_diverged" || f.custodyReturned() {
 				t.Fatalf("unanchored gate divergence must still refuse: %#v", state)
 			}
@@ -270,18 +283,14 @@ func TestRecoverGateAtLocalHeadOffersExecutableKeepLocalExit(t *testing.T) {
 			if state.NextAction == nil || state.NextAction.Code != "anchor_preserved_head" {
 				t.Fatalf("gate divergence has no actionable recovery exit: %#v", state)
 			}
-			wantFetch := "git fetch --no-tags --no-write-fetch-head -- '" + strings.ReplaceAll(f.gate, "'", "'\\''") + "' " + f.preserved + ":" + f.anchorRef()
-			if state.NextAction.Command != wantFetch {
-				t.Fatalf("fetch action = %q, want %q", state.NextAction.Command, wantFetch)
-			}
-			for _, want := range []string{f.preserved, f.submitted, wantFetch, "drill axi sync --recover --keep-local"} {
+			for _, want := range []string{f.preserved, f.submitted, state.NextAction.Command, "drill axi sync --recover --keep-local"} {
 				if !strings.Contains(state.Error, want) {
 					t.Fatalf("diagnosis missing %q: %s", want, state.Error)
 				}
 			}
-			// Execute the exact fetch arguments advertised above, then retry
+			// Run the advertised command verbatim through a shell, then retry
 			// the same service entry point with the documented keep-local flag.
-			mustRun(t, f.local, "fetch", "--no-tags", "--no-write-fetch-head", "--", f.gate, f.preserved+":"+f.anchorRef())
+			mustShell(t, f.local, state.NextAction.Command)
 			recovered := f.service.Recover(f.ctx, true)
 			if !recovered.Recovered || recovered.State != StateCustodyReturned || !f.custodyReturned() {
 				t.Fatalf("advertised exit did not return custody: %#v", recovered)
@@ -540,6 +549,17 @@ func TestCustodyReturnedBranchMergedLaterClassifiesAsRetired(t *testing.T) {
 }
 
 func (f *recoverFixture) anchorRef() string { return "refs/drill/recover/" + f.run.ID }
+
+func mustShell(t *testing.T, dir, command string) string {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sh -c %q: %v\n%s", command, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
 
 func (f *recoverFixture) custodyReturned() bool {
 	f.t.Helper()
