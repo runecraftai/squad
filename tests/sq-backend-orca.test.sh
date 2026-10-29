@@ -124,6 +124,16 @@ assert_pi_argv() {  # <argv-log> <expected-arg>...
   done
 }
 
+file_mode() {  # <path>
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
+}
+
+assert_mode() {  # <mode> <path> <message>
+  local expected=$1 path=$2 msg=$3 actual
+  actual=$(file_mode "$path") || fail "$msg (could not read the mode of $path)"
+  [ "$actual" = "$expected" ] || fail "$msg (mode is ${actual:-unknown}, expected $expected)"
+}
+
 test_capture_reads_terminal_tail_json() {
   local out
   orca_case capture-tail
@@ -1100,7 +1110,7 @@ test_spawn_pi_launch_survives_unset_home() {
 
 # Drive the real spawn executable and capture its terminal protocol, rather than
 # reimplementing the launch builder in the test.
-spawn_launch_fixture() {  # <id> <raw-launch> [write-failure]
+spawn_launch_fixture() {  # <id> <raw-launch> [write-failure|tmp-root-symlink]
   local id=$1 raw=$2 fault=${3:-} data state config out status
   orca_case "$id"
   LAUNCH_PROJ="$CASE_DIR/project"
@@ -1121,20 +1131,36 @@ spawn_launch_fixture() {  # <id> <raw-launch> [write-failure]
   printf '{"ok":true,"result":{"terminal":{"handle":"term-mission","surface":"visible","tabId":"tab-mission","worktreeId":"wt-host"}}}\n' > "$RESP/6.out"
   # A directory at the output filename deterministically denies writes even as root.
   [ "$fault" != write-failure ] || mkdir -p "/tmp/sq-$id/launch.sh"
+  # A predictable temp root planted by another local user (here: any symlink) must
+  # never be inherited as this task's script directory.
+  if [ "$fault" = tmp-root-symlink ]; then
+    rm -rf "/tmp/sq-$id"
+    mkdir -p "$CASE_DIR/planted-tmp"
+    ln -s "$CASE_DIR/planted-tmp" "/tmp/sq-$id"
+  fi
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/sq-spawn.sh" "$id" "$LAUNCH_PROJ" "$raw" --mode drill --yolo off --backend orca 2>&1 )
   status=$?
-  if [ "$fault" = write-failure ]; then
-    [ "$status" -ne 0 ] || fail "spawn succeeded without writing its launch script"
-    assert_contains "$out" "could not write the Orca launch script" "script write failure was not explained"
-    if orca_launch_text "$LOG" 'pi ' >/dev/null; then
-      fail "spawn sent a launch command after failing to write the script"
-    fi
-  else
-    expect_code 0 "$status" "launch fixture spawn failed"$'\n'"$out"
-    LAUNCH_COMMAND=$(orca_launch_text "$LOG" 'pi ') || fail "spawn sent no launch command"
+  case "$fault" in
+    write-failure)
+      [ "$status" -ne 0 ] || fail "spawn succeeded without writing its launch script"
+      assert_contains "$out" "could not write the Orca launch script" "script write failure was not explained"
+      assert_grep "exec_state=retry_queued" "$state/$id.exec" \
+        "a failed launch-script write must queue the attempt for retry instead of leaving it claimed"
+      ;;
+    tmp-root-symlink)
+      [ "$status" -ne 0 ] || fail "spawn accepted a task temp root it does not control"
+      assert_contains "$out" "is not a private directory" "an untrusted task temp root was not explained"
+      ;;
+    *)
+      expect_code 0 "$status" "launch fixture spawn failed"$'\n'"$out"
+      LAUNCH_COMMAND=$(orca_launch_text "$LOG" 'pi ') || fail "spawn sent no launch command"
+      ;;
+  esac
+  if [ -n "$fault" ] && orca_launch_text "$LOG" 'pi ' >/dev/null; then
+    fail "spawn delivered a harness launch after failing ($fault)"
   fi
 }
 
@@ -1145,6 +1171,8 @@ test_spawn_script_runs_in_real_shells_and_keeps_terminal_command_short() {
   # A valid trailing semicolon must not become a doubled semicolon in an inline
   # brace group. This also reproduces the old shape's parse failure in real sh/zsh.
   spawn_launch_fixture orcalaunchz1 'pi short;'
+  assert_mode 700 "/tmp/sq-orcalaunchz1" "the task temp root was not made private to this user"
+  assert_mode 700 "/tmp/sq-orcalaunchz1/launch.sh" "the launch script was not made private to this user"
   short_length=${#LAUNCH_COMMAND}
   arglog="$CASE_DIR/argv"
   cwdlog="$CASE_DIR/cwd"
@@ -1189,6 +1217,12 @@ test_spawn_refuses_an_unwritable_launch_script() {
   spawn_launch_fixture orcalaunchz3 'pi must-not-run;' write-failure
   rm -rf /tmp/sq-orcalaunchz3
   pass "Orca launch: script write failure stops spawn before delivering a harness command"
+}
+
+test_spawn_refuses_an_untrusted_task_temp_root() {
+  spawn_launch_fixture orcalaunchz4 'pi must-not-run;' tmp-root-symlink
+  rm -rf /tmp/sq-orcalaunchz4
+  pass "Orca launch: a task temp root this user does not control is refused before launch"
 }
 
 test_spawn_refuses_orca_XO_before_home_mutation() {
@@ -2362,6 +2396,7 @@ test_worktree_create_removes_worktree_when_path_missing
 test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails
 test_spawn_script_runs_in_real_shells_and_keeps_terminal_command_short
 test_spawn_refuses_an_unwritable_launch_script
+test_spawn_refuses_an_untrusted_task_temp_root
 test_spawn_writes_orca_metadata_and_launches_harness
 test_spawn_pi_launch_omits_status_extension_when_absent
 test_spawn_pi_resolves_status_extension_from_default_home_path

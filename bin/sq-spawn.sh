@@ -2358,7 +2358,20 @@ fi
 # later, and teardown cleans one deterministic path. GOTMPDIR (not TMPDIR) is the
 # targeted knob: TMPDIR is too broad (affects every program's temp, not just Go's).
 TASK_TMP="/tmp/sq-$ID"
-mkdir -p "$TASK_TMP/gotmp"
+# /tmp/sq-<id> is predictable and the Orca launch script is executed from it, so
+# only a private directory this user controls may serve as the task temp root.
+if [ -L "$TASK_TMP" ] || { [ -e "$TASK_TMP" ] && [ ! -d "$TASK_TMP" ]; }; then
+  echo "error: task temp path $TASK_TMP is not a private directory owned by the current user; refusing to use it" >&2
+  exit 1
+fi
+if ! mkdir -p "$TASK_TMP" || ! chmod 700 "$TASK_TMP" 2>/dev/null; then
+  echo "error: task temp path $TASK_TMP is not a private directory owned by the current user; refusing to use it" >&2
+  exit 1
+fi
+if ! mkdir -p "$TASK_TMP/gotmp"; then
+  echo "error: could not create the task temp directory $TASK_TMP/gotmp" >&2
+  exit 1
+fi
 
 # Per-harness turn-end hook where enabled: a file that touches
 # state/<id>.turn-ended when the agent finishes a turn. Worktree-resident hooks
@@ -3137,20 +3150,28 @@ if [ "$BACKEND" = orca ]; then
   # and a parse failure there leaves a tab with no agent. Write the guarded launch
   # to a script and hand the terminal one short command instead.
   ORCA_LAUNCH_SCRIPT="$TASK_TMP/launch.sh"
-  {
-    printf '#!/bin/sh\n'
-    printf 'if ! cd -- %s; then printf "\\n%%s\\n\\n" %s; exit 1; fi\n' \
-      "$(shell_quote "$WT")" "$(shell_quote "$ORCA_GUARD_FAILURE")"
-    # Expand pwd only when the generated script runs in the terminal.
-    # shellcheck disable=SC2016
-    printf 'if [ "$(pwd -P)" != %s ]; then printf "\\n%%s\\n\\n" %s; exit 1; fi\n' \
-      "$(shell_quote "$(cd "$WT" && pwd -P)")" "$(shell_quote "$ORCA_GUARD_FAILURE")"
-    printf '%s\n' "$LAUNCH"
-  } > "$ORCA_LAUNCH_SCRIPT" || {
+  # Remove a leftover entry without following it, then create the script with
+  # noclobber so a path swapped in after the check cannot redirect the write
+  # elsewhere. A write that cannot be proven is a failed spawn, never a launch
+  # from the hosting workspace.
+  rm -f "$ORCA_LAUNCH_SCRIPT" 2>/dev/null || true
+  if ! (
+    set -C
+    {
+      printf '#!/bin/sh\n'
+      printf 'if ! cd -- %s; then printf "\\n%%s\\n\\n" %s; exit 1; fi\n' \
+        "$(shell_quote "$WT")" "$(shell_quote "$ORCA_GUARD_FAILURE")"
+      # Expand pwd only when the generated script runs in the terminal.
+      # shellcheck disable=SC2016
+      printf 'if [ "$(pwd -P)" != %s ]; then printf "\\n%%s\\n\\n" %s; exit 1; fi\n' \
+        "$(shell_quote "$(cd "$WT" && pwd -P)")" "$(shell_quote "$ORCA_GUARD_FAILURE")"
+      printf '%s\n' "$LAUNCH"
+    } > "$ORCA_LAUNCH_SCRIPT"
+  ) || ! chmod 700 "$ORCA_LAUNCH_SCRIPT" 2>/dev/null; then
+    "$SCRIPT_DIR/sq-exec-state.sh" retry "$ID" >/dev/null 2>&1 || true
     echo "error: could not write the Orca launch script for $ID" >&2
     exit 1
-  }
-  chmod 700 "$ORCA_LAUNCH_SCRIPT" 2>/dev/null || true
+  fi
   LAUNCH="sh $(shell_quote "$ORCA_LAUNCH_SCRIPT")"
 fi
 sleep 0.3

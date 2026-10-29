@@ -615,10 +615,11 @@ bin/sq-test-run.sh tests/sq-backend-orca.test.sh
 ```text
 ok - Orca launch: real shells run short and long commands in the mission directory and refuse both guard failures
 ok - Orca launch: script write failure stops spawn before delivering a harness command
+ok - Orca launch: a task temp root this user does not control is refused before launch
 ```
 
 The tests execute the delivered command with `sh -c` and, when installed, `zsh -c`, recording harness arguments and its physical working directory.
-They cover quoted paths, a trailing-semicolon launch, missing and physically substituted mission directories, invariant terminal-command length with 20KB harness arguments, and an unwritable launch script.
+They cover quoted paths, a trailing-semicolon launch, missing and physically substituted mission directories, invariant terminal-command length with 20KB harness arguments, an unwritable launch script whose failed attempt is left queued for retry, and a task temp root this user does not control, which spawn refuses instead of writing an executable script there.
 This proves shell execution and this repository's launch protocol, not Orca's GUI transport or a real harness session.
 
 ### Native away-mode supervisor verification
