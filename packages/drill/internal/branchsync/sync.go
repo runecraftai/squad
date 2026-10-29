@@ -502,7 +502,13 @@ func (s *Service) Apply(ctx context.Context) State {
 //     private anchor ref refs/drill/recover/<runID> locally without gate
 //     access; otherwise the preserved head is verified at the gate branch head
 //     and fetched into that anchor. The anchor keeps them reachable locally no
-//     matter what later happens to the gate.
+//     matter what later happens to the gate. When the gate branch no longer
+//     names P but instead equals the local head while P still survives in the
+//     gate's object store, the gate-divergence refusal also names the exact
+//     fetch of P (a forced private-ref update of refs/drill/recover/<runID>
+//     from the validated gate); running it and the existing explicit
+//     --keep-local retry returns custody. A diverged gate is never adopted
+//     automatically.
 //   - The only possible worktree mutation is a guarded move of a clean checked-out
 //     branch: a strict fast-forward, or an anchored move to a proven-containing
 //     head performed by Git operations that refuse on their own rather than by a
@@ -614,7 +620,18 @@ func (s *Service) Recover(ctx context.Context, keepLocal bool) State {
 	// the preserved head is already anchored.
 	resumedKeepLocal := keepLocal && anchored && gateHead == local
 	if gateHead != preserved && !resumedKeepLocal {
-		return blockedPlan(state, StatePipelineOwned, "blocked_recover_gate_diverged", fmt.Sprintf("the gate branch is at %s, not the preserved pipeline head %s recorded for this run; no files or refs were changed", gateHead, preserved))
+		blocked := blockedPlan(state, StatePipelineOwned, "blocked_recover_gate_diverged", fmt.Sprintf("the gate branch is at %s, not the preserved pipeline head %s recorded for this run; no files or refs were changed", gateHead, preserved))
+		// A detached rebase may leave the branch at the local head while the
+		// verified pipeline object survives only in the gate. Do not weaken
+		// divergence checks: explain how to preserve that exact object and
+		// retry the existing, explicit keep-local recovery above.
+		if gateHead == local && git.ValidateBareRepository(ctx, gateDir) == nil && objectExists(ctx, gateDir, preserved) {
+			quotedGate := "'" + strings.ReplaceAll(gateDir, "'", "'\\''") + "'"
+			command := fmt.Sprintf("git fetch --no-tags --no-write-fetch-head -- %s +%s:%s", quotedGate, preserved, anchorRef)
+			blocked.Error += fmt.Sprintf("; to keep the current local head without losing the preserved pipeline commits, run `%s`, then `drill axi sync --recover --keep-local`; the preserved head remains anchored at %s", command, anchorRef)
+			blocked.NextAction = &NextAction{Code: "anchor_preserved_head", Command: command}
+		}
+		return blocked
 	}
 	if !anchored {
 		if fetchErr := git.FetchRemoteBranchToPrivateRef(ctx, wd, gateDir, branch, anchorRef); fetchErr != nil {

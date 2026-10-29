@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -230,6 +231,78 @@ func TestRecoverMissingAnchorNeverReleasesExistingDivergentHead(t *testing.T) {
 			}
 			if mustRun(t, f.local, "show-ref") != before {
 				t.Fatal("refusal moved a local ref")
+			}
+		})
+	}
+}
+
+// A detached pipeline head can survive in the gate's object store while its
+// branch still names the operator's submitted head. Refusing is safe only if
+// the diagnosis explains how to anchor that object and use existing recovery.
+func TestRecoverGateAtLocalHeadOffersExecutableKeepLocalExit(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		keepLocal   bool
+		staleAnchor bool
+	}{
+		{name: "recover"},
+		{name: "keep-local", keepLocal: true},
+		{name: "stale-anchor", staleAnchor: true},
+		{name: "stale-anchor-keep-local", keepLocal: true, staleAnchor: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newRecoverFixture(t, types.RunFailed)
+			// Include shell metacharacters: the displayed fetch must quote the
+			// local gate path rather than expand it when copied by an operator.
+			gate := filepath.Join(filepath.Dir(f.gate), "gate's $copy.git")
+			if err := os.Rename(f.gate, gate); err != nil {
+				t.Fatal(err)
+			}
+			f.gate, f.service.GateDir = gate, gate
+			mustRun(t, f.gate, "update-ref", "refs/heads/feature/recover", f.submitted)
+			if objectExists(f.ctx, f.local, f.preserved) || !objectExists(f.ctx, f.gate, f.preserved) {
+				t.Fatal("fixture must have the preserved head only in the gate")
+			}
+			if tc.staleAnchor {
+				// A failed anchoring attempt can leave the private anchor at an
+				// unrelated commit that the preserved head does not descend from.
+				stale := mustRun(t, f.local, "commit-tree", f.submitted+"^{tree}", "-p", f.base, "-m", "stale anchor")
+				mustRun(t, f.local, "update-ref", f.anchorRef(), stale)
+			}
+			localRefs := mustRun(t, f.local, "show-ref")
+			gateRefs := mustRun(t, f.gate, "show-ref")
+			state := f.service.Recover(f.ctx, tc.keepLocal)
+			if state.Recovered || state.Safety != "blocked_recover_gate_diverged" || f.custodyReturned() {
+				t.Fatalf("unanchored gate divergence must still refuse: %#v", state)
+			}
+			if mustRun(t, f.local, "show-ref") != localRefs || mustRun(t, f.gate, "show-ref") != gateRefs {
+				t.Fatal("diagnostic refusal moved refs")
+			}
+			if state.NextAction == nil || state.NextAction.Code != "anchor_preserved_head" {
+				t.Fatalf("gate divergence has no actionable recovery exit: %#v", state)
+			}
+			for _, want := range []string{f.preserved, f.submitted, state.NextAction.Command, "drill axi sync --recover --keep-local"} {
+				if !strings.Contains(state.Error, want) {
+					t.Fatalf("diagnosis missing %q: %s", want, state.Error)
+				}
+			}
+			// Run the advertised command verbatim through a shell, then retry
+			// the same service entry point with the documented keep-local flag.
+			mustShell(t, f.local, state.NextAction.Command)
+			recovered := f.service.Recover(f.ctx, true)
+			if !recovered.Recovered || recovered.State != StateCustodyReturned || !f.custodyReturned() {
+				t.Fatalf("advertised exit did not return custody: %#v", recovered)
+			}
+			if mustRun(t, f.local, "rev-parse", "HEAD") != f.submitted || mustRun(t, f.gate, "show-ref") != gateRefs {
+				t.Fatal("keep-local exit moved a branch")
+			}
+			if mustRun(t, f.local, "rev-parse", f.anchorRef()) != f.preserved {
+				t.Fatal("keep-local exit lost the preserved pipeline commits")
+			}
+			if !f.service.Recover(f.ctx, true).Recovered {
+				t.Fatal("repeated recovery is not idempotent")
 			}
 		})
 	}
@@ -476,6 +549,17 @@ func TestCustodyReturnedBranchMergedLaterClassifiesAsRetired(t *testing.T) {
 }
 
 func (f *recoverFixture) anchorRef() string { return "refs/drill/recover/" + f.run.ID }
+
+func mustShell(t *testing.T, dir, command string) string {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sh -c %q: %v\n%s", command, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
 
 func (f *recoverFixture) custodyReturned() bool {
 	f.t.Helper()
@@ -812,7 +896,7 @@ func TestRecoverGateDivergenceAndUnavailabilityFailClosed(t *testing.T) {
 		mustRun(t, writer, "commit", "-m", "out of band gate commit")
 		mustRun(t, writer, "push", "origin", "HEAD:refs/heads/feature/recover")
 		state := f.service.Recover(f.ctx, false)
-		if state.Recovered || state.Safety != "blocked_recover_gate_diverged" {
+		if state.Recovered || state.Safety != "blocked_recover_gate_diverged" || state.NextAction != nil {
 			t.Fatalf("recover with moved gate = %#v", state)
 		}
 		if got := mustRun(t, f.local, "rev-parse", "HEAD"); got != f.submitted {
