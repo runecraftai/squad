@@ -56,7 +56,7 @@ fm_backend_source orca
 LOCK="$STATE/.orca-tab-$ID.lock"
 fm_lock_acquire_wait "$LOCK"
 trap 'fm_lock_release "$LOCK"' EXIT
-# Re-read under the lock so a concurrent relaunch cannot redirect an old event.
+# Re-read under the lock so a concurrent teardown cannot redirect an old event.
 [ "$(fm_backend_meta_exact_value "$META" terminal)" = "$TERMINAL" ] \
   || preserve_tab "Orca tab terminal identity for sq-$ID changed while acquiring its close lock"
 RECEIPT="$STATE/.orca-tab-$ID"

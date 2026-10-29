@@ -1765,7 +1765,7 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
 # mistaking a recovery launch for a duplicate. Ambiguous endpoint state is never
 # enough to authorize a second agent.
 prepare_relaunch_execution() {
-  local meta="$STATE/$ID.meta" old_backend old_target old_host endpoint_state previous
+  local meta="$STATE/$ID.meta" old_backend old_target endpoint_state previous
   RELAUNCH_EXISTING_META=
   if [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
     # A missing metadata record is the recovery signal used after a process
@@ -1808,13 +1808,7 @@ prepare_relaunch_execution() {
     echo "error: existing metadata for $ID has no endpoint; refusing relaunch" >&2
     return 1
   }
-  # Only the Orca classifier needs the hosting workspace that owned the recorded
-  # tab; every other backend keeps its exact target alone.
-  old_host=
-  if [ "$old_backend" = orca ]; then
-    old_host=$(fm_backend_meta_exact_value "$meta" orca_host_workspace_id 2>/dev/null) || old_host=
-  fi
-  endpoint_state=$(fm_backend_agent_state "$old_backend" "$old_target" "$old_host")
+  endpoint_state=$(fm_backend_agent_state "$old_backend" "$old_target")
   case "$endpoint_state" in
     dead|missing) ;;
     alive)
@@ -1822,6 +1816,9 @@ prepare_relaunch_execution() {
       return 1
       ;;
     *)
+      # Orca relaunch is refused on purpose: the mission tab identity is not yet
+      # verified for recommissioning, so relaunch needs its own design. Tracked
+      # as a separate follow-up rather than bolted onto this spawn path.
       echo "error: existing $old_backend endpoint for $ID is $endpoint_state; refusing relaunch" >&2
       return 1
       ;;
@@ -2083,17 +2080,6 @@ EOF
     T="$CMUX_WORKSPACE_ID:$CMUX_SURFACE_ID"
     ;;
   orca)
-    # A relaunch recommissions this task, so the tab its previous attempt left
-    # behind is retired through the verified close path before a second sq-<id>
-    # tab can exist. A handle or hosting identity that no longer matches the
-    # record is refused here instead of being closed or shadowed.
-    if [ -n "$RELAUNCH_EXISTING_META" ]; then
-      SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" \
-        "$SCRIPT_DIR/sq-orca-tab.sh" "$ID" "done" || {
-          echo "error: the mission tab recorded for $ID could not be retired; refusing relaunch" >&2
-          exit 1
-        }
-    fi
     set +e
     ORCA_WT_RAW=$(fm_backend_orca_worktree_create "$PROJ_ABS" "$W")
     ORCA_WT_STATUS=$?

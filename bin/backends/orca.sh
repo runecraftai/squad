@@ -192,10 +192,10 @@ fm_backend_orca_terminal_create() {  # <hosting-workspace-id> <title>
   }
   # terminal create may silently return a hidden background handle. Never launch
   # a mission there: the visible tab and its exact hosting workspace are required.
-  # Observed live on Orca 1.4.243 (2026-10-28): `orca terminal create --json` returned
-  # result.terminal with executionHostId, handle, hostPlatform, incarnationId, paneKey,
-  # processId, ptyId, surface=visible, tabId, title, and worktreeId. The gate below
-  # requires surface, tabId, and worktreeId exactly as that response carries them.
+  # The observed live Orca 1.4.243 create response is recorded by
+  # docs/verification/runtime-backends.md#orca, which owns the evidence of record.
+  # This gate requires surface, tabId, and worktreeId exactly as that response
+  # carries them.
   if ! printf '%s' "$out" | node -e '
 const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
 const t = (d.result || {}).terminal || {};
@@ -556,21 +556,4 @@ process.stdout.write(String(t.worktreeId));
 fm_backend_orca_close() {  # <terminal-id>
   fm_backend_orca_tool_check || return 1
   fm_backend_orca_run_json orca terminal close --terminal "$1" --json
-}
-
-# Recovery-grade state of a recorded mission tab. `missing` requires a complete
-# hosting-workspace inventory that omits the handle plus one exact observation
-# that also fails; every other answer stays `unverified`, because a tab that
-# still exists may host a live agent and Orca exposes no liveness proof for it.
-# A caller that cannot name the hosting workspace gets `unverified` too.
-fm_backend_orca_agent_state() {  # <terminal-id> [hosting-workspace-id]
-  local terminal=$1 host=${2:-}
-  [ -n "$host" ] || { printf 'unverified'; return 0; }
-  [ "$(fm_backend_orca_terminal_presence "$host" "$terminal")" = absent ] \
-    || { printf 'unverified'; return 0; }
-  if fm_backend_orca_terminal_observe "$terminal" >/dev/null 2>&1; then
-    printf 'unverified'
-    return 0
-  fi
-  printf 'missing'
 }

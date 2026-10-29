@@ -735,41 +735,6 @@ test_terminal_create_refuses_hidden_background_handle() {
   pass "fm_backend_orca_terminal_create: refuses and closes a hidden background handle"
 }
 
-# The recovery classifier licenses a relaunch only for an authoritatively absent
-# tab; a tab that exists, a partial inventory, or no hosting workspace at all
-# stays unverified so an agent is never shadowed by a second launch.
-test_agent_state_proves_missing_only_by_complete_absence() {
-  local out run
-  orca_case agent-state
-  run='. "$0/bin/sq-backend.sh"; fm_backend_agent_state orca term-old wt-host'
-  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":[]},"terminals":[]}}\n' > "$RESP/1.out"
-  printf '1\n' > "$RESP/2.exit"
-  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c "$run" "$ROOT" )
-  [ "$out" = missing ] || fail "a complete inventory plus a failed exact observation should prove the tab missing, got '$out'"
-
-  : > "$LOG"
-  rm -f "$RESP"/* "$RESP"/.count
-  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":[]},"terminals":[{"handle":"term-old","worktreeId":"wt-host"}]}}\n' > "$RESP/1.out"
-  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c "$run" "$ROOT" )
-  [ "$out" = unverified ] || fail "an existing tab must stay unverified, got '$out'"
-  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''show' \
-    "an existing tab must not need an exact observation to stay unverified"
-
-  : > "$LOG"
-  rm -f "$RESP"/* "$RESP"/.count
-  printf '{"ok":true,"result":{"truncated":true,"terminals":[]}}\n' > "$RESP/1.out"
-  printf '1\n' > "$RESP/2.exit"
-  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" bash -c "$run" "$ROOT" )
-  [ "$out" = unverified ] || fail "a partial inventory must stay unverified, got '$out'"
-
-  : > "$LOG"
-  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    bash -c '. "$0/bin/sq-backend.sh"; fm_backend_agent_state orca term-old' "$ROOT" )
-  [ "$out" = unverified ] || fail "without a hosting workspace the classifier must stay unverified, got '$out'"
-  [ ! -s "$LOG" ] || fail "without a hosting workspace the classifier must not call Orca"
-  pass "fm_backend_agent_state orca: proves missing only from complete absence"
-}
-
 test_remove_worktree_refuses_empty_id() {
   local out status
   orca_case remove-empty
@@ -1354,9 +1319,10 @@ test_spawn_refuses_nonregular_metadata_before_resource_creation() {
   pass "sq-spawn.sh --backend orca: refuses non-regular metadata before resource creation"
 }
 
-# A recorded tab that still exists may host a live agent, and Orca exposes no
-# liveness proof for it, so the relaunch gate stays closed and mints no second tab.
-test_relaunch_refuses_while_the_previous_orca_tab_exists() {
+# Spawn refuses a relaunch whenever a recorded Orca endpoint exists, because the
+# mission-tab identity has no verified recommissioning path and a tab that still
+# exists may host a live agent.
+test_relaunch_refuses_an_existing_orca_record_as_unverified() {
   local proj old_wt data state config id out status
   id="orcarelaunchz1"
   proj="$TMP_ROOT/relaunch-project"
@@ -1375,79 +1341,20 @@ test_relaunch_refuses_while_the_previous_orca_tab_exists() {
   orca_case relaunch-present
   printf '{"ok":true,"result":{"repo":{"id":"repo-squad-base"}}}\n' > "$RESP/1.out"
   printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":[]},"terminals":[{"handle":"term-old","worktreeId":"wt-host","title":"sq-%s"}]}}\n' "$id" > "$RESP/3.out"
   status=0
   out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
     SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
     SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 ) || status=$?
-  [ "$status" -ne 0 ] || fail "an Orca relaunch must not be authorized while the recorded tab may still hold an agent"
+  [ "$status" -ne 0 ] || fail "an Orca relaunch must stay refused while its mission-tab identity is unverified"
   assert_contains "$out" "unverified; refusing relaunch" \
-    "the refusal should say the recorded tab cannot be proven dead"
-  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''list'$'\x1f''--worktree'$'\x1f''id:wt-host' \
-    "the relaunch gate did not consult the recorded hosting workspace"
+    "the refusal should say the recorded Orca endpoint cannot be proven dead"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''create' \
     "a refused relaunch must not open a second mission tab"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close' \
-    "a refused relaunch must not close the tab it could not prove dead"
+    "a refused relaunch must not close a tab it could not prove dead"
   assert_grep "terminal=term-old" "$state/$id.meta" "a refused relaunch must leave the recorded tab identity untouched"
-  pass "sq-spawn.sh --backend orca: a relaunch refuses while the recorded tab may still be live"
-}
-
-# Only a provably absent tab authorizes a relaunch. Retirement runs before the
-# new tab exists, records the verified absence, and the task ends with exactly
-# one sq-<id> tab identity.
-test_relaunch_retires_the_previous_orca_tab() {
-  local proj old_wt new_wt data state config id out status retire_line create_line creates
-  id="orcarelaunchz2"
-  proj="$TMP_ROOT/relaunch-gone-project"
-  old_wt="$TMP_ROOT/relaunch-gone-old-wt"
-  new_wt="$TMP_ROOT/relaunch-gone-new-wt"
-  data="$TMP_ROOT/relaunch-gone-data"
-  state="$TMP_ROOT/relaunch-gone-state"
-  config="$TMP_ROOT/relaunch-gone-config"
-  fm_git_worktree "$proj" "$new_wt" "sq/$id"
-  mkdir -p "$data/$id" "$state" "$config"
-  printf 'brief\necho done >> %s.status\n' "$data/$id" > "$data/$id/brief.md"
-  touch "$state/.last-sentry-beat"
-  fm_write_meta "$state/$id.meta" \
-    "window=sq-$id" "endpoint_task_id=$id" "terminal=term-old" "worktree=$old_wt" "project=$proj" \
-    "harness=claude" "kind=strike" "mode=drill" "yolo=off" \
-    "backend=orca" "orca_host_workspace_id=wt-host" "orca_worktree_id=wt-old"
-  orca_case relaunch-gone
-  printf '{"ok":true,"result":{"repo":{"id":"repo-squad-base"}}}\n' > "$RESP/1.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-host"}}}\n' > "$RESP/2.out"
-  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":[]},"terminals":[]}}\n' > "$RESP/3.out"
-  printf '1\n' > "$RESP/4.exit"
-  printf '{"ok":true,"result":{"truncated":false,"hostScope":{"omittedHostIds":[]},"terminals":[]}}\n' > "$RESP/5.out"
-  printf '1\n' > "$RESP/6.exit"
-  printf '{"ok":true,"result":{"repo":{"id":"repo-relaunch"}}}\n' > "$RESP/7.out"
-  printf '{"ok":true,"result":{"worktree":{"id":"wt-new","path":"%s"},"terminal":{"handle":"term-implicit"}}}\n' "$new_wt" > "$RESP/8.out"
-  printf '{"ok":true,"result":{}}\n' > "$RESP/9.out"
-  printf '{"ok":true,"result":{"terminal":{"handle":"term-new","surface":"visible","tabId":"tab-new","worktreeId":"wt-host"}}}\n' > "$RESP/10.out"
-  status=0
-  out=$( PATH="$FB:$PATH" SQUAD_ORCA_LOG="$LOG" SQUAD_ORCA_RESPONSES="$RESP" \
-    SQUAD_ROOT_OVERRIDE="$ROOT" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" SQUAD_CONFIG_OVERRIDE="$config" \
-    SQUAD_PROJECTS_OVERRIDE="$TMP_ROOT/unused-projects" SQUAD_SPAWN_NO_GUARD=1 \
-    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" claude --mode drill --yolo off --backend orca 2>&1 ) || status=$?
-  expect_code 0 "$status" "an Orca relaunch must succeed once the previous tab is provably gone"$'\n'"$out"
-  assert_grep "term-old closed" "$state/.orca-tab-$id" \
-    "the relaunch did not record the previous tab's verified close"
-  assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-old' \
-    "a tab proven absent must never be closed through its stale handle"
-  creates=$(grep -cF $'orca\x1f''terminal'$'\x1f''create' "$LOG")
-  [ "$creates" -eq 1 ] || fail "a relaunch must open exactly one mission tab, saw $creates"
-  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''create'$'\x1f''--worktree'$'\x1f''id:wt-host'$'\x1f''--title'$'\x1f'"sq-$id" \
-    "the relaunch did not open the new tab in the hosting workspace under the exact title"
-  retire_line=$(grep -nF $'orca\x1f''terminal'$'\x1f''show'$'\x1f''--terminal'$'\x1f''term-old' "$LOG" | tail -1 | cut -d: -f1)
-  create_line=$(grep -nF $'orca\x1f''terminal'$'\x1f''create' "$LOG" | head -1 | cut -d: -f1)
-  [ -n "$retire_line" ] && [ -n "$create_line" ] && [ "$retire_line" -lt "$create_line" ] \
-    || fail "the previous mission tab must be retired before the new one is created"
-  assert_grep "terminal=term-new" "$state/$id.meta" "the relaunched task did not record its new mission tab"
-  assert_no_grep "terminal=term-old" "$state/$id.meta" "the relaunched task must not keep the stale terminal identity"
-  assert_grep "orca_worktree_id=wt-new" "$state/$id.meta" "the relaunch did not record its new mission worktree"
-  assert_grep "window=sq-$id" "$state/$id.meta" "the relaunched task lost its stable window alias"
-  pass "sq-spawn.sh --backend orca: a relaunch retires the previous tab and opens exactly one"
+  pass "sq-spawn.sh --backend orca: a relaunch is refused as unverified"
 }
 
 # A spawn abort that never minted a mission tab records no hosting workspace, so
@@ -2257,7 +2164,6 @@ test_send_key_enter_and_interrupt
 test_send_key_refuses_unknown_key
 test_send_key_refuses_escape_until_supported
 test_kill_is_best_effort_close
-test_agent_state_proves_missing_only_by_complete_absence
 test_terminal_create_refuses_hidden_background_handle
 test_host_workspace_registers_unregistered_base_before_lookup
 test_host_workspace_skips_registration_when_base_is_already_registered
@@ -2292,8 +2198,7 @@ test_spawn_removes_orca_worktree_when_terminal_create_fails
 test_spawn_preserves_orca_metadata_when_abort_cleanup_fails
 test_spawn_preserves_the_mission_tab_when_abort_cleanup_fails
 test_spawn_refuses_nonregular_metadata_before_resource_creation
-test_relaunch_refuses_while_the_previous_orca_tab_exists
-test_relaunch_retires_the_previous_orca_tab
+test_relaunch_refuses_an_existing_orca_record_as_unverified
 test_teardown_releases_a_terminal_less_orca_abort_record_without_force
 test_peek_send_and_crew_state_route_through_orca_meta
 test_peek_and_crew_state_fail_closed_on_orca_error_json
