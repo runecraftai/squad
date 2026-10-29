@@ -128,6 +128,10 @@ file_mode() {  # <path>
   stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null
 }
 
+file_owner() {  # <path>
+  stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1" 2>/dev/null
+}
+
 assert_mode() {  # <mode> <path> <message>
   local expected=$1 path=$2 msg=$3 actual
   actual=$(file_mode "$path") || fail "$msg (could not read the mode of $path)"
@@ -1110,7 +1114,7 @@ test_spawn_pi_launch_survives_unset_home() {
 
 # Drive the real spawn executable and capture its terminal protocol, rather than
 # reimplementing the launch builder in the test.
-spawn_launch_fixture() {  # <id> <raw-launch> [write-failure|tmp-root-symlink]
+spawn_launch_fixture() {  # <id> <raw-launch> [write-failure|tmp-root-symlink|tmp-root-refuse]
   local id=$1 raw=$2 fault=${3:-} data state config out status
   orca_case "$id"
   LAUNCH_PROJ="$CASE_DIR/project"
@@ -1131,8 +1135,8 @@ spawn_launch_fixture() {  # <id> <raw-launch> [write-failure|tmp-root-symlink]
   printf '{"ok":true,"result":{"terminal":{"handle":"term-mission","surface":"visible","tabId":"tab-mission","worktreeId":"wt-host"}}}\n' > "$RESP/6.out"
   # A directory at the output filename deterministically denies writes even as root.
   [ "$fault" != write-failure ] || mkdir -p "/tmp/sq-$id/launch.sh"
-  # A predictable temp root planted by another local user (here: any symlink) must
-  # never be inherited as this task's script directory.
+  # A predictable temp root planted by another local user must never be inherited
+  # as this task's script directory.
   if [ "$fault" = tmp-root-symlink ]; then
     rm -rf "/tmp/sq-$id"
     mkdir -p "$CASE_DIR/planted-tmp"
@@ -1150,7 +1154,7 @@ spawn_launch_fixture() {  # <id> <raw-launch> [write-failure|tmp-root-symlink]
       assert_grep "exec_state=retry_queued" "$state/$id.exec" \
         "a failed launch-script write must queue the attempt for retry instead of leaving it claimed"
       ;;
-    tmp-root-symlink)
+    tmp-root-symlink|tmp-root-refuse)
       [ "$status" -ne 0 ] || fail "spawn accepted a task temp root it does not control"
       assert_contains "$out" "is not a private directory" "an untrusted task temp root was not explained"
       ;;
@@ -1173,6 +1177,8 @@ test_spawn_script_runs_in_real_shells_and_keeps_terminal_command_short() {
   spawn_launch_fixture orcalaunchz1 'pi short;'
   assert_mode 700 "/tmp/sq-orcalaunchz1" "the task temp root was not made private to this user"
   assert_mode 700 "/tmp/sq-orcalaunchz1/launch.sh" "the launch script was not made private to this user"
+  [ "$(file_owner "/tmp/sq-orcalaunchz1")" = "$(id -u)" ] \
+    || fail "the task temp root is not owned by the spawning user"
   short_length=${#LAUNCH_COMMAND}
   arglog="$CASE_DIR/argv"
   cwdlog="$CASE_DIR/cwd"
@@ -1223,6 +1229,26 @@ test_spawn_refuses_an_untrusted_task_temp_root() {
   spawn_launch_fixture orcalaunchz4 'pi must-not-run;' tmp-root-symlink
   rm -rf /tmp/sq-orcalaunchz4
   pass "Orca launch: a task temp root this user does not control is refused before launch"
+}
+
+# A privileged spawn can chmod a foreign-owned directory, so ownership must be
+# verified explicitly rather than inferred from the chmod succeeding.
+test_spawn_refuses_a_foreign_owned_task_temp_root() {
+  local id=orcalaunchz5
+  if [ "$(id -u)" -ne 0 ]; then
+    printf 'skip - root is required to plant a task temp root owned by another user\n'
+    return 0
+  fi
+  rm -rf "/tmp/sq-$id"
+  mkdir -p "/tmp/sq-$id" || fail "could not create the foreign-owned task temp fixture"
+  if ! chown 1:1 "/tmp/sq-$id" 2>/dev/null; then
+    rm -rf "/tmp/sq-$id"
+    printf 'skip - this environment cannot assign the fixture to another user\n'
+    return 0
+  fi
+  spawn_launch_fixture "$id" 'pi must-not-run;' tmp-root-refuse
+  rm -rf "/tmp/sq-$id"
+  pass "Orca launch: a task temp root owned by another user is refused even for a privileged spawn"
 }
 
 test_spawn_refuses_orca_XO_before_home_mutation() {
@@ -2397,6 +2423,7 @@ test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails
 test_spawn_script_runs_in_real_shells_and_keeps_terminal_command_short
 test_spawn_refuses_an_unwritable_launch_script
 test_spawn_refuses_an_untrusted_task_temp_root
+test_spawn_refuses_a_foreign_owned_task_temp_root
 test_spawn_writes_orca_metadata_and_launches_harness
 test_spawn_pi_launch_omits_status_extension_when_absent
 test_spawn_pi_resolves_status_extension_from_default_home_path

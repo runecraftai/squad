@@ -55,7 +55,7 @@ Spawn first resolves the Squad base's hosting workspace through Orca, registerin
 The guarded launch runs from a generated shell script rather than a long inline terminal command, so interactive-shell parsing does not depend on the harness arguments.
 When the mission worktree cannot be entered and physically verified, the script reports the failure and exits nonzero without starting the agent in the base checkout.
 If the launch script cannot be written, spawn reports the error and sends no launch command.
-The task temp directory that holds the script is created private to the current user, and spawn refuses to use a task temp path this user does not control, so no other local user can plant or swap the generated script.
+The task temp directory that holds the script is created private to the current user, and spawn refuses to use a task temp path this user does not own or cannot make private, so no other local user can plant or swap the generated script.
 A hidden background handle is closed and refused, never used to host a mission.
 The tab's title carries no state; Orca renders agent status itself.
 When a mission reaches `done` or `failed`, the next sentry signal scan after that status line or the teardown closes the tab once through the mission tab helper, which verifies the terminal belongs to the hosting workspace before closing it and records only a confirmed close.

@@ -2359,12 +2359,10 @@ fi
 # targeted knob: TMPDIR is too broad (affects every program's temp, not just Go's).
 TASK_TMP="/tmp/sq-$ID"
 # /tmp/sq-<id> is predictable and the Orca launch script is executed from it, so
-# only a private directory this user controls may serve as the task temp root.
-if [ -L "$TASK_TMP" ] || { [ -e "$TASK_TMP" ] && [ ! -d "$TASK_TMP" ]; }; then
-  echo "error: task temp path $TASK_TMP is not a private directory owned by the current user; refusing to use it" >&2
-  exit 1
-fi
-if ! mkdir -p "$TASK_TMP" || ! chmod 700 "$TASK_TMP" 2>/dev/null; then
+# only a private directory this user owns may serve as the task temp root.
+if ! mkdir -p "$TASK_TMP" \
+   || [ -L "$TASK_TMP" ] || [ ! -d "$TASK_TMP" ] || [ ! -O "$TASK_TMP" ] \
+   || ! chmod 700 "$TASK_TMP" 2>/dev/null; then
   echo "error: task temp path $TASK_TMP is not a private directory owned by the current user; refusing to use it" >&2
   exit 1
 fi

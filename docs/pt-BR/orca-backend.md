@@ -57,7 +57,7 @@ O spawn primeiro resolve o workspace hospedeiro da base do Squad no Orca, regist
 O lançamento protegido roda a partir de um script de shell gerado em vez de um comando de terminal inline longo, então o parsing do shell interativo não depende dos argumentos do harness.
 Quando o worktree da missão não pode ser entrado e verificado fisicamente, o script reporta a falha e sai com código diferente de zero sem iniciar o agente no checkout da base.
 Se o script de lançamento não puder ser gravado, o spawn reporta o erro e não envia nenhum comando de lançamento.
-O diretório temporário da tarefa que guarda o script é criado privado para o usuário atual, e o spawn recusa um caminho temporário de tarefa que este usuário não controla, para que nenhum outro usuário local possa plantar ou trocar o script gerado.
+O diretório temporário da tarefa que guarda o script é criado privado para o usuário atual, e o spawn recusa um caminho temporário de tarefa que este usuário não possui ou que não consegue tornar privado, para que nenhum outro usuário local possa plantar ou trocar o script gerado.
 Um handle de fundo oculto é fechado e recusado, nunca usado para hospedar uma missão.
 O título da aba não carrega estado; o próprio Orca mostra o status do agente.
 Quando uma missão chega a `done` ou `failed`, a próxima varredura de sinais da sentinela após essa linha de status ou o teardown fecha a aba uma vez pelo helper da aba de missão, que verifica que o terminal pertence ao workspace hospedeiro antes de fechá-lo e registra apenas um fechamento confirmado.
