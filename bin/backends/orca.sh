@@ -557,3 +557,20 @@ fm_backend_orca_close() {  # <terminal-id>
   fm_backend_orca_tool_check || return 1
   fm_backend_orca_run_json orca terminal close --terminal "$1" --json
 }
+
+# Recovery-grade state of a recorded mission tab. `missing` requires a complete
+# hosting-workspace inventory that omits the handle plus one exact observation
+# that also fails; every other answer stays `unverified`, because a tab that
+# still exists may host a live agent and Orca exposes no liveness proof for it.
+# A caller that cannot name the hosting workspace gets `unverified` too.
+fm_backend_orca_agent_state() {  # <terminal-id> [hosting-workspace-id]
+  local terminal=$1 host=${2:-}
+  [ -n "$host" ] || { printf 'unverified'; return 0; }
+  [ "$(fm_backend_orca_terminal_presence "$host" "$terminal")" = absent ] \
+    || { printf 'unverified'; return 0; }
+  if fm_backend_orca_terminal_observe "$terminal" >/dev/null 2>&1; then
+    printf 'unverified'
+    return 0
+  fi
+  printf 'missing'
+}

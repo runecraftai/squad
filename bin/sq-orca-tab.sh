@@ -88,15 +88,15 @@ fi
 # Handles are runtime-scoped: a tab the commander already closed, or a handle left
 # by a previous Orca runtime, must never block the worktree release. An inventory
 # that omits the handle only says the tab is not in that workspace, so one exact
-# observation must also show the terminal gone before a close is recorded; when
-# the inventory itself could not be read, an unobservable terminal still refuses
-# an ordinary close.
+# observation must also show the terminal gone before a close is recorded. A
+# truncated or partial inventory is not proof either, so an unobservable terminal
+# still refuses an ordinary close.
 TAB_PRESENCE=$(fm_backend_orca_terminal_presence "$HOST" "$TERMINAL")
 case "$TAB_PRESENCE" in
   present) ;;
   mismatch)
     preserve_tab "Orca terminal $TERMINAL is not a tab in hosting workspace $HOST for sq-$ID" ;;
-  absent|incomplete)
+  absent)
     LIVE_HOST=$(fm_backend_orca_terminal_observe "$TERMINAL") || LIVE_HOST=
     [ -z "$LIVE_HOST" ] || [ "$LIVE_HOST" = "$HOST" ] \
       || preserve_tab "Orca terminal $TERMINAL is a tab in hosting workspace $LIVE_HOST, not $HOST, for sq-$ID"

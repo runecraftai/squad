@@ -1765,7 +1765,7 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
 # mistaking a recovery launch for a duplicate. Ambiguous endpoint state is never
 # enough to authorize a second agent.
 prepare_relaunch_execution() {
-  local meta="$STATE/$ID.meta" old_backend old_target endpoint_state previous
+  local meta="$STATE/$ID.meta" old_backend old_target old_host endpoint_state previous
   RELAUNCH_EXISTING_META=
   if [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
     # A missing metadata record is the recovery signal used after a process
@@ -1808,7 +1808,13 @@ prepare_relaunch_execution() {
     echo "error: existing metadata for $ID has no endpoint; refusing relaunch" >&2
     return 1
   }
-  endpoint_state=$(fm_backend_agent_state "$old_backend" "$old_target")
+  # Only the Orca classifier needs the hosting workspace that owned the recorded
+  # tab; every other backend keeps its exact target alone.
+  old_host=
+  if [ "$old_backend" = orca ]; then
+    old_host=$(fm_backend_meta_exact_value "$meta" orca_host_workspace_id 2>/dev/null) || old_host=
+  fi
+  endpoint_state=$(fm_backend_agent_state "$old_backend" "$old_target" "$old_host")
   case "$endpoint_state" in
     dead|missing) ;;
     alive)

@@ -1019,7 +1019,8 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
 #   missing    - the recorded endpoint is authoritatively absent.
 #   ambiguous  - the endpoint exists but its process cannot be attributed.
 #   unreadable - a target or inventory read failed or contradicted itself.
-#   unverified - this backend has no recovery classifier.
+#   unverified - this backend has no recovery classifier for the supplied
+#                evidence.
 # Only `dead` and `missing` license recovery. The tmux adapter requires a
 # successful session inventory and returns `missing` only when it omits the
 # exact window; the Herdr adapter reuses its husk
@@ -1028,15 +1029,19 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
 # daemon restart, or a finished agent whose foreground program has exited, is
 # `dead` (endpoint present, no running agent) rather than `ambiguous`. Zellij
 # remains unverified because its XO ghost-tab and
-# agent-process recovery path has not been empirically validated. Orca and cmux
-# do not support XO spawns.
-fm_backend_agent_state() {  # <backend> <target>
-  local backend=$1 target=$2
+# agent-process recovery path has not been empirically validated. The Orca
+# adapter needs the recorded hosting workspace as its optional third argument
+# and proves only `missing`, because a tab that still exists may host a live
+# agent and Orca exposes no liveness proof for it. Orca and cmux do not support
+# XO spawns.
+fm_backend_agent_state() {  # <backend> <target> [hosting-workspace-id]
+  local backend=$1 target=$2 host=${3:-}
   fm_backend_source "$backend" || { printf 'unverified'; return 0; }
   case "$backend" in
     tmux) fm_backend_tmux_agent_state "$target" ;;
     herdr) fm_backend_herdr_agent_state "$target" ;;
     tuios) fm_backend_tuios_agent_state "$target" ;;
+    orca) fm_backend_orca_agent_state "$target" "$host" ;;
     *) printf 'unverified' ;;
   esac
 }
