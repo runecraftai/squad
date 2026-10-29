@@ -250,6 +250,24 @@ fm_afk_launch_record_validate_if_present() {
   [ "$result" -ne 2 ]
 }
 
+# A recorded daemon identity proves this invocation actually created its daemon
+# terminal, so the away session has started even when a later probe failed. A
+# pending Orca intent without a receipt is still only an intent.
+fm_afk_launch_recorded_daemon_identity() {
+  local read_result
+  fm_afk_launch_record_read
+  read_result=$?
+  [ "$read_result" -eq 0 ] || return 1
+  case "$SQUAD_AFK_REC_BACKEND" in
+    none) return 1 ;;
+    orca)
+      [ "$SQUAD_AFK_REC_TARGET" != pending ] \
+        || printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e '.endpoint != null' >/dev/null
+      ;;
+    *) return 0 ;;
+  esac
+}
+
 # Close a recorded terminal by EXACT id (never a broad sweep). The
 # recorded workspace id (herdr) needs no separate close: closing the pane takes
 # its single-tab dedicated workspace with it.
@@ -753,7 +771,15 @@ fm_afk_launch_start() {
   fi
   if [ "$result" -ne 0 ]; then
     if [ -n "$backup" ]; then
-      fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+      # Restoring the pre-create snapshot after a daemon terminal was recorded
+      # would hand a prior session's escalation buffer back to a daemon that is
+      # already running, so only an unstarted attempt rolls the clear back.
+      if fm_afk_launch_recorded_daemon_identity; then
+        fm_afk_launch_log 'a daemon terminal identity was recorded before this failure; keeping the cleared session artifacts and the recorded terminal for a later adopt or stop'
+        rm -rf "$backup" || result=1
+      else
+        fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+      fi
     fi
   elif [ -n "$backup" ] && ! rm -rf "$backup"; then
     result=1

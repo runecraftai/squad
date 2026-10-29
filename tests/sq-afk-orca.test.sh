@@ -375,7 +375,16 @@ try {
   assert.equal(count('close'),closesBefore+1);reload();assert.equal(model.terms.length,2);
   rmSync(liveLock,{recursive:true});tracked=tracked.filter(child=>child!==fakeDaemon);
   check('stop retires an already-consumed request through the live daemon shutdown flush');
-  await tick();model.lostCreate=false;model.unreadable=true;save();r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/create outcome remains uncertain/);assert.doesNotMatch(r.stderr,/integer expression expected/);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
+  await tick();model.lostCreate=false;model.unreadable=true;save();
+  // The recorded create receipt is a started session: a prior session's
+  // escalation buffer must never be rolled back into the live daemon's state.
+  writeFileSync(`${state}/.subsuper-escalations`,'prior session escalation\n');
+  writeFileSync(`${state}/.subsuper-inject-wedged`,'prior session wedge\n');
+  r=cli('start');assert.notEqual(r.status,0);assert.match(r.stderr,/runtime terminal inventory could not be read/);assert.doesNotMatch(r.stderr,/integer expression expected/);assert.match(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),/^orca\tpending\t/);
+  assert.equal(existsSync(`${state}/.subsuper-escalations`),false,'a recorded create receipt rolled the prior escalation buffer back');
+  assert.equal(existsSync(`${state}/.subsuper-inject-wedged`),false,'a recorded create receipt rolled the prior wedge marker back');
+  assert.ok(existsSync(`${state}/.afk`),'a recorded create receipt must keep the away-mode flag for its daemon');
+  const n=count('create');r=cli('start');assert.notEqual(r.status,0);assert.equal(count('create'),n);
   reload();model.unreadable=false;save();
   const pendingBytes=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
   const pendingExtra=JSON.parse(pendingBytes.split('\t')[2]);
@@ -451,7 +460,8 @@ try {
   for (const field of ['unreadable','truncated','omitted']) {
     model[field]=true;save();
     for (const action of ['start','stop']) {
-      r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/create outcome remains uncertain/);
+      r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/daemon identity is recorded but the runtime terminal inventory/);
+      assert.doesNotMatch(r.stderr,/create outcome remains uncertain/,'a recorded daemon identity was reported as an uncertain create');
       assert.equal(count('create'),beforeAbsent+1);assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),absentBytes);
     }
     model[field]=false;save();

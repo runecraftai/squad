@@ -34,15 +34,18 @@ fm_afk_launch_orca_resolve() {  # 0: adopted/exact; 2: proven absent; 1: uncerta
   fi
   # Search the whole runtime: a handle moved to another worktree is an identity
   # mismatch, not proof that the terminal disappeared from the original one.
-  if ! inventory=$(orca terminal list --limit 10000 --json) \
-    || ! terminal=$(printf '%s' "$inventory" | jq -ce --argjson rec "$extra" '
+  if ! inventory=$(orca terminal list --limit 10000 --json); then
+    fm_afk_launch_log 'Orca daemon identity is recorded but the runtime terminal inventory could not be read; preserving the pending intent (no create retry)'
+    return 1
+  fi
+  if ! terminal=$(printf '%s' "$inventory" | jq -ce --argjson rec "$extra" '
       select(.ok == true and .result.truncated == false and ._meta.runtimeId == $rec.parent.runtime
         and (.result.hostScope.omittedHostIds | type == "array" and length == 0)
         and (.result.terminals | type == "array")
         and all(.result.terminals[]; (.handle | type == "string" and length > 0)
           and (.worktreeId | type == "string") and (.worktreePath | type == "string")))
       | [.result.terminals[] | select(.handle == $rec.endpoint.target)]'); then
-    fm_afk_launch_log 'Orca create outcome remains uncertain; preserving the pending intent (no create retry)'
+    fm_afk_launch_log 'Orca daemon identity is recorded but the runtime terminal inventory is incomplete, truncated, host-scope omitted, or from another runtime; preserving the pending intent (no create retry)'
     return 1
   fi
   count=$(printf '%s' "$terminal" | jq -r 'length') || return 1
