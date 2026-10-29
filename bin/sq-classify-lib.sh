@@ -122,22 +122,6 @@ _status_pause_key() {  # <status-line> -> key slug, or empty
   printf '%s' "$key"
 }
 
-# Drop the open-pause entry for <key> from a newline-delimited
-# "<key>\t<ordinal>\t<line>" set. An empty key addresses the set's unkeyed entry.
-_status_pause_drop() {  # <open-set> <key>
-  local set=$1 key=$2 line out=''
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    case "$line" in
-      "$key"$'\t'*) : ;;
-      *) out="${out}${line}"$'\n' ;;
-    esac
-  done <<EOF
-$set
-EOF
-  printf '%s' "$out"
-}
-
 # Fold an append-only status stream into its effective worker state and the set of
 # declared pauses still open. The stream is an EVENT log, so one scalar cannot
 # answer both questions: a resolved record closes only the pause for the key it
@@ -152,7 +136,10 @@ EOF
 # terminal/blocked record still wins. With no pause open, the latest non-paused
 # state record is the effective state. The effective open pause is the most
 # recently declared one. Both readers below take their answer from this ONE fold,
-# so worker state and pause identity can never disagree about the same log.
+# so worker state and pause identity can never disagree about the same log. The
+# open-pause set carries the same "<key>\t<field>\t<text>" record shape the
+# decision fold uses, so _fm_decision_drop stays the one owner of dropping a
+# key's record.
 _status_state_pause_fold() {  # <status-file>
   local f=$1 line n=0 state='' pauses='' key entry ordinal top='' top_ordinal=0
   [ -f "$f" ] || { printf '\n'; return 0; }
@@ -162,7 +149,7 @@ _status_state_pause_fold() {  # <status-file>
     if status_is_paused "$line"; then
       key=$(_status_pause_key "$line")
       if [ -n "$pauses" ]; then
-        pauses=$(_status_pause_drop "$pauses" "$key")
+        pauses=$(_fm_decision_drop "$pauses" "$key")
         [ -n "$pauses" ] && pauses="${pauses}"$'\n'
       fi
       pauses="${pauses}${key}"$'\t'"${n}"$'\t'"${line}"$'\n'
@@ -172,7 +159,7 @@ _status_state_pause_fold() {  # <status-file>
       key=$(_status_pause_key "$line")
       [ -n "$key" ] || continue
       if [ -n "$pauses" ]; then
-        pauses=$(_status_pause_drop "$pauses" "$key")
+        pauses=$(_fm_decision_drop "$pauses" "$key")
         [ -n "$pauses" ] && pauses="${pauses}"$'\n'
       fi
       continue
