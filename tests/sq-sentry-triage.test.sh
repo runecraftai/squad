@@ -4256,6 +4256,16 @@ test_pause_episode_classifier() {
   [ "$(status_pause_episode "$state/a.status")" = 3 ] || fail "identical pause did not renew identity"
   printf 'working: resumed\n' >> "$state/a.status"
   [ -z "$(status_pause_episode "$state/a.status")" ] || fail "working did not clear pause identity"
+  printf 'paused [key=a]: upstream\npaused [key=b]: vendor\nresolved [key=b]: vendor answered\n' > "$state/a.status"
+  [ "$(status_pause_episode "$state/a.status")" = 1 ] \
+    || fail "resolving the newer stacked key dropped the still-open pause identity"
+  [ "$(last_status_state_line "$state/a.status")" = 'paused [key=a]: upstream' ] \
+    || fail "the state reader disagreed with pause identity on a stacked pause log"
+  printf 'resolved [key=a]: upstream shipped\n' >> "$state/a.status"
+  [ -z "$(status_pause_episode "$state/a.status")" ] \
+    || fail "resolving the last stacked key left a pause identity"
+  [ -z "$(last_status_state_line "$state/a.status")" ] \
+    || fail "the state reader kept a pause the episode reader had cleared"
   pass "pause identity renews on declarations, not resolutions, and clears on resumed work"
 }
 

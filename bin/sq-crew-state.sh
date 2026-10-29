@@ -44,7 +44,8 @@
 #   4. No run for this crew (pre-validation, or kind=recon): fall back to the
 #      recorded backend's pane busy state (a native `blocked` verdict reports
 #      blocked and carries the prompt the backend read), then the status log's
-#      last line only
+#      folded state line (`last_status_state_line`, whose event fold clears a
+#      `paused` record on a later `resolved` naming that same key) only
 #      when its verb maps to a recognized run-state. Decision-only events such as
 #      `resolved` never become current state or detail.
 #   5. Missing meta or torn-down worktree: report unknown · none. If no run is
@@ -536,16 +537,19 @@ if [ "$KIND" != xo ]; then
   esac
 fi
 
-# Fall back to the status log's last line, but ONLY when its verb maps to a real
-# run-state. A decision-closing event - resolved: (sq-classify-lib.sh's
+# Fall back to the status log's folded state line, but ONLY when its verb maps to
+# a real run-state. A decision-closing event - resolved: (sq-classify-lib.sh's
 # SQUAD_CLASSIFY_RESOLVE_VERB), and any future decision-only sibling - is NOT a state:
-# it exists solely to CLOSE a keyed decision in the durable fold, so a trailing
-# resolved: must never become the current state or leak its resolution prose as the
-# detail. Skipping it lets a just-resolved idle crew (typically an XO, which
-# has no busy check above) fall through to the idle default instead of rendering
-# `unknown` with the resolution note as `doing`. map_log_state is the single owner of
-# the verb->state mapping (including the configurable paused verb), so reusing its
-# `unknown` verdict as the "not a state" test needs no second verb list here.
+# it exists solely to CLOSE a keyed decision in the durable fold, so a resolved:
+# must never become the current state or leak its resolution prose as the detail.
+# The fold already reports the earlier real state line such a resolution restores by
+# clearing a matching keyed pause, and this verb test keeps the same boundary if a
+# closing record ever reaches here. Skipping it lets a just-resolved idle crew
+# (typically an XO, which has no busy check above) fall through to the idle default
+# instead of rendering `unknown` with the resolution note as `doing`. map_log_state
+# is the single owner of the verb->state mapping (including the configurable paused
+# verb), so reusing its `unknown` verdict as the "not a state" test needs no second
+# verb list here.
 if [ -n "$LOG_VERB" ]; then
   LOG_STATE=$(map_log_state "$LOG_LINE")
   if [ "$LOG_STATE" != unknown ]; then

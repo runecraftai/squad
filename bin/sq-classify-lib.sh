@@ -109,33 +109,107 @@ last_status_line() {
   grep -v '^[[:space:]]*$' "$f" 2>/dev/null | tail -1
 }
 
-# Return the latest status event that establishes worker state. `resolved:` closes
-# a decision but does not say that an earlier declared external wait ended.
-last_status_state_line() {  # <status-file>
-  local f=$1 line effective=
-  [ -f "$f" ] || return 0
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -n "${line//[[:space:]]/}" ] || continue
-    [ "$(status_line_verb "$line")" = resolved ] && continue
-    effective=$line
-  done < "$f"
-  printf '%s' "$effective"
+# Decision key a declared pause folds under: the documented `[key=<slug>]` token
+# when the line carries one, else the synthesized "default" of the legacy unkeyed
+# declaration. An explicit `[key=default]` is that same ordinary key, never a
+# wildcard, so a later resolved [key=default] closes either spelling.
+_status_pause_key() {  # <status-line> -> pause key
+  _fm_decision_key "$1"
 }
 
-# Identity of the effective declared pause in an append-only status stream.
-# A fresh declaration (even identical text) renews it; resolved events do not.
-# The ordinal survives restarts without making unrelated appends renew the wait.
-status_pause_episode() {  # <status-file> -> record ordinal, or empty
-  local f=$1 line episode='' n=0
-  [ -f "$f" ] || return 0
+# Decision key a resolved record must NAME EXPLICITLY to close a pause: empty when
+# the line carries no token, so a bare `resolved:` closes a decision without
+# ending a declared external wait it never named.
+_status_resolve_key() {  # <status-line> -> explicit key slug, or empty
+  _fm_decision_key_explicit "$1"
+}
+
+# Fold an append-only status stream into its effective worker state and the set of
+# declared pauses still open. The stream is an EVENT log, so one scalar cannot
+# answer both questions: a resolved record closes only the pause for the key it
+# names, and the state that pause was masking must come back while any other
+# declared pause stays open. Prints the effective state line, then the ordinal
+# (1-based physical record) of the effective open pause:
+#   <state-line>\n<episode-ordinal>
+# Rules: a paused record opens - or renews, even with identical text - the pause
+# for its key, synthesized as "default" when it names none; a resolved record
+# naming that key explicitly (the one key grammar above) closes just that key's
+# pause; any later non-paused state record
+# supersedes every open pause, so `paused:` then `working:` reports working and a
+# terminal/blocked record still wins. With no pause open, the latest non-paused
+# state record is the effective state. The effective open pause is the most
+# recently declared one. Both readers below take their answer from this ONE fold,
+# so worker state and pause identity can never disagree about the same log. The
+# open-pause set carries the same "<key>\t<field>\t<text>" record shape the
+# decision fold uses, so _fm_decision_drop stays the one owner of dropping a
+# key's record.
+_status_state_pause_fold() {  # <status-file>
+  local f=$1 line n=0 state='' pauses='' key entry ordinal top='' top_ordinal=0
+  [ -f "$f" ] || { printf '\n'; return 0; }
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     [ -n "${line//[[:space:]]/}" ] || continue
-    [ "$(status_line_verb "$line")" = resolved ] && continue
-    episode=
-    status_is_paused "$line" && episode=$n
+    if status_is_paused "$line"; then
+      key=$(_status_pause_key "$line")
+      if [ -n "$pauses" ]; then
+        pauses=$(_fm_decision_drop "$pauses" "$key")
+        [ -n "$pauses" ] && pauses="${pauses}"$'\n'
+      fi
+      pauses="${pauses}${key}"$'\t'"${n}"$'\t'"${line}"$'\n'
+      continue
+    fi
+    if [ "$(status_line_verb "$line")" = resolved ]; then
+      key=$(_status_resolve_key "$line")
+      [ -n "$key" ] || continue
+      if [ -n "$pauses" ]; then
+        pauses=$(_fm_decision_drop "$pauses" "$key")
+        [ -n "$pauses" ] && pauses="${pauses}"$'\n'
+      fi
+      continue
+    fi
+    state=$line
+    pauses=''
   done < "$f"
-  printf '%s' "$episode"
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    ordinal=${entry#*$'\t'}
+    ordinal=${ordinal%%$'\t'*}
+    case "$ordinal" in ''|*[!0-9]*) continue ;; esac
+    [ "$ordinal" -ge "$top_ordinal" ] || continue
+    top_ordinal=$ordinal
+    top=${entry#*$'\t'}
+    top=${top#*$'\t'}
+  done <<EOF
+$pauses
+EOF
+  if [ -n "$top" ]; then
+    printf '%s\n%s' "$top" "$top_ordinal"
+  else
+    printf '%s\n' "$state"
+  fi
+}
+
+# Return the latest status event that establishes worker state. A resolved event
+# naming a key also supersedes the declared pause for that same key, so the state
+# it restores is the latest event that still holds.
+last_status_state_line() {  # <status-file>
+  local out
+  out=$(_status_state_pause_fold "$1")
+  printf '%s' "${out%%$'\n'*}"
+}
+
+# Identity of the effective declared pause in an append-only status stream: the
+# physical record ordinal of the pause still open, empty when none is. A fresh
+# declaration renews it (even with identical text), a resolved record naming its
+# key ends it, and any later non-paused state record supersedes it. The ordinal
+# survives restarts without making unrelated appends renew the wait, and it comes
+# from the same fold last_status_state_line reads, so the two cannot disagree.
+status_pause_episode() {  # <status-file> -> record ordinal, or empty
+  local out
+  out=$(_status_state_pause_fold "$1")
+  case "$out" in
+    *$'\n'*) printf '%s' "${out#*$'\n'}" ;;
+  esac
 }
 
 # --- stuck-pane text signatures --------------------------------------------
@@ -298,7 +372,9 @@ status_line_append() {  # <status-file> <line>
 #   resolved [key=api-shape]: <how it was decided>
 # A line with no token uses the key "default", preserving the historical
 # one-open-decision-per-task behavior (a bare "resolved:" closes "default").
-# The three parsers are pure reads of a single line; the verb parser strips any
+# _fm_decision_key_explicit reports the token alone, so a reader that must tell an
+# explicit "[key=default]" from no token at all can ask for it.
+# The parsers are pure reads of a single line; the verb parser strips any
 # key token before the colon so the leading word is recovered cleanly.
 status_line_verb() {  # <status-line> -> leading verb word
   local v=${1%%:*}
@@ -313,7 +389,6 @@ status_line_note() {  # <status-line> -> text after the first colon, trimmed
     *) printf '%s' "$1" ;;
   esac
 }
-
 # Canonical crew-state verb from the reconciler's one line
 # ("state: <verb> · source: <src> · <detail>"). Anything malformed or missing
 # reports unknown so a consumer never drops or misreads a row.
@@ -324,7 +399,7 @@ crew_state_verb() {  # <crew-state-line> -> canonical verb, or unknown
     *) printf 'unknown' ;;
   esac
 }
-_fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
+_fm_decision_key_explicit() {  # <status-line> -> explicit key slug, or empty
   local line=$1 prefix k
   prefix=${line%%:*}
   case "$prefix" in
@@ -334,7 +409,7 @@ _fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
       line=${line#"${line%%[![:space:]]*}"}
       case "$line" in
         \[key=*\]*) k=${line#\[key=} ;;
-        *) printf 'default'; return 0 ;;
+        *) return 0 ;;
       esac
       ;;
   esac
@@ -343,6 +418,11 @@ _fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
     ''|*[!A-Za-z0-9._-]*) return 1 ;;
     *) printf '%s' "$k" ;;
   esac
+}
+_fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
+  local k
+  k=$(_fm_decision_key_explicit "$1") || return 1
+  printf '%s' "${k:-default}"
 }
 # Drop the record for <key> from a newline-terminated "<key>\t<verb>\t<note>" set.
 # Portable (no associative arrays) so the fold runs on bash 3.2 as well as 4+.
