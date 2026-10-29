@@ -70,7 +70,7 @@ Maintain the curated root [CHANGELOG.md](CHANGELOG.md) for user-impacting distro
 Tracked changes to Squad itself - `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `.tasks.toml`, `.factory-collect.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and `skills/` - ship through the `drill` pipeline on a feature branch and require an explicit merge approval.
 Before making any such change, load the agent-only `squad-coding-guidelines` skill (`.agents/skills/squad-coding-guidelines/SKILL.md`).
 It has the knowledge-placement rules that keep `AGENTS.md` from regrowing after each diet pass.
-There is no reliable way for `bin/sq-brief.sh`'s scaffold to detect that a task's repo is Squad itself, so Squad adds this skill's load line to Squad-repo briefs by hand.
+`bin/sq-brief.sh` recognizes Squad's own repo only from the exact name `squad` or a path resolving to this base, which is enough for the repository guard it emits there but says nothing about the task body, so Squad adds this skill's load line to Squad-repo briefs by hand.
 An operator picking up such a brief should load the skill even if the brief predates this instruction.
 When supervising live operators, keep Squad's own long validation or build commands in the background so sentry wakes can still be handled.
 Operator validation follows the installed drill version's SKILL.md and live `axi` help instead of duplicating gate mechanics in Squad docs.
