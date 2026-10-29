@@ -116,9 +116,11 @@ Whether Orca focuses, keeps, or hides the new terminal tab is real host behaviou
 The creation intent is recorded before the CLI call; a returned daemon identity is persisted before any subsequent runtime lookup.
 Cleanup requires the exact terminal handle, runtime and terminal incarnation, and worktree identity/path; terminal titles are display-only because the shell can change them during startup.
 A live daemon process must additionally match the recorded launch token and operating-system process identity before it can be signalled.
+A record written by the pre-token launcher has no launch token, so its stored legacy title marker may verify only the process that the exact recorded terminal identity already binds; it never selects or adopts a terminal by title, and a mismatched or missing marker still refuses to signal.
 Pending-creation recovery is owned by `bin/sq-afk-orca-launch.sh` and covered by `tests/sq-afk-orca.test.sh`; it requires a recorded daemon identity and a complete inventory bound to the original primary and this base.
 `start` adopts exactly one identity match without replacing it; with the recorded handle absent, it releases the old intent and makes at most one create call.
 `stop` releases a pending intent with proven identity absence; multiple candidates, changed identity, and incomplete or unreadable inventory preserve the record without touching terminals.
+`status` is read-only and reports a pending intent that carries a recorded handle as `terminal=recoverable` when that exact identity is live, `terminal=absent` when the complete inventory proves it absent, and `terminal=uncertain` when the probe is incomplete, mismatched, or still handle-less; it never reports such an intent as `terminal=dead` merely because its target field is `pending`.
 A fresh ambiguous create is never retried inside the same invocation.
 A create whose daemon identity was recorded counts as a started session, so a later probe failure keeps the away flag and the freshly cleared escalation artifacts instead of restoring a previous session's buffer that the adopted or refreshed daemon would then deliver.
 An entirely lost response or legacy intent with no recorded daemon identity always remains uncertain, even with no title matches; automatic adoption and retry are forbidden.
@@ -146,8 +148,23 @@ The only sanctioned recovery is the named, human-approved permanent-uncertainty 
 
 1. Name the record: `state/.afk-daemon-terminal` for a recorded creation (a `pending` target plus whatever daemon identity the create receipt recorded), or `bin/sq-supervisor-native.sh dir <state> <exact-primary-target>` for the request directory holding `request.json` and `result.json`.
 2. Read it and have the commander, as the base's session owner, confirm on the live host/primary whether that exact recorded daemon identity (handle, runtime, incarnation, worktree/path) exists or whether that exact message text was delivered and consumed; a terminal title is display-only and proves nothing.
-3. Only with explicit approval for that specific record: for a creation, reconcile the exact conflicting identity before retrying the launcher, never infer absence from a title or hand-delete its pending record; a handle-less intent requires separate commander-approved live evidence, not automatic recovery; for a native request, remove the `request.json` plus `result.json` pair and drop exactly the `lines` prefix recorded in that request from the head of `state/.subsuper-escalations`, so the never-delivered text cannot be republished.
+3. Only with explicit approval for that specific record: for a creation, reconcile the exact conflicting identity before retrying the launcher, and never infer absence from a title or hand-delete its pending record; for a native request, remove the `request.json` plus `result.json` pair and drop exactly the `lines` prefix recorded in that request from the head of `state/.subsuper-escalations`, so the never-delivered text cannot be republished.
 4. Record the approver, the exact target, and the removed record id in the away-mode report.
+
+#### Approved handle-less creation release
+
+A pending creation that recorded no daemon handle is never recovered automatically, even with zero title matches.
+Its only sanctioned release is the guarded `bin/sq-afk-launch.sh release-handle-less` action, run by an operator after the commander approves that exact record.
+The action performs the following read-only census and refuses, leaving the intent in place, unless every step is complete:
+
+1. Check the live runtime: `orca status --json` must report `reachable=true`, `state="ready"`, and the `runtimeId` recorded in the intent's `parent.runtime`.
+2. Enumerate every live terminal: `orca terminal list --limit 10000 --json` must report `ok=true`, that same `_meta.runtimeId`, `result.truncated=false`, an empty `result.hostScope.omittedHostIds`, and a non-empty string `handle`, `worktreeId`, and `worktreePath` on every terminal.
+3. Cross-check every recorded task terminal: each `state/*.meta` names its endpoint target as `terminal=` for `backend=orca` (otherwise `window=`). Any live handle named by a task record is claimed and is never a release candidate; unreadable or symlinked metadata, or an Orca task record without exactly one `terminal=`, makes the evidence incomplete.
+4. Compare against the intent's `parent`: every remaining live terminal whose `worktreeId` equals `parent.worktree` or whose `worktreePath` equals `parent.path`, excluding the primary `parent.target` and every claimed task terminal, is an unclaimed plausible lost supervisor. The action reports each candidate handle and stops.
+5. Only when no candidate exists does the action settle the exact recorded primary's native request and then clear the pending record and `state/.afk`.
+
+The action never creates, adopts, retitles, or closes a terminal, never treats a title as evidence, and is not an automatic fallback.
+An incomplete or unreadable census keeps the record and reports the lifecycle as not complete.
 
 Any doubt that the text or terminal was delivered or consumed leaves every file in place and the lifecycle reported as not complete; removal never authorizes a resend.
 

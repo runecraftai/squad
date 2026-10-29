@@ -730,8 +730,8 @@ PASS: real Orca + real Pi pending-identity adoption without replacement, start/s
 
 Focus behavior, a fully lost real create receipt, and combined real-host message consumption were not tested.
 
-Refresh the portable recovery proof with `bash tests/sq-afk-orca.test.sh`: it covers a renamed identity match, one create after recorded-identity absence despite an unrelated matching title, duplicate-identity refusal without terminal mutation, changed parent/base/incarnation/worktree refusal, incomplete inventory refusal, and preservation of handle-less lost responses with either zero or matching-title terminals.
-The launcher's `bin/sq-afk-orca-launch.sh` owns the identity-recovery contract; a handle-less legacy record needs separately authorized live verification, never title-based automatic adoption or retry.
+Refresh the portable recovery proof with `bash tests/sq-afk-orca.test.sh`: it covers a renamed identity match, one create after recorded-identity absence despite an unrelated matching title, duplicate-identity refusal without terminal mutation, changed parent/base/incarnation/worktree refusal, incomplete inventory refusal, preservation of handle-less lost responses with either zero or matching-title terminals, the read-only `status` states a pending record reports for a live, unreadable, changed, or absent recorded identity, backward-compatible stop of a pre-token legacy record whose stored title marker may only verify its exact already-bound identity, and the guarded handle-less release refusing unclaimed candidates or incomplete evidence before clearing anything.
+The launcher's `bin/sq-afk-orca-launch.sh` owns the identity-recovery contract; a handle-less legacy record needs the separately authorized `release-handle-less` census, never title-based automatic adoption or retry.
 
 ### 2026-10-28 - live Orca 1.4.243 terminal create observation
 

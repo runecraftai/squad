@@ -17,9 +17,9 @@ fm_afk_launch_orca_primary() {  # [exact-target]; never guesses an unresolved pr
   printf '%s' "$primary"
 }
 
-fm_afk_launch_orca_resolve() {  # 0: adopted/exact; 2: proven absent; 1: uncertain
+fm_afk_launch_orca_pending_match() {  # read-only: 0 exact single live match; 2 proven absent; 1 uncertain
   local extra=$SQUAD_AFK_REC_EXTRA inventory terminal count endpoint parent base
-  if [ "$SQUAD_AFK_REC_TARGET" != pending ]; then return 0; fi
+  SQUAD_AFK_ORCA_PENDING_TARGET=
   if ! printf '%s' "$extra" | jq -e '.endpoint.backend == "orca" and (.endpoint.target | type == "string" and length > 0)' >/dev/null; then
     fm_afk_launch_log 'Orca create outcome remains uncertain: no daemon identity was recorded; preserving the pending intent (no create retry)'
     return 1
@@ -64,9 +64,80 @@ fm_afk_launch_orca_resolve() {  # 0: adopted/exact; 2: proven absent; 1: uncerta
     return 1
   fi
   fm_afk_launch_orca_owned "$terminal" "$extra" || return 1
-  fm_afk_launch_record_write orca "$terminal" "$extra" || return 1
-  SQUAD_AFK_REC_TARGET=$terminal
-  SQUAD_AFK_REC_EXTRA=$extra
+  SQUAD_AFK_ORCA_PENDING_TARGET=$terminal
+}
+
+fm_afk_launch_orca_resolve() {  # 0: adopted/exact; 2: proven absent; 1: uncertain
+  local match target
+  if [ "$SQUAD_AFK_REC_TARGET" != pending ]; then return 0; fi
+  fm_afk_launch_orca_pending_match
+  match=$?
+  [ "$match" -eq 0 ] || return "$match"
+  target=$SQUAD_AFK_ORCA_PENDING_TARGET
+  fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
+  fm_afk_launch_record_write orca "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
+  SQUAD_AFK_REC_TARGET=$target
+}
+
+fm_afk_launch_orca_pending_state() {  # read-only status token for a pending intent
+  fm_afk_launch_orca_pending_match
+  case "$?" in
+    0) printf 'recoverable' ;;
+    2) printf 'absent' ;;
+    *) printf 'uncertain' ;;
+  esac
+}
+
+fm_afk_launch_orca_claimed_terminals() {  # read-only task-recorded terminal targets as JSON
+  local meta backend target claimed='[]'
+  for meta in "$SQUAD_AFK_LAUNCH_STATE"/*.meta; do
+    [ -e "$meta" ] || [ -L "$meta" ] || continue
+    if [ ! -f "$meta" ] || [ ! -r "$meta" ] || [ -L "$meta" ]; then
+      fm_afk_launch_log "task metadata $meta is not a readable regular file; refusing handle-less release"
+      return 1
+    fi
+    backend=$(fm_backend_of_meta "$meta") || return 1
+    if [ "$backend" = orca ]; then
+      target=$(fm_backend_meta_exact_value "$meta" terminal) || {
+        fm_afk_launch_log "task metadata $meta records an Orca task without exactly one terminal handle; refusing handle-less release"
+        return 1
+      }
+    else
+      target=$(fm_backend_target_of_meta "$meta") || target=
+    fi
+    [ -n "$target" ] || continue
+    claimed=$(printf '%s' "$claimed" | jq -c --arg target "$target" '. + [$target]') || return 1
+  done
+  printf '%s' "$claimed"
+}
+
+# Read-only proof for the commander-approved handle-less release: a complete
+# live census cross-checked against every recorded task terminal. 0 means no
+# unclaimed terminal could be the lost supervisor in this worktree/parent
+# binding; 2 names candidates in SQUAD_AFK_ORCA_CANDIDATES; 1 is incomplete.
+fm_afk_launch_orca_handle_less_evidence() {
+  local extra=$SQUAD_AFK_REC_EXTRA parent runtime status inventory claimed
+  SQUAD_AFK_ORCA_CANDIDATES=
+  parent=$(printf '%s' "$extra" | jq -ce '.parent') || return 1
+  runtime=$(printf '%s' "$parent" | jq -er '.runtime | select(type == "string" and length > 0)') || return 1
+  status=$(orca status --json) || return 1
+  printf '%s' "$status" | jq -e --arg runtime "$runtime" '.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready" and .result.runtime.runtimeId == $runtime' >/dev/null || return 1
+  inventory=$(orca terminal list --limit 10000 --json) || return 1
+  printf '%s' "$inventory" | jq -e --arg runtime "$runtime" '
+    .ok == true and ._meta.runtimeId == $runtime and .result.truncated == false
+    and (.result.hostScope.omittedHostIds | type == "array" and length == 0)
+    and (.result.terminals | type == "array")
+    and all(.result.terminals[]; (.handle | type == "string" and length > 0)
+      and (.worktreeId | type == "string") and (.worktreePath | type == "string"))' >/dev/null || return 1
+  claimed=$(fm_afk_launch_orca_claimed_terminals) || return 1
+  SQUAD_AFK_ORCA_CANDIDATES=$(printf '%s' "$inventory" | jq -r --argjson parent "$parent" --argjson claimed "$claimed" '
+    [ .result.terminals[]
+      | select(.handle != $parent.target)
+      | select((.worktreeId == $parent.worktree) or (.worktreePath == $parent.path))
+      | select(.handle as $handle | $claimed | index($handle) | not)
+      | .handle ] | unique | .[]') || return 1
+  [ -z "$SQUAD_AFK_ORCA_CANDIDATES" ] && return 0
+  return 2
 }
 
 fm_afk_launch_orca_scope() {  # recorded/daemon state owns this; the caller's environment is not authority
@@ -79,11 +150,26 @@ fm_afk_launch_orca_scope() {  # recorded/daemon state owns this; the caller's en
 }
 
 fm_afk_launch_orca_daemon_owned() {
-  local owner token
+  local owner marker token
   owner=$(daemon_lock_owner) || return 1
-  token=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er '.owner | select(type == "string" and length > 0)') || return 1
-  [ -f "$owner/orca-owner" ] && [ ! -L "$owner/orca-owner" ] \
-    && [ "$(cat "$owner/orca-owner")" = "$token" ]
+  [ -f "$owner/orca-owner" ] && [ ! -L "$owner/orca-owner" ] || return 1
+  marker=$(cat "$owner/orca-owner") || return 1
+  if token=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er '.owner | select(type == "string" and length > 0)' 2>/dev/null); then
+    [ "$marker" = "$token" ] && return 0
+    fm_afk_launch_log 'recorded Orca launch token does not match the daemon lock owner marker; refusing to treat the process as this terminal owner'
+    return 1
+  fi
+  # A record from the pre-token launcher carries only its stored title, which
+  # the old launcher also wrote into the lock marker. It verifies the process
+  # already bound by the exact recorded terminal identity; it never selects a
+  # terminal by title.
+  token=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er '.title | select(type == "string" and length > 0)' 2>/dev/null) || {
+    fm_afk_launch_log 'recorded Orca daemon has no launch token and no legacy title marker; cannot prove process ownership, so it will not be signalled; inspect state/.afk-daemon-terminal and use the commander-approved permanent-uncertainty recovery in docs/orca-backend.md'
+    return 1
+  }
+  [ "$marker" = "$token" ] && return 0
+  fm_afk_launch_log 'legacy Orca title marker does not match the recorded terminal owner; refusing to treat the process as this terminal owner'
+  return 1
 }
 
 fm_afk_launch_orca_owned() {  # <target> <record-json>

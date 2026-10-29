@@ -117,9 +117,11 @@ Se o Orca foca, mantém ou oculta a nova aba é comportamento real do host que p
 A intenção de criação é gravada antes da chamada da CLI; uma identidade de daemon retornada é persistida antes de qualquer consulta posterior ao runtime.
 A limpeza exige o handle exato do terminal, o runtime e a encarnação do terminal, e a identidade/caminho do worktree; títulos de terminal são apenas exibição porque o shell pode alterá-los durante a inicialização.
 Um processo de daemon vivo precisa ainda corresponder ao token de lançamento gravado e à identidade de processo do sistema operacional antes de poder ser sinalizado.
+Um registro gravado pelo launcher anterior ao token não tem token de lançamento, então seu marcador legado de título gravado pode verificar apenas o processo que a identidade exata de terminal já vincula; ele nunca seleciona nem adota um terminal por título, e um marcador divergente ou ausente ainda recusa sinalizar.
 A recuperação de criação pendente pertence a `bin/sq-afk-orca-launch.sh` e é coberta por `tests/sq-afk-orca.test.sh`; ela exige uma identidade de daemon gravada e um inventário completo vinculado ao primário original e a esta base.
 `start` adota exatamente uma correspondência de identidade sem substituí-la; com o handle gravado ausente, libera a intenção antiga e faz no máximo uma chamada de criação.
 `stop` libera uma intenção pendente com ausência de identidade comprovada; múltiplos candidatos, identidade alterada e inventário incompleto ou ilegível preservam o registro sem tocar em terminais.
+`status` é somente-leitura e reporta uma intenção pendente que carrega um handle gravado como `terminal=recoverable` quando essa identidade exata está viva, `terminal=absent` quando o inventário completo prova sua ausência, e `terminal=uncertain` quando a sonda é incompleta, divergente ou ainda sem handle; ele nunca reporta essa intenção como `terminal=dead` apenas porque seu campo alvo é `pending`.
 Uma criação ambígua nova nunca é repetida dentro da mesma invocação.
 Uma criação cuja identidade de daemon foi gravada conta como sessão iniciada, então uma falha de sonda posterior mantém a flag de away e os artefatos de escalonamento recém-limpos em vez de restaurar o buffer de uma sessão anterior que o daemon adotado ou atualizado entregaria.
 Uma resposta totalmente perdida ou intenção legada sem identidade de daemon gravada permanece sempre incerta, mesmo sem nenhum título correspondente; adoção e retentativa automáticas são proibidas.
@@ -147,8 +149,23 @@ A única recuperação sancionada é a recuperação nomeada de incerteza perman
 
 1. Nomeie o registro: `state/.afk-daemon-terminal` para uma criação gravada (alvo `pending` mais qualquer identidade de daemon que o recibo de criação gravou), ou `bin/sq-supervisor-native.sh dir <state> <alvo-exato-do-primário>` para o diretório da requisição que contém `request.json` e `result.json`.
 2. Leia-o e peça ao comandante, como dono de sessão da base, para confirmar no host/primário vivo se aquela identidade exata de daemon gravada (handle, runtime, encarnação, worktree/caminho) existe ou se aquele texto exato de mensagem foi entregue e consumido; um título de terminal é apenas exibição e não prova nada.
-3. Somente com aprovação explícita para aquele registro específico: para uma criação, reconcilie a identidade conflitante exata antes de repetir o launcher, nunca infera ausência a partir de um título nem apague à mão seu registro pendente; uma intenção sem handle exige evidência viva separadamente aprovada pelo comandante, não recuperação automática; para uma requisição nativa, remova o par `request.json` e `result.json` e remova exatamente o prefixo de `lines` registrado naquela requisição do início de `state/.subsuper-escalations`, para que o texto nunca entregue não seja republicado.
+3. Somente com aprovação explícita para aquele registro específico: para uma criação, reconcilie a identidade conflitante exata antes de repetir o launcher, e nunca infera ausência a partir de um título nem apague à mão seu registro pendente; para uma requisição nativa, remova o par `request.json` e `result.json` e remova exatamente o prefixo de `lines` registrado naquela requisição do início de `state/.subsuper-escalations`, para que o texto nunca entregue não seja republicado.
 4. Registre o aprovador, o alvo exato e o id do registro removido no relatório do modo ausente.
+
+#### Liberação aprovada de criação sem handle
+
+Uma criação pendente que não gravou nenhum handle de daemon nunca é recuperada automaticamente, mesmo sem nenhum título correspondente.
+Sua única liberação sancionada é a ação guardada `bin/sq-afk-launch.sh release-handle-less`, executada por um operador após o comandante aprovar aquele registro exato.
+A ação faz o censo somente-leitura abaixo e recusa, mantendo a intenção no lugar, a menos que cada passo esteja completo:
+
+1. Verifique o runtime vivo: `orca status --json` deve reportar `reachable=true`, `state="ready"` e o `runtimeId` gravado em `parent.runtime` da intenção.
+2. Enumere todos os terminais vivos: `orca terminal list --limit 10000 --json` deve reportar `ok=true`, esse mesmo `_meta.runtimeId`, `result.truncated=false`, `result.hostScope.omittedHostIds` vazio e `handle`, `worktreeId` e `worktreePath` como strings não vazias em cada terminal.
+3. Cruze todos os terminais registrados de tarefas: cada `state/*.meta` nomeia seu alvo de endpoint como `terminal=` para `backend=orca` (caso contrário `window=`). Todo handle vivo nomeado por um registro de tarefa está reivindicado e nunca é candidato à liberação; metadados ilegíveis ou simbólicos, ou um registro de tarefa Orca sem exatamente um `terminal=`, tornam a evidência incompleta.
+4. Compare com o `parent` da intenção: todo terminal vivo restante cujo `worktreeId` é igual a `parent.worktree` ou cujo `worktreePath` é igual a `parent.path`, excluindo o primário `parent.target` e todo terminal reivindicado por tarefa, é um supervisor perdido plausível não reivindicado. A ação reporta cada handle candidato e para.
+5. Somente quando não existe candidato a ação liquida a requisição nativa do primário exato gravado e então limpa o registro pendente e `state/.afk`.
+
+A ação nunca cria, adota, renomeia nem fecha terminais, nunca trata um título como evidência e não é um fallback automático.
+Um censo incompleto ou ilegível mantém o registro e reporta o ciclo de vida como não completo.
 
 Qualquer dúvida de que o texto ou o terminal tenha sido entregue ou consumido deixa todos os arquivos no lugar e o ciclo de vida reportado como não completo; a remoção nunca autoriza um reenvio.
 

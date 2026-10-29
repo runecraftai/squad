@@ -390,6 +390,19 @@ try {
   const pendingExtra=JSON.parse(pendingBytes.split('\t')[2]);
   const closesBeforeAdopt=count('close');
   assert.ok(pendingExtra.endpoint.target,'create receipt was not persisted before inventory lookup');
+  // status must report the recorded handle honestly and read-only: a pending
+  // target is recoverable while its exact identity is live, not dead.
+  r=cli('status');assert.match(r.stdout,/active=1 terminal=recoverable daemon=dead /);assert.doesNotMatch(r.stdout,/terminal=dead/);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes,'status rewrote the pending record');
+  model.unreadable=true;save();
+  r=cli('status');assert.match(r.stdout,/active=1 terminal=uncertain daemon=dead /);assert.doesNotMatch(r.stdout,/terminal=dead/);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes,'status rewrote the pending record on an unreadable census');
+  model.unreadable=false;save();
+  model.terms.find(t=>t.handle===pendingExtra.endpoint.target).incarnationId='changed-identity';save();
+  r=cli('status');assert.match(r.stdout,/active=1 terminal=uncertain daemon=dead /);assert.doesNotMatch(r.stdout,/terminal=dead/);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes,'status rewrote the pending record on a changed identity');
+  model.terms.find(t=>t.handle===pendingExtra.endpoint.target).incarnationId=pendingExtra.endpoint.incarnation;save();
+  check('status reports a pending recorded identity as recoverable, uncertain when unreadable or changed, and never dead');
   // Parent binding and base identity must agree independently of the title.
   for (const overrides of [{SQUAD_SUPERVISOR_TARGET:'term-foreign'}, {SQUAD_BASE:`${home}/outside`}]) {
     r=cli('start',overrides);assert.notEqual(r.status,0);assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
@@ -422,6 +435,8 @@ try {
   pendingTerminal.title='zsh in squad';save();
   r=cli('start');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/adopted the exact Orca daemon terminal/);
   assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
+  r=cli('release-handle-less');assert.notEqual(r.status,0);assert.match(r.stderr,/releases only a pending Orca creation intent that recorded no daemon identity/);
+  assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
   assert.notEqual(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t')[1],'pending');
   r=cli('stop');assert.equal(r.status,0,r.stderr);reload();assert.equal(model.terms.length,2);
   check('recorded identity adopts one renamed terminal; changed incarnation/worktree/path never permits adoption or retry');
@@ -430,6 +445,8 @@ try {
   model.lostCreate=true;save();await tick();r=cli('start');assert.notEqual(r.status,0);reload();
   const unknownBytes=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
   const unknownExtra=JSON.parse(unknownBytes.split('\t')[2]);assert.equal(unknownExtra.endpoint,undefined);
+  r=cli('status');assert.match(r.stdout,/terminal=uncertain daemon=dead /);assert.doesNotMatch(r.stdout,/terminal=dead/);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),unknownBytes,'status rewrote the handle-less record');
   const unknownCreates=count('create'),unknownCloses=count('close');
   for (const terms of [model.terms, model.terms.filter(t=>!t.handle.startsWith('term-daemon-'))]) {
     const previous=model.terms;model.terms=terms;save();
@@ -440,6 +457,37 @@ try {
     }
     model.terms=previous;
   }
+  // Guarded handle-less release: a complete census that still contains an
+  // unclaimed terminal in the pending worktree is reported, never released.
+  save();
+  r=cli('release-handle-less');assert.notEqual(r.status,0);
+  const unknownDaemon=model.terms.find(t=>t.handle.startsWith('term-daemon-'));
+  assert.match(r.stderr,new RegExp(`unclaimed live terminal candidate handle=${unknownDaemon.handle}`));
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),unknownBytes);
+  for (const field of ['unreadable','truncated','omitted']) {
+    model[field]=true;save();
+    r=cli('release-handle-less');assert.notEqual(r.status,0);assert.match(r.stderr,/census or the recorded task-terminal cross-check is incomplete/);
+    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),unknownBytes);
+    model[field]=false;save();
+  }
+  const incompleteMeta=`${state}/task-incomplete.meta`;
+  writeFileSync(incompleteMeta,'backend=orca\nwindow=sq-task-incomplete\nendpoint_task_id=task-incomplete\n');
+  r=cli('release-handle-less');assert.notEqual(r.status,0);assert.match(r.stderr,/without exactly one terminal handle/);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),unknownBytes);
+  rmSync(incompleteMeta);
+  // Recorded task metas claim those exact terminals, so a complete census has
+  // no unclaimed candidate and only then does the approved release proceed.
+  writeFileSync(`${state}/.afk`,String(Math.floor(Date.now()/1000)));
+  const claimMeta=`${state}/task-claimed.meta`;
+  const foreignMeta=`${state}/task-foreign.meta`;
+  writeFileSync(claimMeta,`backend=orca\nwindow=sq-task-claimed\nendpoint_task_id=task-claimed\nterminal=${unknownDaemon.handle}\nworktree=${home}\nproject=${home}\n`);
+  writeFileSync(foreignMeta,`backend=orca\nwindow=sq-task-foreign\nendpoint_task_id=task-foreign\nterminal=term-foreign\nworktree=${home}\nproject=${home}\n`);
+  r=cli('release-handle-less');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/released the handle-less Orca creation intent/);
+  assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);assert.equal(existsSync(`${state}/.afk`),false);
+  assert.ok(model.terms.some(t=>t.handle===unknownDaemon.handle),'release closed a live terminal');
+  assert.equal(count('close'),unknownCloses);assert.equal(count('create'),unknownCreates);
+  rmSync(claimMeta);rmSync(foreignMeta);
+  check('handle-less release reports unclaimed candidates and incomplete census, then releases only complete cross-checked evidence');
   // Test-only fixture supplies the fake runtime's exact receipt after proving
   // no automatic path changed the unknown record. This is not production recovery.
   const lost=model.terms.find(t=>t.handle.startsWith('term-daemon-'));
@@ -457,6 +505,8 @@ try {
   const absentExtra=JSON.parse(absentBytes.split('\t')[2]);
   model.terms=model.terms.filter(t=>t.handle!==absentExtra.endpoint.target);
   model.terms[1].title=absentExtra.title;model.unreadable=false;save();
+  r=cli('status');assert.match(r.stdout,/active=1 terminal=absent daemon=dead /);assert.doesNotMatch(r.stdout,/terminal=dead/);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),absentBytes,'status rewrote the absent pending record');
   for (const field of ['unreadable','truncated','omitted']) {
     model[field]=true;save();
     for (const action of ['start','stop']) {
@@ -477,6 +527,36 @@ try {
   r=cli('stop');assert.equal(r.status,0,r.stderr);assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);
   assert.equal(existsSync(`${state}/.afk`),false);
   await tick();r=cli('start');assert.equal(r.status,0,r.stderr);r=cli('stop');assert.equal(r.status,0,r.stderr);
+  // A record from the previous launcher has no .owner token; its stored title
+  // marker may only verify the process the exact terminal identity already binds.
+  await tick();r=cli('start');assert.equal(r.status,0,r.stderr);reload();
+  const legacyBound=JSON.parse(readFileSync(`${state}/.afk-daemon-terminal`,'utf8').split('\t').slice(2).join('\t'));
+  const legacyRecord=`orca\t${legacyBound.endpoint.target}\t${JSON.stringify({parent:legacyBound.parent,title:legacyBound.title,endpoint:legacyBound.endpoint})}\n`;
+  const untitledRecord=`orca\t${legacyBound.endpoint.target}\t${JSON.stringify({parent:legacyBound.parent,endpoint:legacyBound.endpoint})}\n`;
+  writeFileSync(`${state}/.afk-daemon-terminal`,legacyRecord);
+  const legacyDaemon=spawn('bash',['-c','sleep 60 & echo $!; wait'],{stdio:['ignore','pipe','ignore']});tracked.push(legacyDaemon);
+  const legacyPid=Number((await once(legacyDaemon.stdout,'data'))[0].toString().trim());assert.ok(legacyPid>1);
+  const legacyLock=`${state}/.supervise-daemon.lock`;mkdirSync(legacyLock);
+  writeFileSync(`${legacyLock}/pid`,String(legacyPid));
+  const legacyIdentity=script(`. '${root}/bin/sq-stand-to-lib.sh'; fm_pid_identity '${legacyPid}'`);assert.equal(legacyIdentity.status,0);
+  writeFileSync(`${legacyLock}/pid-identity`,legacyIdentity.stdout.trim());
+  const closesBeforeLegacy=count('close');
+  writeFileSync(`${legacyLock}/orca-owner`,'foreign-legacy-title');
+  r=cli('stop');assert.notEqual(r.status,0);assert.match(r.stderr,/legacy Orca title marker does not match/);
+  assert.equal(legacyDaemon.exitCode,null);assert.ok(existsSync(`${state}/.afk`));assert.equal(count('close'),closesBeforeLegacy);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),legacyRecord);
+  writeFileSync(`${state}/.afk-daemon-terminal`,untitledRecord);
+  r=cli('stop');assert.notEqual(r.status,0);assert.match(r.stderr,/no launch token and no legacy title marker/);
+  assert.equal(legacyDaemon.exitCode,null);assert.equal(count('close'),closesBeforeLegacy);
+  writeFileSync(`${state}/.afk-daemon-terminal`,legacyRecord);
+  writeFileSync(`${legacyLock}/orca-owner`,legacyBound.title);
+  r=cli('stop');assert.equal(r.status,0,r.stderr);
+  let legacyAlive=true;try{process.kill(legacyPid,0);}catch{legacyAlive=false;}assert.equal(legacyAlive,false,'the legacy daemon process was not signalled');
+  assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);assert.equal(existsSync(`${state}/.afk`),false);
+  assert.equal(count('close'),closesBeforeLegacy+1);reload();assert.equal(model.terms.length,2);
+  r=cli('status');assert.match(r.stdout,/active=0 terminal=absent daemon=dead/);
+  rmSync(legacyLock,{recursive:true});tracked=tracked.filter(child=>child!==legacyDaemon);
+  check('a pre-token legacy record stops only its exact identity with the stored legacy title marker; foreign or missing markers refuse');
   check('proven identity absence releases pending state on stop and permits subsequent start/stop');
   // A redundant start while an escalation is in flight and the daemon is alive
   // must refresh the flag instead of claiming another away session is needed: a
