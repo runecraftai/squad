@@ -29,7 +29,7 @@ const value = k => a[a.indexOf(k)+1]; const out = result => console.log(JSON.str
 if(a[0]==='status') { if(d.failStatus) process.exit(1); out({runtime:{runtimeId:d.runtime,reachable:d.ready,state:d.ready?'ready':'stopped',appVersion:'FAKE'}}); }
 else if(a[0]==='terminal' && a[1]==='show') { if(d.failShow) process.exit(1); const t = d.terms.find(t=>t.handle===value('--terminal')); if(t) out({terminal: d.mismatch ? {...t,handle:'term-other'}:t}); else { console.log(JSON.stringify({ok:false,error:{code:'terminal_handle_not_found'}})); process.exitCode=1; } }
 else if(a[0]==='terminal' && a[1]==='list') { if(d.unreadable) process.exit(1); out({terminals:d.terms,truncated:!!d.truncated,hostScope:{omittedHostIds:d.omitted?['local']:[]}}); }
-else if(a[0]==='terminal' && a[1]==='create') { const t = {handle:'term-daemon-'+(++d.count),title:value('--title'),incarnationId:'daemon-inc-'+d.count,worktreeId:'repo::'+process.env.SQUAD_BASE,worktreePath:process.env.SQUAD_BASE,connected:true,writable:true,orphaned:false,executionHostId:'local'}; d.terms.push(t); if(d.executeCommand) { const env={...process.env}; delete env.PI_CODING_AGENT; delete env.TMUX_PANE; delete env.TMUX; const child=require('child_process').spawn('bash',['-c',value('--command')],{detached:true,stdio:['ignore',fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a'),fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a')],env});d.spawnedPid=child.pid;child.unref(); } fs.writeFileSync(p,JSON.stringify(d)); if(d.lostCreate) process.exit(1); out({terminal:{...t,worktreePath:undefined}}); }
+else if(a[0]==='terminal' && a[1]==='create') { const t = d.createPrimary ? d.terms.find(x=>x.handle==='term-primary') : {handle:'term-daemon-'+(++d.count),title:value('--title'),incarnationId:'daemon-inc-'+d.count,worktreeId:'repo::'+process.env.SQUAD_BASE,worktreePath:process.env.SQUAD_BASE,connected:true,writable:true,orphaned:false,executionHostId:'local'}; if(!d.createPrimary) d.terms.push(t); if(d.executeCommand) { const env={...process.env}; delete env.PI_CODING_AGENT; delete env.TMUX_PANE; delete env.TMUX; const child=require('child_process').spawn('bash',['-c',value('--command')],{detached:true,stdio:['ignore',fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a'),fs.openSync(process.env.SQUAD_BASE+'/daemon-output.txt','a')],env});d.spawnedPid=child.pid;child.unref(); } fs.writeFileSync(p,JSON.stringify(d)); if(d.lostCreate) process.exit(1); out({terminal:{...t,worktreePath:undefined}}); }
 else if(a[0]==='terminal' && a[1]==='close') { if(d.cancelClose) {out({cancelled:true});} else {d.terms=d.terms.filter(t=>t.handle!==value('--terminal'));fs.writeFileSync(p,JSON.stringify(d));out({});} }
 else { console.error('forbidden fake Orca operation '+JSON.stringify(a)); process.exit(99); }
 `);
@@ -575,6 +575,23 @@ try {
   assert.equal(readFileSync(`${state}/.subsuper-escalations`,'utf8'),bufferBefore);assert.ok(existsSync(`${otherDir}/request.json`));assert.ok(existsSync(`${state}/.afk`));
   rmSync(otherDir,{recursive:true,force:true});
   check('an unresolved request for another primary blocks start/stop/reconcile and preserves the buffer');
+  // A create receipt that names the primary is not a daemon identity: the
+  // launcher must refuse it, never adopt it, and never close the primary.
+  model.createPrimary=true;save();await tick();
+  const primaryCloses=count('close');
+  r=cli('start');assert.notEqual(r.status,0,r.stderr);
+  assert.match(r.stderr,/returned the primary terminal handle instead of a daemon terminal/);
+  assert.match(r.stderr,/no daemon identity was recorded/);
+  assert.equal(count('close'),primaryCloses,'the primary was closed after a create receipt named it');
+  assert.ok(model.terms.some(t=>t.handle==='term-primary'),'the primary terminal disappeared');
+  const primaryRecord=readFileSync(`${state}/.afk-daemon-terminal`,'utf8');
+  assert.equal(primaryRecord.split('\t')[1],'pending');
+  assert.equal(JSON.parse(primaryRecord.split('\t')[2]).endpoint,undefined,'a primary handle was persisted as the daemon identity');
+  r=cli('stop');assert.notEqual(r.status,0);
+  assert.equal(count('close'),primaryCloses,'stop closed the primary named by a rejected create receipt');
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),primaryRecord);
+  delete model.createPrimary;save();
+  check('a create receipt naming the primary is refused without adopting or closing it');
   await emit('session_shutdown');
 } finally {
   globalThis.setInterval=oldSet;globalThis.clearInterval=oldClear;

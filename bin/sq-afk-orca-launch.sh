@@ -90,7 +90,7 @@ fm_afk_launch_orca_owned() {  # <target> <record-json>
   local target=$1 extra=$2 endpoint
   [ "$target" != pending ] || return 1
   endpoint=$(fm_supervisor_native_endpoint orca "$target") || return 1
-  printf '%s' "$extra" | jq -e --argjson endpoint "$endpoint" '.endpoint == $endpoint and .parent.runtime == $endpoint.runtime and .parent.worktree == $endpoint.worktree and .parent.path == $endpoint.path' >/dev/null
+  printf '%s' "$extra" | jq -e --argjson endpoint "$endpoint" '.endpoint == $endpoint and .parent.target != $endpoint.target and .parent.runtime == $endpoint.runtime and .parent.worktree == $endpoint.worktree and .parent.path == $endpoint.path' >/dev/null
 }
 
 fm_afk_launch_orca_absent() {  # <target> <record-json>
@@ -132,9 +132,12 @@ fm_afk_launch_create_orca() {  # <commander-target> <commander-backend>
   # receipt need not repeat worktreePath (the installed Linux host does not).
   endpoint=$(printf '%s' "$out" | jq -ce --argjson parent "$parent" '
     select(.ok == true and ._meta.runtimeId == $parent.runtime)
-    | .result.terminal | select(.worktreeId == $parent.worktree)
+    | .result.terminal | select(.worktreeId == $parent.worktree and .handle != $parent.target)
     | select(all([.handle,.incarnationId][]; type == "string" and length > 0))
     | {backend:"orca",target:.handle,runtime:$parent.runtime,incarnation:.incarnationId,worktree:.worktreeId,path:$parent.path}' 2>/dev/null) || endpoint=
+  if [ -z "$endpoint" ] && printf '%s' "$out" | jq -e --argjson parent "$parent" '.ok == true and .result.terminal.handle == $parent.target' >/dev/null 2>&1; then
+    fm_afk_launch_log 'Orca create returned the primary terminal handle instead of a daemon terminal; refusing to adopt or close the primary and preserving the pending intent'
+  fi
   if [ -n "$endpoint" ]; then
     extra=$(printf '%s' "$extra" | jq -ce --argjson endpoint "$endpoint" '. + {endpoint:$endpoint}') || return 1
     fm_afk_launch_record_write orca pending "$extra" || return 1

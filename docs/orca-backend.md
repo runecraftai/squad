@@ -122,6 +122,7 @@ Pending-creation recovery is owned by `bin/sq-afk-orca-launch.sh` and covered by
 A fresh ambiguous create is never retried inside the same invocation.
 A create whose daemon identity was recorded counts as a started session, so a later probe failure keeps the away flag and the freshly cleared escalation artifacts instead of restoring a previous session's buffer that the adopted or refreshed daemon would then deliver.
 An entirely lost response or legacy intent with no recorded daemon identity always remains uncertain, even with no title matches; automatic adoption and retry are forbidden.
+A create receipt whose handle is the primary's is refused the same way: the parent terminal is never the daemon's, so it is never adopted or closed.
 `stop` and `reconcile` recognise the Orca lifecycle from the recorded terminal and the daemon lock's owner marker, not from the invoking shell's `SQUAD_SUPERVISOR_BACKEND`, so a stop without that variable still refuses an unrecorded daemon or an unresolved native request instead of reporting completion.
 Remote Orca targets are refused because the local receiver/process ownership proof does not apply to a remote host.
 
