@@ -28,13 +28,13 @@
 #   It adds the hard isolation contract backed by bin/sq-herdr-lab.sh.
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo label says nothing about the task body: only the exact
-#   label "squad" in any capitalization or a path resolving to this base
+#   label "squad", matched case-sensitively, or a path resolving to this base
 #   identifies this repo, and even then the task's Herdr surface stays unknown.
 #   Briefs made without it carry a loud declaration so an omitted contract cannot
 #   be silent.
 # A strike or recon brief scoped to this Squad base itself - the exact repo label
-# "squad" in any capitalization or a path resolving to this base checkout or
-# another worktree of the same repository - carries one repository guard line
+# "squad", matched case-sensitively, or a path resolving to this base checkout
+# or another worktree of the same repository - carries one repository guard line
 # after the task body: this is the Squad base, so work only in an isolated
 # worktree and never in the primary checkout. A drill strike states its delivery
 # fact as well, because CI requires drill's signature; direct-PR and local-only
@@ -608,9 +608,9 @@ exit 0
 fi
 
 # True when the caller's repo string names this Squad base itself: the exact
-# label "squad" in any capitalization, or a path that resolves to this checkout
-# or another worktree of the same repository. Every other string is an ordinary
-# project repo.
+# label "squad", matched case-sensitively, or a path that resolves to this
+# checkout or another worktree of the same repository. Every other string is an
+# ordinary project repo.
 repo_is_squad() {  # <repo-name-or-path>
   local label=$1 path root common_path common_root
   [ "$label" = squad ] && return 0
