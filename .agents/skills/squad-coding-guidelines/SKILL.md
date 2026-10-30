@@ -69,8 +69,7 @@ A new skill is dead weight if nothing loads it.
 Every new skill needs its load trigger declared inline: section 13 for agent-only reference skills, or the relevant operating section for anything else.
 State the trigger as a condition ("load before X", "load on Y wake"), never as a vague pointer.
 Briefs for tasks that touch Squad's own tracked material should tell the operator to load this skill.
-`bin/sq-brief.sh`'s `REPO` argument is a caller-supplied string with no reliable signal that it names Squad's own repo, unlike a project registered in `data/projects.md`, so there is no clean point inside the scaffold to detect this case automatically.
-Squad adds this skill's load instruction to Squad-repo briefs by hand instead.
+`bin/sq-brief.sh`'s `REPO` argument is a caller-supplied string, and its header owns which values identify Squad's own repo for the repository guard the scaffold emits; that guard still says nothing about the task body, and the skill's load condition depends on the `{TASK}` text filled after scaffolding, so Squad adds this skill's load instruction to Squad-repo briefs by hand instead.
 `CONTRIBUTING.md`'s "Development" section carries the same instruction as a durable reminder.
 
 ## Compatibility and enforcement

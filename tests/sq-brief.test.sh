@@ -202,6 +202,10 @@ test_playbook_selection_and_legacy_compatibility() {
   brief="$home/data/playbook-good/brief.md"
   [ "$(grep -c '^Execution playbook: id=bug-fix version=1$' "$brief")" -eq 1 ] || fail "bug-fix@1 identity must occur exactly once"
   assert_grep "Reproduction before fix" "$brief" "playbook brief missing reproduction evidence"
+  assert_grep "repair only criteria that lack \`Proof:\` or are marked \`FAIL\`" "$brief" "bug-fix playbook must keep repairs to missing or failed criteria"
+  assert_grep 'auto_fix.max_fix_rounds' "$brief" "bug-fix playbook must defer the repair cap to drill's configured fix budget"
+  assert_grep 'fails the run as non-convergence' "$brief" "bug-fix playbook must describe fix-budget exhaustion as non-convergence"
+  assert_grep 'do not hand-fix review findings yourself while an active run owns the work' "$brief" "bug-fix playbook must forbid operator hand-fixing during an active run"
   assert_grep "diagnostic-reasoning" "$brief" "playbook brief missing diagnostic-reasoning"
   assert_grep "tlc-implement" "$brief" "playbook brief missing tlc-implement"
   baseline="$home/legacy.md"
@@ -1141,6 +1145,91 @@ test_ambiguity_rule_stops_coding_and_asks() {
   pass "sq-brief.sh: strike and recon briefs tell the operator to ask instead of coding through ambiguity"
 }
 
+test_repo_squad_guard_and_recon_action_line() {
+  local home brief guard drill_guard out status unconfirmed wt_base wt_other wt_home
+  home="$TMP_ROOT/repo-squad-guard-home"
+  mkdir -p "$home/data"
+  guard='Repository guard: this is the Squad base itself; work only in an isolated worktree, never the primary checkout.'
+  drill_guard="$guard"' Deliver through drill because CI requires its signature.'
+
+  scaffold() {  # <task-id> <repo> [scaffold flags...]
+    local id=$1 repo=$2
+    shift 2
+    out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "$id" "$repo" "$@" 2>&1)
+    status=$?
+    expect_code 0 "$status" "$id scaffold for repo '$repo' should succeed (got: $out)"
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$id scaffold did not write its brief"
+  }
+
+  scaffold repo-squad-strike squad --mode drill --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$drill_guard" "$brief")" -eq 1 ] || fail "repo=squad drill strike must carry the drill repository guard exactly once"
+
+  scaffold repo-squad-title-case Squad --mode drill --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$drill_guard" "$brief")" -eq 1 ] || fail "repo=Squad drill strike must be matched case-insensitively"
+
+  scaffold repo-squad-upper-case SQUAD --recon --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=SQUAD recon must be matched case-insensitively"
+
+  scaffold repo-squad-direct squad --mode direct-PR --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=squad direct-PR strike must carry the repository guard exactly once"
+  assert_no_grep 'Deliver through drill' "$brief" "direct-PR brief says it does not run drill, so the guard must not claim drill delivery"
+
+  scaffold repo-squad-local squad --mode local-only --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=squad local-only strike must carry the repository guard exactly once"
+  assert_no_grep 'Deliver through drill' "$brief" "local-only brief ships no pipeline, so the guard must not claim drill delivery"
+
+  scaffold repo-squad-path "$ROOT" --mode drill --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$drill_guard" "$brief")" -eq 1 ] || fail "a path resolving to the Squad base must carry the drill repository guard exactly once"
+
+  scaffold repo-squad-subdir "$ROOT/bin" --recon --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "a path inside the Squad base must carry the repository guard exactly once"
+  assert_no_grep 'Deliver through drill' "$brief" "a recon never delivers through drill, so its guard must not claim drill delivery"
+  # shellcheck disable=SC2016 # literal backticks are part of the emitted sentence
+  assert_grep 'for each recommended strike, include the exact `sq-*` command (or equivalent action) that would start it' "$brief" \
+    "recon brief must require an actionable strike command"
+
+  scaffold repo-squad-recon squad --recon --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=squad recon must carry the repository guard exactly once"
+
+  scaffold repo-other-strike another-repo --mode drill --no-playbook "test fixture: no execution playbook applies"
+  assert_no_grep "$guard" "$brief" "repository guard must not appear for another repo"
+  scaffold repo-other-recon another-repo --recon --no-playbook "test fixture: no execution playbook applies"
+  assert_no_grep "$guard" "$brief" "repository guard must not appear for another recon repo"
+  scaffold repo-squad-partial squad-extra --mode drill --no-playbook "test fixture: no execution playbook applies"
+  assert_no_grep "$guard" "$brief" "a partial label match must not be treated as the Squad base"
+
+  # A confirmable directory that is not part of any repository cannot be the
+  # Squad base, so it stays an ordinary project repo.
+  unconfirmed="$TMP_ROOT/repo-squad-unconfirmed"
+  mkdir -p "$unconfirmed"
+  scaffold repo-other-path "$home" --mode drill --no-playbook "test fixture: no execution playbook applies"
+  assert_no_grep "$guard" "$brief" "repository guard must not appear for a path outside the Squad base"
+  scaffold repo-unconfirmed-path "$unconfirmed" --mode drill --no-playbook "test fixture: no execution playbook applies"
+  assert_no_grep "$guard" "$brief" "an unconfirmable path must not be assumed to be the Squad base"
+
+  # Another worktree of the same repository has its own top-level, so it is not
+  # this base even though it shares the same git directory.
+  wt_base="$TMP_ROOT/repo-squad-wt-base"
+  wt_other="$TMP_ROOT/repo-squad-wt-other"
+  wt_home="$TMP_ROOT/repo-squad-wt-home"
+  mkdir -p "$wt_home/data"
+  fm_git_init_commit "$wt_base"
+  git -C "$wt_base" worktree add -q --detach "$wt_other" HEAD \
+    || fail "could not create the fixture linked worktree"
+  SQUAD_ROOT_OVERRIDE="$wt_base" SQUAD_BASE="$wt_home" "$ROOT/bin/sq-brief.sh" repo-squad-wt-base "$wt_base" \
+    --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+    || fail "the fixture base's own path must scaffold"
+  brief="$wt_home/data/repo-squad-wt-base/brief.md"
+  [ "$(grep -Fxc "$drill_guard" "$brief")" -eq 1 ] || fail "the fixture base's own path must carry the guard"
+  SQUAD_ROOT_OVERRIDE="$wt_base" SQUAD_BASE="$wt_home" "$ROOT/bin/sq-brief.sh" repo-squad-wt-other "$wt_other" \
+    --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+    || fail "a path to another worktree must still scaffold"
+  brief="$wt_home/data/repo-squad-wt-other/brief.md"
+  assert_no_grep "$guard" "$brief" "another worktree of the same repository must not be treated as the Squad base"
+  pass "sq-brief.sh: Squad-repo guard is conditional, mode-aware, and recon recommendations name their launch action"
+}
+
 test_autonomous_policy_refusals_and_topology_boundaries() {
   local home name out status
   home="$TMP_ROOT/autonomous-policy-home"
@@ -1377,4 +1466,5 @@ test_scout_and_XO_scaffold
 test_operator_guard_leads_strike_and_recon_briefs
 test_status_instruction_is_present_in_all_scaffolds
 test_ambiguity_rule_stops_coding_and_asks
+test_repo_squad_guard_and_recon_action_line
 test_status_instruction_enforcement_refuses_missing_pattern

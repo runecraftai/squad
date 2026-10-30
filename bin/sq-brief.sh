@@ -27,8 +27,27 @@
 #   --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
 #   It adds the hard isolation contract backed by bin/sq-herdr-lab.sh.
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
-#   caller-supplied repo string cannot reliably identify this repo. Briefs made
-#   without it carry a loud declaration so an omitted contract cannot be silent.
+#   caller-supplied repo label says nothing about the task body: only the exact
+#   label "squad" in any capitalization, or a path whose canonical repository
+#   top-level is exactly this base, identifies this repo, and even then the
+#   task's Herdr surface stays unknown.
+#   Briefs made without it carry a loud declaration so an omitted contract cannot
+#   be silent.
+# A strike or recon brief scoped to this Squad base itself - the exact repo label
+# "squad", "Squad", or "SQUAD" (case-insensitive, never a partial match), or a
+# path whose canonical repository top-level is exactly this base checkout -
+# carries one repository guard line after the task body: this is the Squad base,
+# so work only in an isolated worktree and never in the primary checkout. A
+# drill strike states its delivery fact as well, because CI requires drill's
+# signature; direct-PR and local-only strikes and recons do not, since nothing on
+# those paths delivers through drill. Other repos carry no line.
+# A path whose repository identity cannot be confirmed or whose top-level is not
+# this base - one outside this repository, an unresolvable symlink, or another
+# worktree of the same repository - is an ordinary project repo and carries no
+# guard, so an ambiguous label never produces an assumed Squad-base warning.
+# A promoted recon keeps the base and worktree facts only: bin/sq-promote.sh
+# rewrites the task's mode and yolo fields and only suggests a separate ship
+# message instead of regenerating the brief.
 # A strike or recon brief must also record an explicit playbook decision:
 # either --playbook <id>@<version> selects a versioned execution playbook, or
 # --no-playbook "<reason>" states in one non-empty line why none applies.
@@ -72,6 +91,9 @@
 # primary session that dispatched it, and a session-start lock refusal is a
 # misunderstanding rather than a read-only state to respect. XO charters keep
 # their own preamble instead, because an XO runs session start for its own base.
+# A brief for this Squad base itself additionally carries the repository guard
+# line described above; any other repo's brief is byte-identical to a guard-free
+# scaffold, because an empty guard contributes no line and no blank line.
 # Ship briefs also carry a worktree-isolation assertion before the branch step.
 # --mode is refused on recon and XO scaffolds: a recon's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
@@ -587,7 +609,43 @@ fi
 exit 0
 fi
 
+# True when the caller's repo string names this Squad base itself: the exact
+# label "squad" in any capitalization, or a path whose canonical repository
+# top-level is exactly this base checkout. A subdirectory of the base qualifies
+# because its top-level is the base; another worktree of the same repository does
+# not, because its top-level is that worktree. Every other string is an ordinary
+# project repo.
+repo_is_squad() {  # <repo-name-or-path>
+  local label=$1 path root path_top root_top
+  shopt -s nocasematch
+  if [[ $label == squad ]]; then
+    shopt -u nocasematch
+    return 0
+  fi
+  shopt -u nocasematch
+  [ -d "$label" ] || return 1
+  path=$(CDPATH='' cd -- "$label" 2>/dev/null && pwd -P) || return 1
+  root=$(CDPATH='' cd -- "$SQUAD_ROOT" 2>/dev/null && pwd -P) || return 1
+  [ "$path" = "$root" ] && return 0
+  command -v git >/dev/null 2>&1 || return 1
+  path_top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null) || return 1
+  root_top=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || return 1
+  [ -n "$path_top" ] && [ -n "$root_top" ] || return 1
+  path_top=$(CDPATH='' cd -- "$path_top" 2>/dev/null && pwd -P) || return 1
+  root_top=$(CDPATH='' cd -- "$root_top" 2>/dev/null && pwd -P) || return 1
+  [ "$path_top" = "$root_top" ]
+}
+
 REPO=${POS[1]}
+REPO_GUARD=
+REPO_GUARD_SECTION=
+if repo_is_squad "$REPO"; then
+  REPO_GUARD='Repository guard: this is the Squad base itself; work only in an isolated worktree, never the primary checkout.'
+  if [ "$KIND" = strike ] && [ "$MODE" = drill ]; then
+    REPO_GUARD="$REPO_GUARD Deliver through drill because CI requires its signature."
+  fi
+  REPO_GUARD_SECTION="$REPO_GUARD"$'\n\n'
+fi
 
 if [ "$HERDR_LAB" -eq 1 ]; then
 HERDR_LAB_HELPER=$(shell_quote "$SQUAD_ROOT/bin/sq-herdr-lab.sh")
@@ -642,7 +700,7 @@ $OPERATOR_GUARD
 # Task
 {TASK}
 
-${PLAYBOOK_BLOCK}${PROFILE_BLOCK}$HERDR_SECTION
+${REPO_GUARD_SECTION}${PLAYBOOK_BLOCK}${PROFILE_BLOCK}$HERDR_SECTION
 
 # Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.
@@ -679,7 +737,7 @@ Write your findings to \`$DATA/$ID/report.md\`.
 The report must stand alone: what you did, what you found, the evidence (commands run, output, file:line references), and what you recommend.
 Before reporting done, read and follow \`$SQUAD_ROOT/.agents/skills/decision-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
-If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; Squad may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
+If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; for each recommended strike, include the exact \`sq-*\` command (or equivalent action) that would start it; Squad may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
 # Recon status instruction enforcement: refuse to scaffold a brief
 # that lacks the status reporting instruction.
@@ -778,7 +836,7 @@ $OPERATOR_GUARD
 # Task
 {TASK}
 
-$HERDR_SECTION
+${REPO_GUARD_SECTION}$HERDR_SECTION
 
 ${PLAYBOOK_BLOCK}${PROFILE_BLOCK}# Setup
 You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch.

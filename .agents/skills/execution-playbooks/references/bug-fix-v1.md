@@ -9,6 +9,8 @@
 5. Add a regression test that fails for the reproduced bug and passes for the fix.
 6. Run the relevant suite and keep it green.
 7. Re-exercise the original surface after the fix with the original reproduction.
+8. After the first review, repair only criteria that lack `Proof:` or are marked `FAIL`, leaving criteria already proved or passing unchanged; drill's configured maximum fix executions (`auto_fix.max_fix_rounds`) bound those rounds and are shared by automatic and user-triggered fixes, so do not hand-fix review findings yourself while an active run owns the work.
+9. When that budget is exhausted, drill refuses the next fix request and fails the run as non-convergence, naming the executions already performed; report each still-unresolved criterion to the supervisor with the reason it could not be repaired.
 
 ## Required evidence
 

@@ -162,6 +162,7 @@ test_unedited_task_placeholder_is_refused() {
   out=$(run_settle_spawn "$id")
   status=$?
   expect_code 0 "$status" "spawn should pass once the placeholder is replaced (got: $out)"
+  assert_contains "$out" "spawned $id" "substituted brief did not reach a successful spawn"
   pass "an unedited {TASK} brief is refused before launch; a filled brief passes"
 }
 
