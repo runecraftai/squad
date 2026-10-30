@@ -61,7 +61,7 @@ referenced_sandboxes() {
   local pid
   # If the snapshot cannot be taken, report failure so the caller keeps every
   # candidate instead of mistaking an empty result for "no references".
-  command -v cat find readlink tr >/dev/null 2>&1 || return 1
+  command -v cat find grep readlink sort tr >/dev/null 2>&1 || return 1
   readlink "$PROC/self/cwd" >/dev/null 2>&1 || return 1
   [ -r "$PROC/self/mountinfo" ] && [ -r "$PROC/self/environ" ] || return 1
   {
@@ -73,7 +73,10 @@ referenced_sandboxes() {
       readlink "$pid/cwd" 2>/dev/null
       [ -d "$pid/fd" ] && find "$pid/fd" -mindepth 1 -maxdepth 1 -exec readlink {} + 2>/dev/null
       cat "$pid/mountinfo" 2>/dev/null
-      tr '\0' '\n' <"$pid/environ" 2>/dev/null
+      # stderr goes to /dev/null before the input redirect: bash reports a
+      # failed input redirect itself, in the order the redirects appear, and a
+      # pid that exits mid-scan or hides its environ must stay silent.
+      tr '\0' '\n' 2>/dev/null <"$pid/environ"
     done
   } | grep -aoE "${PREFIX}[A-Za-z0-9._-]+" | sort -u
 }

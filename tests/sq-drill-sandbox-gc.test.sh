@@ -205,6 +205,30 @@ SQUAD_DRILL_SANDBOX_PROC="$TMP_ROOT/no-proc" run_gc
 case "$ERR" in *warning*) ;; *) fail "a failed reference scan warns on stderr (got: $ERR)" ;; esac
 pass "a failed live-reference scan keeps every candidate and warns"
 
+# --- an unreadable process entry stays silent ---------------------------------
+# Other-user processes (or hidepid proc mounts) make per-pid files unreadable;
+# the sweep tolerates that without leaking shell errors onto stderr and still
+# honours references it could read.
+reset
+make_sandbox drill-execution-policy-readable 6
+FAKE_PROC="$TMP_ROOT/proc-fake"
+mkdir -p "$FAKE_PROC/self" "$FAKE_PROC/4242" "$FAKE_PROC/4343"
+ln -s "$TMP_ROOT" "$FAKE_PROC/self/cwd"
+: >"$FAKE_PROC/self/mountinfo"
+printf '\0' >"$FAKE_PROC/self/environ"
+ln -s "$SANDBOX_ROOT/drill-execution-policy-readable" "$FAKE_PROC/4242/cwd"
+: >"$FAKE_PROC/4242/mountinfo"
+printf 'x\0' >"$FAKE_PROC/4242/environ"
+: >"$FAKE_PROC/4343/mountinfo"
+printf 'y\0' >"$FAKE_PROC/4343/environ"
+chmod 000 "$FAKE_PROC/4343/environ"
+SQUAD_DRILL_SANDBOX_PROC="$FAKE_PROC" run_gc
+[ "$RC" -eq 0 ] || fail "an unreadable process entry still exits 0 (got $RC)"
+[ -z "$ERR" ] || fail "an unreadable process entry prints nothing on stderr (got: $ERR)"
+[ -d "$SANDBOX_ROOT/drill-execution-policy-readable" ] || fail "a readable cwd reference still keeps the sandbox"
+chmod 600 "$FAKE_PROC/4343/environ"
+pass "an unreadable process entry is silent and does not hide readable references"
+
 # --- missing target and bad input always exit 0 ------------------------------
 SQUAD_DRILL_SANDBOX_ROOT="$TMP_ROOT/does-not-exist" run_gc
 [ "$RC" -eq 0 ] && [ -z "$OUT" ] && [ -z "$ERR" ] || fail "missing root is a silent success"

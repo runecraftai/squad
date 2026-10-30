@@ -1403,3 +1403,30 @@ ROWS
 }
 
 test_crew_dispatch_model_existence_validation
+
+# --- the detached sandbox sweep runs even when state/ does not exist ---------
+# A base run straight from a checkout has no state/ directory; the sweep must
+# still start and its log must land in the state/ it creates on demand.
+test_sandbox_gc_runs_without_state_dir() {
+  local case_dir fakebin i
+  case_dir="$TMP_ROOT/gc-no-state"
+  mkdir -p "$case_dir/home" "$case_dir/tmp/drill-execution-policy-stale/cache"
+  printf 'x\n' >"$case_dir/tmp/drill-execution-policy-stale/cache/blob"
+  find "$case_dir/tmp" -depth -exec touch -d '6 hours ago' {} +
+  fakebin=$(make_fake_toolchain "$case_dir")
+  PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_DRILL_SANDBOX_GC=1 SQUAD_DRILL_SANDBOX_ROOT="$case_dir/tmp" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
+  i=0
+  while [ -e "$case_dir/tmp/drill-execution-policy-stale" ] && [ "$i" -lt 200 ]; do
+    command sleep 0.05
+    i=$((i + 1))
+  done
+  [ ! -e "$case_dir/tmp/drill-execution-policy-stale" ] \
+    || fail "bootstrap sweeps stale drill sandboxes when state/ is absent"
+  [ -f "$case_dir/home/state/.drill-sandbox-gc.log" ] \
+    || fail "the sweep log lands in the state/ bootstrap creates on demand"
+  pass "bootstrap sweeps stale drill sandboxes when state/ is absent"
+}
+
+test_sandbox_gc_runs_without_state_dir

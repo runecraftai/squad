@@ -1334,9 +1334,16 @@ if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   # The sweep runs detached with its output in a log, so a slow scan never delays
   # startup and never holds this script's stdout open for a capturing caller.
   if local_phase && [ "${SQUAD_DRILL_SANDBOX_GC:-1}" != 0 ] && [ -x "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" ]; then
+    # A base run straight from a checkout has no state/ yet, so create it (or
+    # fall back to /dev/null) rather than letting the redirect fail silently and
+    # skip the sweep the log was meant to record.
+    gc_log=$STATE/.drill-sandbox-gc.log
+    if ! mkdir -p "$STATE" 2>/dev/null || ! : 2>/dev/null >"$gc_log"; then
+      gc_log=/dev/null
+    fi
     (
       timeout 120 "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" \
-        >"$STATE/.drill-sandbox-gc.log" 2>&1 </dev/null &
+        >"$gc_log" 2>&1 </dev/null &
     ) 2>/dev/null || true
   fi
   if local_phase && [ "${SQUAD_BOOTSTRAP_LOCKED:-0}" = 1 ]; then
