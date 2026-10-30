@@ -90,6 +90,7 @@ func TestSpecializedReviewRetryUsesNewBatchAndCurrentHead(t *testing.T) {
 }
 
 func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) {
+	const wantMaxParallel int32 = 2
 	dir, base, head := setupGitRepo(t)
 	var active, peak atomic.Int32
 	var completionMu sync.Mutex
@@ -99,6 +100,12 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 	var arrived atomic.Int32
 	bothInside := make(chan struct{})
 	requirementsDone := make(chan struct{})
+	// Any lens that enters the run while the rendezvous lenses still hold it
+	// is recorded on this channel, so an over-permissive worker pool is a
+	// signalled event instead of an inferred one.
+	var overBoundPeak atomic.Int32
+	var overBoundOnce sync.Once
+	overBound := make(chan struct{})
 	a := controlledReviewAgent{run: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
 		validPurpose := false
 		for _, lens := range reviewLensInstructions {
@@ -115,6 +122,10 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 			}
 		}
 		defer active.Add(-1)
+		if current > wantMaxParallel {
+			overBoundPeak.Store(current)
+			overBoundOnce.Do(func() { close(overBound) })
+		}
 		isSecurity := opts.Purpose == "review-lens:security"
 		isRequirements := opts.Purpose == "review-lens:requirements"
 		if isSecurity || isRequirements {
@@ -123,6 +134,7 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 			}
 			select {
 			case <-bothInside:
+			case <-overBound:
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
@@ -143,11 +155,12 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 			close(requirementsDone)
 		}
 		if isSecurity || isRequirements {
-			// Keep both lenses inside the run for a bounded window so an
-			// extraneously permitted worker would be observed rather than
-			// raced past.
+			// Hold both lenses inside the run until a third execution is
+			// signalled, giving a worker beyond the bound enough time to finish
+			// its setup and enter the run where it is recorded.
 			select {
-			case <-time.After(100 * time.Millisecond):
+			case <-overBound:
+			case <-time.After(3 * time.Second):
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
@@ -155,15 +168,18 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
-	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 2, 30*time.Second, nil, fixtureExecutionPolicy{dir: dir})
-	if got := peak.Load(); got != 2 {
+	results := runReviewSpecialists(context.Background(), a, dir, snapshot, int(wantMaxParallel), 30*time.Second, nil, fixtureExecutionPolicy{dir: dir})
+	if got := overBoundPeak.Load(); got > wantMaxParallel {
+		t.Fatalf("observed %d concurrent lens runs while the configured bound is %d (peak concurrency = %d, want %d)", got, wantMaxParallel, peak.Load(), wantMaxParallel)
+	}
+	if got := peak.Load(); got != wantMaxParallel {
 		var lensErrors []error
 		for _, result := range results {
 			if result.Err != nil {
 				lensErrors = append(lensErrors, result.Err)
 			}
 		}
-		t.Fatalf("peak concurrency = %d, want 2 (lens errors: %v)", got, lensErrors)
+		t.Fatalf("peak concurrency = %d, want %d (lens errors: %v)", got, wantMaxParallel, lensErrors)
 	}
 	if len(completionOrder) < 2 || completionOrder[0] != "review-lens:requirements" {
 		t.Fatalf("test did not complete out of order: %v", completionOrder)
