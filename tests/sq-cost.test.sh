@@ -837,6 +837,376 @@ test_pi_zero_result() {
 
 test_pi_zero_result
 
+# ── (h9) summary --by kind ────────────────────────────────────────────────
+
+test_summary_by_kind() {
+  local dir="$TMP_ROOT/summary" database="$TMP_ROOT/summary/drill.sqlite" i
+  mkdir -p "$dir/data"
+  {
+    echo '## Archived 2026-10-01'
+    # Six strikes with known cost: sonnet 1M input tokens = $3 per $1 unit.
+    for i in 1 2 3 4 5 6; do
+      echo "- [x] strike-$i - Strike $i (repo: squad) (kind: strike) (merged 2026-10-01)"
+    done
+    for i in 1 2 3; do echo "- [x] recon-$i - Recon $i (kind: recon) (done 2026-10-01)"; done
+    echo "- [x] strike-1 - Duplicate of strike one (kind: strike)"
+    echo "- [x] plain-1 - Entry without marker (repo: squad)"
+    echo "- [x] **freeform** - Completed bullet that is not a task item (kind: strike)"
+    echo "- [ ] open-1 - Not done (kind: strike)"
+  } > "$dir/data/done-archive.md"
+  printf -- '- [x] strike-7 - Backlog strike (kind: strike) (merged 2026-10-02)\n' > "$dir/data/backlog.md"
+  sqlite3 "$database" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER
+);
+INSERT INTO runs VALUES ('r1','sq/strike-1'),('r2','sq/strike-2'),('r3','sq/strike-3'),
+  ('r4','sq/strike-4'),('r5','sq/strike-5'),('r6','sq/strike-6'),('r7','sq/strike-7'),('rr','sq/recon-1');
+INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i2','r2','pi','claude-sonnet-4','anthropic','a',1,2000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i3','r3','pi','claude-sonnet-4','anthropic','a',1,3000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i4','r4','pi','claude-sonnet-4','anthropic','a',1,4000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i5a','r5','pi','claude-sonnet-4','anthropic','a',1,2000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i5b','r5','pi','claude-sonnet-4','anthropic','b',2,3000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i6','r6','pi','claude-sonnet-4','anthropic','a',1,10000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i7','r7','pi','mimo-v2.5','opencode-go','a',1,9000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('ir','rr','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+SQL
+  local json status
+  json=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --by kind --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "summary exits 0 (got $status)"
+  [ ! -s "$dir/err" ] || fail "summary warns nothing on healthy data: $(cat "$dir/err")"
+  # costs: 3, 6, 9, 12, 15, 30 -> nearest-rank median rank 3 = 9, p90 rank 6 = 30
+  [ "$(jq -r '.classes[] | select(.kind=="strike") | [.n, .no_cost_data, .status, .median_usd, .p90_usd] | @tsv' <<<"$json")" \
+      = "$(printf '6\t1\tok\t9\t30')" ] || fail "strike stats wrong: $json"
+  [ "$(jq -r '.classes[] | select(.kind=="recon") | [.n, .no_cost_data, .status, has("median_usd")] | @tsv' <<<"$json")" \
+      = "$(printf '1\t2\tinsufficient\tfalse')" ] || fail "recon should be insufficient without values: $json"
+  [ "$(jq -r '.classes[] | select(.kind=="unclassified") | .n + .no_cost_data' <<<"$json")" = 1 ] \
+    || fail "entry without marker is unclassified once: $json"
+  [ "$(jq '[.classes[] | .n + .no_cost_data] | add' <<<"$json")" = 11 ] || fail "each id counts once: $json"
+  pass "summary --by kind reports nearest-rank median/p90 and marks small classes insufficient"
+
+  local default_missing="$dir/default-missing" default_warning
+  default_warning=$(SQUAD_DATA_OVERRIDE="$default_missing" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --json 2>&1 >/dev/null)
+  status=$?
+  [ "$status" = 0 ] || fail "missing default archive still exits 0 (got $status)"
+  assert_contains "$default_warning" "warning: archive not readable: $default_missing/done-archive.md" \
+    "a missing default archive warns about the resolved path"
+  pass "summary resolves the default done archive and warns when it is missing"
+
+  local table strike_row recon_row unclassified_row
+  table=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" 2>&1)
+  strike_row=$(printf '%s\n' "$table" | awk '$1 == "strike" {print $4, $5}')
+  recon_row=$(printf '%s\n' "$table" | awk '$1 == "recon" {print $4, $5}')
+  unclassified_row=$(printf '%s\n' "$table" | awk '$1 == "unclassified" {print $4, $5}')
+  [ "$strike_row" = "9 30" ] || fail "table shows median/p90 for a sufficient class: $table"
+  [ "$recon_row" = "insufficient insufficient" ] \
+    || fail "table withholds values for an insufficient class: $table"
+  [ "$unclassified_row" = "insufficient insufficient" ] \
+    || fail "table withholds values for a class with no priced samples: $table"
+  pass "summary prints a table by default with values only for sufficient classes"
+
+  local no_column_bin="$dir/no-column-bin" table_without_column
+  mkdir -p "$no_column_bin"
+  cat > "$no_column_bin/column" <<'SH'
+#!/usr/bin/env bash
+echo 'column: not installed' >&2
+exit 1
+SH
+  chmod +x "$no_column_bin/column"
+  table_without_column=$(PATH="$no_column_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" \
+    SQUAD_DRILL_STATE="$database" "$COST_CLI" summary --archive "$dir/data/done-archive.md" 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "table mode does not require column (got $status): $(cat "$dir/err")"
+  [ "$(printf '%s\n' "$table_without_column" | awk '$1 == "strike" {print $4, $5}')" = "9 30" ] \
+    || fail "table renders without column: $table_without_column"
+  pass "summary table renders without the undeclared column formatter"
+
+  local out
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/missing.sqlite" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "missing database still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "missing database warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "missing database leaves every class insufficient: $out"
+  printf 'not a database' > "$dir/corrupt.sqlite"
+  SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/corrupt.sqlite" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json >/dev/null 2>"$dir/err" \
+    || fail "unreadable database still exits 0"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "unreadable database warns on stderr"
+  pass "missing or unreadable database warns and degrades to insufficient"
+
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "directory archive still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "warning: archive not readable: $dir" \
+    "a directory archive warns instead of leaking a raw cat failure"
+  pass "a directory passed as the archive warns and is skipped"
+
+  local old_db="$dir/old-schema.sqlite"
+  sqlite3 "$old_db" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER
+);
+INSERT INTO runs VALUES ('r1','sq/strike-1');
+INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0);
+SQL
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$old_db" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "incompatible schema still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "incompatible invocation schema warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "incompatible invocation schema leaves every class insufficient: $out"
+  pass "incompatible invocation schema is reported instead of silently dropping cost"
+
+  local no_branch_db="$dir/no-branch.sqlite"
+  sqlite3 "$no_branch_db" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER
+);
+INSERT INTO runs VALUES ('r1');
+INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+SQL
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$no_branch_db" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "runs without branch still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "runs without branch warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "runs without branch leaves every class insufficient: $out"
+  pass "a runs table missing the branch column cannot silently drop cost"
+
+  local no_json_bin="$dir/no-json-bin" real_sqlite3
+  real_sqlite3=$(command -v sqlite3)
+  mkdir -p "$no_json_bin"
+  cat > "$no_json_bin/sqlite3" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  [ "\$arg" = -json ] && { echo 'unknown option: -json' >&2; exit 1; }
+done
+exec "$real_sqlite3" "\$@"
+SH
+  chmod +x "$no_json_bin/sqlite3"
+  out=$(PATH="$no_json_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "sqlite3 without -json still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "sqlite3 without -json warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "sqlite3 without -json leaves every class insufficient: $out"
+  pass "a sqlite3 lacking -json support cannot silently drop cost"
+
+  local late_fail_bin="$dir/late-fail-bin"
+  mkdir -p "$late_fail_bin"
+  cat > "$late_fail_bin/sqlite3" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *sq/__sq_cost_read_probe__*|*sq/strike-*) exec "$real_sqlite3" "\$@" ;;
+  esac
+done
+echo 'database is locked' >&2
+exit 1
+SH
+  chmod +x "$late_fail_bin/sqlite3"
+  out=$(PATH="$late_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "mid-run Drill read failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "mid-run Drill read failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "mid-run Drill read failure leaves every class insufficient: $out"
+  [ "$(jq '[.classes[] | select(has("median_usd") or has("p90_usd"))] | length' <<<"$out")" = 0 ] \
+    || fail "mid-run Drill read failure withholds values gathered before the failure: $out"
+  pass "a Drill read failure during the per-task loop warns once and leaves every class insufficient"
+
+  local jq_fail_bin="$dir/jq-fail-bin" real_jq grouping_total grouping_status
+  real_jq=$(command -v jq)
+  mkdir -p "$jq_fail_bin"
+  cat > "$jq_fail_bin/jq" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *group_by*.model*) echo 'jq: cannot group invocations' >&2; exit 5 ;;
+  esac
+done
+exec "$real_jq" "\$@"
+SH
+  chmod +x "$jq_fail_bin/jq"
+  grouping_total=$(PATH="$jq_fail_bin:$PATH" sq_cost_task_total strike-1 "$database" 2>"$dir/err")
+  grouping_status=$?
+  [ "$grouping_status" = 2 ] || fail "a jq grouping failure is a read failure (got $grouping_status)"
+  [ -z "$grouping_total" ] || fail "a jq grouping failure yields no cost: $grouping_total"
+  out=$(PATH="$jq_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "jq grouping failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "jq grouping failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "jq grouping failure leaves every class insufficient: $out"
+  pass "a jq interpretation failure cannot be mistaken for a task without priced usage"
+
+  local real_awk awk_estimate_fail_bin estimate_total estimate_status
+  real_awk=$(command -v awk)
+  awk_estimate_fail_bin="$dir/awk-estimate-fail-bin"
+  mkdir -p "$awk_estimate_fail_bin"
+  cat > "$awk_estimate_fail_bin/awk" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    i=*) echo 'awk: estimate failed' >&2; exit 1 ;;
+  esac
+done
+exec "$real_awk" "\$@"
+SH
+  chmod +x "$awk_estimate_fail_bin/awk"
+  estimate_total=$(PATH="$awk_estimate_fail_bin:$PATH" sq_cost_task_total strike-1 "$database" 2>"$dir/err")
+  estimate_status=$?
+  [ "$estimate_status" = 2 ] || fail "an estimate failure is a read failure (got $estimate_status)"
+  [ -z "$estimate_total" ] || fail "an estimate failure yields no cost: $estimate_total"
+  out=$(PATH="$awk_estimate_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "estimate failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "estimate failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "estimate failure leaves every class insufficient: $out"
+  pass "an estimate failure cannot be recorded as a zero-cost sample"
+
+  local awk_total_fail_bin accumulate_total accumulate_status
+  awk_total_fail_bin="$dir/awk-total-fail-bin"
+  mkdir -p "$awk_total_fail_bin"
+  cat > "$awk_total_fail_bin/awk" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    t=*) echo 'awk: accumulation failed' >&2; exit 1 ;;
+  esac
+done
+exec "$real_awk" "\$@"
+SH
+  chmod +x "$awk_total_fail_bin/awk"
+  accumulate_total=$(PATH="$awk_total_fail_bin:$PATH" sq_cost_task_total strike-1 "$database" 2>"$dir/err")
+  accumulate_status=$?
+  [ "$accumulate_status" = 2 ] || fail "an accumulation failure is a read failure (got $accumulate_status)"
+  [ -z "$accumulate_total" ] || fail "an accumulation failure yields no cost: $accumulate_total"
+  out=$(PATH="$awk_total_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "accumulation failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "accumulation failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "accumulation failure leaves every class insufficient: $out"
+  pass "an accumulation failure cannot be recorded as a zero-cost sample"
+
+  sqlite3 "$database" <<'SQL'
+INSERT INTO runs VALUES ('rt','sq/tab-1');
+INSERT INTO agent_invocations VALUES ('it','rt','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+SQL
+  printf -- '- [x] tab-1 - Tab kind (kind: a\tb) (merged 2026-10-03)\n' > "$dir/tab.md"
+  out=$(SQUAD_DATA_OVERRIDE="$dir/tab-data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/tab.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "a tab in a kind still exits 0 (got $status): $(cat "$dir/err")"
+  [ ! -s "$dir/err" ] || fail "a tab in a kind warns nothing: $(cat "$dir/err")"
+  [ "$(jq -r '.classes[] | select(.kind == "a\tb") | [.n, .no_cost_data, .status] | @tsv' <<<"$out")" \
+      = "$(printf '1\t0\tinsufficient')" ] || fail "a tab in a kind is preserved when priced: $out"
+  out=$(SQUAD_DATA_OVERRIDE="$dir/tab-data" SQUAD_DRILL_STATE="$dir/missing-tab.sqlite" \
+    "$COST_CLI" summary --archive "$dir/tab.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "a tab in a kind with no database still exits 0 (got $status): $(cat "$dir/err")"
+  [ "$(jq -r '.classes[] | select(.kind == "a\tb") | [.n, .no_cost_data, .status] | @tsv' <<<"$out")" \
+      = "$(printf '0\t1\tinsufficient')" ] || fail "a tab in a kind survives the no-database fallback: $out"
+  pass "kinds containing tabs are preserved through JSON and fallback summaries"
+
+  local vanish_db="$dir/vanish.sqlite" vanish_data="$dir/vanish-data" vanish_bin="$dir/vanish-bin"
+  mkdir -p "$vanish_data" "$vanish_bin"
+  rm -f "$dir/vanish-count"
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    echo "- [x] van-$i - Strike $i (kind: strike)"
+  done > "$dir/vanish.md"
+  {
+    echo 'CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);'
+    echo 'CREATE TABLE agent_invocations (
+      id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+      model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+      input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+      cache_creation_tokens INTEGER);'
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      echo "INSERT INTO runs VALUES ('r$i','sq/van-$i');"
+      echo "INSERT INTO agent_invocations VALUES ('a$i','r$i','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);"
+    done
+  } | sqlite3 "$vanish_db"
+  cat > "$vanish_bin/sqlite3" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *sq/van-*)
+      count=\$(( \$(cat "$dir/vanish-count" 2>/dev/null || echo 0) + 1 ))
+      printf '%s\n' "\$count" > "$dir/vanish-count"
+      "$real_sqlite3" "\$@"
+      status=\$?
+      [ "\$count" -ge 6 ] && rm -f "$vanish_db"
+      exit "\$status"
+      ;;
+  esac
+done
+exec "$real_sqlite3" "\$@"
+SH
+  chmod +x "$vanish_bin/sqlite3"
+  out=$(PATH="$vanish_bin:$PATH" SQUAD_DATA_OVERRIDE="$vanish_data" SQUAD_DRILL_STATE="$vanish_db" \
+    "$COST_CLI" summary --archive "$dir/vanish.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "database disappearing mid-run still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "database disappearing mid-run warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "database disappearing mid-run leaves every class insufficient: $out"
+  [ "$(jq '[.classes[] | select(has("median_usd") or has("p90_usd"))] | length' <<<"$out")" = 0 ] \
+    || fail "database disappearing mid-run withholds the partial sample: $out"
+  pass "a database that disappears mid-run warns once and leaves every class insufficient"
+
+  local legacy_missing
+  legacy_missing=$(sq_cost_drill_task_json van-1 "$vanish_db" 2>"$dir/err")
+  [ "$(jq 'length' <<<"$legacy_missing")" = 0 ] || fail "missing database yields no legacy rows: $legacy_missing"
+  [ ! -s "$dir/err" ] || fail "legacy Drill reads stay quiet for a missing database: $(cat "$dir/err")"
+  pass "legacy Drill reads keep their silent empty result for a missing database"
+
+  if "$COST_CLI" summary --by task >/dev/null 2>"$dir/err"; then
+    fail "unsupported grouping must be a usage error"
+  fi
+  assert_contains "$(cat "$dir/err")" "unsupported grouping" "usage error names the grouping"
+  pass "any grouping other than kind is a usage error"
+
+  local legacy
+  legacy=$(SQUAD_STATE_OVERRIDE="$dir/nostate" "$COST_CLI" task nosuch-task)
+  [ "$legacy" = "0|0|0|0|unknown|0.000000 [estimate]" ] || fail "legacy task line changed: $legacy"
+  pass "legacy task output line is unchanged"
+}
+
+test_summary_by_kind
+
 # ── (i) shellcheck-clean ──────────────────────────────────────────────────
 
 test_shellcheck() {

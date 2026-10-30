@@ -228,17 +228,14 @@ sq_cost_from_transcript() {
 
 # ── Drill invocation reporting ────────────────────────────────────────────
 
-# sq_cost_drill_task_json — return invocations for the task's exact Drill branch.
-# Args: $1=task id, $2=Drill SQLite database path.
-# Each row includes invocation identity, provider/model, step, timestamp, and tokens.
-sq_cost_drill_task_json() {
-  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
-  local branch="sq/$task_id" escaped_branch
+# sq_cost_drill_query — read Drill invocations for an exact branch.
+# Args: $1=branch, $2=Drill SQLite database path.
+# Prints JSON rows and returns sqlite3's status, so callers can distinguish an
+# empty result from a read failure.
+sq_cost_drill_query() {
+  local branch="${1:?branch required}" database="${2:?Drill database required}" escaped_branch
   escaped_branch=${branch//\'/\'\'}
-  [ -f "$database" ] || { printf '[]\n'; return 0; }
-  local rows status err detail
-  err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-drill.XXXXXX")
-  if rows=$(sqlite3 -json "$database" \
+  sqlite3 -json "$database" \
     "SELECT ai.agent, COALESCE(NULLIF(ai.model, ''), 'unknown') AS model,
             COALESCE(NULLIF(ai.model_provider, ''), 'unknown') AS model_provider,
             ai.step_name, ai.started_at,
@@ -249,7 +246,52 @@ sq_cost_drill_task_json() {
        FROM agent_invocations AS ai
        JOIN runs AS r ON r.id = ai.run_id
       WHERE r.branch = '$escaped_branch'
-      ORDER BY ai.started_at, ai.id;" 2>"$err"); then
+      ORDER BY ai.started_at, ai.id;"
+}
+
+# sq_cost_drill_readable — probe the exact Drill read path without using rows.
+# Args: $1=Drill SQLite database path. Non-zero when the database or the
+# invocation query cannot be read with the same sqlite3 options and columns
+# that sq_cost_drill_task_json uses.
+sq_cost_drill_readable() {
+  local database="${1:?Drill database required}"
+  [ -r "$database" ] || return 1
+  sq_cost_drill_query 'sq/__sq_cost_read_probe__' "$database" >/dev/null 2>&1
+}
+
+# sq_cost_drill_task_rows — read invocations for the task's exact Drill branch.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Prints JSON rows (`[]` when the task has none) and returns non-zero when the
+# database is missing or the query itself fails, so an unreadable database is
+# never mistaken for no usage.
+sq_cost_drill_task_rows() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}" rows status
+  if [ ! -f "$database" ]; then
+    printf 'sq-cost: database not found\n' >&2
+    printf '[]\n'
+    return 1
+  fi
+  if rows=$(sq_cost_drill_query "sq/$task_id" "$database"); then
+    printf '%s\n' "${rows:-[]}"
+  else
+    status=$?
+    printf '[]\n'
+    return "$status"
+  fi
+}
+
+# sq_cost_drill_task_json — return invocations for the task's exact Drill branch.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Each row includes invocation identity, provider/model, step, timestamp, and tokens.
+# A missing database is an empty list; other read failures are diagnosed here and
+# also yield an empty list. Callers that must distinguish failure from empty
+# usage use sq_cost_drill_task_rows directly.
+sq_cost_drill_task_json() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
+  local rows status err detail
+  [ -f "$database" ] || { printf '[]\n'; return 0; }
+  err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-drill.XXXXXX")
+  if rows=$(sq_cost_drill_task_rows "$task_id" "$database" 2>"$err"); then
     :
   else
     status=$?
@@ -260,6 +302,93 @@ sq_cost_drill_task_json() {
   fi
   rm -f "$err"
   printf '%s\n' "${rows:-[]}"
+}
+
+# ── Kind summary helpers ──────────────────────────────────────────────────
+
+# sq_cost_task_total — total estimated USD for a task's Drill invocations.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Prints the cost with six decimals, or nothing when the task has no priced
+# usage: no invocations, only flat-rate subscription rows, or zero tokens.
+# Returns 2 when the Drill read, pricing, or arithmetic fails, so callers can
+# stop trusting the sample.
+sq_cost_task_total() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
+  local rows groups model in out cr cw total=0 priced=0 estimate
+  if ! rows=$(sq_cost_drill_task_rows "$task_id" "$database"); then
+    return 2
+  fi
+  if ! groups=$(jq -r '
+    map(select((.model_provider // "") != "opencode-go" and ((.model // "") | startswith("opencode-go") | not)))
+    | group_by(.model)[]
+    | [.[0].model, (map(.input)|add // 0), (map(.output)|add // 0),
+       (map(.cache_read)|add // 0), (map(.cache_write)|add // 0)] | @tsv
+  ' <<<"$rows"); then
+    return 2
+  fi
+  [ -n "$groups" ] || return 0
+  while IFS=$'\t' read -r model in out cr cw; do
+    [ "$((in + out + cr + cw))" -gt 0 ] || continue
+    priced=1
+    if ! estimate=$(sq_cost_estimate "$model" "$in" "$out" "$cr" "$cw"); then
+      return 2
+    fi
+    if ! total=$(awk -v t="$total" -v c="$estimate" 'BEGIN { printf "%.6f", t + c }'); then
+      return 2
+    fi
+  done <<<"$groups"
+  [ "$priced" = 1 ] && printf '%s\n' "$total"
+  return 0
+}
+
+# sq_cost_archive_kinds — id and kind of every completed item.
+# Args: files holding `- [x] <id> - ...` item lines (done archive, backlog).
+# Prints `<id><TAB><kind>` once per id; an item without a `(kind: ...)` marker
+# is `unclassified`, and a later copy of an id only fills a missing kind.
+# Only canonical ids accepted by the done grammar are items; other completed
+# bullets are free-form prose and are skipped. Missing or unreadable files are
+# skipped silently.
+sq_cost_archive_kinds() {
+  local file
+  for file in "$@"; do [ -f "$file" ] && [ -r "$file" ] && cat -- "$file"; done | awk '
+    /^- \[x\] [A-Za-z0-9][A-Za-z0-9._-]* - / {
+      id = $3; kind = "unclassified"
+      if (match($0, /\(kind: [^)]*\)/)) {
+        k = substr($0, RSTART + 7, RLENGTH - 8)
+        gsub(/^[ \t]+|[ \t]+$/, "", k)
+        if (k != "") kind = k
+      }
+      if (!(id in seen)) { seen[id] = kind; order[++n] = id }
+      else if (seen[id] == "unclassified" && kind != "unclassified") seen[id] = kind
+    }
+    END { for (i = 1; i <= n; i++) printf "%s\t%s\n", order[i], seen[order[i]] }
+  '
+  return 0
+}
+
+# sq_cost_summarize_costs — median and p90 cost per class, as JSON.
+# Stdin: `<class><TAB><usd>` lines, with the cost as the last tab-separated
+# field and `-` as the cost of a task without data.
+# Percentiles use the nearest-rank method: the value at 1-based rank
+# ceil(p * n / 100) of the ascending sample, so the median of an even sample is
+# its lower middle value. A class under the minimum is `insufficient` and carries
+# no values. Args: $1=minimum samples (default 5).
+sq_cost_summarize_costs() {
+  local min="${1:-5}"
+  jq -R -s --argjson min "$min" '
+    def nearest_rank($p): sort as $v | $v[((($p * length) + 99) / 100 | floor) - 1];
+    split("\n") | map(select(length > 0) | split("\t") | {kind: (.[0:-1] | join("\t")), cost: .[-1]})
+    | group_by(.kind)
+    | map({kind: .[0].kind,
+           costs: (map(select(.cost != "-") | .cost | tonumber | . * 1000000 | round / 1000000)),
+           no_cost_data: (map(select(.cost == "-")) | length)})
+    | map(. as $c | ($c.costs | length) as $n
+          | {kind: $c.kind, n: $n, no_cost_data: $c.no_cost_data}
+            + (if $n < $min then {status: "insufficient"}
+               else {status: "ok", median_usd: ($c.costs | nearest_rank(50)),
+                     p90_usd: ($c.costs | nearest_rank(90))} end))
+    | {by: "kind", method: "nearest-rank", min_samples: $min, classes: .}
+  '
 }
 
 # ── Pi task reporting ─────────────────────────────────────────────────────
