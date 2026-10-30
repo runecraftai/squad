@@ -33,7 +33,7 @@ The summary lists provider-qualified models and includes both operator and pipel
 `bin/sq-cost.sh summary --by kind` reports the median and p90 estimated list-price cost per completed task kind from priced Drill invocations on branch `sq/<id>`, with kinds read from canonical `- [x]` task items in `data/done-archive.md` and `data/backlog.md`.
 Classes under five priced samples are marked `insufficient` without values, and ids without priced usage are counted in `no_cost_data`.
 It prints a table by default; `--json` requests machine consumption and `--archive <path>` reads a different done archive, while `kind` is the only supported grouping and any other grouping is a usage error.
-A missing or unreadable Drill database warns on stderr, marks every class `insufficient`, and still exits 0; the command never alerts.
+A missing, unreadable, or incompatible Drill database warns on stderr, marks every class `insufficient`, and still exits 0; the command never alerts.
 The script header owns the command contract; `bin/sq-cost-lib.sh` owns the exact item grammar, per-id counting, percentile method, and `unclassified` rules.
 
 `sq-cost.sh publish <task-id> <pr-url>` publishes one marked comment through `sq-gh`.
