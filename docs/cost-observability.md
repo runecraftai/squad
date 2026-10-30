@@ -7,7 +7,7 @@ The JSON contains agent, session, invocation, model, token, timestamp, provider-
 Markdown output renders token counts as humanized strings (e.g. `2.6 billion`) and money to cents with each amount labeled provider-recorded or estimate.
 JSON money fields and the combined total are cents-formatted strings, with `cost_basis` set to `provider-recorded`, `estimate`, `provider-recorded + estimate`, or `flat-rate subscription`.
 Raw integer values are preserved only in the JSON output.
-Drill records are read from `~/.drill/state.sqlite`; `SQUAD_DRILL_STATE` overrides this path for tests.
+Drill records are read from `~/.drill/state.sqlite`; `SQUAD_DRILL_STATE` overrides this path.
 
 Recorded harness identifiers (`pi`, `pi-signed`, `claude`, `codex`, `opencode`, `grok`, `kimi`, `muse`) are mapped to product labels in the Markdown report.
 Unrecognized identifiers fall back to a title-cased form.
@@ -29,6 +29,12 @@ Provider-recorded costs are preferred when a record supplies them.
 List-price calculations are labeled estimates.
 OpenCode Go usage is labeled flat-rate subscription usage and is not presented as token spend.
 The summary lists provider-qualified models and includes both operator and pipeline token totals and costs.
+
+`bin/sq-cost.sh summary --by kind` reports the median and p90 cost per completed task kind from priced Drill invocations on branch `sq/<id>`, with kinds read from `- [x]` items in `data/done-archive.md` and `data/backlog.md`.
+Classes under five priced samples are marked `insufficient` without values, and ids without priced usage are counted in `no_cost_data`.
+Pass `--json` for machine consumption or `--archive <path>` to read a different done archive; `kind` is the only supported grouping, and any other grouping is a usage error.
+A missing or unreadable Drill database warns on stderr, marks every class `insufficient`, and still exits 0; the command never alerts.
+The script header owns the exact percentile method, per-id counting, and `unclassified` rules.
 
 `sq-cost.sh publish <task-id> <pr-url>` publishes one marked comment through `sq-gh`.
 The command updates that comment on later runs rather than creating duplicates.
