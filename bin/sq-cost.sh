@@ -413,12 +413,7 @@ cmd_summary() {
   [ -r "$archive" ] || echo "sq-cost: warning: archive not readable: $archive" >&2
 
   local database="${SQUAD_DRILL_STATE:-$HOME/.drill/state.sqlite}" db_ok=true
-  if [ ! -r "$database" ] || ! sqlite3 "$database" \
-    'SELECT ai.agent, ai.model, ai.model_provider, ai.step_name, ai.started_at,
-            ai.input_tokens, ai.output_tokens, ai.cache_read_tokens, ai.cache_creation_tokens
-       FROM agent_invocations AS ai
-       JOIN runs AS r ON r.id = ai.run_id
-      LIMIT 1;' >/dev/null 2>&1; then
+  if ! sq_cost_drill_readable "$database"; then
     echo "sq-cost: warning: Drill database not readable: $database" >&2
     db_ok=false
   fi
@@ -430,7 +425,7 @@ cmd_summary() {
     while IFS=$'\t' read -r id kind; do
       [ -n "$id" ] || continue
       total=""
-      if [ "$db_ok" = true ]; then total=$(sq_cost_task_total "$id" "$database" 2>/dev/null || true); fi
+      if [ "$db_ok" = true ]; then total=$(sq_cost_task_total "$id" "$database" || true); fi
       printf '%s\t%s\n' "$kind" "${total:--}"
     done <<<"$pairs"
   )

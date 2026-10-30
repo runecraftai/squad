@@ -228,17 +228,14 @@ sq_cost_from_transcript() {
 
 # ── Drill invocation reporting ────────────────────────────────────────────
 
-# sq_cost_drill_task_json — return invocations for the task's exact Drill branch.
-# Args: $1=task id, $2=Drill SQLite database path.
-# Each row includes invocation identity, provider/model, step, timestamp, and tokens.
-sq_cost_drill_task_json() {
-  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
-  local branch="sq/$task_id" escaped_branch
+# sq_cost_drill_query — read Drill invocations for an exact branch.
+# Args: $1=branch, $2=Drill SQLite database path.
+# Prints JSON rows and returns sqlite3's status, so callers can distinguish an
+# empty result from a read failure.
+sq_cost_drill_query() {
+  local branch="${1:?branch required}" database="${2:?Drill database required}" escaped_branch
   escaped_branch=${branch//\'/\'\'}
-  [ -f "$database" ] || { printf '[]\n'; return 0; }
-  local rows status err detail
-  err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-drill.XXXXXX")
-  if rows=$(sqlite3 -json "$database" \
+  sqlite3 -json "$database" \
     "SELECT ai.agent, COALESCE(NULLIF(ai.model, ''), 'unknown') AS model,
             COALESCE(NULLIF(ai.model_provider, ''), 'unknown') AS model_provider,
             ai.step_name, ai.started_at,
@@ -249,7 +246,28 @@ sq_cost_drill_task_json() {
        FROM agent_invocations AS ai
        JOIN runs AS r ON r.id = ai.run_id
       WHERE r.branch = '$escaped_branch'
-      ORDER BY ai.started_at, ai.id;" 2>"$err"); then
+      ORDER BY ai.started_at, ai.id;"
+}
+
+# sq_cost_drill_readable — probe the exact Drill read path without using rows.
+# Args: $1=Drill SQLite database path. Non-zero when the database or the
+# invocation query cannot be read with the same sqlite3 options and columns
+# that sq_cost_drill_task_json uses.
+sq_cost_drill_readable() {
+  local database="${1:?Drill database required}"
+  [ -r "$database" ] || return 1
+  sq_cost_drill_query 'sq/__sq_cost_read_probe__' "$database" >/dev/null 2>&1
+}
+
+# sq_cost_drill_task_json — return invocations for the task's exact Drill branch.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Each row includes invocation identity, provider/model, step, timestamp, and tokens.
+sq_cost_drill_task_json() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
+  [ -f "$database" ] || { printf '[]\n'; return 0; }
+  local rows status err detail
+  err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-drill.XXXXXX")
+  if rows=$(sq_cost_drill_query "sq/$task_id" "$database" 2>"$err"); then
     :
   else
     status=$?
