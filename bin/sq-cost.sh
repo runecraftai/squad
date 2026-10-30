@@ -418,19 +418,29 @@ cmd_summary() {
     db_ok=false
   fi
 
-  local pairs id kind total
+  local pairs id kind total detail read_err samples_file summary
+  read_err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-summary.XXXXXX")
+  samples_file=$(mktemp "${TMPDIR:-/tmp}/sq-cost-samples.XXXXXX")
   pairs=$(sq_cost_archive_kinds "$archive" "$data_dir/backlog.md")
-  local samples
-  samples=$(
-    while IFS=$'\t' read -r id kind; do
-      [ -n "$id" ] || continue
-      total=""
-      if [ "$db_ok" = true ]; then total=$(sq_cost_task_total "$id" "$database" || true); fi
-      printf '%s\t%s\n' "$kind" "${total:--}"
-    done <<<"$pairs"
-  )
-  local summary
-  summary=$(sq_cost_summarize_costs 5 <<<"$samples")
+  while IFS=$'\t' read -r id kind; do
+    [ -n "$id" ] || continue
+    total=""
+    if [ "$db_ok" = true ]; then
+      if ! total=$(sq_cost_task_total "$id" "$database" 2>"$read_err"); then
+        db_ok=false
+        detail=$(tr '\n' ' ' < "$read_err" | sed 's/[[:space:]]*$//')
+        printf 'sq-cost: warning: could not read Drill invocations from %s: %s\n' \
+          "$database" "${detail:-sqlite3 read failed}" >&2
+        total=""
+      fi
+    fi
+    printf '%s\t%s\n' "$kind" "${total:--}" >> "$samples_file"
+  done <<<"$pairs"
+  if [ "$db_ok" = false ]; then
+    awk -F'\t' 'NF { printf "%s\t-\n", $2 }' <<<"$pairs" > "$samples_file"
+  fi
+  summary=$(sq_cost_summarize_costs 5 < "$samples_file")
+  rm -f "$read_err" "$samples_file"
   if [ "$json" = true ]; then
     printf '%s\n' "$summary"
     return 0

@@ -259,15 +259,32 @@ sq_cost_drill_readable() {
   sq_cost_drill_query 'sq/__sq_cost_read_probe__' "$database" >/dev/null 2>&1
 }
 
+# sq_cost_drill_task_rows — read invocations for the task's exact Drill branch.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Prints JSON rows (`[]` when the task has none) and returns non-zero when the
+# query itself fails, so an unreadable database is never mistaken for no usage.
+sq_cost_drill_task_rows() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}" rows status
+  [ -f "$database" ] || { printf '[]\n'; return 0; }
+  if rows=$(sq_cost_drill_query "sq/$task_id" "$database"); then
+    printf '%s\n' "${rows:-[]}"
+  else
+    status=$?
+    printf '[]\n'
+    return "$status"
+  fi
+}
+
 # sq_cost_drill_task_json — return invocations for the task's exact Drill branch.
 # Args: $1=task id, $2=Drill SQLite database path.
 # Each row includes invocation identity, provider/model, step, timestamp, and tokens.
+# A read failure is diagnosed here and yields an empty list; callers that must
+# distinguish failure from empty usage use sq_cost_drill_task_rows directly.
 sq_cost_drill_task_json() {
   local task_id="${1:?task-id required}" database="${2:?Drill database required}"
-  [ -f "$database" ] || { printf '[]\n'; return 0; }
   local rows status err detail
   err=$(mktemp "${TMPDIR:-/tmp}/sq-cost-drill.XXXXXX")
-  if rows=$(sq_cost_drill_query "sq/$task_id" "$database" 2>"$err"); then
+  if rows=$(sq_cost_drill_task_rows "$task_id" "$database" 2>"$err"); then
     :
   else
     status=$?
@@ -286,10 +303,13 @@ sq_cost_drill_task_json() {
 # Args: $1=task id, $2=Drill SQLite database path.
 # Prints the cost with six decimals, or nothing when the task has no priced
 # usage: no invocations, only flat-rate subscription rows, or zero tokens.
+# Returns 2 when the Drill read fails, so callers can stop trusting the sample.
 sq_cost_task_total() {
   local task_id="${1:?task-id required}" database="${2:?Drill database required}"
   local rows groups model in out cr cw total=0 priced=0
-  rows=$(sq_cost_drill_task_json "$task_id" "$database")
+  if ! rows=$(sq_cost_drill_task_rows "$task_id" "$database"); then
+    return 2
+  fi
   groups=$(jq -r '
     map(select((.model_provider // "") != "opencode-go" and ((.model // "") | startswith("opencode-go") | not)))
     | group_by(.model)[]
@@ -311,11 +331,13 @@ sq_cost_task_total() {
 # Args: files holding `- [x] <id> - ...` item lines (done archive, backlog).
 # Prints `<id><TAB><kind>` once per id; an item without a `(kind: ...)` marker
 # is `unclassified`, and a later copy of an id only fills a missing kind.
-# Missing or unreadable files are skipped silently.
+# Only canonical ids accepted by the done grammar are items; other completed
+# bullets are free-form prose and are skipped. Missing or unreadable files are
+# skipped silently.
 sq_cost_archive_kinds() {
   local file
   for file in "$@"; do [ -r "$file" ] && cat -- "$file"; done | awk '
-    /^- \[x\] [^ ]+ - / {
+    /^- \[x\] [A-Za-z0-9][A-Za-z0-9._-]* - / {
       id = $3; kind = "unclassified"
       if (match($0, /\(kind: [^)]*\)/)) {
         k = substr($0, RSTART + 7, RLENGTH - 8)
