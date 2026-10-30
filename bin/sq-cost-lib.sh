@@ -262,6 +262,79 @@ sq_cost_drill_task_json() {
   printf '%s\n' "${rows:-[]}"
 }
 
+# ── Kind summary helpers ──────────────────────────────────────────────────
+
+# sq_cost_task_total — total estimated USD for a task's Drill invocations.
+# Args: $1=task id, $2=Drill SQLite database path.
+# Prints the cost with six decimals, or nothing when the task has no priced
+# usage: no invocations, only flat-rate subscription rows, or zero tokens.
+sq_cost_task_total() {
+  local task_id="${1:?task-id required}" database="${2:?Drill database required}"
+  local rows groups model in out cr cw total=0 priced=0
+  rows=$(sq_cost_drill_task_json "$task_id" "$database")
+  groups=$(jq -r '
+    map(select((.model_provider // "") != "opencode-go" and ((.model // "") | startswith("opencode-go") | not)))
+    | group_by(.model)[]
+    | [.[0].model, (map(.input)|add // 0), (map(.output)|add // 0),
+       (map(.cache_read)|add // 0), (map(.cache_write)|add // 0)] | @tsv
+  ' <<<"$rows" 2>/dev/null || true)
+  [ -n "$groups" ] || return 0
+  while IFS=$'\t' read -r model in out cr cw; do
+    [ "$((in + out + cr + cw))" -gt 0 ] || continue
+    priced=1
+    total=$(awk -v t="$total" -v c="$(sq_cost_estimate "$model" "$in" "$out" "$cr" "$cw")" \
+      'BEGIN { printf "%.6f", t + c }')
+  done <<<"$groups"
+  [ "$priced" = 1 ] && printf '%s\n' "$total"
+  return 0
+}
+
+# sq_cost_archive_kinds — id and kind of every completed item.
+# Args: files holding `- [x] <id> - ...` item lines (done archive, backlog).
+# Prints `<id><TAB><kind>` once per id; an item without a `(kind: ...)` marker
+# is `unclassified`, and a later copy of an id only fills a missing kind.
+# Missing or unreadable files are skipped silently.
+sq_cost_archive_kinds() {
+  local file
+  for file in "$@"; do [ -r "$file" ] && cat -- "$file"; done | awk '
+    /^- \[x\] [^ ]+ - / {
+      id = $3; kind = "unclassified"
+      if (match($0, /\(kind: [^)]*\)/)) {
+        k = substr($0, RSTART + 7, RLENGTH - 8)
+        gsub(/^[ \t]+|[ \t]+$/, "", k)
+        if (k != "") kind = k
+      }
+      if (!(id in seen)) { seen[id] = kind; order[++n] = id }
+      else if (seen[id] == "unclassified" && kind != "unclassified") seen[id] = kind
+    }
+    END { for (i = 1; i <= n; i++) printf "%s\t%s\n", order[i], seen[order[i]] }
+  '
+  return 0
+}
+
+# sq_cost_summarize_costs — median and p90 cost per class, as JSON.
+# Stdin: `<class><TAB><usd>` lines, with `-` as the cost of a task without data.
+# Percentiles use the nearest-rank method: the value at 1-based rank
+# ceil(p * n / 100) of the ascending sample, so the median of an even sample is
+# its lower middle value. A class under the minimum is `insufficient` and carries
+# no values. Args: $1=minimum samples (default 5).
+sq_cost_summarize_costs() {
+  local min="${1:-5}"
+  jq -R -s --argjson min "$min" '
+    def nearest_rank($p): sort as $v | $v[((($p * length) + 99) / 100 | floor) - 1];
+    split("\n") | map(select(length > 0) | split("\t")) | group_by(.[0])
+    | map({kind: .[0][0],
+           costs: (map(select(.[1] != "-") | .[1] | tonumber | . * 1000000 | round / 1000000)),
+           no_cost_data: (map(select(.[1] == "-")) | length)})
+    | map(. as $c | ($c.costs | length) as $n
+          | {kind: $c.kind, n: $n, no_cost_data: $c.no_cost_data}
+            + (if $n < $min then {status: "insufficient"}
+               else {status: "ok", median_usd: ($c.costs | nearest_rank(50)),
+                     p90_usd: ($c.costs | nearest_rank(90))} end))
+    | {by: "kind", method: "nearest-rank", min_samples: $min, classes: .}
+  '
+}
+
 # ── Pi task reporting ─────────────────────────────────────────────────────
 
 # sq_cost_pi_task_json — return privacy-safe aggregated usage for a Pi task.

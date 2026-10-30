@@ -15,6 +15,8 @@
 #   bin/sq-cost.sh estimate <model> <in> <out> [<cache_read>] [<cache_write>]
 #                                              # quick cost estimate
 #   bin/sq-cost.sh price <model>               # show pricing for a model
+#   bin/sq-cost.sh summary [--by kind] [--archive <path>] [--json]
+#                                              # median and p90 cost per task kind
 #
 # Output format (transcript/dir/cwd):
 #   input_tokens|output_tokens|cache_read|cache_write|model|cost_usd
@@ -33,6 +35,14 @@
 # `publish <task-id> <pr-url>`, normally called by sq-pr-check after a PR becomes
 # ready, because it survives generated
 # PR bodies and can update one marked comment idempotently.
+#
+# `summary --by kind` groups completed items by kind and prints n, median, and
+# p90 of the Drill-derived task cost per class (nearest-rank percentiles; a class
+# under five priced samples prints `insufficient` and no values). Kinds come from
+# `- [x]` items in data/done-archive.md (or --archive) and data/backlog.md, since
+# task metadata is deleted at teardown; each id counts once, an item without a
+# kind marker is `unclassified`, and ids without priced Drill usage count in
+# `no_cost_data`. It never alerts and exits 0 on data problems.
 #
 # When no transcript is found, the legacy command prints an estimate line.
 # The humanized-count and agent-label patterns are based on LangWatch
@@ -60,6 +70,7 @@ Commands:
                                                   Quick cost estimate
   price <model>                                   Show pricing table for a model
   pricing-table                                   Dump the full pricing table
+  summary [--by kind] [--archive <path>] [--json] Median and p90 task cost per kind
 EOF
 }
 
@@ -384,6 +395,55 @@ cmd_pricing_table() {
   done
 }
 
+cmd_summary() {
+  local by=kind archive="" json=false
+  local data_dir="${SQUAD_DATA_OVERRIDE:-${SQUAD_BASE:-${SQUAD_HOME:-.}}/data}"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --by) [ $# -ge 2 ] || { echo "error: --by requires a value" >&2; usage >&2; return 1; }
+            by="$2"; shift 2 ;;
+      --archive) [ $# -ge 2 ] || { echo "error: --archive requires a path" >&2; usage >&2; return 1; }
+                 archive="$2"; shift 2 ;;
+      --json) json=true; shift ;;
+      *) echo "error: unknown summary argument: $1" >&2; usage >&2; return 1 ;;
+    esac
+  done
+  [ "$by" = kind ] || { echo "error: unsupported grouping: $by (only 'kind' is supported)" >&2; usage >&2; return 1; }
+  archive="${archive:-$data_dir/done-archive.md}"
+  [ -r "$archive" ] || echo "sq-cost: warning: archive not readable: $archive" >&2
+
+  local database="${SQUAD_DRILL_STATE:-$HOME/.drill/state.sqlite}" db_ok=true
+  if [ ! -r "$database" ] || ! sqlite3 "$database" 'SELECT 1 FROM runs LIMIT 1;' >/dev/null 2>&1; then
+    echo "sq-cost: warning: Drill database not readable: $database" >&2
+    db_ok=false
+  fi
+
+  local pairs id kind total
+  pairs=$(sq_cost_archive_kinds "$archive" "$data_dir/backlog.md")
+  local samples
+  samples=$(
+    while IFS=$'\t' read -r id kind; do
+      [ -n "$id" ] || continue
+      total=""
+      if [ "$db_ok" = true ]; then total=$(sq_cost_task_total "$id" "$database" 2>/dev/null || true); fi
+      printf '%s\t%s\n' "$kind" "${total:--}"
+    done <<<"$pairs"
+  )
+  local summary
+  summary=$(sq_cost_summarize_costs 5 <<<"$samples")
+  if [ "$json" = true ]; then
+    printf '%s\n' "$summary"
+    return 0
+  fi
+  {
+    printf 'kind\tn\tno_cost_data\tmedian_usd\tp90_usd\n'
+    jq -r '.classes[] | [.kind, .n, .no_cost_data,
+      (if .status == "ok" then (.median_usd | . * 100 | round / 100 | tostring) else "insufficient" end),
+      (if .status == "ok" then (.p90_usd | . * 100 | round / 100 | tostring) else "insufficient" end)] | @tsv' <<<"$summary"
+  } | column -t -s $'\t'
+  echo "method: nearest-rank; classes under 5 priced samples are insufficient"
+}
+
 # ── Main ───────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -396,6 +456,7 @@ case "${1:-}" in
   estimate)       shift; cmd_estimate "$@" ;;
   price)          shift; cmd_price "$@" ;;
   pricing-table)  cmd_pricing_table ;;
+  summary)        shift; cmd_summary "$@" ;;
   -h|--help|help|"") usage ;;
   *) echo "unknown command: $1" >&2; usage >&2; exit 1 ;;
 esac
