@@ -224,6 +224,41 @@ case "$OUT" in
 esac
 pass "a BSD-style rm without --one-file-system still sweeps"
 
+# --- an unusable probe never falls back to a mount-crossing rm ---------------
+# When no probe directory can be created (a full or read-only TMPDIR is exactly
+# the state this sweep targets) the guard cannot be verified, so the sweep must
+# keep it through find -xdev instead of falling back to an unbounded rm -rf that
+# would recurse through an unreferenced mount inside the sandbox.
+reset
+make_sandbox drill-execution-policy-no-probe 7
+noprobebin="$TMP_ROOT/no-probe-bin"
+mkdir -p "$noprobebin"
+REAL_RM=$(command -v rm)
+cat >"$noprobebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+cat >"$noprobebin/rm" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$TMP_ROOT/rm-calls"
+exec '$REAL_RM' "\$@"
+SH
+chmod +x "$noprobebin/mktemp" "$noprobebin/rm"
+rm -f "$TMP_ROOT/rm-calls"
+OUT=$(PATH="$noprobebin:$PATH" "$GC" 2>"$TMP_ROOT/err")
+RC=$?
+ERR=$(cat "$TMP_ROOT/err")
+[ "$RC" -eq 0 ] || fail "an unusable probe still exits 0 (got $RC)"
+[ ! -e "$SANDBOX_ROOT/drill-execution-policy-no-probe" ] \
+  || fail "a stale sandbox is removed when the guard probe cannot run"
+[ ! -s "$TMP_ROOT/rm-calls" ] \
+  || fail "an unverifiable guard never falls back to rm -rf (called: $(cat "$TMP_ROOT/rm-calls"))"
+case "$OUT" in
+  *"removed 1 stale drill sandbox"*) ;;
+  *) fail "the removal is still summarized (got: $OUT)" ;;
+esac
+pass "an unusable guard probe still sweeps without crossing mount points"
+
 # --- a failed size measurement warns but does not hide the removal -----------
 reset
 make_sandbox drill-execution-policy-unmeasurable 7

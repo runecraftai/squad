@@ -105,12 +105,13 @@ human_size() {
 }
 
 # Some rm implementations (BSD/macOS) reject --one-file-system. Probe once with
-# a throwaway directory so an unsupported flag falls back to a plain rm -rf
-# instead of failing every removal. If no probe directory can be created, the
-# plain form is used rather than skipping the sweep.
-rm_supports_one_file_system() {
+# a throwaway directory: 0 means the flag works, 1 means it is genuinely
+# unsupported (plain rm -rf is safe there), and 2 means the probe itself could
+# not run, so nothing is known and the removal must keep the cross-filesystem
+# guard through find -xdev rather than crossing a mount point inside a sandbox.
+rm_one_file_system_support() {
   local probe
-  probe=$(mktemp -d "${TMPDIR:-/tmp}/sq-drill-sandbox-gc-probe.XXXXXX" 2>/dev/null) || return 1
+  probe=$(mktemp -d "${TMPDIR:-/tmp}/sq-drill-sandbox-gc-probe.XXXXXX" 2>/dev/null) || return 2
   if rm -rf --one-file-system -- "$probe" 2>/dev/null && [ ! -e "$probe" ]; then
     return 0
   fi
@@ -147,10 +148,14 @@ main() {
     return 0
   fi
 
-  local count=0 total_kb=0 kb du_out
-  local -a rm_one_fs=()
-  if [ "$DRY_RUN" -eq 0 ] && rm_supports_one_file_system; then
-    rm_one_fs=(--one-file-system)
+  local count=0 total_kb=0 kb du_out rm_mode=plain
+  if [ "$DRY_RUN" -eq 0 ]; then
+    rm_one_file_system_support
+    case "$?" in
+      0) rm_mode=one_fs ;;
+      1) rm_mode=plain ;;
+      *) rm_mode=find_xdev ;;
+    esac
   fi
   for d in "${candidates[@]}"; do
     name=${d##*/}
@@ -183,7 +188,13 @@ main() {
     else
       # Cache trees can hold read-only directories, which block removal.
       find "$d" -xdev -type d -exec chmod u+rwx {} + 2>/dev/null || true
-      if ! rm -rf "${rm_one_fs[@]+"${rm_one_fs[@]}"}" -- "$d" 2>/dev/null || [ -e "$d" ]; then
+      local removed=1
+      case "$rm_mode" in
+        one_fs) rm -rf --one-file-system -- "$d" 2>/dev/null || removed=0 ;;
+        plain) rm -rf -- "$d" 2>/dev/null || removed=0 ;;
+        *) find "$d" -xdev -depth -delete 2>/dev/null || removed=0 ;;
+      esac
+      if [ "$removed" -eq 0 ] || [ -e "$d" ]; then
         warn "could not fully remove $d"
         continue
       fi
