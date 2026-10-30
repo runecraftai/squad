@@ -52,6 +52,10 @@ mkdir -p "$out_dir"
 summarize() {
 	local package=$1 log=$2 report_rel=$3
 	local efficacy counts timed_out killed lived not_covered
+	if [ ! -s "$repo_dir/$report_rel" ]; then
+		echo "mutation: gremlins finished $package without writing the JSON report $report_rel; see $log" >&2
+		return 1
+	fi
 	efficacy=$(sed -n 's/^Test efficacy: \(.*\)%$/\1/p' "$log" | tail -n 1)
 	counts=$(sed -n 's/^Killed: \([0-9][0-9]*\), Lived: \([0-9][0-9]*\), Not covered: \([0-9][0-9]*\)$/\1 \2 \3/p' "$log" | tail -n 1)
 	timed_out=$(sed -n 's/^Timed out: \([0-9][0-9]*\),.*$/\1/p' "$log" | tail -n 1)
@@ -69,6 +73,7 @@ for package in ./internal/agent ./internal/types; do
 	name=${package#./internal/}
 	report_rel="tmp/mutation/$name.json"
 	log="$out_dir/$name.log"
+	rm -f -- "$repo_dir/$report_rel"
 	echo "mutation: $package (timeout coefficient $TIMEOUT_COEFFICIENT)"
 	if ! (cd "$repo_dir" && "$gremlins" unleash --timeout-coefficient "$TIMEOUT_COEFFICIENT" --output "$report_rel" "$package") >"$log" 2>&1; then
 		echo "mutation: gremlins failed on $package; last lines of $log:" >&2
