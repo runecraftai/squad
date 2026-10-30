@@ -91,6 +91,23 @@ assert_contains "$out" "declared_but_untouched src/nowhere.txt" "an untouched de
 assert_contains "$out" "undeclared src (2)" "both touched files should be undeclared under one area"
 pass "sq-scope-gate: a declaration the diff never touched is reported"
 
+# A declaration written as an absolute worktree path is normalized before the
+# comparison, so it is not double-counted as both untouched and undeclared.
+fm_write_meta "$STATE/task3.meta" "worktree=$WT"
+write_brief task3 <<EOF
+## Execution plan
+
+Files to touch
+- \`$WT/src/planned.txt\`
+EOF
+out=$(gate task3); rc=$?
+expect_code 0 "$rc" "an absolute worktree declaration must not fail the gate"
+assert_contains "$out" "declared=1 touched=2" "the absolute declaration should be normalized before counting"
+assert_contains "$out" "planned src/planned.txt" "an absolute worktree declaration should match the relative diff path"
+assert_not_contains "$out" "declared_but_untouched" "a normalized declaration must not be reported as untouched"
+assert_contains "$out" "undeclared src (1): src/sibling.txt" "only the sibling should remain undeclared"
+pass "sq-scope-gate: an absolute worktree declaration is normalized"
+
 # A brief without the section is a skip, never an error.
 write_brief noplan <<'EOF'
 ## Execution plan
@@ -196,7 +213,10 @@ else
     out=$(gate sweep); rc=$?
     expect_code 0 "$rc" "the gate must exit 0 for $path"
     assert_not_contains "$out" "Traceback" "the parser must not raise on $path"
-    assert_contains "$out" "scope-gate" "the gate must answer for $path"
+    case "$out" in
+      "scope-gate: skip"*|"declared="*) : ;;
+      *) fail "the gate must answer for $path with a skip or report (got: $out)" ;;
+    esac
   done
   pass "sq-scope-gate: ${#real[@]} real briefs parse without raising"
 fi

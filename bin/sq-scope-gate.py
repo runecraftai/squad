@@ -258,16 +258,15 @@ def run(task):
     if not brief.is_file():
         return skip(f'no brief at {brief}')
     text = brief.read_text(errors='replace')
-    found, declared = declared_paths(text)
+    meta = STATE / f'{task}.meta'
+    worktree = meta_value(meta, 'worktree') if meta.is_file() else ''
+    found, declared = declared_paths(text, worktree)
     if not found:
         return skip()
     if not declared:
         return skip('no path-like entry under Files to touch')
-
-    meta = STATE / f'{task}.meta'
     if not meta.is_file():
         return skip(f'no task meta at {meta}')
-    worktree = meta_value(meta, 'worktree')
     if not worktree:
         return skip(f'{meta} records no worktree')
     if not Path(worktree).is_dir():
