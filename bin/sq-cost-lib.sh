@@ -310,10 +310,11 @@ sq_cost_drill_task_json() {
 # Args: $1=task id, $2=Drill SQLite database path.
 # Prints the cost with six decimals, or nothing when the task has no priced
 # usage: no invocations, only flat-rate subscription rows, or zero tokens.
-# Returns 2 when the Drill read fails, so callers can stop trusting the sample.
+# Returns 2 when the Drill read, pricing, or arithmetic fails, so callers can
+# stop trusting the sample.
 sq_cost_task_total() {
   local task_id="${1:?task-id required}" database="${2:?Drill database required}"
-  local rows groups model in out cr cw total=0 priced=0
+  local rows groups model in out cr cw total=0 priced=0 estimate
   if ! rows=$(sq_cost_drill_task_rows "$task_id" "$database"); then
     return 2
   fi
@@ -329,8 +330,12 @@ sq_cost_task_total() {
   while IFS=$'\t' read -r model in out cr cw; do
     [ "$((in + out + cr + cw))" -gt 0 ] || continue
     priced=1
-    total=$(awk -v t="$total" -v c="$(sq_cost_estimate "$model" "$in" "$out" "$cr" "$cw")" \
-      'BEGIN { printf "%.6f", t + c }')
+    if ! estimate=$(sq_cost_estimate "$model" "$in" "$out" "$cr" "$cw"); then
+      return 2
+    fi
+    if ! total=$(awk -v t="$total" -v c="$estimate" 'BEGIN { printf "%.6f", t + c }'); then
+      return 2
+    fi
   done <<<"$groups"
   [ "$priced" = 1 ] && printf '%s\n' "$total"
   return 0
@@ -362,7 +367,8 @@ sq_cost_archive_kinds() {
 }
 
 # sq_cost_summarize_costs — median and p90 cost per class, as JSON.
-# Stdin: `<class><TAB><usd>` lines, with `-` as the cost of a task without data.
+# Stdin: `<class><TAB><usd>` lines, with the cost as the last tab-separated
+# field and `-` as the cost of a task without data.
 # Percentiles use the nearest-rank method: the value at 1-based rank
 # ceil(p * n / 100) of the ascending sample, so the median of an even sample is
 # its lower middle value. A class under the minimum is `insufficient` and carries
@@ -371,10 +377,11 @@ sq_cost_summarize_costs() {
   local min="${1:-5}"
   jq -R -s --argjson min "$min" '
     def nearest_rank($p): sort as $v | $v[((($p * length) + 99) / 100 | floor) - 1];
-    split("\n") | map(select(length > 0) | split("\t")) | group_by(.[0])
-    | map({kind: .[0][0],
-           costs: (map(select(.[1] != "-") | .[1] | tonumber | . * 1000000 | round / 1000000)),
-           no_cost_data: (map(select(.[1] == "-")) | length)})
+    split("\n") | map(select(length > 0) | split("\t") | {kind: (.[0:-1] | join("\t")), cost: .[-1]})
+    | group_by(.kind)
+    | map({kind: .[0].kind,
+           costs: (map(select(.cost != "-") | .cost | tonumber | . * 1000000 | round / 1000000)),
+           no_cost_data: (map(select(.cost == "-")) | length)})
     | map(. as $c | ($c.costs | length) as $n
           | {kind: $c.kind, n: $n, no_cost_data: $c.no_cost_data}
             + (if $n < $min then {status: "insufficient"}

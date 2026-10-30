@@ -1065,6 +1065,81 @@ SH
     || fail "jq grouping failure leaves every class insufficient: $out"
   pass "a jq interpretation failure cannot be mistaken for a task without priced usage"
 
+  local real_awk awk_estimate_fail_bin estimate_total estimate_status
+  real_awk=$(command -v awk)
+  awk_estimate_fail_bin="$dir/awk-estimate-fail-bin"
+  mkdir -p "$awk_estimate_fail_bin"
+  cat > "$awk_estimate_fail_bin/awk" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    i=*) echo 'awk: estimate failed' >&2; exit 1 ;;
+  esac
+done
+exec "$real_awk" "\$@"
+SH
+  chmod +x "$awk_estimate_fail_bin/awk"
+  estimate_total=$(PATH="$awk_estimate_fail_bin:$PATH" sq_cost_task_total strike-1 "$database" 2>"$dir/err")
+  estimate_status=$?
+  [ "$estimate_status" = 2 ] || fail "an estimate failure is a read failure (got $estimate_status)"
+  [ -z "$estimate_total" ] || fail "an estimate failure yields no cost: $estimate_total"
+  out=$(PATH="$awk_estimate_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "estimate failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "estimate failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "estimate failure leaves every class insufficient: $out"
+  pass "an estimate failure cannot be recorded as a zero-cost sample"
+
+  local awk_total_fail_bin accumulate_total accumulate_status
+  awk_total_fail_bin="$dir/awk-total-fail-bin"
+  mkdir -p "$awk_total_fail_bin"
+  cat > "$awk_total_fail_bin/awk" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    t=*) echo 'awk: accumulation failed' >&2; exit 1 ;;
+  esac
+done
+exec "$real_awk" "\$@"
+SH
+  chmod +x "$awk_total_fail_bin/awk"
+  accumulate_total=$(PATH="$awk_total_fail_bin:$PATH" sq_cost_task_total strike-1 "$database" 2>"$dir/err")
+  accumulate_status=$?
+  [ "$accumulate_status" = 2 ] || fail "an accumulation failure is a read failure (got $accumulate_status)"
+  [ -z "$accumulate_total" ] || fail "an accumulation failure yields no cost: $accumulate_total"
+  out=$(PATH="$awk_total_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "accumulation failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "accumulation failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "accumulation failure leaves every class insufficient: $out"
+  pass "an accumulation failure cannot be recorded as a zero-cost sample"
+
+  sqlite3 "$database" <<'SQL'
+INSERT INTO runs VALUES ('rt','sq/tab-1');
+INSERT INTO agent_invocations VALUES ('it','rt','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+SQL
+  printf -- '- [x] tab-1 - Tab kind (kind: a\tb) (merged 2026-10-03)\n' > "$dir/tab.md"
+  out=$(SQUAD_DATA_OVERRIDE="$dir/tab-data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/tab.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "a tab in a kind still exits 0 (got $status): $(cat "$dir/err")"
+  [ ! -s "$dir/err" ] || fail "a tab in a kind warns nothing: $(cat "$dir/err")"
+  [ "$(jq -r '.classes[] | select(.kind == "a\tb") | [.n, .no_cost_data, .status] | @tsv' <<<"$out")" \
+      = "$(printf '1\t0\tinsufficient')" ] || fail "a tab in a kind is preserved when priced: $out"
+  out=$(SQUAD_DATA_OVERRIDE="$dir/tab-data" SQUAD_DRILL_STATE="$dir/missing-tab.sqlite" \
+    "$COST_CLI" summary --archive "$dir/tab.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "a tab in a kind with no database still exits 0 (got $status): $(cat "$dir/err")"
+  [ "$(jq -r '.classes[] | select(.kind == "a\tb") | [.n, .no_cost_data, .status] | @tsv' <<<"$out")" \
+      = "$(printf '0\t1\tinsufficient')" ] || fail "a tab in a kind survives the no-database fallback: $out"
+  pass "kinds containing tabs are preserved through JSON and fallback summaries"
+
   local vanish_db="$dir/vanish.sqlite" vanish_data="$dir/vanish-data" vanish_bin="$dir/vanish-bin"
   mkdir -p "$vanish_data" "$vanish_bin"
   rm -f "$dir/vanish-count"

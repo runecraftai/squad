@@ -438,7 +438,11 @@ cmd_summary() {
     printf '%s\t%s\n' "$kind" "${total:--}" >> "$samples_file"
   done <<<"$pairs"
   if [ "$db_ok" = false ]; then
-    awk -F'\t' 'NF { printf "%s\t-\n", $2 }' <<<"$pairs" > "$samples_file"
+    awk -F'\t' 'NF > 1 {
+      kind = $2
+      for (i = 3; i <= NF; i++) kind = kind "\t" $i
+      printf "%s\t-\n", kind
+    }' <<<"$pairs" > "$samples_file"
   fi
   summary=$(sq_cost_summarize_costs 5 < "$samples_file")
   rm -f "$read_err" "$samples_file"
