@@ -18,6 +18,9 @@
 #
 #   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|none> · <detail>
 #
+# A finished run attributed with full detail appends ` · risk=<low|medium|high>`
+# to its detail when drill recorded a review risk (sq_drill_run_risk).
+#
 # Logic, in order:
 #   1. Resolve worktree + backend target + kind from state/<id>.meta.
 #   2. Matching drill run for this crew's branch AND current code identity,
@@ -494,6 +497,13 @@ if [ "$HAVE_RUN" = 1 ]; then
   if [ "$RUN_SOURCE" = full ]; then
     drill_pr_url=$(strip_quotes "$(drill_field pr)")
     [ -n "$drill_pr_url" ] && drill_pr_sidecar_write "$STATE" "$ID" "$drill_pr_url"
+  fi
+
+  # Surface drill's review risk on a finished run; sq_drill_run_risk prints
+  # nothing when the level is absent, so the detail stays unchanged then.
+  if [ "$RUN_STATE" = "done" ] && [ "$RUN_SOURCE" = full ]; then
+    run_risk=$(sq_drill_run_risk "$(strip_quotes "$(drill_field id)")")
+    [ -z "$run_risk" ] || RUN_DETAIL="$RUN_DETAIL${SEP}risk=$run_risk"
   fi
 
   emit "$RUN_STATE" run-step "$RUN_DETAIL"
