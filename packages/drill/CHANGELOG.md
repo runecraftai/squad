@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.15](https://github.com/runecraftai/squad/compare/drill-v0.1.14...drill-v0.1.15) (2026-10-30)
+
+
+### Features
+
+* **bin:** safely retire orphaned Orca terminals and fob worktrees ([#321](https://github.com/runecraftai/squad/issues/321)) ([0403d66](https://github.com/runecraftai/squad/commit/0403d661c6198db7bf5c1fdfa43f752befd9d1c9))
+* **drill:** add durable read-only post-green CI observation ([#315](https://github.com/runecraftai/squad/issues/315)) ([4f14f5e](https://github.com/runecraftai/squad/commit/4f14f5e51b3b1484ffd696d1ad3d24d6eef05807))
+
+
+### Bug Fixes
+
+* **drill:** name an executable anchor-and-keep-local exit when the recovery gate diverges ([#327](https://github.com/runecraftai/squad/issues/327)) ([d28f19a](https://github.com/runecraftai/squad/commit/d28f19af9ebfc53f5efe279af3d82c90165f4fd5))
+
 ## [0.1.14](https://github.com/runecraftai/squad/compare/drill-v0.1.13...drill-v0.1.14) (2026-10-25)
 
 
