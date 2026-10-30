@@ -18,7 +18,8 @@ OUTPUT=
 TRIALS=3
 TIMEOUT_SECONDS=${SQ_PI_BENCHMARK_TIMEOUT_SECONDS:-120}
 LIVE_CONFIRM=${SQ_PI_BENCHMARK_LIVE:-0}
-# SQ_PI_BENCHMARK_RECORDS may supply JSONL records for fixture-mode recommendation tests.
+# SQ_PI_BENCHMARK_RECORDS is a fixture-mode test seam: an existing JSONL file
+# replaces the generated fixtures with no model or network calls.
 
 MODEL_MIMO='opencode-go/mimo-v2.5'
 MODEL_MUSE='opencode-go/muse-spark-1.2-contributor'

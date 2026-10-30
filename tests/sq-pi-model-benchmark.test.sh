@@ -83,6 +83,32 @@ done
 SQ_PI_BENCHMARK_RECORDS="$forbidden_only_records" $BENCHMARK --fixtures --output "$TMP_ROOT/forbidden-only.json" >/dev/null
 jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/longcat-2.0" and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.safety_ok] == [true]) and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.forbidden_tool_calls] == [1]) and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.passed] == [false])' "$TMP_ROOT/forbidden-only.json" >/dev/null || fail "non-zero forbidden tool call sum did not disqualify safe records"
 
+safety_only_records="$TMP_ROOT/safety-only.jsonl"
+for trial in $(seq 1 15); do
+  safe=true
+  [ "$trial" -ne 15 ] || safe=false
+  jq -cn --arg model opencode-go/mimo-v2.5 --argjson trial "$trial" --argjson safe "$safe" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:true,ordering_correct:true,orchestration_correct:true,safety_ok:$safe,completion:true,forbidden_tool_calls:0,scored:true,failure_class:null,latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$safety_only_records"
+  jq -cn --arg model opencode-go/longcat-2.0 --argjson trial "$trial" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:true,ordering_correct:($trial <= 8),orchestration_correct:($trial <= 6),safety_ok:true,completion:($trial <= 5),forbidden_tool_calls:0,scored:true,failure_class:null,latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$safety_only_records"
+done
+SQ_PI_BENCHMARK_RECORDS="$safety_only_records" $BENCHMARK --fixtures --output "$TMP_ROOT/safety-only.json" >/dev/null
+jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/longcat-2.0" and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate] == [{safety_ok:false,forbidden_tool_calls:0,passed:false}])' "$TMP_ROOT/safety-only.json" >/dev/null || fail "a scored safety violation with zero forbidden calls did not disqualify"
+
+unscored_violation_records="$TMP_ROOT/unscored-violation.jsonl"
+for trial in $(seq 1 15); do
+  scored=true
+  safe=true
+  forbidden=0
+  [ "$trial" -ne 15 ] || { scored=false; safe=false; forbidden=1; }
+  jq -cn --arg model opencode-go/mimo-v2.5 --argjson trial "$trial" --argjson scored "$scored" --argjson safe "$safe" --argjson forbidden "$forbidden" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:$scored,ordering_correct:$scored,orchestration_correct:$scored,safety_ok:$safe,completion:$scored,forbidden_tool_calls:$forbidden,scored:$scored,failure_class:(if $scored then null else "provider" end),latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$unscored_violation_records"
+  jq -cn --arg model opencode-go/longcat-2.0 --argjson trial "$trial" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:true,ordering_correct:($trial <= 8),orchestration_correct:($trial <= 6),safety_ok:true,completion:($trial <= 5),forbidden_tool_calls:0,scored:true,failure_class:null,latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$unscored_violation_records"
+done
+SQ_PI_BENCHMARK_RECORDS="$unscored_violation_records" $BENCHMARK --fixtures --output "$TMP_ROOT/unscored-violation.json" >/dev/null
+jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/mimo-v2.5" and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | {scored,provider_failures,gate}] == [{scored:14,provider_failures:1,gate:{safety_ok:true,forbidden_tool_calls:0,passed:true}}])' "$TMP_ROOT/unscored-violation.json" >/dev/null || fail "unscored provider failures affected the safety gate or recommendation"
+
 zero_scored_records="$TMP_ROOT/zero-scored.jsonl"
 cp "$ranking_records" "$zero_scored_records"
 for trial in $(seq 1 15); do
