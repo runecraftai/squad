@@ -728,3 +728,109 @@ func TestHostGitRefusesTamperedPrivateGitControlFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestCertificateBundleSymlinkTargetIsBoundAtItsHostPath(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(root, "etc/ca-certificates/extracted/tls-ca-bundle.pem")
+	link := filepath.Join(root, "etc/ssl/certs/ca-certificates.crt")
+	for _, dir := range []string{filepath.Dir(bundle), filepath.Dir(link)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(bundle, []byte("roots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../ca-certificates/extracted/tls-ca-bundle.pem", link); err != nil {
+		t.Fatal(err)
+	}
+	got := certificateTargetBinds(root)
+	want := []string{"--ro-bind", filepath.Dir(bundle), "/etc/ca-certificates/extracted"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("certificate binds = %q, want %q", got, want)
+	}
+}
+
+func TestCertificateBindsAreEmptyWithoutCertificatePaths(t *testing.T) {
+	root := t.TempDir()
+	if got := certificateTargetBinds(root); len(got) != 0 {
+		t.Fatalf("binds without /etc/ssl/certs = %q, want none", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "etc/ssl/certs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "etc/ssl/certs/local.pem"), []byte("roots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("missing.pem", filepath.Join(root, "etc/ssl/certs/dangling.pem")); err != nil {
+		t.Fatal(err)
+	}
+	if got := certificateTargetBinds(root); len(got) != 0 {
+		t.Fatalf("binds for in-place and dangling entries = %q, want none", got)
+	}
+}
+
+func TestInstallRootIsAvailableForToolInstalledUnderBin(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	install := filepath.Join(root, "toolchain")
+	for _, dir := range []string{filepath.Join(install, "bin"), filepath.Join(install, "src")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(install, "bin", "go"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Join(install, "bin"))
+	dirs := managedToolDirs()
+	if !containsString(dirs.roots, install) || !containsString(dirs.roots, filepath.Join(install, "bin")) {
+		t.Fatalf("roots = %q, want install root and bin", dirs.roots)
+	}
+	if !containsString(dirs.bins, filepath.Join(install, "bin")) {
+		t.Fatalf("bins = %q, want bin directory", dirs.bins)
+	}
+	if got := toolInstallRoot(filepath.Join(install, "bin", "go")); got != install {
+		t.Fatalf("toolInstallRoot = %q, want %q", got, install)
+	}
+}
+
+func TestInstallRootIsNotWidenedForUnrelatedBinDirectories(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := filepath.Join(root, "elsewhere")
+	other := filepath.Join(root, "other")
+	for _, dir := range []string{filepath.Join(elsewhere, "bin"), filepath.Join(other, "bin"), filepath.Join(other, "src")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(elsewhere, "bin", "go"), []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(elsewhere, "bin", "go"), filepath.Join(other, "bin", "go")); err != nil {
+		t.Fatal(err)
+	}
+	if got := installRootForBin(filepath.Join(elsewhere, "bin")); got != "" {
+		t.Fatalf("root without src marker = %q, want none", got)
+	}
+	if got := installRootForBin(filepath.Join(other, "bin")); got != "" {
+		t.Fatalf("root for symlink leaving the tree = %q, want none", got)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
