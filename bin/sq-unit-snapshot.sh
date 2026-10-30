@@ -29,8 +29,9 @@
 #     sq-classify-lib.sh's authoritative status_open_decisions fold and reconciled
 #     against current_state; hints.pending_decision and hints.blocked_event are
 #     booleans derived from that set.
-#     pr.risk is drill's review risk (low|medium|high) taken from the done detail
-#     of current_state, null when the run is unfinished or reports none.
+#     pr.risk is drill's review risk (low|medium|high) taken from the done
+#     run-step detail of current_state, null when the run is unfinished or reports
+#     none; details from other sources are never treated as a review level.
 #     endpoint.exists is the cheap backend endpoint-presence read.
 #     endpoint.agent_alive is populated for XOs only, where it is useful
 #     return-channel supervision data; other tasks use "not_checked".
@@ -462,10 +463,16 @@ task_json_lines() {
     event_json=$(status_event_json "$status_log")
     last_event_raw=$(printf '%s' "$event_json" | jq -r '.last_event.raw // ""')
     current_state=$(printf '%s' "$current_json" | jq -r '.state // ""')
-    # Drill's review risk rides on sq-crew-state.sh's done detail, which already
-    # binds the run to this worktree; no second database read here.
-    pr_risk=$(printf '%s' "$current_json" | jq -r \
-      '(.detail // "") | capture("(^| · )risk=(?<level>low|medium|high)( · |$)").level // ""')
+    # Drill's review risk rides on sq-crew-state.sh's done run-step detail, which
+    # already binds the run to this worktree; no second database read here. Only
+    # that source appends a risk token - status-log and pane details are free-form
+    # operator prose, so a `risk=` word in them is not drill's review level.
+    pr_risk=$(printf '%s' "$current_json" | jq -r '
+      if .state == "done" and .source == "run-step" then
+        ((.detail // "") | split(" · ")
+          | map(select(test("^risk=(low|medium|high)$")) | sub("^risk="; ""))
+          | last) // ""
+      else "" end')
     current_source=$(printf '%s' "$current_json" | jq -r '.source // ""')
 
     # Durable keyed open-decision set: fold the WHOLE status stream

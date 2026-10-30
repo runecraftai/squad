@@ -89,4 +89,31 @@ make_risk_db "$RISK/state.sqlite" review "'{\"risk_level\":\"unknown\"}'" NULL
 make_risk_db "$RISK/state.sqlite" test "'{\"risk_level\":\"high\"}'" NULL
 [ "$(snapshot_risk "$RISK/state.sqlite" | jq -r .risk)" = null ] || fail "a run without a review row should leave pr.risk null"
 
+# Free-form detail from a non-run source is operator prose, not drill's review
+# level: a status-log done note mentioning risk=high must not populate pr.risk.
+NOTE="$RISK/note"
+mkdir -p "$NOTE/fakebin" "$NOTE/wt"
+git -C "$NOTE/wt" init -q
+git -C "$NOTE/wt" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m init
+git -C "$NOTE/wt" checkout -q -b sq/note-task
+NOTE_HEAD=$(git -C "$NOTE/wt" rev-parse HEAD)
+cat > "$NOTE/fakebin/drill" <<SH
+#!/usr/bin/env bash
+case "\${1:-}:\${2:-}" in
+  axi:status) printf 'run:\n  id: "01NOTE"\n  branch: sq/note-task\n  status: running\n  head: "$NOTE_HEAD"\n  findings: none\n' ;;
+  runs:*) printf 'running sq/note-task %.7s 2026-10-29\n' "$NOTE_HEAD" ;;
+esac
+exit 0
+SH
+chmod +x "$NOTE/fakebin/drill"
+printf 'window=fm:sq-note-task\nworktree=%s\nkind=strike\n' "$NOTE/wt" > "$BASE/state/note-task.meta"
+printf 'done: PR checks green · risk=high\n' > "$BASE/state/note-task.status"
+note=$(PATH="$NOTE/fakebin:$PATH" SQUAD_DRILL_STATE="$RISK/missing.sqlite" SQUAD_BASE="$BASE" SQUAD_ROOT="$ROOT" \
+  SQUAD_STATE_OVERRIDE="$BASE/state" SQUAD_DATA_OVERRIDE="$BASE/data" \
+  SQUAD_CONFIG_OVERRIDE="$BASE/config" SQUAD_PROJECTS_OVERRIDE="$BASE/projects" \
+  "$ROOT/bin/sq-unit-snapshot.sh" | jq -c '.tasks[] | select(.id == "note-task")')
+printf '%s' "$note" | jq -e '.current_state.state == "done" and .current_state.source == "status-log"
+  and (.current_state.detail | contains("risk=high")) and .pr.risk == null' >/dev/null \
+  || fail "a status-log detail mentioning risk must not become pr.risk: $note"
+
 pass "sq-unit-snapshot handles backlog JSON without argv transport"
