@@ -142,12 +142,28 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 		if isRequirements {
 			close(requirementsDone)
 		}
+		if isSecurity || isRequirements {
+			// Keep both lenses inside the run for a bounded window so an
+			// extraneously permitted worker would be observed rather than
+			// raced past.
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
-	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 2, time.Second, nil, fixtureExecutionPolicy{dir: dir})
-	if peak.Load() != 2 {
-		t.Fatalf("peak concurrency = %d, want 2", peak.Load())
+	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 2, 30*time.Second, nil, fixtureExecutionPolicy{dir: dir})
+	if got := peak.Load(); got != 2 {
+		var lensErrors []error
+		for _, result := range results {
+			if result.Err != nil {
+				lensErrors = append(lensErrors, result.Err)
+			}
+		}
+		t.Fatalf("peak concurrency = %d, want 2 (lens errors: %v)", got, lensErrors)
 	}
 	if len(completionOrder) < 2 || completionOrder[0] != "review-lens:requirements" {
 		t.Fatalf("test did not complete out of order: %v", completionOrder)
