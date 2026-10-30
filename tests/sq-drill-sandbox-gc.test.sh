@@ -83,10 +83,20 @@ reset
 make_sandbox drill-execution-policy-grace 3
 run_gc
 [ -d "$SANDBOX_ROOT/drill-execution-policy-grace" ] || fail "the default grace window keeps a 3h sandbox"
+# A shorter flag window must remove what the default would keep, so a flag that
+# is ignored (or rejected before the sweep) fails here.
+run_gc --grace-minutes 120
+[ ! -e "$SANDBOX_ROOT/drill-execution-policy-grace" ] || fail "--grace-minutes 120 removes a 3h sandbox"
+reset
+make_sandbox drill-execution-policy-grace-old 7
 run_gc --grace-minutes 600
-[ -d "$SANDBOX_ROOT/drill-execution-policy-grace" ] || fail "a longer grace window keeps a 3h sandbox"
+[ -d "$SANDBOX_ROOT/drill-execution-policy-grace-old" ] || fail "--grace-minutes 600 keeps a 7h sandbox"
+run_gc
+[ ! -e "$SANDBOX_ROOT/drill-execution-policy-grace-old" ] || fail "the default grace window removes a 7h sandbox"
+reset
+make_sandbox drill-execution-policy-grace-env 3
 SQUAD_DRILL_SANDBOX_GRACE_MINUTES=120 run_gc
-[ ! -e "$SANDBOX_ROOT/drill-execution-policy-grace" ] || fail "the environment grace window applies"
+[ ! -e "$SANDBOX_ROOT/drill-execution-policy-grace-env" ] || fail "the environment grace window applies"
 pass "default grace window is six hours and configurable by flag and environment"
 
 # --- dry run removes nothing ------------------------------------------------
