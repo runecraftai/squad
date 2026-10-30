@@ -595,10 +595,7 @@ func certificateTargetBinds(hostRoot string) []string {
 			continue
 		}
 		for _, hop := range certificateSymlinkChain(entryPath) {
-			hopGuest := strings.TrimPrefix(hop, hostRoot)
-			if hopGuest != guest {
-				hops = append(hops, certificateHop{source: guest, target: hopGuest})
-			}
+			hops = append(hops, certificateHop{source: guest, target: strings.TrimPrefix(hop, hostRoot)})
 		}
 	}
 	sort.Strings(dirs)

@@ -815,6 +815,31 @@ func TestCertificateBundleChainThroughAlternativesIsMaterialized(t *testing.T) {
 	}
 }
 
+func TestCertificateShallowBundleTargetIsBoundAsFile(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(root, "etc/ca-bundle.pem")
+	link := filepath.Join(root, "etc/ssl/certs/ca-certificates.crt")
+	for _, dir := range []string{filepath.Dir(bundle), filepath.Dir(link)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(bundle, []byte("roots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../ca-bundle.pem", link); err != nil {
+		t.Fatal(err)
+	}
+	got := certificateTargetBinds(root)
+	want := []string{"--ro-bind", bundle, "/etc/ca-bundle.pem"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("certificate binds = %q, want %q", got, want)
+	}
+}
+
 func TestCertificateDirectoryEntryDoesNotMaterializeDirectoryAsFile(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
