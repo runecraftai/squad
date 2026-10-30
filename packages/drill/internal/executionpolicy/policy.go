@@ -581,13 +581,19 @@ func certificateTargetBinds(hostRoot string) []string {
 		if err != nil {
 			continue
 		}
-		guest := strings.TrimPrefix(resolved, hostRoot)
-		dir := filepath.Dir(guest)
-		if strings.HasPrefix(guest+"/", "/etc/ssl/certs/") || isSystemPath(guest) ||
-			strings.Count(dir, string(filepath.Separator)) < 2 || exposesHostCredentials(dir) {
+		info, err := os.Stat(resolved)
+		if err != nil {
 			continue
 		}
-		dirs = append(dirs, dir)
+		guest := strings.TrimPrefix(resolved, hostRoot)
+		dir := filepath.Dir(guest)
+		if !strings.HasPrefix(guest+"/", "/etc/ssl/certs/") && !isSystemPath(guest) &&
+			strings.Count(dir, string(filepath.Separator)) >= 2 && !exposesHostCredentials(dir) {
+			dirs = append(dirs, dir)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
 		for _, hop := range certificateSymlinkChain(entryPath) {
 			hopGuest := strings.TrimPrefix(hop, hostRoot)
 			if hopGuest != guest {
@@ -613,7 +619,12 @@ func certificateTargetBinds(hostRoot string) []string {
 		if hop.target == lastHop || isSystemPath(hop.target) ||
 			strings.HasPrefix(hop.target+"/", "/etc/ssl/certs/") ||
 			strings.Count(hop.target, string(filepath.Separator)) < 2 ||
-			exposesHostCredentials(filepath.Dir(hop.target)) || withinAny(hop.target, bound) {
+			exposesHostCredentials(filepath.Dir(hop.target)) || withinAny(hop.target, bound) ||
+			containsAny(hop.target, bound) {
+			continue
+		}
+		hopInfo, err := os.Stat(filepath.Join(hostRoot, hop.target))
+		if err != nil || !hopInfo.Mode().IsRegular() {
 			continue
 		}
 		lastHop = hop.target
@@ -625,6 +636,15 @@ func certificateTargetBinds(hostRoot string) []string {
 func withinAny(path string, dirs []string) bool {
 	for _, dir := range dirs {
 		if pathWithin(path, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAny(path string, dirs []string) bool {
+	for _, dir := range dirs {
+		if pathWithin(dir, path) {
 			return true
 		}
 	}

@@ -786,6 +786,64 @@ func TestCertificateBundleSymlinkChainIsMaterializedAtEveryHop(t *testing.T) {
 	}
 }
 
+func TestCertificateBundleChainThroughAlternativesIsMaterialized(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(root, "usr/share/ca-certificates/mozilla/ca-certificates.crt")
+	intermediate := filepath.Join(root, "etc/alternatives/ca-certificates.crt")
+	link := filepath.Join(root, "etc/ssl/certs/ca-certificates.crt")
+	for _, dir := range []string{filepath.Dir(bundle), filepath.Dir(intermediate), filepath.Dir(link)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(bundle, []byte("roots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../usr/share/ca-certificates/mozilla/ca-certificates.crt", intermediate); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../alternatives/ca-certificates.crt", link); err != nil {
+		t.Fatal(err)
+	}
+	got := certificateTargetBinds(root)
+	want := []string{"--ro-bind", bundle, "/etc/alternatives/ca-certificates.crt"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("certificate binds = %q, want %q", got, want)
+	}
+}
+
+func TestCertificateDirectoryEntryDoesNotMaterializeDirectoryAsFile(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundles := filepath.Join(root, "srv/certs/bundles")
+	intermediate := filepath.Join(root, "etc/static/bundles")
+	link := filepath.Join(root, "etc/ssl/certs/bundles")
+	for _, dir := range []string{bundles, filepath.Dir(intermediate), filepath.Dir(link)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(bundles, "bundle.pem"), []byte("roots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../srv/certs/bundles", intermediate); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../static/bundles", link); err != nil {
+		t.Fatal(err)
+	}
+	got := certificateTargetBinds(root)
+	want := []string{"--ro-bind", filepath.Join(root, "srv/certs"), "/srv/certs"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("certificate binds = %q, want %q", got, want)
+	}
+}
+
 func TestCertificateBindsAreEmptyWithoutCertificatePaths(t *testing.T) {
 	root := t.TempDir()
 	if got := certificateTargetBinds(root); len(got) != 0 {
