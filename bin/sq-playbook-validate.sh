@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Validate structural evidence for a materialized execution playbook.
 # Usage: sq-playbook-validate.sh <task-id>
+#
+# After the criteria checks and before the failure exit, this validator also runs
+# bin/sq-scope-gate.py for the same task in report mode, prefixing its report.
+# The scope gate compares the brief's declared files with the worktree diff; it
+# never changes this validator's exit status, messages, or gates. The report
+# needs python3, so a base without it validates exactly as before.
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -332,5 +338,12 @@ for (( i=0; i<COUNT; i++ )); do
     fi
   done
 done
+# Report-mode scope gate: it informs, and never changes this validator's exit.
+if command -v python3 >/dev/null 2>&1; then
+  SCOPE_REPORT=$(python3 "$SCRIPT_DIR/sq-scope-gate.py" "$ID" 2>/dev/null || true)
+  if [ -n "$SCOPE_REPORT" ]; then
+    printf '%s\n' "$SCOPE_REPORT" | sed -e 's/^scope-gate: //' -e 's/^/scope-gate (report): /'
+  fi
+fi
 [ "$FAIL" -eq 0 ] || exit 1
 echo "playbook evidence valid: $PLAYBOOK@$VERSION ($CHECKLIST)"
