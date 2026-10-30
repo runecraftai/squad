@@ -58,27 +58,36 @@ usage() {
 # Path components are matched whole, so drill-execution-policy-1 never shields
 # drill-execution-policy-10.
 referenced_sandboxes() {
-  local pid
+  local pid rc refs
   # If the snapshot cannot be taken, report failure so the caller keeps every
   # candidate instead of mistaking an empty result for "no references".
   command -v cat find grep readlink sort tr >/dev/null 2>&1 || return 1
   readlink "$PROC/self/cwd" >/dev/null 2>&1 || return 1
   [ -r "$PROC/self/mountinfo" ] && [ -r "$PROC/self/environ" ] || return 1
-  {
-    # One process at a time, batching descriptor reads: a busy host holds
-    # thousands of descriptors, which neither forks per descriptor nor exceeds
-    # the argument limit and silently drops references.
-    for pid in "$PROC"/[0-9]*; do
-      [ -d "$pid" ] || continue
-      readlink "$pid/cwd" 2>/dev/null
-      [ -d "$pid/fd" ] && find "$pid/fd" -mindepth 1 -maxdepth 1 -exec readlink {} + 2>/dev/null
-      cat "$pid/mountinfo" 2>/dev/null
-      # stderr goes to /dev/null before the input redirect: bash reports a
-      # failed input redirect itself, in the order the redirects appear, and a
-      # pid that exits mid-scan or hides its environ must stay silent.
-      tr '\0' '\n' 2>/dev/null <"$pid/environ"
-    done
-  } | grep -aoE "${PREFIX}[A-Za-z0-9._-]+" | sort -u
+  # A local pipefail makes a stage that fails or is killed fail the snapshot, so
+  # a truncated stream can never pass sort's success off as a complete list.
+  refs=$(
+    set -o pipefail
+    {
+      # One process at a time, batching descriptor reads: a busy host holds
+      # thousands of descriptors, which neither forks per descriptor nor exceeds
+      # the argument limit and silently drops references.
+      for pid in "$PROC"/[0-9]*; do
+        [ -d "$pid" ] || continue
+        readlink "$pid/cwd" 2>/dev/null
+        [ -d "$pid/fd" ] && find "$pid/fd" -mindepth 1 -maxdepth 1 -exec readlink {} + 2>/dev/null
+        cat "$pid/mountinfo" 2>/dev/null
+        # stderr goes to /dev/null before the input redirect: bash reports a
+        # failed input redirect itself, in the order the redirects appear, and a
+        # pid that exits mid-scan or hides its environ must stay silent.
+        tr '\0' '\n' 2>/dev/null <"$pid/environ"
+      done
+      # A pid that exits mid-scan fails only its own reads, which is expected,
+      # so the scan itself still succeeds; a killed or broken stage does not.
+      :
+    } | { grep -aoE "${PREFIX}[A-Za-z0-9._-]+" || { rc=$?; [ "$rc" -eq 1 ]; }; } | sort -u
+  ) || return 1
+  printf '%s\n' "$refs"
 }
 
 human_size() {

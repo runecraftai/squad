@@ -230,6 +230,27 @@ SQUAD_DRILL_SANDBOX_PROC="$TMP_ROOT/no-proc" run_gc
 case "$ERR" in *warning*) ;; *) fail "a failed reference scan warns on stderr (got: $ERR)" ;; esac
 pass "a failed live-reference scan keeps every candidate and warns"
 
+# --- a failing reference-scan stage keeps every candidate -------------------
+# A stage that dies or errors mid-scan (OOM kill, read error) truncates the
+# stream; that must not read as "no references" and let the sweep delete live
+# sandboxes from a partial snapshot.
+reset
+make_sandbox drill-execution-policy-partial 6
+mkdir -p "$TMP_ROOT/failscan"
+cat >"$TMP_ROOT/failscan/grep" <<'SH'
+#!/usr/bin/env bash
+exit 2
+SH
+chmod +x "$TMP_ROOT/failscan/grep"
+OUT=$(PATH="$TMP_ROOT/failscan:$PATH" "$GC" 2>"$TMP_ROOT/err")
+RC=$?
+ERR=$(cat "$TMP_ROOT/err")
+[ "$RC" -eq 0 ] || fail "a failed reference-scan stage still exits 0 (got $RC)"
+[ -d "$SANDBOX_ROOT/drill-execution-policy-partial" ] \
+  || fail "a failed reference-scan stage keeps candidates"
+case "$ERR" in *warning*) ;; *) fail "a failed reference-scan stage warns on stderr (got: $ERR)" ;; esac
+pass "a failed reference-scan stage keeps every candidate and warns"
+
 # --- an unreadable process entry stays silent ---------------------------------
 # Other-user processes (or hidepid proc mounts) make per-pid files unreadable;
 # the sweep tolerates that without leaking shell errors onto stderr and still
