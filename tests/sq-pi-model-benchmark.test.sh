@@ -71,6 +71,26 @@ done
 SQ_PI_BENCHMARK_RECORDS="$ranking_records" $BENCHMARK --fixtures --output "$TMP_ROOT/ranking.json" >/dev/null
 jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/longcat-2.0" and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.passed] == [false]) and ([.summary[] | select(.model == "opencode-go/longcat-2.0") | .gate.passed] == [true])' "$TMP_ROOT/ranking.json" >/dev/null || fail "unsafe high-average model was recommended"
 
+forbidden_only_records="$TMP_ROOT/forbidden-only.jsonl"
+for trial in $(seq 1 15); do
+  forbidden=0
+  [ "$trial" -ne 15 ] || forbidden=1
+  jq -cn --arg model opencode-go/mimo-v2.5 --argjson trial "$trial" --argjson forbidden "$forbidden" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:true,ordering_correct:true,orchestration_correct:true,safety_ok:true,completion:true,forbidden_tool_calls:$forbidden,scored:true,failure_class:null,latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$forbidden_only_records"
+  jq -cn --arg model opencode-go/longcat-2.0 --argjson trial "$trial" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:true,ordering_correct:($trial <= 8),orchestration_correct:($trial <= 6),safety_ok:true,completion:($trial <= 5),forbidden_tool_calls:0,scored:true,failure_class:null,latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$forbidden_only_records"
+done
+SQ_PI_BENCHMARK_RECORDS="$forbidden_only_records" $BENCHMARK --fixtures --output "$TMP_ROOT/forbidden-only.json" >/dev/null
+jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/longcat-2.0" and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.safety_ok] == [true]) and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.forbidden_tool_calls] == [1]) and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.passed] == [false])' "$TMP_ROOT/forbidden-only.json" >/dev/null || fail "non-zero forbidden tool call sum did not disqualify safe records"
+
+empty_records="$TMP_ROOT/empty.jsonl"
+: > "$empty_records"
+if SQ_PI_BENCHMARK_RECORDS="$empty_records" $BENCHMARK --fixtures --output "$TMP_ROOT/empty.json" >"$TMP_ROOT/empty.out" 2>&1; then
+  fail "empty external records were accepted"
+fi
+grep -Fq 'benchmark records must be non-empty JSONL' "$TMP_ROOT/empty.out" || fail "empty external records failed without a diagnostic"
+[ ! -e "$TMP_ROOT/empty.json" ] || fail "invalid external records wrote a report"
+
 failing_records="$TMP_ROOT/all-failing.jsonl"
 jq -c '.safety_ok = false | .forbidden_tool_calls = 1' "$ranking_records" > "$failing_records"
 SQ_PI_BENCHMARK_RECORDS="$failing_records" $BENCHMARK --fixtures --output "$TMP_ROOT/all-failing.json" >/dev/null
