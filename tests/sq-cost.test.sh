@@ -853,7 +853,7 @@ test_summary_by_kind() {
     echo "- [x] plain-1 - Entry without marker (repo: squad)"
     echo "- [x] **freeform** - Completed bullet that is not a task item (kind: strike)"
     echo "- [ ] open-1 - Not done (kind: strike)"
-  } > "$dir/archive.md"
+  } > "$dir/data/done-archive.md"
   printf -- '- [x] strike-7 - Backlog strike (kind: strike) (merged 2026-10-02)\n' > "$dir/data/backlog.md"
   sqlite3 "$database" <<'SQL'
 CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);
@@ -877,7 +877,7 @@ INSERT INTO agent_invocations VALUES ('ir','rr','pi','claude-sonnet-4','anthropi
 SQL
   local json status
   json=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
-    "$COST_CLI" summary --by kind --archive "$dir/archive.md" --json 2>"$dir/err")
+    "$COST_CLI" summary --by kind --json 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "summary exits 0 (got $status)"
   [ ! -s "$dir/err" ] || fail "summary warns nothing on healthy data: $(cat "$dir/err")"
@@ -891,9 +891,18 @@ SQL
   [ "$(jq '[.classes[] | .n + .no_cost_data] | add' <<<"$json")" = 11 ] || fail "each id counts once: $json"
   pass "summary --by kind reports nearest-rank median/p90 and marks small classes insufficient"
 
+  local default_missing="$dir/default-missing" default_warning
+  default_warning=$(SQUAD_DATA_OVERRIDE="$default_missing" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --json 2>&1 >/dev/null)
+  status=$?
+  [ "$status" = 0 ] || fail "missing default archive still exits 0 (got $status)"
+  assert_contains "$default_warning" "warning: archive not readable: $default_missing/done-archive.md" \
+    "a missing default archive warns about the resolved path"
+  pass "summary resolves the default done archive and warns when it is missing"
+
   local table strike_row recon_row unclassified_row
   table=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
-    "$COST_CLI" summary --archive "$dir/archive.md" 2>&1)
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" 2>&1)
   strike_row=$(printf '%s\n' "$table" | awk '$1 == "strike" {print $4, $5}')
   recon_row=$(printf '%s\n' "$table" | awk '$1 == "recon" {print $4, $5}')
   unclassified_row=$(printf '%s\n' "$table" | awk '$1 == "unclassified" {print $4, $5}')
@@ -913,7 +922,7 @@ exit 1
 SH
   chmod +x "$no_column_bin/column"
   table_without_column=$(PATH="$no_column_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" \
-    SQUAD_DRILL_STATE="$database" "$COST_CLI" summary --archive "$dir/archive.md" 2>"$dir/err")
+    SQUAD_DRILL_STATE="$database" "$COST_CLI" summary --archive "$dir/data/done-archive.md" 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "table mode does not require column (got $status): $(cat "$dir/err")"
   [ "$(printf '%s\n' "$table_without_column" | awk '$1 == "strike" {print $4, $5}')" = "9 30" ] \
@@ -922,7 +931,7 @@ SH
 
   local out
   out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/missing.sqlite" \
-    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "missing database still exits 0 (got $status)"
   assert_contains "$(cat "$dir/err")" "Drill database not readable" "missing database warns on stderr"
@@ -930,7 +939,7 @@ SH
     || fail "missing database leaves every class insufficient: $out"
   printf 'not a database' > "$dir/corrupt.sqlite"
   SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/corrupt.sqlite" \
-    "$COST_CLI" summary --archive "$dir/archive.md" --json >/dev/null 2>"$dir/err" \
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json >/dev/null 2>"$dir/err" \
     || fail "unreadable database still exits 0"
   assert_contains "$(cat "$dir/err")" "Drill database not readable" "unreadable database warns on stderr"
   pass "missing or unreadable database warns and degrades to insufficient"
@@ -955,7 +964,7 @@ INSERT INTO runs VALUES ('r1','sq/strike-1');
 INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0);
 SQL
   out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$old_db" \
-    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "incompatible schema still exits 0 (got $status)"
   assert_contains "$(cat "$dir/err")" "Drill database not readable" "incompatible invocation schema warns on stderr"
@@ -976,7 +985,7 @@ INSERT INTO runs VALUES ('r1');
 INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
 SQL
   out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$no_branch_db" \
-    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "runs without branch still exits 0 (got $status)"
   assert_contains "$(cat "$dir/err")" "Drill database not readable" "runs without branch warns on stderr"
@@ -996,7 +1005,7 @@ exec "$real_sqlite3" "\$@"
 SH
   chmod +x "$no_json_bin/sqlite3"
   out=$(PATH="$no_json_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
-    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "sqlite3 without -json still exits 0 (got $status)"
   assert_contains "$(cat "$dir/err")" "Drill database not readable" "sqlite3 without -json warns on stderr"
@@ -1018,7 +1027,7 @@ exit 1
 SH
   chmod +x "$late_fail_bin/sqlite3"
   out=$(PATH="$late_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
-    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "mid-run Drill read failure still exits 0 (got $status)"
   [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
@@ -1047,7 +1056,7 @@ SH
   [ "$grouping_status" = 2 ] || fail "a jq grouping failure is a read failure (got $grouping_status)"
   [ -z "$grouping_total" ] || fail "a jq grouping failure yields no cost: $grouping_total"
   out=$(PATH="$jq_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
-    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+    "$COST_CLI" summary --archive "$dir/data/done-archive.md" --json 2>"$dir/err")
   status=$?
   [ "$status" = 0 ] || fail "jq grouping failure still exits 0 (got $status)"
   [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
