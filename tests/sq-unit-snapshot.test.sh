@@ -134,10 +134,16 @@ snap_pr risk-task "$RISK/fakebin" >/dev/null
 got=$(snap_pr risk-task "$RISK/fakebin")
 pr_is "$got" '.verification == "verified" and .diverging_url == null and .source == "drill"' "sidecar alone should be verified"
 
-# verified: the declared URL matches; the newest status-log URL wins over an older one.
-printf 'working: opened https://github.com/o/r/pull/3\ndone: PR https://github.com/o/r/pull/9 checks green\n' > "$BASE/state/risk-task.status"
+# verified: the declared URL matches; an older differing status-log URL is ignored.
+printf 'working: opened https://github.com/o/r/pull/5\ndone: PR https://github.com/o/r/pull/9 checks green\n' > "$BASE/state/risk-task.status"
 got=$(snap_pr risk-task "$RISK/fakebin")
-pr_is "$got" '.verification == "verified" and .diverging_url == null' "newest status-log URL should be the declared one"
+pr_is "$got" '.verification == "verified" and .diverging_url == null and .url == "https://github.com/o/r/pull/9"' "newest matching status-log URL should be the declared one"
+
+# diverged: with no meta pr=, the newest status-log URL is the declaration, so a
+# mismatch is marked and the older matching URL must not be mistaken for it.
+printf 'working: opened https://github.com/o/r/pull/9\ndone: PR https://github.com/o/r/pull/5 checks green\n' > "$BASE/state/risk-task.status"
+got=$(snap_pr risk-task "$RISK/fakebin")
+pr_is "$got" '.verification == "diverged" and .diverging_url == "https://github.com/o/r/pull/5" and .source == "drill"' "a differing newest status-log URL should be diverged"
 rm -f "$BASE/state/risk-task.status"
 
 # Re-warm the sidecar so this fixture does not depend on an earlier snapshot.
