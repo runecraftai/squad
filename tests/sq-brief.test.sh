@@ -202,7 +202,7 @@ test_playbook_selection_and_legacy_compatibility() {
   brief="$home/data/playbook-good/brief.md"
   [ "$(grep -c '^Execution playbook: id=bug-fix version=1$' "$brief")" -eq 1 ] || fail "bug-fix@1 identity must occur exactly once"
   assert_grep "Reproduction before fix" "$brief" "playbook brief missing reproduction evidence"
-  assert_grep 'repair only criteria that lack `Proof:` or are marked `FAIL`' "$brief" "bug-fix playbook must keep repairs to missing or failed criteria"
+  assert_grep "repair only criteria that lack \`Proof:\` or are marked \`FAIL\`" "$brief" "bug-fix playbook must keep repairs to missing or failed criteria"
   assert_grep 'auto_fix.max_fix_rounds' "$brief" "bug-fix playbook must defer the repair cap to drill's configured fix budget"
   assert_grep 'fails the run as non-convergence' "$brief" "bug-fix playbook must describe fix-budget exhaustion as non-convergence"
   assert_grep 'do not hand-fix review findings yourself while an active run owns the work' "$brief" "bug-fix playbook must forbid operator hand-fixing during an active run"
