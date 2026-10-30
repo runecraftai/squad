@@ -94,8 +94,11 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 	var active, peak atomic.Int32
 	var completionMu sync.Mutex
 	var completionOrder []string
-	requirementsStarted := make(chan struct{})
-	var requirementsOnce sync.Once
+	// The security and requirements lenses rendezvous: neither proceeds until
+	// both are inside the run, so the overlap is guaranteed rather than timed.
+	var arrived atomic.Int32
+	bothInside := make(chan struct{})
+	requirementsDone := make(chan struct{})
 	a := controlledReviewAgent{run: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
 		validPurpose := false
 		for _, lens := range reviewLensInstructions {
@@ -112,31 +115,33 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 			}
 		}
 		defer active.Add(-1)
-		// The slower security lens waits for the fast requirements lens to enter
-		// its run so overlap does not depend on clone/checkout setup timings.
-		if opts.Purpose == "review-lens:requirements" {
-			requirementsOnce.Do(func() { close(requirementsStarted) })
-		} else if opts.Purpose == "review-lens:security" {
+		isSecurity := opts.Purpose == "review-lens:security"
+		isRequirements := opts.Purpose == "review-lens:requirements"
+		if isSecurity || isRequirements {
+			if arrived.Add(1) == 2 {
+				close(bothInside)
+			}
 			select {
-			case <-requirementsStarted:
+			case <-bothInside:
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
 		}
-		delay := 20 * time.Millisecond
-		if opts.Purpose == "review-lens:security" {
-			delay = 80 * time.Millisecond
-		} else if opts.Purpose == "review-lens:requirements" {
-			delay = 5 * time.Millisecond
-		}
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		// Security completes strictly after requirements, by channel order
+		// rather than by wall-clock delay.
+		if isSecurity {
+			select {
+			case <-requirementsDone:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 		completionMu.Lock()
 		completionOrder = append(completionOrder, opts.Purpose)
 		completionMu.Unlock()
+		if isRequirements {
+			close(requirementsDone)
+		}
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
