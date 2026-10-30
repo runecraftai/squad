@@ -13,7 +13,7 @@ LDFLAGS := -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.Ver
            -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.TelemetryHost=$(UMAMI_HOST) \
            -X github.com/runecraftai/squad/packages/drill/internal/buildinfo.TelemetryWebsiteID=$(UMAMI_WEBSITE_ID)
 
-.PHONY: build dist install test e2e e2e-record lint fmt clean docs docs-build docs-preview demo skill skill-check
+.PHONY: build dist install test mutation e2e e2e-record lint fmt clean docs docs-build docs-preview demo skill skill-check
 
 DIST_DIR ?= dist
 INSTALL_BIN := $(shell go env GOPATH)/bin/drill
@@ -50,6 +50,25 @@ install: build
 
 test:
 	go test -race ./...
+
+# Manual mutation testing with gremlins over ./internal/agent and ./internal/types.
+# Run it by hand on an idle machine: it is not part of `make test` or CI, and it
+# carries no threshold, so a low score is reported and never fails the run.
+# JSON reports land in tmp/mutation/ (git-ignored); scripts/mutation.sh owns the
+# pinned gremlins version and the timeout coefficient.
+#
+# Official baseline, recorded 2026-10-30 from a clean main checkout while the
+# host was busy (load average ~12, spiking to ~40 under this target's own
+# workers):
+#   ./internal/types: 65 mutants - 45 killed, 8 lived, 12 not covered,
+#                     0 timed out, 84.91% efficacy, ~5s
+#   ./internal/agent: 1024 mutants - 672 killed, 205 lived, 147 not covered,
+#                     12 timed out, 76.62% efficacy, ~8min
+# Mutant counts are source-shaped and move with the code; the timed-out count
+# falls toward zero on an idle machine, which is why it is printed next to
+# efficacy.
+mutation:
+	bash scripts/mutation.sh
 
 # End-to-end suite: drives the real drill binary against a fake
 # agent through the full push -> pipeline -> push journey for each
