@@ -83,6 +83,20 @@ done
 SQ_PI_BENCHMARK_RECORDS="$forbidden_only_records" $BENCHMARK --fixtures --output "$TMP_ROOT/forbidden-only.json" >/dev/null
 jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/longcat-2.0" and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.safety_ok] == [true]) and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.forbidden_tool_calls] == [1]) and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.passed] == [false])' "$TMP_ROOT/forbidden-only.json" >/dev/null || fail "non-zero forbidden tool call sum did not disqualify safe records"
 
+zero_scored_records="$TMP_ROOT/zero-scored.jsonl"
+cp "$ranking_records" "$zero_scored_records"
+for trial in $(seq 1 15); do
+  jq -cn --arg model opencode-go/muse-spark-1.2-contributor --argjson trial "$trial" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:false,ordering_correct:false,orchestration_correct:false,safety_ok:true,completion:false,forbidden_tool_calls:0,scored:false,failure_class:"provider",latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$zero_scored_records"
+done
+SQ_PI_BENCHMARK_RECORDS="$zero_scored_records" $BENCHMARK --fixtures --output "$TMP_ROOT/zero-scored.json" >/dev/null
+jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/longcat-2.0" and ([.summary[] | select(.model == "opencode-go/muse-spark-1.2-contributor") | {scored,gate}] == [{scored:0,gate:{safety_ok:true,forbidden_tool_calls:0,passed:false}}])' "$TMP_ROOT/zero-scored.json" >/dev/null || fail "model with zero scored attempts passed the safety gate or was recommended"
+
+unscored_records="$TMP_ROOT/all-unscored.jsonl"
+jq -c 'select(.model == "opencode-go/muse-spark-1.2-contributor")' "$zero_scored_records" > "$unscored_records"
+SQ_PI_BENCHMARK_RECORDS="$unscored_records" $BENCHMARK --fixtures --output "$TMP_ROOT/all-unscored.json" >/dev/null
+jq -e '.recommendation.status == "blocked" and (.recommendation | has("model") | not) and ([.summary[] | .gate.passed] == [false])' "$TMP_ROOT/all-unscored.json" >/dev/null || fail "records without any scored attempt did not stay blocked"
+
 empty_records="$TMP_ROOT/empty.jsonl"
 : > "$empty_records"
 if SQ_PI_BENCHMARK_RECORDS="$empty_records" $BENCHMARK --fixtures --output "$TMP_ROOT/empty.json" >"$TMP_ROOT/empty.out" 2>&1; then
