@@ -168,6 +168,8 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 # deferred network stage sets, so an ordinary bootstrap run records nothing.
 # shellcheck source=bin/sq-timing-lib.sh disable=SC1091
 . "$SCRIPT_DIR/sq-timing-lib.sh"
+# shellcheck source=bin/sq-timeout-lib.sh disable=SC1091
+. "$SCRIPT_DIR/sq-timeout-lib.sh"
 
 # Network-phase selection (see the header). An unrecognized value resolves to
 # `all` so a malformed override runs every step rather than silently dropping a
@@ -1341,8 +1343,10 @@ if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
     if ! mkdir -p "$STATE" 2>/dev/null || ! : 2>/dev/null >"$gc_log"; then
       gc_log=/dev/null
     fi
+    # fm_run_timed owns the bound so a host without GNU coreutils (macOS
+    # exposes only gtimeout) still runs the sweep instead of skipping it.
     (
-      timeout 120 "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" \
+      fm_run_timed 120 "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" \
         >"$gc_log" 2>&1 </dev/null &
     ) 2>/dev/null || true
   fi

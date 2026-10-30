@@ -118,7 +118,7 @@ main() {
     return 0
   fi
 
-  local count=0 total_kb=0 kb
+  local count=0 total_kb=0 kb du_out
   for d in "${candidates[@]}"; do
     name=${d##*/}
     if printf '%s\n' "$refs" | grep -qxF -- "$name"; then
@@ -131,8 +131,19 @@ main() {
     fi
     [ -z "$recent" ] || continue
 
-    kb=$(du -sk -- "$d" 2>/dev/null | awk '{print $1}')
-    case "$kb" in '' | *[!0-9]*) kb=0 ;; esac
+    # Take du's own status: an unreadable subtree must not look like a
+    # successful zero-size measurement with no warning.
+    if du_out=$(du -sk -- "$d" 2>/dev/null); then
+      kb=${du_out%%[[:space:]]*}
+      case "$kb" in '' | *[!0-9]*)
+        warn "could not measure $d, counting it without a size"
+        kb=0
+        ;;
+      esac
+    else
+      warn "could not measure $d, counting it without a size"
+      kb=0
+    fi
 
     if [ "$DRY_RUN" -eq 1 ]; then
       printf 'would remove %s (%s)\n' "$d" "$(human_size "$kb")"

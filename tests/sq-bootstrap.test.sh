@@ -1430,3 +1430,29 @@ test_sandbox_gc_runs_without_state_dir() {
 }
 
 test_sandbox_gc_runs_without_state_dir
+
+# --- the detached sandbox sweep runs without GNU timeout ---------------------
+# A host with only BSD tools (stock macOS) has no `timeout`; the sweep must use
+# the shared bounded runner instead of skipping itself with a hidden error.
+test_sandbox_gc_runs_without_gnu_timeout() {
+  local case_dir fakebin no_timeout_path i
+  case_dir="$TMP_ROOT/gc-no-timeout"
+  mkdir -p "$case_dir/home" "$case_dir/tmp/drill-execution-policy-stale/cache"
+  printf 'x\n' >"$case_dir/tmp/drill-execution-policy-stale/cache/blob"
+  find "$case_dir/tmp" -depth -exec touch -d '6 hours ago' {} +
+  fakebin=$(make_fake_toolchain "$case_dir")
+  no_timeout_path=$(path_farm_without "$case_dir/no-timeout-path" "$BASE_PATH" timeout gtimeout)
+  PATH="$fakebin:$no_timeout_path" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_DRILL_SANDBOX_GC=1 SQUAD_DRILL_SANDBOX_ROOT="$case_dir/tmp" \
+    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
+  i=0
+  while [ -e "$case_dir/tmp/drill-execution-policy-stale" ] && [ "$i" -lt 200 ]; do
+    command sleep 0.05
+    i=$((i + 1))
+  done
+  [ ! -e "$case_dir/tmp/drill-execution-policy-stale" ] \
+    || fail "bootstrap sweeps stale drill sandboxes without a timeout/gtimeout binary"
+  pass "bootstrap sweeps stale drill sandboxes without a timeout/gtimeout binary"
+}
+
+test_sandbox_gc_runs_without_gnu_timeout

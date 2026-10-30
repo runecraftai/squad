@@ -181,6 +181,31 @@ run_gc
 [ ! -e "$SANDBOX_ROOT/drill-execution-policy-ro" ] || fail "read-only sandbox is removed"
 pass "read-only cache trees are removed"
 
+# --- a failed size measurement warns but does not hide the removal -----------
+reset
+make_sandbox drill-execution-policy-unmeasurable 3
+mkdir -p "$TMP_ROOT/failbin"
+cat >"$TMP_ROOT/failbin/du" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$TMP_ROOT/failbin/du"
+OUT=$(PATH="$TMP_ROOT/failbin:$PATH" "$GC" 2>"$TMP_ROOT/err")
+RC=$?
+ERR=$(cat "$TMP_ROOT/err")
+[ "$RC" -eq 0 ] || fail "a failed size measurement still exits 0 (got $RC)"
+[ ! -e "$SANDBOX_ROOT/drill-execution-policy-unmeasurable" ] \
+  || fail "a sandbox whose size cannot be measured is still removed"
+case "$ERR" in
+  *"warning"*"could not measure"*) ;;
+  *) fail "a failed size measurement warns on stderr (got: $ERR)" ;;
+esac
+case "$OUT" in
+  *"removed 1 stale drill sandbox"*) ;;
+  *) fail "the removal is still summarized (got: $OUT)" ;;
+esac
+pass "a failed size measurement warns on stderr and still removes"
+
 # --- permission repair cannot reach files outside the sandbox ----------------
 reset
 make_sandbox drill-execution-policy-linked 3
