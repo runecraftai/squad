@@ -59,8 +59,9 @@ test:
 #
 # Official baseline, recorded 2026-10-30 on this branch from a clean checkout
 # while the host was busy (load average ~12, spiking to ~40 under this target's
-# own workers). This branch re-measurement supersedes the 2026-10-29 audit's
-# under-load numbers; compare future runs against these:
+# own workers). The 2026-10-29 audit recorded 989 mutants for ./internal/agent
+# at an earlier HEAD, so this branch's 1036-mutant total reflects later source,
+# not machine load; compare future runs against these:
 #   ./internal/types: 65 mutants - 45 killed, 8 lived, 12 not covered,
 #                     0 timed out, 84.91% efficacy, ~5s
 #   ./internal/agent: 1036 mutants - 672 killed, 205 lived, 147 not covered,
