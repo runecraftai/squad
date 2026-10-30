@@ -42,12 +42,9 @@ LIST_MARKER_RE = re.compile(r'^\s*(?:[-*+]|\d+[.)])\s+')
 FILES_LABEL_RE = re.compile(r'^[Ff]iles\s+to\s+touch\b')
 OTHER_LABEL_RE = re.compile(
     r'^(?:[Oo]rdered\s+)?[Ss]teps\b'
-    r'|^[Aa]cceptance\b'
-    r'|^[Vv]erification\b'
+    r'|^[Aa]cceptance\s+criteria\b'
+    r'|^[Vv]erification\s+commands?\b'
     r'|^[Oo]ut\s+of\s+scope\b'
-    r'|^[Rr]oll(?:out|back)\b'
-    r'|^[Rr]isk\b'
-    r'|^[Dd]eliverables?\b'
 )
 LINE_RANGE_RE = re.compile(r':\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$')
 SEGMENT_RE = re.compile(r'[A-Za-z0-9._@+*-]+')
@@ -110,14 +107,12 @@ def add_candidates(line, entries, worktree, allow_bare):
 
 
 def is_files_body_stop(line):
+    """End the body exactly where bin/sq-plan-validate.sh ends the field."""
     if HEADING_STOP_RE.match(line):
         return True
-    text = label_text(line)
     if LIST_ITEM_RE.match(line):
-        return OTHER_LABEL_RE.match(label_text(LIST_MARKER_RE.sub('', line))) is not None
-    if not text:
         return False
-    return OTHER_LABEL_RE.match(text) is not None
+    return OTHER_LABEL_RE.match(label_text(line)) is not None
 
 
 def entry_head(text):

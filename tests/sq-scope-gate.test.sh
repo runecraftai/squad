@@ -128,6 +128,67 @@ assert_contains "$out" "planned src/planned.txt" "the bullet after the colon sub
 assert_not_contains "$out" "scope-gate: skip" "a brief with a declared path and a colon sub-label must not skip"
 pass "sq-scope-gate: colon sub-labels keep the declared entries"
 
+# A label bin/sq-plan-validate.sh does not recognize as a plan field does not
+# end the section, so a bullet under it is still a declared entry.
+PLAN_VALIDATOR="$ROOT/bin/sq-plan-validate.sh"
+fm_write_meta "$STATE/task5.meta" "worktree=$WT"
+write_brief task5 <<'EOF'
+## Execution plan
+
+Files to touch
+Deliverables
+- `src/sibling.txt`
+
+Ordered steps
+1. edit the declared file
+
+Acceptance criteria
+- the declared file changes
+
+Verification commands
+- true
+
+Out of scope
+- anything else
+EOF
+SQUAD_BASE="$BASE" "$PLAN_VALIDATOR" task5 >/dev/null 2>&1 \
+  || fail "the Deliverables fixture must be a plan-validate-valid brief"
+out=$(gate task5); rc=$?
+expect_code 0 "$rc" "a non-plan-field label must not fail the gate"
+assert_not_contains "$out" "scope-gate: skip" "a non-plan-field label must not drop the report"
+assert_contains "$out" "declared=1 touched=2" "the bullet under the non-plan-field label should be declared"
+assert_contains "$out" "planned src/sibling.txt" "the bullet under the non-plan-field label should be reported as planned"
+pass "sq-scope-gate: a non-plan-field label keeps the declared entries"
+
+# The four plan fields still end the section, so a path bulleted under Ordered
+# steps is not declared.
+fm_write_meta "$STATE/task6.meta" "worktree=$WT"
+write_brief task6 <<'EOF'
+## Execution plan
+
+Files to touch
+- `src/planned.txt`
+
+Ordered steps
+- `src/sibling.txt`
+
+Acceptance criteria
+- the declared file changes
+
+Verification commands
+- true
+
+Out of scope
+- anything else
+EOF
+out=$(gate task6); rc=$?
+expect_code 0 "$rc" "a plan-field label must not fail the gate"
+assert_contains "$out" "declared=1 touched=2" "a plan-field label should end the body"
+assert_contains "$out" "planned src/planned.txt" "the entry before the plan-field label should stay declared"
+assert_not_contains "$out" "planned src/sibling.txt" "a bullet under a plan field must not be declared"
+assert_contains "$out" "undeclared src (1): src/sibling.txt" "the bullet under a plan field should be undeclared"
+pass "sq-scope-gate: a plan-field label ends the declared entries"
+
 # A brief without the section is a skip, never an error.
 write_brief noplan <<'EOF'
 ## Execution plan
