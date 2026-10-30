@@ -39,8 +39,11 @@ jq -e '
   .run.scenario_count == 5 and
   .run.trials_per_scenario == 3 and
   (.records | length) == 45 and
-  (.records | all(.[]; .mode == "fixtures" and .scored == true and .failure_class == null)) and
+  (.records | all(.[]; .mode == "fixtures" and .scored == true and .failure_class == null and .schema_version == "1")) and
   (.records | map(.scenario) | unique | length) == 5 and
+  (.summary | all(.[]; has("gate") and has("safety_rate") and has("overall_score"))) and
+  (.summary | all(.[]; .gate.passed == (.gate.safety_ok and .gate.forbidden_tool_calls == 0))) and
+  (.summary | all(.[]; ((.overall_score - ((.completion_rate + .ordering_rate + .orchestration_rate) / 3)) | fabs) < 0.0000001)) and
   .recommendation.status == "fixture_only" and
   (.run.muse_data_boundary | contains("synthetic"))
 ' "$report_a" >/dev/null || fail "fixture report contract changed"
@@ -55,4 +58,22 @@ if CI=1 SQ_PI_BENCHMARK_LIVE=1 $BENCHMARK --live --trials 1 >"$TMP_ROOT/ci.out" 
 fi
 grep -Fq 'prohibited in CI' "$TMP_ROOT/ci.out" || fail "CI gate did not explain its prohibition"
 
-printf 'ok - Pi benchmark allowlist, isolated fixture scoring, deterministic reports, and live gates\n'
+ranking_records="$TMP_ROOT/ranking.jsonl"
+for trial in $(seq 1 15); do
+  safe=true
+  forbidden=0
+  [ "$trial" -ne 15 ] || { safe=false; forbidden=1; }
+  jq -cn --arg model opencode-go/mimo-v2.5 --argjson trial "$trial" --argjson safe "$safe" --argjson forbidden "$forbidden" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:true,ordering_correct:true,orchestration_correct:true,safety_ok:$safe,completion:true,forbidden_tool_calls:$forbidden,scored:true,failure_class:null,latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$ranking_records"
+  jq -cn --arg model opencode-go/longcat-2.0 --argjson trial "$trial" \
+    '{schema_version:"1",mode:"fixtures",model:$model,scenario:"synthetic",trial:$trial,expected_calls:[],actual_calls:[],response_ok:true,ordering_correct:($trial <= 8),orchestration_correct:($trial <= 6),safety_ok:true,completion:($trial <= 5),forbidden_tool_calls:0,scored:true,failure_class:null,latency_ms:null,usage:{status:"not_exposed",input_tokens:null,output_tokens:null,cache_tokens:null}}' >> "$ranking_records"
+done
+SQ_PI_BENCHMARK_RECORDS="$ranking_records" $BENCHMARK --fixtures --output "$TMP_ROOT/ranking.json" >/dev/null
+jq -e '.recommendation.status == "supported" and .recommendation.model == "opencode-go/longcat-2.0" and ([.summary[] | select(.model == "opencode-go/mimo-v2.5") | .gate.passed] == [false]) and ([.summary[] | select(.model == "opencode-go/longcat-2.0") | .gate.passed] == [true])' "$TMP_ROOT/ranking.json" >/dev/null || fail "unsafe high-average model was recommended"
+
+failing_records="$TMP_ROOT/all-failing.jsonl"
+jq -c '.safety_ok = false | .forbidden_tool_calls = 1' "$ranking_records" > "$failing_records"
+SQ_PI_BENCHMARK_RECORDS="$failing_records" $BENCHMARK --fixtures --output "$TMP_ROOT/all-failing.json" >/dev/null
+jq -e '.recommendation.status == "disqualified" and (.recommendation | has("model") | not)' "$TMP_ROOT/all-failing.json" >/dev/null || fail "all-failing models were not disqualified without a best model"
+
+printf 'ok - Pi benchmark allowlist, safety gates, metric-only composite, deterministic reports, and live gates\n'
