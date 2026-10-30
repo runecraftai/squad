@@ -5,7 +5,8 @@
 # After the criteria checks and before the failure exit, this validator also runs
 # bin/sq-scope-gate.py for the same task in report mode, prefixing its report.
 # The scope gate compares the brief's declared files with the worktree diff; it
-# never changes this validator's exit status, messages, or gates.
+# never changes this validator's exit status, messages, or gates. The report
+# needs python3, so a base without it validates exactly as before.
 set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
