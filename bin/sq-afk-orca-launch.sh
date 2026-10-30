@@ -8,6 +8,11 @@
 # recorded runtime-issued daemon identity and a complete identity-bound inventory;
 # titles are display-only. Handle-less lost responses always remain uncertain.
 
+# Per-invocation memo of a pending record already proven absent, so one command
+# derives its lifecycle decisions from a single evidence round.
+SQUAD_AFK_ORCA_PROOF=
+SQUAD_AFK_ORCA_PROOF_EXTRA=
+
 fm_afk_launch_orca_primary() {  # [exact-target]; never guesses an unresolved primary
   local primary=${1:-${SQUAD_SUPERVISOR_TARGET:-}}
   if [ -z "$primary" ] || [ "$primary" = pending ]; then
@@ -54,7 +59,7 @@ fm_afk_launch_orca_pending_match() {  # read-only: 0 exact single live match; 2 
       # Absence of the recorded handle alone is insufficient if an unclaimed
       # live terminal still matches its binding. Use the same conjunctive proof
       # as the explicitly approved release path, without changing any record.
-      if fm_afk_launch_orca_release_evidence; then
+      if fm_afk_launch_orca_release_evidence "$inventory"; then
         fm_afk_launch_log "pending release proof branch=$SQUAD_AFK_ORCA_RELEASE_BRANCH handle=$(printf '%s' "$extra" | jq -r .endpoint.target)"
         return 2
       fi
@@ -80,9 +85,17 @@ fm_afk_launch_orca_pending_match() {  # read-only: 0 exact single live match; 2 
 fm_afk_launch_orca_resolve() {  # 0: adopted/exact; 2: proven absent; 1: uncertain
   local match target
   if [ "$SQUAD_AFK_REC_TARGET" != pending ]; then return 0; fi
+  if [ "$SQUAD_AFK_ORCA_PROOF" = absent ] && [ "$SQUAD_AFK_ORCA_PROOF_EXTRA" = "$SQUAD_AFK_REC_EXTRA" ]; then
+    return 2
+  fi
   fm_afk_launch_orca_pending_match
   match=$?
-  [ "$match" -eq 0 ] || return "$match"
+  if [ "$match" -eq 2 ]; then
+    SQUAD_AFK_ORCA_PROOF=absent
+    SQUAD_AFK_ORCA_PROOF_EXTRA=$SQUAD_AFK_REC_EXTRA
+    return 2
+  fi
+  [ "$match" -eq 0 ] || return 1
   target=$SQUAD_AFK_ORCA_PENDING_TARGET
   fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
   fm_afk_launch_record_write orca "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
@@ -108,10 +121,11 @@ fm_afk_launch_orca_claimed_terminals() {  # read-only task-recorded terminal tar
     fi
     backend=$(fm_backend_of_meta "$meta") || return 1
     if [ "$backend" = orca ]; then
-      target=$(fm_backend_meta_exact_value "$meta" terminal) || {
+      target=$(fm_backend_meta_exact_value "$meta" terminal) || target=
+      if [ -z "$target" ] && ! fm_backend_orca_declares_no_terminal "$meta"; then
         fm_afk_launch_log "task metadata $meta records an Orca task without exactly one terminal handle; refusing handle-less release"
         return 1
-      }
+      fi
     else
       target=$(fm_backend_target_of_meta "$meta") || target=
     fi
@@ -126,7 +140,7 @@ fm_afk_launch_orca_claimed_terminals() {  # read-only task-recorded terminal tar
 # absent AND no unclaimed terminal may match its binding. Runtime/incarnation
 # changes alone never prove absence. 0: release proof; 2: named candidates;
 # 1: incomplete evidence. The caller logs SQUAD_AFK_ORCA_RELEASE_BRANCH.
-fm_afk_launch_orca_release_evidence() {
+fm_afk_launch_orca_release_evidence() {  # [inventory-json]
   local extra=$SQUAD_AFK_REC_EXTRA parent runtime status inventory claimed target
   SQUAD_AFK_ORCA_CANDIDATES=
   SQUAD_AFK_ORCA_RELEASE_BRANCH=incomplete-evidence
@@ -142,7 +156,10 @@ fm_afk_launch_orca_release_evidence() {
   if [ -z "$target" ]; then
     printf '%s' "$parent" | jq -e --arg runtime "$runtime" '.runtime == $runtime' >/dev/null || return 1
   fi
-  inventory=$(orca terminal list --limit 10000 --json) || return 1
+  inventory=${1:-}
+  if [ -z "$inventory" ]; then
+    inventory=$(orca terminal list --limit 10000 --json) || return 1
+  fi
   printf '%s' "$inventory" | jq -e --arg runtime "$runtime" '
     .ok == true and ._meta.runtimeId == $runtime and .result.truncated == false
     and (.result.hostScope.omittedHostIds | type == "array" and length == 0)
@@ -215,8 +232,9 @@ fm_afk_launch_orca_owned() {  # <target> <record-json>
 fm_afk_launch_orca_absent() {  # <target> <record-json>
   local target=$1 extra=$2 status inventory runtime
   if [ "$target" = pending ]; then
-    fm_afk_launch_orca_resolve
-    [ "$?" -eq 2 ]
+    # Absence is proved once by fm_afk_launch_orca_resolve; this predicate never
+    # adopts a reappearing terminal or rewrites the record as a side effect.
+    [ "$SQUAD_AFK_ORCA_PROOF" = absent ] && [ "$SQUAD_AFK_ORCA_PROOF_EXTRA" = "$extra" ]
     return
   fi
   runtime=$(printf '%s' "$extra" | jq -er '.endpoint.runtime') || return 1

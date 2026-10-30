@@ -404,10 +404,15 @@ try {
   model.terms.find(t=>t.handle===pendingExtra.endpoint.target).incarnationId=pendingExtra.endpoint.incarnation;save();
   check('status reports a pending recorded identity as recoverable, uncertain when unreadable or changed, and never dead');
   // Parent binding and base identity must agree independently of the title.
-  for (const overrides of [{SQUAD_SUPERVISOR_TARGET:'term-foreign'}, {SQUAD_BASE:`${home}/outside`}]) {
-    r=cli('start',overrides);assert.notEqual(r.status,0);assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
-    assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
-  }
+  // A ready foreign primary must still not satisfy the recorded parent, and a
+  // foreign base must not satisfy the recorded parent path; neither case may
+  // create, close or rewrite the pending record.
+  mkdirSync(foreignDir,{recursive:true,mode:0o700});writeFileSync(`${foreignDir}/ready.json`,JSON.stringify({...JSON.parse(readFileSync(`${dir}/ready.json`)),endpoint:foreignEndpoint,heartbeat:Date.now()}));
+  r=cli('start',{SQUAD_SUPERVISOR_TARGET:'term-foreign'});assert.notEqual(r.status,0);assert.match(r.stderr,/another primary binding/);assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
+  rmSync(foreignDir,{recursive:true,force:true});
+  r=cli('stop',{SQUAD_BASE:`${home}/outside`});assert.notEqual(r.status,0);assert.match(r.stderr,/pending parent identity/);assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
+  assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
   model.terms[0].incarnationId='changed-primary';save();
   r=cli('stop');assert.notEqual(r.status,0);assert.match(r.stderr,/pending parent identity/);
   assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
@@ -532,11 +537,15 @@ try {
   const foreignMeta=`${state}/task-foreign.meta`;
   writeFileSync(claimMeta,`backend=orca\nwindow=sq-task-claimed\nendpoint_task_id=task-claimed\nterminal=${unknownDaemon.handle}\nworktree=${home}\nproject=${home}\n`);
   writeFileSync(foreignMeta,`backend=orca\nwindow=sq-task-foreign\nendpoint_task_id=task-foreign\nterminal=term-foreign\nworktree=${home}\nproject=${home}\n`);
+  // An aborted spawn declares it never minted a mission tab. That shape owns
+  // no terminal, so it must not block the approved handle-less release.
+  const abortedMeta=`${state}/task-aborted.meta`;
+  writeFileSync(abortedMeta,`backend=orca\nwindow=sq-task-aborted\nendpoint_task_id=task-aborted\norca_worktree_id=repo::${home}\nworktree=${home}\nproject=${home}\norca_mission_tab=none\n`);
   r=cli('release-handle-less');assert.equal(r.status,0,r.stderr);assert.match(r.stderr,/released the handle-less Orca creation intent/);
   assert.equal(existsSync(`${state}/.afk-daemon-terminal`),false);assert.equal(existsSync(`${state}/.afk`),false);
   assert.ok(model.terms.some(t=>t.handle===unknownDaemon.handle),'release closed a live terminal');
   assert.equal(count('close'),unknownCloses);assert.equal(count('create'),unknownCreates);
-  rmSync(claimMeta);rmSync(foreignMeta);
+  rmSync(claimMeta);rmSync(foreignMeta);rmSync(abortedMeta);
   check('handle-less release reports unclaimed candidates and incomplete census, then releases only complete cross-checked evidence');
   // Test-only fixture supplies the fake runtime's exact receipt after proving
   // no automatic path changed the unknown record. This is not production recovery.
