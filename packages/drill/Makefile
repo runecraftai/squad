@@ -57,12 +57,13 @@ test:
 # JSON reports land in tmp/mutation/ (git-ignored); scripts/mutation.sh owns the
 # pinned gremlins version and the timeout coefficient.
 #
-# Official baseline, recorded 2026-10-30 from a clean main checkout while the
-# host was busy (load average ~12, spiking to ~40 under this target's own
-# workers):
+# Official baseline, recorded 2026-10-30 on this branch from a clean checkout
+# while the host was busy (load average ~12, spiking to ~40 under this target's
+# own workers). This branch re-measurement supersedes the 2026-10-29 audit's
+# under-load numbers; compare future runs against these:
 #   ./internal/types: 65 mutants - 45 killed, 8 lived, 12 not covered,
 #                     0 timed out, 84.91% efficacy, ~5s
-#   ./internal/agent: 1024 mutants - 672 killed, 205 lived, 147 not covered,
+#   ./internal/agent: 1036 mutants - 672 killed, 205 lived, 147 not covered,
 #                     12 timed out, 76.62% efficacy, ~8min
 # Mutant counts are source-shaped and move with the code; the timed-out count
 # falls toward zero on an idle machine, which is why it is printed next to
