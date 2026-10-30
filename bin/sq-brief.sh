@@ -28,21 +28,23 @@
 #   It adds the hard isolation contract backed by bin/sq-herdr-lab.sh.
 #   The flag must be explicit because {TASK} is filled after scaffolding and the
 #   caller-supplied repo label says nothing about the task body: only the exact
-#   label "squad", matched case-sensitively, or a path resolving to this base
-#   identifies this repo, and even then the task's Herdr surface stays unknown.
+#   label "squad" in any capitalization, or a path whose canonical repository
+#   top-level is exactly this base, identifies this repo, and even then the
+#   task's Herdr surface stays unknown.
 #   Briefs made without it carry a loud declaration so an omitted contract cannot
 #   be silent.
 # A strike or recon brief scoped to this Squad base itself - the exact repo label
-# "squad", matched case-sensitively, or a path resolving to this base checkout
-# or another worktree of the same repository - carries one repository guard line
-# after the task body: this is the Squad base, so work only in an isolated
-# worktree and never in the primary checkout. A drill strike states its delivery
-# fact as well, because CI requires drill's signature; direct-PR and local-only
-# strikes and recons do not, since nothing on those paths delivers through drill.
-# Other repos carry no line.
-# A path whose repository identity cannot be confirmed, such as one outside this
-# repository or an unresolvable symlink, is an ordinary project repo and carries
-# no guard, so an ambiguous label never produces an assumed Squad-base warning.
+# "squad", "Squad", or "SQUAD" (case-insensitive, never a partial match), or a
+# path whose canonical repository top-level is exactly this base checkout -
+# carries one repository guard line after the task body: this is the Squad base,
+# so work only in an isolated worktree and never in the primary checkout. A
+# drill strike states its delivery fact as well, because CI requires drill's
+# signature; direct-PR and local-only strikes and recons do not, since nothing on
+# those paths delivers through drill. Other repos carry no line.
+# A path whose repository identity cannot be confirmed or whose top-level is not
+# this base - one outside this repository, an unresolvable symlink, or another
+# worktree of the same repository - is an ordinary project repo and carries no
+# guard, so an ambiguous label never produces an assumed Squad-base warning.
 # A promoted recon keeps the base and worktree facts only: bin/sq-promote.sh
 # rewrites the task's mode and yolo fields and only suggests a separate ship
 # message instead of regenerating the brief.
@@ -608,23 +610,30 @@ exit 0
 fi
 
 # True when the caller's repo string names this Squad base itself: the exact
-# label "squad", matched case-sensitively, or a path that resolves to this
-# checkout or another worktree of the same repository. Every other string is an
-# ordinary project repo.
+# label "squad" in any capitalization, or a path whose canonical repository
+# top-level is exactly this base checkout. A subdirectory of the base qualifies
+# because its top-level is the base; another worktree of the same repository does
+# not, because its top-level is that worktree. Every other string is an ordinary
+# project repo.
 repo_is_squad() {  # <repo-name-or-path>
-  local label=$1 path root common_path common_root
-  [ "$label" = squad ] && return 0
+  local label=$1 path root path_top root_top
+  shopt -s nocasematch
+  if [[ $label == squad ]]; then
+    shopt -u nocasematch
+    return 0
+  fi
+  shopt -u nocasematch
   [ -d "$label" ] || return 1
   path=$(CDPATH='' cd -- "$label" 2>/dev/null && pwd -P) || return 1
   root=$(CDPATH='' cd -- "$SQUAD_ROOT" 2>/dev/null && pwd -P) || return 1
   [ "$path" = "$root" ] && return 0
   command -v git >/dev/null 2>&1 || return 1
-  common_path=$(git -C "$path" rev-parse --git-common-dir 2>/dev/null) || return 1
-  common_root=$(git -C "$root" rev-parse --git-common-dir 2>/dev/null) || return 1
-  [ -n "$common_path" ] && [ -n "$common_root" ] || return 1
-  case "$common_path" in /*) ;; *) common_path=$path/$common_path ;; esac
-  case "$common_root" in /*) ;; *) common_root=$root/$common_root ;; esac
-  [ "$(CDPATH='' cd -- "$common_path" 2>/dev/null && pwd -P)" = "$(CDPATH='' cd -- "$common_root" 2>/dev/null && pwd -P)" ]
+  path_top=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null) || return 1
+  root_top=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || return 1
+  [ -n "$path_top" ] && [ -n "$root_top" ] || return 1
+  path_top=$(CDPATH='' cd -- "$path_top" 2>/dev/null && pwd -P) || return 1
+  root_top=$(CDPATH='' cd -- "$root_top" 2>/dev/null && pwd -P) || return 1
+  [ "$path_top" = "$root_top" ]
 }
 
 REPO=${POS[1]}

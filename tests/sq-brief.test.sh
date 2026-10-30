@@ -1146,7 +1146,7 @@ test_ambiguity_rule_stops_coding_and_asks() {
 }
 
 test_repo_squad_guard_and_recon_action_line() {
-  local home brief guard drill_guard out status
+  local home brief guard drill_guard out status unconfirmed wt_base wt_other wt_home
   home="$TMP_ROOT/repo-squad-guard-home"
   mkdir -p "$home/data"
   guard='Repository guard: this is the Squad base itself; work only in an isolated worktree, never the primary checkout.'
@@ -1164,6 +1164,12 @@ test_repo_squad_guard_and_recon_action_line() {
 
   scaffold repo-squad-strike squad --mode drill --no-playbook "test fixture: no execution playbook applies"
   [ "$(grep -Fxc "$drill_guard" "$brief")" -eq 1 ] || fail "repo=squad drill strike must carry the drill repository guard exactly once"
+
+  scaffold repo-squad-title-case Squad --mode drill --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$drill_guard" "$brief")" -eq 1 ] || fail "repo=Squad drill strike must be matched case-insensitively"
+
+  scaffold repo-squad-upper-case SQUAD --recon --no-playbook "test fixture: no execution playbook applies"
+  [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=SQUAD recon must be matched case-insensitively"
 
   scaffold repo-squad-direct squad --mode direct-PR --no-playbook "test fixture: no execution playbook applies"
   [ "$(grep -Fxc "$guard" "$brief")" -eq 1 ] || fail "repo=squad direct-PR strike must carry the repository guard exactly once"
@@ -1190,8 +1196,37 @@ test_repo_squad_guard_and_recon_action_line() {
   assert_no_grep "$guard" "$brief" "repository guard must not appear for another repo"
   scaffold repo-other-recon another-repo --recon --no-playbook "test fixture: no execution playbook applies"
   assert_no_grep "$guard" "$brief" "repository guard must not appear for another recon repo"
+  scaffold repo-squad-partial squad-extra --mode drill --no-playbook "test fixture: no execution playbook applies"
+  assert_no_grep "$guard" "$brief" "a partial label match must not be treated as the Squad base"
+
+  # A confirmable directory that is not part of any repository cannot be the
+  # Squad base, so it stays an ordinary project repo.
+  unconfirmed="$TMP_ROOT/repo-squad-unconfirmed"
+  mkdir -p "$unconfirmed"
   scaffold repo-other-path "$home" --mode drill --no-playbook "test fixture: no execution playbook applies"
   assert_no_grep "$guard" "$brief" "repository guard must not appear for a path outside the Squad base"
+  scaffold repo-unconfirmed-path "$unconfirmed" --mode drill --no-playbook "test fixture: no execution playbook applies"
+  assert_no_grep "$guard" "$brief" "an unconfirmable path must not be assumed to be the Squad base"
+
+  # Another worktree of the same repository has its own top-level, so it is not
+  # this base even though it shares the same git directory.
+  wt_base="$TMP_ROOT/repo-squad-wt-base"
+  wt_other="$TMP_ROOT/repo-squad-wt-other"
+  wt_home="$TMP_ROOT/repo-squad-wt-home"
+  mkdir -p "$wt_home/data"
+  fm_git_init_commit "$wt_base"
+  git -C "$wt_base" worktree add -q --detach "$wt_other" HEAD \
+    || fail "could not create the fixture linked worktree"
+  SQUAD_ROOT_OVERRIDE="$wt_base" SQUAD_BASE="$wt_home" "$ROOT/bin/sq-brief.sh" repo-squad-wt-base "$wt_base" \
+    --mode drill --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+    || fail "the fixture base's own path must scaffold"
+  brief="$wt_home/data/repo-squad-wt-base/brief.md"
+  [ "$(grep -Fxc "$drill_guard" "$brief")" -eq 1 ] || fail "the fixture base's own path must carry the guard"
+  SQUAD_ROOT_OVERRIDE="$wt_base" SQUAD_BASE="$wt_home" "$ROOT/bin/sq-brief.sh" repo-squad-wt-other "$wt_other" \
+    --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+    || fail "a path to another worktree must still scaffold"
+  brief="$wt_home/data/repo-squad-wt-other/brief.md"
+  assert_no_grep "$guard" "$brief" "another worktree of the same repository must not be treated as the Squad base"
   pass "sq-brief.sh: Squad-repo guard is conditional, mode-aware, and recon recommendations name their launch action"
 }
 
