@@ -32,6 +32,13 @@
 #     pr.risk is drill's review risk (low|medium|high) taken from the done
 #     run-step detail of current_state, null when the run is unfinished or reports
 #     none; details from other sources are never treated as a review level.
+#     pr.verification compares the declared URL (meta pr=, else the newest
+#     /pull/N in the status log) with drill's sidecar: verified when that sidecar
+#     exists and the URL matches it or none was declared, diverged when the
+#     declared URL differs (pr.diverging_url carries that declared URL),
+#     unverified when a URL is declared but no sidecar exists, and null when there
+#     is no PR. It is informational only: pr.url, pr.source, pr.risk, and task
+#     state are never changed by it, and a divergence never blocks or downgrades.
 #     endpoint.exists is the cheap backend endpoint-presence read.
 #     endpoint.agent_alive is populated for XOs only, where it is useful
 #     return-channel supervision data; other tasks use "not_checked".
@@ -255,6 +262,11 @@ first_pr_url_in_file() {  # <file>
   grep -Eo 'https?://[^[:space:])"]+/pull/[0-9]+' "$1" 2>/dev/null | head -1
 }
 
+last_pr_url_in_file() {  # <file>
+  [ -f "$1" ] || return 1
+  grep -Eo 'https?://[^[:space:])"]+/pull/[0-9]+' "$1" 2>/dev/null | tail -1
+}
+
 backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
   local backlog=${1:-$BACKLOG}
   if [ ! -f "$backlog" ]; then
@@ -408,7 +420,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
 task_json_lines() {
   local meta id kind harness mode yolo project worktree home projects backend target status_log report_path
   local remote_host remote_root remote_state remote_rc remote_home_present
-  local pr pr_source pr_risk event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
+  local pr pr_source pr_risk pr_verification pr_diverging declared_pr event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
   local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
 
@@ -439,6 +451,12 @@ task_json_lines() {
     report_path="$DATA/$id/report.md"
     pr=$(meta_value "$meta" pr)
     pr_source=meta
+    # The URL the operator declared (meta pr=, else the newest status-log URL) is
+    # captured before the drill sidecar can overwrite pr, so verification can compare.
+    declared_pr=$pr
+    [ -n "$declared_pr" ] || declared_pr=$(last_pr_url_in_file "$STATE/$id.status" || true)
+    pr_verification=""
+    pr_diverging=""
     # Read the drill run's authoritative structured pr field from the sidecar
     # written by sq-crew-state.sh. When present it takes precedence over the
     # metadata value because drill created the PR in its own pipeline step.
@@ -448,6 +466,13 @@ task_json_lines() {
       if [ -n "$drill_pr" ]; then
         pr=$drill_pr
         pr_source=drill
+        # Informational only: a divergent declaration is marked, never blocked.
+        if [ -n "$declared_pr" ] && [ "$declared_pr" != "$drill_pr" ]; then
+          pr_verification=diverged
+          pr_diverging=$declared_pr
+        else
+          pr_verification=verified
+        fi
       fi
     fi
     if [ -z "$pr" ]; then
@@ -457,6 +482,8 @@ task_json_lines() {
     fi
     if [ -z "$pr" ]; then
       pr_source=absent
+    elif [ -z "$pr_verification" ]; then
+      pr_verification=unverified
     fi
 
     current_json=$(operator_state_json "$id")
@@ -571,6 +598,8 @@ task_json_lines() {
       --arg pr "$pr" \
       --arg pr_source "$pr_source" \
       --arg pr_risk "$pr_risk" \
+      --arg pr_verification "$pr_verification" \
+      --arg pr_diverging "$pr_diverging" \
       --arg agent_alive "$agent_alive" \
       --arg observed_at "$SNAPSHOT_NOW" \
       --arg last_event_raw "$last_event_raw" \
@@ -608,7 +637,9 @@ task_json_lines() {
                   elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                   else "unknown" end),
           observed_at:$observed_at,freshness:"fresh"},
-        pr:{url:($pr | if . == "" then null else . end),source:$pr_source,risk:($pr_risk | if . == "" then null else . end)},
+        pr:{url:($pr | if . == "" then null else . end),source:$pr_source,risk:($pr_risk | if . == "" then null else . end),
+          verification:($pr_verification | if . == "" then null else . end),
+          diverging_url:($pr_diverging | if . == "" then null else . end)},
         hints:{
           pending_decision:$pending_decision,
           blocked_event:$blocked_event,

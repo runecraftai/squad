@@ -179,6 +179,8 @@ outcome: passed"
   [ "$snap_pr_source" = "drill" ] || fail "drill-pr: snapshot pr.source=$snap_pr_source, expected drill"
   local snap_pr_url; snap_pr_url=$(printf '%s' "$snap" | jq -r '.tasks[0].pr.url')
   [ "$snap_pr_url" = "$pr_url" ] || fail "drill-pr: snapshot pr.url=$snap_pr_url"
+  local snap_pr_verification; snap_pr_verification=$(printf '%s' "$snap" | jq -r '.tasks[0].pr.verification')
+  [ "$snap_pr_verification" = "verified" ] || fail "drill-pr: snapshot pr.verification=$snap_pr_verification"
 
   # sq-unit-view.sh should show "(drill)" suffix
   local view; view=$(run_view "$d")
