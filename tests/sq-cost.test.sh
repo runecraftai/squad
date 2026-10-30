@@ -837,6 +837,95 @@ test_pi_zero_result() {
 
 test_pi_zero_result
 
+# ── (h9) summary --by kind ────────────────────────────────────────────────
+
+test_summary_by_kind() {
+  local dir="$TMP_ROOT/summary" database="$TMP_ROOT/summary/drill.sqlite" i
+  mkdir -p "$dir/data"
+  {
+    echo '## Archived 2026-10-01'
+    # Six strikes with known cost: sonnet 1M input tokens = $3 per $1 unit.
+    for i in 1 2 3 4 5 6; do
+      echo "- [x] strike-$i - Strike $i (repo: squad) (kind: strike) (merged 2026-10-01)"
+    done
+    for i in 1 2 3; do echo "- [x] recon-$i - Recon $i (kind: recon) (done 2026-10-01)"; done
+    echo "- [x] strike-1 - Duplicate of strike one (kind: strike)"
+    echo "- [x] plain-1 - Entry without marker (repo: squad)"
+    echo "- [ ] open-1 - Not done (kind: strike)"
+  } > "$dir/archive.md"
+  printf -- '- [x] strike-7 - Backlog strike (kind: strike) (merged 2026-10-02)\n' > "$dir/data/backlog.md"
+  sqlite3 "$database" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER
+);
+INSERT INTO runs VALUES ('r1','sq/strike-1'),('r2','sq/strike-2'),('r3','sq/strike-3'),
+  ('r4','sq/strike-4'),('r5','sq/strike-5'),('r6','sq/strike-6'),('r7','sq/strike-7'),('rr','sq/recon-1');
+INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i2','r2','pi','claude-sonnet-4','anthropic','a',1,2000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i3','r3','pi','claude-sonnet-4','anthropic','a',1,3000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i4','r4','pi','claude-sonnet-4','anthropic','a',1,4000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i5a','r5','pi','claude-sonnet-4','anthropic','a',1,2000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i5b','r5','pi','claude-sonnet-4','anthropic','b',2,3000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i6','r6','pi','claude-sonnet-4','anthropic','a',1,10000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('i7','r7','pi','mimo-v2.5','opencode-go','a',1,9000000,0,0,0);
+INSERT INTO agent_invocations VALUES ('ir','rr','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+SQL
+  local json status
+  json=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --by kind --archive "$dir/archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "summary exits 0 (got $status)"
+  [ ! -s "$dir/err" ] || fail "summary warns nothing on healthy data: $(cat "$dir/err")"
+  # costs: 3, 6, 9, 12, 15, 30 -> nearest-rank median rank 3 = 9, p90 rank 6 = 30
+  [ "$(jq -r '.classes[] | select(.kind=="strike") | [.n, .no_cost_data, .status, .median_usd, .p90_usd] | @tsv' <<<"$json")" \
+      = "$(printf '6\t1\tok\t9\t30')" ] || fail "strike stats wrong: $json"
+  [ "$(jq -r '.classes[] | select(.kind=="recon") | [.n, .no_cost_data, .status, has("median_usd")] | @tsv' <<<"$json")" \
+      = "$(printf '1\t2\tinsufficient\tfalse')" ] || fail "recon should be insufficient without values: $json"
+  [ "$(jq -r '.classes[] | select(.kind=="unclassified") | .n + .no_cost_data' <<<"$json")" = 1 ] \
+    || fail "entry without marker is unclassified once: $json"
+  [ "$(jq '[.classes[] | .n + .no_cost_data] | add' <<<"$json")" = 11 ] || fail "each id counts once: $json"
+  pass "summary --by kind reports nearest-rank median/p90 and marks small classes insufficient"
+
+  local table
+  table=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/archive.md" 2>&1)
+  assert_contains "$table" "insufficient" "table marks insufficient classes"
+  assert_not_contains "$table" "alert" "summary never alerts"
+  pass "summary prints a table by default"
+
+  local out
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/missing.sqlite" \
+    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "missing database still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "missing database warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "missing database leaves every class insufficient: $out"
+  printf 'not a database' > "$dir/corrupt.sqlite"
+  SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/corrupt.sqlite" \
+    "$COST_CLI" summary --archive "$dir/archive.md" --json >/dev/null 2>"$dir/err" \
+    || fail "unreadable database still exits 0"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "unreadable database warns on stderr"
+  pass "missing or unreadable database warns and degrades to insufficient"
+
+  if "$COST_CLI" summary --by task >/dev/null 2>"$dir/err"; then
+    fail "unsupported grouping must be a usage error"
+  fi
+  assert_contains "$(cat "$dir/err")" "unsupported grouping" "usage error names the grouping"
+  pass "any grouping other than kind is a usage error"
+
+  local legacy
+  legacy=$(SQUAD_STATE_OVERRIDE="$dir/nostate" "$COST_CLI" task nosuch-task)
+  [ "$legacy" = "0|0|0|0|unknown|0.000000 [estimate]" ] || fail "legacy task line changed: $legacy"
+  pass "legacy task output line is unchanged"
+}
+
+test_summary_by_kind
+
 # ── (i) shellcheck-clean ──────────────────────────────────────────────────
 
 test_shellcheck() {
