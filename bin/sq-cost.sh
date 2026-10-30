@@ -411,7 +411,7 @@ cmd_summary() {
   done
   [ "$by" = kind ] || { echo "error: unsupported grouping: $by (only 'kind' is supported)" >&2; usage >&2; return 1; }
   archive="${archive:-$data_dir/done-archive.md}"
-  [ -r "$archive" ] || echo "sq-cost: warning: archive not readable: $archive" >&2
+  [ -f "$archive" ] && [ -r "$archive" ] || echo "sq-cost: warning: archive not readable: $archive" >&2
 
   local database="${SQUAD_DRILL_STATE:-$HOME/.drill/state.sqlite}" db_ok=true
   if ! sq_cost_drill_readable "$database"; then
@@ -451,7 +451,26 @@ cmd_summary() {
     jq -r '.classes[] | [.kind, .n, .no_cost_data,
       (if .status == "ok" then (.median_usd | . * 100 | round / 100 | tostring) else "insufficient" end),
       (if .status == "ok" then (.p90_usd | . * 100 | round / 100 | tostring) else "insufficient" end)] | @tsv' <<<"$summary"
-  } | column -t -s $'\t'
+  } | awk -F'\t' '
+    {
+      for (i = 1; i <= NF; i++) {
+        cell[NR, i] = $i
+        if (length($i) > width[i]) width[i] = length($i)
+        if (NF > nf) nf = NF
+      }
+      rows = NR
+    }
+    END {
+      for (r = 1; r <= rows; r++) {
+        line = ""
+        for (i = 1; i <= nf; i++) {
+          value = cell[r, i]
+          line = line value
+          if (i < nf) for (j = length(value); j < width[i] + 2; j++) line = line " "
+        }
+        print line
+      }
+    }'
   echo "method: nearest-rank; classes under 5 priced samples are insufficient"
 }
 
