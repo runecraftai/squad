@@ -181,6 +181,30 @@ run_gc
 [ ! -e "$SANDBOX_ROOT/drill-execution-policy-ro" ] || fail "read-only sandbox is removed"
 pass "read-only cache trees are removed"
 
+# --- permission repair cannot reach files outside the sandbox ----------------
+reset
+make_sandbox drill-execution-policy-linked 3
+printf 'keep\n' >"$TMP_ROOT/victim-file"
+chmod 0444 "$TMP_ROOT/victim-file"
+ln "$TMP_ROOT/victim-file" "$SANDBOX_ROOT/drill-execution-policy-linked/victim-link"
+touch -d '3 hours ago' "$SANDBOX_ROOT/drill-execution-policy-linked" \
+  "$SANDBOX_ROOT/drill-execution-policy-linked/victim-link"
+run_gc
+[ ! -e "$SANDBOX_ROOT/drill-execution-policy-linked" ] || fail "sandbox holding a read-only hard link is removed"
+[ -f "$TMP_ROOT/victim-file" ] || fail "a file hard-linked from the sandbox survives the sweep"
+[ "$(stat -c %a "$TMP_ROOT/victim-file")" = 444 ] || fail "permission repair leaves outside files untouched"
+pass "permission repair cannot reach files outside the sandbox"
+
+# --- a failed reference scan keeps every candidate ---------------------------
+reset
+make_sandbox drill-execution-policy-unscannable 6
+mkdir -p "$TMP_ROOT/no-proc"
+SQUAD_DRILL_SANDBOX_PROC="$TMP_ROOT/no-proc" run_gc
+[ "$RC" -eq 0 ] || fail "a failed reference scan still exits 0 (got $RC)"
+[ -d "$SANDBOX_ROOT/drill-execution-policy-unscannable" ] || fail "a failed reference scan keeps candidates"
+case "$ERR" in *warning*) ;; *) fail "a failed reference scan warns on stderr (got: $ERR)" ;; esac
+pass "a failed live-reference scan keeps every candidate and warns"
+
 # --- missing target and bad input always exit 0 ------------------------------
 SQUAD_DRILL_SANDBOX_ROOT="$TMP_ROOT/does-not-exist" run_gc
 [ "$RC" -eq 0 ] && [ -z "$OUT" ] && [ -z "$ERR" ] || fail "missing root is a silent success"

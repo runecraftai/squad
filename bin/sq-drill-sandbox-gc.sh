@@ -20,7 +20,9 @@
 #     file descriptor, mount (/proc/<pid>/mountinfo, which covers sandbox bind
 #     mounts), or environment (HOME and cache variables).
 # A referenced directory is kept whatever its age. Processes whose /proc entries
-# are unreadable (other users) cannot be inspected and are ignored.
+# are unreadable (other users) cannot be inspected and are ignored, but if the
+# reference snapshot cannot be taken at all, nothing is removed and a warning is
+# printed rather than treating the sandbox as dead.
 #
 # Output: nothing when there is nothing to do; otherwise one summary line with
 # the count and freed size. --dry-run additionally lists each directory it would
@@ -34,11 +36,14 @@
 #                                      --grace-minutes overrides it.
 #   SQUAD_DRILL_SANDBOX_ROOT           directory scanned for sandboxes
 #                                      (default /tmp); a test seam.
+#   SQUAD_DRILL_SANDBOX_PROC           procfs mount scanned for live references
+#                                      (default /proc); a test seam.
 set -u
 
 PREFIX=drill-execution-policy-
 ROOT=${SQUAD_DRILL_SANDBOX_ROOT:-/tmp}
 GRACE=${SQUAD_DRILL_SANDBOX_GRACE_MINUTES:-60}
+PROC=${SQUAD_DRILL_SANDBOX_PROC:-/proc}
 DRY_RUN=0
 
 warn() {
@@ -53,13 +58,24 @@ usage() {
 # Path components are matched whole, so drill-execution-policy-1 never shields
 # drill-execution-policy-10.
 referenced_sandboxes() {
-  # One process per source rather than per pid or fd: a busy host holds
-  # thousands of descriptors and a fork each would make the sweep crawl.
+  local pid
+  # If the snapshot cannot be taken, report failure so the caller keeps every
+  # candidate instead of mistaking an empty result for "no references".
+  command -v cat find readlink tr >/dev/null 2>&1 || return 1
+  readlink "$PROC/self/cwd" >/dev/null 2>&1 || return 1
+  [ -r "$PROC/self/mountinfo" ] && [ -r "$PROC/self/environ" ] || return 1
   {
-    readlink /proc/[0-9]*/cwd /proc/[0-9]*/fd/*
-    cat /proc/[0-9]*/mountinfo
-    cat /proc/[0-9]*/environ | tr '\0' '\n'
-  } 2>/dev/null | grep -aoE "${PREFIX}[A-Za-z0-9._-]+" | sort -u
+    # One process at a time, batching descriptor reads: a busy host holds
+    # thousands of descriptors, which neither forks per descriptor nor exceeds
+    # the argument limit and silently drops references.
+    for pid in "$PROC"/[0-9]*; do
+      [ -d "$pid" ] || continue
+      readlink "$pid/cwd" 2>/dev/null
+      [ -d "$pid/fd" ] && find "$pid/fd" -mindepth 1 -maxdepth 1 -exec readlink {} + 2>/dev/null
+      cat "$pid/mountinfo" 2>/dev/null
+      tr '\0' '\n' <"$pid/environ" 2>/dev/null
+    done
+  } | grep -aoE "${PREFIX}[A-Za-z0-9._-]+" | sort -u
 }
 
 human_size() {
@@ -94,7 +110,10 @@ main() {
   [ "${#candidates[@]}" -gt 0 ] || return 0
 
   local refs recent
-  refs=$(referenced_sandboxes) || refs=""
+  if ! refs=$(referenced_sandboxes); then
+    warn "could not scan $PROC for live sandbox references, keeping all candidates"
+    return 0
+  fi
 
   local count=0 total_kb=0 kb
   for d in "${candidates[@]}"; do
@@ -116,7 +135,7 @@ main() {
       printf 'would remove %s (%s)\n' "$d" "$(human_size "$kb")"
     else
       # Cache trees can hold read-only directories, which block removal.
-      chmod -R u+rwX -- "$d" 2>/dev/null || true
+      find "$d" -xdev -type d -exec chmod u+rwx {} + 2>/dev/null || true
       if ! rm -rf --one-file-system -- "$d" 2>/dev/null || [ -e "$d" ]; then
         warn "could not fully remove $d"
         continue
