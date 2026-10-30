@@ -413,7 +413,12 @@ cmd_summary() {
   [ -r "$archive" ] || echo "sq-cost: warning: archive not readable: $archive" >&2
 
   local database="${SQUAD_DRILL_STATE:-$HOME/.drill/state.sqlite}" db_ok=true
-  if [ ! -r "$database" ] || ! sqlite3 "$database" 'SELECT 1 FROM runs LIMIT 1;' >/dev/null 2>&1; then
+  if [ ! -r "$database" ] || ! sqlite3 "$database" \
+    'SELECT ai.agent, ai.model, ai.model_provider, ai.step_name, ai.started_at,
+            ai.input_tokens, ai.output_tokens, ai.cache_read_tokens, ai.cache_creation_tokens
+       FROM agent_invocations AS ai
+       JOIN runs AS r ON r.id = ai.run_id
+      LIMIT 1;' >/dev/null 2>&1; then
     echo "sq-cost: warning: Drill database not readable: $database" >&2
     db_ok=false
   fi
