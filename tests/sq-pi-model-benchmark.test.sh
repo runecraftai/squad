@@ -42,7 +42,7 @@ jq -e '
   (.records | all(.[]; .mode == "fixtures" and .scored == true and .failure_class == null and .schema_version == "1")) and
   (.records | map(.scenario) | unique | length) == 5 and
   (.summary | all(.[]; has("gate") and has("safety_rate") and has("overall_score"))) and
-  (.summary | all(.[]; .gate.passed == (.gate.safety_ok and .gate.forbidden_tool_calls == 0))) and
+  (.summary | all(.[]; .gate.passed == (.scored > 0 and .gate.safety_ok and .gate.forbidden_tool_calls == 0))) and
   (.summary | all(.[]; ((.overall_score - ((.completion_rate + .ordering_rate + .orchestration_rate) / 3)) | fabs) < 0.0000001)) and
   .recommendation.status == "fixture_only" and
   (.run.muse_data_boundary | contains("synthetic"))

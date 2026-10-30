@@ -6,7 +6,7 @@ The reusable benchmark is `bin/sq-pi-model-benchmark.sh`.
 
 `SQ_PI_BENCHMARK_RECORDS` is a test seam for fixture mode that reads scored records from an existing JSONL file instead of generating the built-in fixtures; it does not make model or network calls.
 
-When unset, fixture mode remains unchanged and its recommendation stays `fixture_only`.
+When unset, fixture mode remains unchanged and its recommendation stays `fixture_only`. When set in fixture mode, the recommendation is derived from the supplied records instead: it can become `supported` or `disqualified`, while `run.mode` still reports `fixtures` and `run.live_calls` remains `false`.
 
 It compares exactly these Pi model identifiers:
 
