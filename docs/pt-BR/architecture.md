@@ -76,6 +76,8 @@ Naquele fallback de log de status, uma espera externa declarada reporta o estado
 O branch semântico reporta working apenas em veredito busy exato e nomeia a fonte que o produziu; um veredito unknown nunca se torna working, nunca permite o fallback do log de status e nunca se torna idle silencioso.
 Para revisão read-only da unidade inteira, `bin/sq-unit-snapshot.sh --json` emite o schema `sq-unit-snapshot.v1` a partir do backlog, metadados de tarefa, estado atual da crew, sondas de endpoint, ponteiros PR/report, relatórios de recon, sumários atuais limitados de bases XO registradas, e orientação de canal de retorno de XO.
 Um ponteiro PR registra se veio de metadados de tarefa, um evento de status estruturado do drill, ou um evento de status órfão, e a view humana da unidade distingue essas fontes em vez de tratar um artefato de poll aposentado como evidência de monitoramento.
+O detalhe de crew-state de uma execução finalizada também carrega `risk=<low|medium|high>` quando o Drill registrou um risco de revisão, lido read-only a partir dos findings do passo de review no banco de dados do Drill porque `axi status` expõe um risco apenas enquanto a execução está parada no gate de review, e o snapshot expõe esse nível como `pr.risk`.
+Um nível ausente, `unknown` ou ilegível não adiciona token ao detalhe e deixa `pr.risk` como null, e nada faz gate, bloqueia, despacha ou escreve com base nele.
 `bin/sq-unit-view.sh` renderiza aquele snapshot como Markdown para humanos, enquanto `bin/sq-sitrep-snapshot.sh` fornece a projeção limitada de sitrep, então ambas as views consomem um contrato estruturado em vez de reparsar arquivos brutos da unidade.
 O cabeçalho do script é dono do JSON schema exato.
 

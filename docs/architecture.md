@@ -74,6 +74,8 @@ In that status-log fallback, a declared external wait reports the distinct `paus
 The semantic branch reports working only on an exact busy verdict and names the source that produced it; an unknown verdict never becomes working, never permits the status-log fallback, and never becomes a silent idle.
 For whole-unit read-only review, `bin/sq-unit-snapshot.sh --json` emits schema `sq-unit-snapshot.v1` from the backlog, task metadata, current crew state, endpoint probes, PR/report pointers, recon reports, bounded current summaries from registered XO bases, and XO return-channel guidance.
 A PR pointer records whether it came from task metadata, a structured drill status event, or an orphaned status event, and the human unit view distinguishes those sources rather than treating a retired poll artifact as monitoring evidence.
+A finished run's crew-state detail also carries `risk=<low|medium|high>` when Drill recorded a review risk, read read-only from the review step's findings in the Drill database because `axi status` exposes a risk only while parked at the review gate, and the snapshot surfaces that level as `pr.risk`.
+An absent, `unknown`, or unreadable level adds no detail token and leaves `pr.risk` null, and nothing gates, blocks, dispatches, or writes on it.
 `bin/sq-unit-view.sh` renders that snapshot as Markdown for humans, while `bin/sq-sitrep-snapshot.sh` provides the bounded sitrep projection, so both views consume one structured contract instead of reparsing raw unit files.
 The script header owns the exact JSON schema.
 

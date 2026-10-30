@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared drill axi run attribution and current-run lifecycle primitives.
+# Shared drill axi run attribution, current-run lifecycle, and review-risk primitives.
 #
 # ONE owner for the branch+code-identity matching rule that decides whether a
 # drill run belongs to a given worktree, and for the current-run capture built
