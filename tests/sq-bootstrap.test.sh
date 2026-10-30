@@ -1412,7 +1412,7 @@ test_sandbox_gc_runs_without_state_dir() {
   case_dir="$TMP_ROOT/gc-no-state"
   mkdir -p "$case_dir/home" "$case_dir/tmp/drill-execution-policy-stale/cache"
   printf 'x\n' >"$case_dir/tmp/drill-execution-policy-stale/cache/blob"
-  find "$case_dir/tmp" -depth -exec touch -d '6 hours ago' {} +
+  find "$case_dir/tmp" -depth -exec touch -d '7 hours ago' {} +
   fakebin=$(make_fake_toolchain "$case_dir")
   PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_DRILL_SANDBOX_GC=1 SQUAD_DRILL_SANDBOX_ROOT="$case_dir/tmp" \
@@ -1439,7 +1439,7 @@ test_sandbox_gc_runs_without_gnu_timeout() {
   case_dir="$TMP_ROOT/gc-no-timeout"
   mkdir -p "$case_dir/home" "$case_dir/tmp/drill-execution-policy-stale/cache"
   printf 'x\n' >"$case_dir/tmp/drill-execution-policy-stale/cache/blob"
-  find "$case_dir/tmp" -depth -exec touch -d '6 hours ago' {} +
+  find "$case_dir/tmp" -depth -exec touch -d '7 hours ago' {} +
   fakebin=$(make_fake_toolchain "$case_dir")
   no_timeout_path=$(path_farm_without "$case_dir/no-timeout-path" "$BASE_PATH" timeout gtimeout)
   PATH="$fakebin:$no_timeout_path" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \

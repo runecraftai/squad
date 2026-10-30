@@ -45,7 +45,7 @@ run_gc() {
 
 # --- stale unused directory is removed --------------------------------------
 reset
-make_sandbox drill-execution-policy-stale 3
+make_sandbox drill-execution-policy-stale 7
 run_gc
 [ "$RC" -eq 0 ] || fail "real run exits 0 (got $RC)"
 [ ! -e "$SANDBOX_ROOT/drill-execution-policy-stale" ] || fail "stale unused sandbox is removed"
@@ -72,25 +72,27 @@ pass "recent sandbox is kept"
 
 # --- old top level but recent nested activity is kept -----------------------
 reset
-make_sandbox drill-execution-policy-busy 3
+make_sandbox drill-execution-policy-busy 7
 touch "$SANDBOX_ROOT/drill-execution-policy-busy/cache/deep/blob"
 run_gc
 [ -d "$SANDBOX_ROOT/drill-execution-policy-busy" ] || fail "sandbox with recent nested writes is kept"
 pass "nested recent activity keeps an otherwise old sandbox"
 
-# --- grace window is configurable --------------------------------------------
+# --- grace window defaults to six hours and is configurable ------------------
 reset
 make_sandbox drill-execution-policy-grace 3
+run_gc
+[ -d "$SANDBOX_ROOT/drill-execution-policy-grace" ] || fail "the default grace window keeps a 3h sandbox"
 run_gc --grace-minutes 600
 [ -d "$SANDBOX_ROOT/drill-execution-policy-grace" ] || fail "a longer grace window keeps a 3h sandbox"
 SQUAD_DRILL_SANDBOX_GRACE_MINUTES=120 run_gc
 [ ! -e "$SANDBOX_ROOT/drill-execution-policy-grace" ] || fail "the environment grace window applies"
-pass "grace window is configurable by flag and environment"
+pass "default grace window is six hours and configurable by flag and environment"
 
 # --- dry run removes nothing ------------------------------------------------
 reset
-make_sandbox drill-execution-policy-old1 4
-make_sandbox drill-execution-policy-old2 5
+make_sandbox drill-execution-policy-old1 7
+make_sandbox drill-execution-policy-old2 8
 make_sandbox drill-execution-policy-new 0
 run_gc --dry-run
 [ "$RC" -eq 0 ] || fail "dry run exits 0"
@@ -129,8 +131,8 @@ hold() {
 
 for mode in cwd fd env; do
   reset
-  make_sandbox drill-execution-policy-held 6
-  make_sandbox drill-execution-policy-free 6
+  make_sandbox drill-execution-policy-held 7
+  make_sandbox drill-execution-policy-free 7
   hold "$mode" "$SANDBOX_ROOT/drill-execution-policy-held"
   run_gc
   [ -d "$SANDBOX_ROOT/drill-execution-policy-held" ] || fail "sandbox referenced by $mode is kept"
@@ -144,8 +146,8 @@ done
 
 # A reference to one id never shields a sibling whose name only shares a prefix.
 reset
-make_sandbox drill-execution-policy-1 6
-make_sandbox drill-execution-policy-10 6
+make_sandbox drill-execution-policy-1 7
+make_sandbox drill-execution-policy-10 7
 hold cwd "$SANDBOX_ROOT/drill-execution-policy-1"
 run_gc
 [ -d "$SANDBOX_ROOT/drill-execution-policy-1" ] || fail "referenced -1 is kept"
@@ -154,16 +156,16 @@ pass "references match whole names, not prefixes"
 
 # --- names that do not match, and symlinks, are untouched --------------------
 reset
-make_sandbox other-execution-policy-x 6
-make_sandbox drill-execution-policy 6
-make_sandbox drill-execution-policy-a+b 6
-make_sandbox drill-execution-policyx 6
+make_sandbox other-execution-policy-x 7
+make_sandbox drill-execution-policy 7
+make_sandbox drill-execution-policy-a+b 7
+make_sandbox drill-execution-policyx 7
 mkdir -p "$TMP_ROOT/victim"
 printf 'keep\n' >"$TMP_ROOT/victim/file"
-touch -d '6 hours ago' "$TMP_ROOT/victim" "$TMP_ROOT/victim/file"
+touch -d '7 hours ago' "$TMP_ROOT/victim" "$TMP_ROOT/victim/file"
 ln -s "$TMP_ROOT/victim" "$SANDBOX_ROOT/drill-execution-policy-link"
 printf 'f\n' >"$SANDBOX_ROOT/drill-execution-policy-file"
-touch -d '6 hours ago' "$SANDBOX_ROOT/drill-execution-policy-file"
+touch -d '7 hours ago' "$SANDBOX_ROOT/drill-execution-policy-file"
 run_gc
 [ "$RC" -eq 0 ] && [ -z "$OUT" ] || fail "nothing matching means nothing removed (got: $OUT)"
 for n in other-execution-policy-x drill-execution-policy drill-execution-policy-a+b drill-execution-policyx; do
@@ -175,7 +177,7 @@ pass "non-matching names, symlinks, and plain files are untouched"
 
 # --- read-only cache trees are still removed ---------------------------------
 reset
-make_sandbox drill-execution-policy-ro 3
+make_sandbox drill-execution-policy-ro 7
 chmod -R a-w "$SANDBOX_ROOT/drill-execution-policy-ro"
 run_gc
 [ ! -e "$SANDBOX_ROOT/drill-execution-policy-ro" ] || fail "read-only sandbox is removed"
@@ -183,7 +185,7 @@ pass "read-only cache trees are removed"
 
 # --- a failed size measurement warns but does not hide the removal -----------
 reset
-make_sandbox drill-execution-policy-unmeasurable 3
+make_sandbox drill-execution-policy-unmeasurable 7
 mkdir -p "$TMP_ROOT/failbin"
 cat >"$TMP_ROOT/failbin/du" <<'SH'
 #!/usr/bin/env bash
@@ -208,11 +210,11 @@ pass "a failed size measurement warns on stderr and still removes"
 
 # --- permission repair cannot reach files outside the sandbox ----------------
 reset
-make_sandbox drill-execution-policy-linked 3
+make_sandbox drill-execution-policy-linked 7
 printf 'keep\n' >"$TMP_ROOT/victim-file"
 chmod 0444 "$TMP_ROOT/victim-file"
 ln "$TMP_ROOT/victim-file" "$SANDBOX_ROOT/drill-execution-policy-linked/victim-link"
-touch -d '3 hours ago' "$SANDBOX_ROOT/drill-execution-policy-linked" \
+touch -d '7 hours ago' "$SANDBOX_ROOT/drill-execution-policy-linked" \
   "$SANDBOX_ROOT/drill-execution-policy-linked/victim-link"
 run_gc
 [ ! -e "$SANDBOX_ROOT/drill-execution-policy-linked" ] || fail "sandbox holding a read-only hard link is removed"
@@ -222,7 +224,7 @@ pass "permission repair cannot reach files outside the sandbox"
 
 # --- a failed reference scan keeps every candidate ---------------------------
 reset
-make_sandbox drill-execution-policy-unscannable 6
+make_sandbox drill-execution-policy-unscannable 7
 mkdir -p "$TMP_ROOT/no-proc"
 SQUAD_DRILL_SANDBOX_PROC="$TMP_ROOT/no-proc" run_gc
 [ "$RC" -eq 0 ] || fail "a failed reference scan still exits 0 (got $RC)"
@@ -235,7 +237,7 @@ pass "a failed live-reference scan keeps every candidate and warns"
 # stream; that must not read as "no references" and let the sweep delete live
 # sandboxes from a partial snapshot.
 reset
-make_sandbox drill-execution-policy-partial 6
+make_sandbox drill-execution-policy-partial 7
 mkdir -p "$TMP_ROOT/failscan"
 cat >"$TMP_ROOT/failscan/grep" <<'SH'
 #!/usr/bin/env bash
@@ -256,7 +258,7 @@ pass "a failed reference-scan stage keeps every candidate and warns"
 # the sweep tolerates that without leaking shell errors onto stderr and still
 # honours references it could read.
 reset
-make_sandbox drill-execution-policy-readable 6
+make_sandbox drill-execution-policy-readable 7
 FAKE_PROC="$TMP_ROOT/proc-fake"
 mkdir -p "$FAKE_PROC/self" "$FAKE_PROC/4242" "$FAKE_PROC/4343"
 ln -s "$TMP_ROOT" "$FAKE_PROC/self/cwd"
@@ -297,8 +299,8 @@ pass "bad input warns on stderr and still exits 0"
 # Needs unprivileged user namespaces; report rather than silently pass without them.
 if unshare -Urm true 2>/dev/null; then
   reset
-  make_sandbox drill-execution-policy-mounted 6
-  make_sandbox drill-execution-policy-unmounted 6
+  make_sandbox drill-execution-policy-mounted 7
+  make_sandbox drill-execution-policy-unmounted 7
   mkdir -p "$TMP_ROOT/target"
   READY="$TMP_ROOT/ready.mount"
   unshare -Urm bash -c 'mount --bind "$1" "$2" && : >"$3" && exec sleep 300' _ \

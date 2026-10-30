@@ -24,6 +24,12 @@
 # reference snapshot cannot be taken at all, nothing is removed and a warning is
 # printed rather than treating the sandbox as dead.
 #
+# The grace window defaults to six hours because an idle drill run leaves no
+# reference between sandboxed commands: it parks at approval gates and polls CI
+# for hours, and both signals then look dead. A longer window keeps such a live
+# run from being swept out from under itself while still reclaiming abandoned
+# sandboxes.
+#
 # Output: nothing when there is nothing to do; otherwise one summary line with
 # the count and freed size. --dry-run additionally lists each directory it would
 # remove and removes nothing.
@@ -32,7 +38,7 @@
 # session start that calls this can never be failed by it.
 #
 # Environment:
-#   SQUAD_DRILL_SANDBOX_GRACE_MINUTES  grace window in minutes (default 60);
+#   SQUAD_DRILL_SANDBOX_GRACE_MINUTES  grace window in minutes (default 360);
 #                                      --grace-minutes overrides it.
 #   SQUAD_DRILL_SANDBOX_ROOT           directory scanned for sandboxes
 #                                      (default /tmp); a test seam.
@@ -42,7 +48,7 @@ set -u
 
 PREFIX=drill-execution-policy-
 ROOT=${SQUAD_DRILL_SANDBOX_ROOT:-/tmp}
-GRACE=${SQUAD_DRILL_SANDBOX_GRACE_MINUTES:-60}
+GRACE=${SQUAD_DRILL_SANDBOX_GRACE_MINUTES:-360}
 PROC=${SQUAD_DRILL_SANDBOX_PROC:-/proc}
 DRY_RUN=0
 
