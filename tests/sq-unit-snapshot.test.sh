@@ -140,6 +140,9 @@ got=$(snap_pr risk-task "$RISK/fakebin")
 pr_is "$got" '.verification == "verified" and .diverging_url == null' "newest status-log URL should be the declared one"
 rm -f "$BASE/state/risk-task.status"
 
+# Re-warm the sidecar so this fixture does not depend on an earlier snapshot.
+snap_pr risk-task "$RISK/fakebin" >/dev/null
+
 # diverged: the declared URL differs; url and source stay drill's.
 printf 'window=fm:sq-risk-task\nworktree=%s\nkind=strike\npr=https://github.com/o/r/pull/5\n' "$RISK/wt" > "$BASE/state/risk-task.meta"
 got=$(snap_pr risk-task "$RISK/fakebin")
