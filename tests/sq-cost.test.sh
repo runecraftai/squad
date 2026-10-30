@@ -931,6 +931,47 @@ SQL
     || fail "incompatible invocation schema leaves every class insufficient: $out"
   pass "incompatible invocation schema is reported instead of silently dropping cost"
 
+  local no_branch_db="$dir/no-branch.sqlite"
+  sqlite3 "$no_branch_db" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER
+);
+INSERT INTO runs VALUES ('r1');
+INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);
+SQL
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$no_branch_db" \
+    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "runs without branch still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "runs without branch warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "runs without branch leaves every class insufficient: $out"
+  pass "a runs table missing the branch column cannot silently drop cost"
+
+  local no_json_bin="$dir/no-json-bin" real_sqlite3
+  real_sqlite3=$(command -v sqlite3)
+  mkdir -p "$no_json_bin"
+  cat > "$no_json_bin/sqlite3" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  [ "\$arg" = -json ] && { echo 'unknown option: -json' >&2; exit 1; }
+done
+exec "$real_sqlite3" "\$@"
+SH
+  chmod +x "$no_json_bin/sqlite3"
+  out=$(PATH="$no_json_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "sqlite3 without -json still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "sqlite3 without -json warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "sqlite3 without -json leaves every class insufficient: $out"
+  pass "a sqlite3 lacking -json support cannot silently drop cost"
+
   if "$COST_CLI" summary --by task >/dev/null 2>"$dir/err"; then
     fail "unsupported grouping must be a usage error"
   fi
