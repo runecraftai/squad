@@ -436,6 +436,15 @@ fm_backend_orca_worktree_id_valid() {  # <value>
   esac
 }
 
+# fm_backend_orca_declares_no_terminal: an Orca record whose spawn aborted
+# before minting a mission tab declares that explicitly and names no hosting
+# workspace, so its missing terminal is complete metadata rather than a lost
+# live handle. Any other terminal-less Orca record could still own a live tab.
+fm_backend_orca_declares_no_terminal() {  # <meta-file>
+  ! grep -q '^orca_host_workspace_id=' "$1" \
+    && [ "$(fm_backend_meta_exact_value "$1" orca_mission_tab 2>/dev/null || true)" = none ]
+}
+
 fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
   local meta=$1 id=$2 backend_count backend window worktree project binding_count binding
   local session pane recorded_session workspace tab terminal worktree_id surface
@@ -551,12 +560,10 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
         return 1
       }
       # A mission tab is the only Orca endpoint this record can close, so a
-      # terminal-less record is accepted only when the abort writer declared that
-      # it never minted one and the record names no hosting workspace. Any other
-      # missing terminal is incomplete metadata, where a tab may still be live.
+      # terminal-less record is accepted only when the shared rule proves the
+      # abort writer declared it never minted one.
       if [ -z "$terminal" ]; then
-        if grep -q '^orca_host_workspace_id=' "$meta" \
-          || [ "$(fm_backend_meta_exact_value "$meta" orca_mission_tab 2>/dev/null || true)" != none ]; then
+        if ! fm_backend_orca_declares_no_terminal "$meta"; then
           echo "REFUSED: missing terminal in $meta; cannot close Orca endpoint; preserving task state." >&2
           return 1
         fi

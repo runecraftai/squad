@@ -80,7 +80,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-sentry.sh`            | Singleton-safe always-on sentry: absorb benign wakes, queue and exit on actionable ones |
 | `sq-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `sq-afk-launch.sh`       | Own away-mode entry, exit, rollback, and any backend terminal lifecycle                 |
-| `sq-afk-orca-launch.sh`  | Exact Orca daemon-terminal lifecycle for the away-mode launcher; requests no focus flag (real host focus behaviour is unverified), requests close only for the exact daemon terminal it created, and never creates a worktree, stops the runtime, or issues close for another terminal's tab (real create/cleanup semantics unverified) |
+| `sq-afk-orca-launch.sh`  | Exact identity-bound Orca daemon-terminal lifecycle and pending recovery; titles are display-only, handle-less lost responses stay pending, and cleanup never changes worktrees or the runtime; real lifecycle evidence and focus limits: [runtime-backends](verification/runtime-backends.md#2026-10-29---identity-bound-daemon-lifecycle) |
 | `sq-afk-tuios-launch.sh` | Exact, unattached TUIOS daemon-session lifecycle owned by the away-mode launcher        |
 | `sq-afk-pi-handoff.sh`   | Publish a durable Pi-native away-mode handoff request and observe its consumption acknowledgement |
 | `sq-afk-tuios-lab.sh`    | Guarded opt-in disposable TUIOS/Pi live verification for away-mode delivery and the blocked-operator answer path |

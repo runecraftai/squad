@@ -37,6 +37,17 @@
 #                              id and drop the record (recovery after a crash).
 #   sq-afk-launch.sh status   Print one read-only machine-readable health line and
 #                              return zero only when active state is healthy.
+#   sq-afk-launch.sh release-pending
+#                              Explicit commander-approved release of an
+#                              identity-bearing pending intent, only after its
+#                              handle is absent and no unclaimed binding matches.
+#   sq-afk-launch.sh release-handle-less
+#                              Release a pending Orca intent that recorded no
+#                              daemon identity, only after a read-only complete
+#                              live census and recorded task-terminal cross-check
+#                              prove no unclaimed candidate in this
+#                              worktree/parent binding; otherwise report each
+#                              candidate and preserve the intent.
 #
 # Supported supervisor targets: herdr, tmux, TUIOS, and native-only Orca (adopted
 # from the runtime-issued identity or selected explicitly).
@@ -185,7 +196,7 @@ fm_afk_launch_lock_release() {
 }
 
 fm_afk_launch_usage() {
-  sed -n '2,34p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # The command run inside the created terminal. Real launch runs the shared
@@ -227,9 +238,14 @@ fm_afk_launch_record_read() {
   case "$SQUAD_AFK_REC_BACKEND" in
     orca)
       printf '%s' "$extra" | jq -e --arg target "$SQUAD_AFK_REC_TARGET" '
-        (.title | type == "string" and startswith("sq-afk-")) and .parent.backend == "orca"
-        and (.parent.target | type == "string" and length > 0)
-        and (($target == "pending" and .endpoint == null) or (.endpoint.backend == "orca" and .endpoint.target == $target))' >/dev/null
+        .parent.backend == "orca"
+        and all([.parent.target,.parent.runtime,.parent.incarnation,.parent.worktree,.parent.path][]; type == "string" and length > 0)
+        and (if .endpoint == null then $target == "pending" else
+          .endpoint.backend == "orca" and ($target == "pending" or .endpoint.target == $target)
+          and all([.endpoint.target,.endpoint.runtime,.endpoint.incarnation,.endpoint.worktree,.endpoint.path][]; type == "string" and length > 0)
+          and .endpoint.target != .parent.target
+          and .endpoint.runtime == .parent.runtime and .endpoint.worktree == .parent.worktree and .endpoint.path == .parent.path
+        end)' >/dev/null
       ;;
     herdr|tuios) [ -n "$extra" ] ;;
     tmux) : ;;
@@ -245,6 +261,24 @@ fm_afk_launch_record_validate_if_present() {
   [ "$result" -ne 2 ]
 }
 
+# A recorded daemon identity proves this invocation actually created its daemon
+# terminal, so the away session has started even when a later probe failed. A
+# pending Orca intent without a receipt is still only an intent.
+fm_afk_launch_recorded_daemon_identity() {
+  local read_result
+  fm_afk_launch_record_read
+  read_result=$?
+  [ "$read_result" -eq 0 ] || return 1
+  case "$SQUAD_AFK_REC_BACKEND" in
+    none) return 1 ;;
+    orca)
+      [ "$SQUAD_AFK_REC_TARGET" != pending ] \
+        || printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e '.endpoint != null' >/dev/null
+      ;;
+    *) return 0 ;;
+  esac
+}
+
 # Close a recorded terminal by EXACT id (never a broad sweep). The
 # recorded workspace id (herdr) needs no separate close: closing the pane takes
 # its single-tab dedicated workspace with it.
@@ -252,6 +286,9 @@ fm_afk_launch_close_terminal() {  # <backend> <target>
   local backend=$1 target=$2
   case "$backend" in
     orca)
+      # A pending intent has no exact terminal to close; absence must still be
+      # proved by close_recorded before the record can be released.
+      [ "$target" != pending ] || return 0
       fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
       local out
       out=$(orca terminal close --terminal "$target" --json) || return 1
@@ -335,6 +372,8 @@ fm_afk_launch_status() {
     0)
       if [ "$SQUAD_AFK_REC_BACKEND" = none ]; then
         terminal=not-applicable
+      elif [ "$SQUAD_AFK_REC_BACKEND" = orca ] && [ "$SQUAD_AFK_REC_TARGET" = pending ]; then
+        terminal=$(fm_afk_launch_orca_pending_state)
       elif fm_afk_launch_terminal_alive "$SQUAD_AFK_REC_BACKEND" "$SQUAD_AFK_REC_TARGET"; then
         terminal=alive
       else
@@ -487,7 +526,7 @@ fm_afk_launch_native_settle() {  # <exact-primary> <preserve-message>
 # Reconcile a recorded-but-dead terminal: if a record exists and no live daemon
 # owns it, close the leaked terminal by exact id and drop the record.
 fm_afk_launch_reconcile() {  # [exact-primary]
-  local read_result primary
+  local read_result primary resolve_result
   if daemon_lock_held_by_live_daemon; then
     return 0
   fi
@@ -495,7 +534,9 @@ fm_afk_launch_reconcile() {  # [exact-primary]
   read_result=$?
   if [ "$read_result" -eq 0 ]; then
     if [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
-      fm_afk_launch_orca_resolve || return 1
+      fm_afk_launch_orca_resolve
+      resolve_result=$?
+      [ "$resolve_result" -eq 0 ] || [ "$resolve_result" -eq 2 ] || return 1
       primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er .parent.target) || return 1
       fm_afk_launch_native_settle "$primary" 'Orca escalation is unresolved, preserving lifecycle during reconciliation' || return 1
     fi
@@ -680,6 +721,28 @@ fm_afk_launch_start() {
     return 0
   fi
 
+  # Recover an interrupted create with a recorded receipt, without replacing it.
+  # An absent pending intent instead goes through ordinary reconciliation, then
+  # this invocation makes at most one create call. A fresh ambiguous create is
+  # left pending for a later invocation, never retried inside a create call.
+  if fm_afk_launch_record_read && [ "$SQUAD_AFK_REC_BACKEND" = orca ] && [ "$SQUAD_AFK_REC_TARGET" = pending ]; then
+    local current resolve_result
+    current=$(fm_supervisor_native_endpoint "$commander_backend" "$commander_target") || return 1
+    printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --argjson current "$current" '.parent == $current' >/dev/null || {
+      fm_afk_launch_log 'Orca pending creation belongs to another primary binding; preserving it'
+      return 1
+    }
+    fm_afk_launch_orca_resolve
+    resolve_result=$?
+    if [ "$resolve_result" -eq 0 ]; then
+      fm_afk_launch_commit_terminal orca "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" 1 || return 1
+      fm_afk_launch_flag_write || return 1
+      fm_afk_launch_log 'adopted the exact Orca daemon terminal from a pending creation (no new terminal)'
+      return 0
+    fi
+    [ "$resolve_result" -eq 2 ] || return 1
+  fi
+
   if ! fm_afk_launch_reconcile "$commander_target"; then
     result=1
   else
@@ -721,7 +784,15 @@ fm_afk_launch_start() {
   fi
   if [ "$result" -ne 0 ]; then
     if [ -n "$backup" ]; then
-      fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+      # Restoring the pre-create snapshot after a daemon terminal was recorded
+      # would hand a prior session's escalation buffer back to a daemon that is
+      # already running, so only an unstarted attempt rolls the clear back.
+      if fm_afk_launch_recorded_daemon_identity; then
+        fm_afk_launch_log 'a daemon terminal identity was recorded before this failure; keeping the cleared session artifacts and the recorded terminal for a later adopt or stop'
+        rm -rf "$backup" || result=1
+      else
+        fm_afk_launch_restore_backup "$backup" "$had_afk" || result=1
+      fi
     fi
   elif [ -n "$backup" ] && ! rm -rf "$backup"; then
     result=1
@@ -773,8 +844,68 @@ fm_afk_launch_start_native() {
   return "$result"
 }
 
+fm_afk_launch_release_pending() {  # <handle-less|identity>; explicit commander approval required
+  local kind=${1:-handle-less} primary proof candidate target base
+  fm_afk_launch_record_read || {
+    fm_afk_launch_log 'no readable Orca creation intent is recorded; nothing to release'
+    return 1
+  }
+  if [ "$SQUAD_AFK_REC_BACKEND" != orca ] || [ "$SQUAD_AFK_REC_TARGET" != pending ]; then
+    fm_afk_launch_log 'this action releases only a pending Orca creation intent; use start, stop, or reconcile for a settled identity'
+    return 1
+  fi
+  target=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -r '.endpoint.target // empty') || return 1
+  if [ "$kind" = handle-less ] && [ -n "$target" ]; then
+    fm_afk_launch_log 'this action releases only a pending Orca creation intent that recorded no daemon identity; use release-pending for a recorded pending identity'
+    return 1
+  elif [ "$kind" = identity ] && [ -z "$target" ]; then
+    fm_afk_launch_log 'release-pending requires a recorded daemon identity; use the separately approved release-handle-less procedure'
+    return 1
+  fi
+  base=$(CDPATH='' cd -- "$SQUAD_BASE" && pwd -P) || return 1
+  if ! printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -e --arg base "$base" '.parent.path == $base' >/dev/null; then
+    fm_afk_launch_log "release branch=foreign-base handle=${target:-unrecorded}; preserving the pending intent"
+    return 1
+  fi
+  if daemon_lock_held_by_live_daemon; then
+    fm_afk_launch_log "release branch=live-daemon-process handle=${target:-unrecorded}; a live daemon process still holds the session lock, refusing to release the pending intent"
+    return 1
+  fi
+  primary=$(printf '%s' "$SQUAD_AFK_REC_EXTRA" | jq -er '.parent.target') || return 1
+  fm_afk_launch_orca_release_evidence
+  proof=$?
+  fm_afk_launch_log "release branch=$SQUAD_AFK_ORCA_RELEASE_BRANCH handle=${target:-unrecorded}"
+  case "$proof" in
+    0) ;;
+    2)
+      while IFS= read -r candidate; do
+        [ -n "$candidate" ] || continue
+        fm_afk_launch_log "unclaimed live terminal candidate handle=$candidate could be the lost supervisor in this worktree/parent binding; preserving the pending intent"
+      done <<EOF
+$SQUAD_AFK_ORCA_CANDIDATES
+EOF
+      return 1
+      ;;
+    *)
+      fm_afk_launch_log 'the live terminal census or the recorded task-terminal cross-check is incomplete or uncertain; preserving the pending intent'
+      return 1
+      ;;
+  esac
+  fm_afk_launch_native_settle "$primary" 'Orca native request or buffer retirement remains unresolved; pending release is not complete' || return 1
+  rm -f "$SQUAD_AFK_LAUNCH_RECORD" || return 1
+  if ! rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk"; then
+    fm_afk_launch_log 'failed to clear away-mode flag after releasing the pending intent'
+    return 1
+  fi
+  if [ "$kind" = handle-less ]; then
+    fm_afk_launch_log 'released the handle-less Orca creation intent after a complete live census and recorded task-terminal cross-check found no unclaimed candidate'
+  else
+    fm_afk_launch_log "released the recorded Orca pending intent for absent handle=$target after a complete live census and task-terminal cross-check found no unclaimed candidate"
+  fi
+}
+
 fm_afk_launch_stop() {
-  local pid pid_identity current_identity result=0 read_result primary
+  local pid pid_identity current_identity result=0 read_result primary resolve_result
   fm_afk_launch_record_read
   read_result=$?
   if [ "$read_result" -eq 2 ]; then
@@ -800,7 +931,9 @@ fm_afk_launch_stop() {
     return 1
   fi
   if [ "$read_result" -eq 0 ] && [ "$SQUAD_AFK_REC_BACKEND" = orca ]; then
-    fm_afk_launch_orca_resolve || return 1
+    fm_afk_launch_orca_resolve
+    resolve_result=$?
+    [ "$resolve_result" -eq 0 ] || [ "$resolve_result" -eq 2 ] || return 1
     if ! fm_afk_launch_orca_owned "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA" \
       && ! fm_afk_launch_orca_absent "$SQUAD_AFK_REC_TARGET" "$SQUAD_AFK_REC_EXTRA"; then
       fm_afk_launch_log 'Orca daemon identity is uncertain; preserving away mode and process'
@@ -925,6 +1058,8 @@ fm_afk_launch_main() {
     start) fm_afk_launch_start ;;
     start-native) fm_afk_launch_start_native ;;
     stop) fm_afk_launch_stop ;;
+    release-handle-less) fm_afk_launch_release_pending handle-less ;;
+    release-pending) fm_afk_launch_release_pending identity ;;
     reconcile) fm_afk_launch_reconcile ;;
     -h|--help|help) fm_afk_launch_usage ;;
     *) fm_afk_launch_usage >&2; return 2 ;;

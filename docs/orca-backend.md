@@ -113,9 +113,19 @@ The variable selects only the adapter: the primary's published readiness record 
 Use `bin/sq-afk-launch.sh start`, `status`, `stop`, and `reconcile` for the lifecycle.
 The create call passes **no focus flag** and never splits the primary, creates or removes a worktree, or stops the runtime.
 Whether Orca focuses, keeps, or hides the new terminal tab is real host behaviour that remains **unverified**, so treat the daemon terminal as possibly visible or focused.
-The creation intent is recorded before the CLI call, and cleanup requires the exact terminal handle, runtime and terminal incarnation, worktree identity/path, and unique title.
+The creation intent is recorded before the CLI call; a returned daemon identity is persisted before any subsequent runtime lookup.
+Cleanup requires the exact terminal handle, runtime and terminal incarnation, and worktree identity/path; terminal titles are display-only because the shell can change them during startup.
 A live daemon process must additionally match the recorded launch token and operating-system process identity before it can be signalled.
-Uncertain creation remains recorded and blocks another creation; reconciliation may recover only the exact uniquely titled endpoint, never sweep other terminals.
+A record written by the pre-token launcher has no launch token, so its stored legacy title marker may verify only the process that the exact recorded terminal identity already binds; it never selects or adopts a terminal by title, and a mismatched or missing marker still refuses to signal.
+Pending-creation recovery is owned by `bin/sq-afk-orca-launch.sh` and covered by `tests/sq-afk-orca.test.sh`; it requires a recorded daemon identity and a complete inventory bound to the original primary and this base.
+`start` adopts exactly one identity match without replacing it; with the recorded handle absent and no unclaimed live terminal matching its binding, it releases the old intent and makes at most one create call.
+`stop` requires the same conjunctive absence proof to release a pending intent; multiple candidates, changed identity, and incomplete or unreadable inventory preserve the record without touching terminals.
+`reconcile` uses the same resolution: one exact live identity is closed by handle, a proven-absent record is dropped, and `state/.afk` is never cleared.
+`status` is read-only and reports a pending intent that carries a recorded handle as `terminal=recoverable` when that exact identity is live, `terminal=absent` when the complete absence proof succeeds, and `terminal=uncertain` when the probe is incomplete, mismatched, or still handle-less; it never reports such an intent as `terminal=dead` merely because its target field is `pending`.
+A fresh ambiguous create is never retried inside the same invocation.
+A create whose daemon identity was recorded counts as a started session, so a later probe failure keeps the away flag and the freshly cleared escalation artifacts instead of restoring a previous session's buffer that the adopted or refreshed daemon would then deliver.
+An entirely lost response or legacy intent with no recorded daemon identity always remains uncertain, even with no title matches; automatic adoption and retry are forbidden.
+A create receipt whose handle is the primary's is refused the same way: the parent terminal is never the daemon's, so it is never adopted or closed.
 `stop` and `reconcile` recognise the Orca lifecycle from the recorded terminal and the daemon lock's owner marker, not from the invoking shell's `SQUAD_SUPERVISOR_BACKEND`, so a stop without that variable still refuses an unrecorded daemon or an unresolved native request instead of reporting completion.
 Remote Orca targets are refused because the local receiver/process ownership proof does not apply to a remote host.
 
@@ -132,22 +142,41 @@ Inspect and reconcile that evidence before retrying; unresolved records are neve
 
 Some records never resolve on their own.
 A request published before a primary restart keeps the dead receiver-session nonce, so the exact-match acknowledgement can never accept it, and `start`, `stop`, and `reconcile` keep refusing while it exists.
-A recorded-but-unresolvable creation with a unique title that matches zero or several terminals behaves the same way.
+A recorded creation with no daemon identity, several identity candidates, a changed parent binding, or no authoritative inventory also remains unresolved; proven absence of a recorded identity instead uses the launcher's automatic recovery above.
 That is the intended fail-closed state: Squad never abandons, deletes, or replays a possibly accepted operation, and no flag adds one.
 
 The only sanctioned recovery is the named, human-approved permanent-uncertainty recovery below, performed by an operator on one exact record.
 
-1. Name the record: `state/.afk-daemon-terminal` for a recorded creation (`pending` target plus the recorded unique title), or `bin/sq-supervisor-native.sh dir <state> <exact-primary-target>` for the request directory holding `request.json` and `result.json`.
-2. Read it and have the commander, as the base's session owner, confirm on the live host/primary whether that exact recorded terminal title exists or whether that exact message text was delivered and consumed.
-3. Only with explicit approval for that specific record: for a creation, close that one matching terminal through Orca, or remove just the pending creation record when nothing matches; for a native request, remove the `request.json` plus `result.json` pair and drop exactly the `lines` prefix recorded in that request from the head of `state/.subsuper-escalations`, so the never-delivered text cannot be republished.
+1. Name the record: `state/.afk-daemon-terminal` for a recorded creation (a `pending` target plus whatever daemon identity the create receipt recorded), or `bin/sq-supervisor-native.sh dir <state> <exact-primary-target>` for the request directory holding `request.json` and `result.json`.
+2. Read it and have the commander, as the base's session owner, confirm on the live host/primary whether that exact recorded daemon identity (handle, runtime, incarnation, worktree/path) exists or whether that exact message text was delivered and consumed; a terminal title is display-only and proves nothing.
+3. Only with explicit approval for that specific record: for a creation, use the guarded pending-creation release procedure below, never title-based absence or hand deletion; for a native request, remove the `request.json` plus `result.json` pair and drop exactly the `lines` prefix recorded in that request from the head of `state/.subsuper-escalations`, so the never-delivered text cannot be republished.
 4. Record the approver, the exact target, and the removed record id in the away-mode report.
+
+#### Approved pending-creation release
+
+After the commander approves one exact pending record, an operator uses `bin/sq-afk-launch.sh release-pending` for a recorded daemon identity or `bin/sq-afk-launch.sh release-handle-less` when no identity was recorded.
+Both actions require the recorded base path to match this base and refuse while a live daemon process owns the session.
+A handle-less intent is never automatically recovered, even with zero title matches.
+The guarded actions perform the following read-only proof before clearing anything:
+
+1. Check the live runtime: `orca status --json` must report `reachable=true`, `state="ready"`, and a non-empty runtime identity; a handle-less intent additionally requires its recorded `parent.runtime` to match.
+2. Enumerate every live terminal: `orca terminal list --limit 10000 --json` must report `ok=true`, the current runtime's `_meta.runtimeId`, `result.truncated=false`, an empty `result.hostScope.omittedHostIds`, and non-empty string `handle`, `worktreeId`, and `worktreePath` fields for every terminal.
+3. For an identity-bearing intent, refuse and name its recorded daemon handle if that handle appears anywhere in the inventory, even if the runtime, incarnation, worktree, or task claim changed.
+4. Cross-check every `state/*.meta` endpoint: `terminal=` for `backend=orca`, otherwise `window=`, refusing unreadable, symlinked, or ambiguous Orca task records rather than treating them as complete claims.
+An Orca task record that declares an aborted spawn (`orca_mission_tab=none` with no `orca_host_workspace_id=`) and names no `terminal=` claims no terminal, so it neither blocks a release nor counts as a claimed handle.
+5. Report and refuse every unclaimed live handle whose `worktreeId` equals `parent.worktree` or whose `worktreePath` equals `parent.path`, excluding only the recorded primary `parent.target` and task-claimed terminals.
+6. Release an identity-bearing intent only when its recorded daemon handle is absent AND no unclaimed binding candidate exists, then settle the recorded primary's native request before clearing the pending record and `state/.afk`; the handle-less action requires the same no-candidate census.
+
+Runtime or incarnation mismatch is never a release trigger: live evidence showed the same handle and incarnation surviving a runtime change.
+The actions log the release/refusal branch and candidate handles, never create, adopt, retitle, signal, or close a terminal, and never infer identity from a title.
+Incomplete or ambiguous evidence refuses and preserves the record; neither command is an automatic recovery fallback.
 
 Any doubt that the text or terminal was delivered or consumed leaves every file in place and the lifecycle reported as not complete; removal never authorizes a resend.
 
-Verification is split explicitly: Linux Orca **1.4.188** supplied the read-only runtime/terminal identity schema; interactive **Pi 1.1.0** supplied real editor/modal and native consumption proof on an isolated PTY with a **fake Orca identity CLI**.
-No combined real Orca + Pi supervisor/AFK lifecycle, macOS supervisor, Chat UI eligibility, or physical Android acceptance is claimed by those separate checks.
-The installed host has shared live terminals, and its documented `serve` options do not prove a separate user-data/profile boundary; a different port or project root alone is not isolation.
-A disposable real-host probe therefore requires a proven independent Orca profile/runtime before launch, without restarting or reconfiguring the shared host.
+Verification separates lifecycle from message consumption: Linux Orca **1.4.243** with real interactive **Pi 1.4.0** passed start, live status, repeated start without a duplicate terminal, stop, and a second start/stop in an isolated task copy with private lifecycle state.
+Pi **1.1.0** separately supplied editor/modal and native consumption proof on an isolated PTY with a **fake Orca identity CLI**.
+Combined real-host message consumption, macOS supervisor behavior, Chat UI eligibility, and physical Android acceptance remain unverified.
+The installed host has shared live terminals, so live probes must have explicit authorization, use only exact lab-owned terminals and private state in a disposable copy, and leave no daemon running; they must never restart or reconfigure the shared host.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#orca) records the exact refresh commands and evidence limits.
 
 ## Active limits
@@ -158,8 +187,9 @@ A disposable real-host probe therefore requires a proven independent Orca profil
 - Escape is unsupported.
 - Orca exposes no stable CLI version or protocol marker, so readiness is the compatibility gate rather than a version floor.
 - For spawn and cleanup identity, only the observed terminal, tab, and worktree result fields are accepted and speculative response shapes there are rejected: a mission tab is accepted only when `surface=visible`, `tabId` is present, and `worktreeId` is exactly the requested hosting workspace, as the [live 1.4.243 creation observation](verification/runtime-backends.md#2026-10-28---live-orca-14243-terminal-create-observation) records; the blocked-prompt `agentWait` read below is the single documented exception, and every position it probes is treated as unverified.
-- The worktree-filtered `orca terminal list` response (`truncated`, `hostScope`, `terminals[]`) and the installed `orca terminal create --help` flags were observed read-only on 2026-10-25 and that observation is retained in [`verification/runtime-backends.md`](verification/runtime-backends.md#orca).
-  Filter semantics, real close and cleanup, focus behaviour, and every real lifecycle path stay unproven - only the create response shape has a live observation - so any unexpected shape is an uncertain outcome that preserves the pending record instead of recovering.
+- The terminal inventory response the launcher reads is the complete `orca terminal list --limit 10000 --json` (`truncated`, `hostScope.omittedHostIds`, `terminals[].handle/incarnationId/worktreeId/worktreePath`).
+  The earlier worktree-filtered read-only observation of `orca terminal list` and the installed `orca terminal create --help` flags were recorded on 2026-10-25 and are retained in [`verification/runtime-backends.md`](verification/runtime-backends.md#orca).
+  Exact identity-based create/cleanup and the Pi daemon lifecycle were subsequently verified on Linux Orca 1.4.243; focus behavior remains unverified, and any unexpected or incomplete inventory preserves the pending intent instead of permitting recovery.
 - Busy-expiry cannot be evaluated: the complete-viewport read is unverified, so a static busy claim logs a named limitation and never escalates from a tail ([architecture](architecture.md)).
 - Orca does not expose the event stream used by Herdr; blocked-prompt detection polls `agentWait` and degrades to the existing sentry fallback when that observation is not available.
   The non-null `agentWait` record's shape and meaning are **unverified**: only the absent value (`agentWait=null`) has been observed on a real terminal, so it is unknown whether every non-null record means a human must answer or whether it can also describe an operator parked at its composer between turns.
