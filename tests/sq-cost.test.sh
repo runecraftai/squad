@@ -851,6 +851,7 @@ test_summary_by_kind() {
     for i in 1 2 3; do echo "- [x] recon-$i - Recon $i (kind: recon) (done 2026-10-01)"; done
     echo "- [x] strike-1 - Duplicate of strike one (kind: strike)"
     echo "- [x] plain-1 - Entry without marker (repo: squad)"
+    echo "- [x] **freeform** - Completed bullet that is not a task item (kind: strike)"
     echo "- [ ] open-1 - Not done (kind: strike)"
   } > "$dir/archive.md"
   printf -- '- [x] strike-7 - Backlog strike (kind: strike) (merged 2026-10-02)\n' > "$dir/data/backlog.md"
@@ -890,11 +891,18 @@ SQL
   [ "$(jq '[.classes[] | .n + .no_cost_data] | add' <<<"$json")" = 11 ] || fail "each id counts once: $json"
   pass "summary --by kind reports nearest-rank median/p90 and marks small classes insufficient"
 
-  local table
+  local table strike_row recon_row unclassified_row
   table=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
     "$COST_CLI" summary --archive "$dir/archive.md" 2>&1)
-  assert_contains "$table" "insufficient" "table marks insufficient classes"
-  pass "summary prints a table by default"
+  strike_row=$(printf '%s\n' "$table" | awk '$1 == "strike" {print $4, $5}')
+  recon_row=$(printf '%s\n' "$table" | awk '$1 == "recon" {print $4, $5}')
+  unclassified_row=$(printf '%s\n' "$table" | awk '$1 == "unclassified" {print $4, $5}')
+  [ "$strike_row" = "9 30" ] || fail "table shows median/p90 for a sufficient class: $table"
+  [ "$recon_row" = "insufficient insufficient" ] \
+    || fail "table withholds values for an insufficient class: $table"
+  [ "$unclassified_row" = "insufficient insufficient" ] \
+    || fail "table withholds values for a class with no priced samples: $table"
+  pass "summary prints a table by default with values only for sufficient classes"
 
   local out
   out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/missing.sqlite" \
@@ -971,6 +979,31 @@ SH
   [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
     || fail "sqlite3 without -json leaves every class insufficient: $out"
   pass "a sqlite3 lacking -json support cannot silently drop cost"
+
+  local late_fail_bin="$dir/late-fail-bin"
+  mkdir -p "$late_fail_bin"
+  cat > "$late_fail_bin/sqlite3" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *sq/__sq_cost_read_probe__*|*sq/strike-*) exec "$real_sqlite3" "\$@" ;;
+  esac
+done
+echo 'database is locked' >&2
+exit 1
+SH
+  chmod +x "$late_fail_bin/sqlite3"
+  out=$(PATH="$late_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "mid-run Drill read failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "mid-run Drill read failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "mid-run Drill read failure leaves every class insufficient: $out"
+  [ "$(jq '[.classes[] | select(has("median_usd") or has("p90_usd"))] | length' <<<"$out")" = 0 ] \
+    || fail "mid-run Drill read failure withholds values gathered before the failure: $out"
+  pass "a Drill read failure during the per-task loop warns once and leaves every class insufficient"
 
   if "$COST_CLI" summary --by task >/dev/null 2>"$dir/err"; then
     fail "unsupported grouping must be a usage error"
