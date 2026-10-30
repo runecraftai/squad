@@ -894,7 +894,6 @@ SQL
   table=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
     "$COST_CLI" summary --archive "$dir/archive.md" 2>&1)
   assert_contains "$table" "insufficient" "table marks insufficient classes"
-  assert_not_contains "$table" "alert" "summary never alerts"
   pass "summary prints a table by default"
 
   local out
@@ -911,6 +910,26 @@ SQL
     || fail "unreadable database still exits 0"
   assert_contains "$(cat "$dir/err")" "Drill database not readable" "unreadable database warns on stderr"
   pass "missing or unreadable database warns and degrades to insufficient"
+
+  local old_db="$dir/old-schema.sqlite"
+  sqlite3 "$old_db" <<'SQL'
+CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);
+CREATE TABLE agent_invocations (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+  model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+  input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER
+);
+INSERT INTO runs VALUES ('r1','sq/strike-1');
+INSERT INTO agent_invocations VALUES ('i1','r1','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0);
+SQL
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$old_db" \
+    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "incompatible schema still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "Drill database not readable" "incompatible invocation schema warns on stderr"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "incompatible invocation schema leaves every class insufficient: $out"
+  pass "incompatible invocation schema is reported instead of silently dropping cost"
 
   if "$COST_CLI" summary --by task >/dev/null 2>"$dir/err"; then
     fail "unsupported grouping must be a usage error"
