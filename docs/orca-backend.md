@@ -162,6 +162,7 @@ The guarded actions perform the following read-only proof before clearing anythi
 2. Enumerate every live terminal: `orca terminal list --limit 10000 --json` must report `ok=true`, the current runtime's `_meta.runtimeId`, `result.truncated=false`, an empty `result.hostScope.omittedHostIds`, and non-empty string `handle`, `worktreeId`, and `worktreePath` fields for every terminal.
 3. For an identity-bearing intent, refuse and name its recorded daemon handle if that handle appears anywhere in the inventory, even if the runtime, incarnation, worktree, or task claim changed.
 4. Cross-check every `state/*.meta` endpoint: `terminal=` for `backend=orca`, otherwise `window=`, refusing unreadable, symlinked, or ambiguous Orca task records rather than treating them as complete claims.
+An Orca task record that declares an aborted spawn (`orca_mission_tab=none` with no `orca_host_workspace_id=`) and names no `terminal=` claims no terminal, so it neither blocks a release nor counts as a claimed handle.
 5. Report and refuse every unclaimed live handle whose `worktreeId` equals `parent.worktree` or whose `worktreePath` equals `parent.path`, excluding only the recorded primary `parent.target` and task-claimed terminals.
 6. Release an identity-bearing intent only when its recorded daemon handle is absent AND no unclaimed binding candidate exists, then settle the recorded primary's native request before clearing the pending record and `state/.afk`; the handle-less action requires the same no-candidate census.
 
