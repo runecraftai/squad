@@ -646,10 +646,11 @@ orca status --json | jq -c '{version:.result.runtime.appVersion,ready:(.result.r
 An existing shell endpoint's `terminal show --terminal <handle> --json` also supplied handle, incarnation, worktree/path, connected/writable and local-host fields, with `agentWait=null`.
 No non-null `agentWait` record has been observed, so the blocked-prompt poll's record shape, its semantics, and whether presence alone means a human must answer remain UNVERIFIED and are covered only by `tests/sq-backend-orca.test.sh` and `tests/sq-sentry-triage.test.sh` against a fake CLI, which establish call shape and this repository's own behavior rather than end-to-end Orca behavior.
 That identity schema is not proof of draft/modal safety or message consumption.
-Two read-only shapes the Orca launcher depends on - the complete terminal inventory `orca terminal list --limit 10000 --json` response including `result.truncated`, `result.hostScope.omittedHostIds` and `result.terminals[].handle/incarnationId/worktreeId/worktreePath`, and the `orca terminal create --worktree/--command/--title --json` receipt - were observed read-only on 2026-10-25 (as a worktree-filtered list) and then exercised in the identity-bound lifecycle below.
+The Orca launcher depends on two shapes: the complete terminal inventory `orca terminal list --limit 10000 --json` response including `result.truncated`, `result.hostScope.omittedHostIds` and `result.terminals[].handle/incarnationId/worktreeId/worktreePath`, and the `orca terminal create --worktree/--command/--title --json` receipt.
+The 2026-10-25 read-only observation recorded only the worktree-filtered list form and the create help flags; the [live 1.4.243 creation observation](#2026-10-28---live-orca-14243-terminal-create-observation) recorded the create receipt, and the identity-bound lifecycle below exercised both.
 That single shape observation leaves the worktree-filtered form's filter semantics UNVERIFIED and claims no real create or cleanup path; an unexpected or unreadable inventory still keeps the recorded creation intent uncertain instead of recovering an endpoint.
 No terminal input, creation, close, worktree operation, host restart, or configuration change was performed on the shared real Orca runtime.
-An independent user-data/profile boundary could not be established from the installed host's documented `serve` options, so the real-runtime lifecycle probe was not attempted.
+An independent user-data/profile boundary could not be established from the installed host's documented `serve` options, so no profile-isolated real-runtime lifecycle probe was attempted in this check.
 
 Portable public-helper tests use a fake Orca CLI and the shipped Pi receiver:
 
@@ -681,7 +682,7 @@ The combined real Orca + Pi daemon lifecycle was subsequently verified below; co
 On 2026-10-25, read-only observation of the installed Orca 1.4.188 host returned, for the worktree-filtered terminal list, ok=true, exactly one terminal matching the recorded worktree, totalCount=1, truncated=false, local host scope with no omitted host ids, and the same runtime identity as the earlier host.
 That observation used the worktree-filtered `--worktree id:<worktree>` form; the shipped launcher instead reads the complete inventory with `orca terminal list --limit 10000 --json` and requires its `truncated`, `hostScope.omittedHostIds` and per-terminal `handle`/`worktreeId`/`worktreePath` fields, exercised in the lifecycle below.
 The installed create help advertises worktree, title, command, focus and json flags and qualifies no-focus behaviour with 'when possible'.
-Filter semantics, real terminal creation, cleanup, focus behaviour and Android operation remain UNVERIFIED.
+That read-only observation left filter semantics, real terminal creation, cleanup, focus behaviour and Android operation UNVERIFIED.
 No real lifecycle test was executed in that read-only observation.
 
 ### 2026-10-29 - identity-bound daemon lifecycle
@@ -730,8 +731,8 @@ PASS: real Orca + real Pi pending-identity adoption without replacement, start/s
 
 Focus behavior, a fully lost real create receipt, and combined real-host message consumption were not tested.
 
-Refresh the portable recovery proof with `bash tests/sq-afk-orca.test.sh`: it covers a renamed identity match, one create after recorded-identity absence despite an unrelated matching title, duplicate-identity refusal without terminal mutation, changed parent/base/incarnation/worktree refusal, incomplete inventory refusal, preservation of handle-less lost responses with either zero or matching-title terminals, the read-only `status` states a pending record reports for a live, unreadable, changed, or absent recorded identity, backward-compatible stop of a pre-token legacy record whose stored title marker may only verify its exact already-bound identity, the guarded handle-less release refusing unclaimed candidates or incomplete evidence before clearing anything, and identity-bearing release requiring both an absent recorded handle and no unclaimed binding candidate while refusing a surviving handle even across runtime/incarnation changes.
-The launcher's `bin/sq-afk-orca-launch.sh` owns the identity-recovery contract; `release-pending` and `release-handle-less` require separately authorized, complete live-identity and task-claim evidence, never title-based proof or runtime-mismatch shortcuts.
+Refresh the portable recovery proof with `bash tests/sq-afk-orca.test.sh`: it covers a renamed identity match, one create after recorded-identity absence despite an unrelated matching title, duplicate-identity refusal without terminal mutation, changed parent/base/incarnation/worktree refusal, incomplete inventory refusal, preservation of handle-less lost responses with either zero or matching-title terminals, the read-only `status` states a pending record reports for a live, unreadable, changed, or absent recorded identity, backward-compatible stop of a pre-token legacy record whose stored title marker may only verify its exact already-bound identity, a create receipt naming the primary handle refused without adoption or close, the guarded handle-less release refusing unclaimed candidates or incomplete evidence before clearing anything (including a declared-abort task record that claims no terminal), and identity-bearing release requiring both an absent recorded handle and no unclaimed binding candidate while refusing a surviving handle even across runtime/incarnation changes.
+The launcher's `bin/sq-afk-orca-launch.sh` owns the identity-recovery evidence; `bin/sq-afk-launch.sh release-pending` and `release-handle-less` require separately authorized, complete live-identity and task-claim evidence, never title-based proof or runtime-mismatch shortcuts.
 
 ### 2026-10-28 - live Orca 1.4.243 terminal create observation
 
@@ -753,7 +754,8 @@ result.terminal.worktreeId=<hosting-workspace-id>
 ```
 
 This observation is the evidence of record for the strict creation gate in `bin/backends/orca.sh`: a creation is accepted only when `result.terminal.surface` is `visible`, `result.terminal.tabId` is present, and `result.terminal.worktreeId` is exactly the hosting workspace that was requested, and any other handle is closed and refused.
-Only this create response was observed live. Terminal input, close, worktree lifecycle, relaunch, and Android operation remain unverified against this host and are covered by the fake-Orca suite rather than by a real-runtime claim; Orca relaunch is refused on purpose until it has its own design.
+Only this mission-tab create response was observed live for this task path.
+Task terminal input, mission-tab close, worktree lifecycle, relaunch, and Android operation remain unverified against this host and are covered by the fake-Orca suite rather than by a real-runtime claim; Orca relaunch is refused on purpose until it has its own design.
 
 ## cmux
 
