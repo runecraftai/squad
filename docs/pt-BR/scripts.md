@@ -35,6 +35,7 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-learn.sh`            | Capturar uma lição operacional durável em `data/learnings.md`                         |
 | `sq-brief.sh`            | Estruturar briefs ship (`--mode` explícito), recon, charter de XO e Herdr-lab; briefs strike e recon exigem decisão explícita de playbook (`--playbook <id>@<version>`, ou `--no-playbook` com o motivo em uma linha), e `--profile` anexa um conjunto de restrições ao playbook selecionado   |
 | `sq-drill-drive.sh`      | Conduzir chamadas AXI com recuperação limitada de custódia de runs falhos; o cabeçalho do script é dono do contrato de retry e parada |
+| `sq-drill-sandbox-gc.sh` | Remover sandboxes `/tmp/drill-execution-policy-*` do drill que estão obsoletos e sem referência de processo vivo, mais antigos que uma janela de tolerância (padrão 60 minutos, `--dry-run` só lista), iniciado em segundo plano pelo bootstrap para que um tmpfs cheio não trave os agentes de etapa |
 | `sq-herdr-lab.sh`        | Provisionar e operar protegidamente uma sessão de lab Herdr isolada, nunca padrão         |
 | `sq-install-herdr.sh`    | Instalar o pin exato de versão do Herdr usado pelo CI com URL oficial de asset, SHA-256 e checagens de protocolo |
 | `sq-install-oxlint.sh`   | Instalar o oxlint de versão exata usado pelo CI com URL de tarball npm, pin SHA-256 e binding de plataforma |
