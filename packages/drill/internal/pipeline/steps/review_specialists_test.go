@@ -90,12 +90,22 @@ func TestSpecializedReviewRetryUsesNewBatchAndCurrentHead(t *testing.T) {
 }
 
 func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) {
+	const wantMaxParallel int32 = 2
 	dir, base, head := setupGitRepo(t)
 	var active, peak atomic.Int32
 	var completionMu sync.Mutex
 	var completionOrder []string
-	requirementsStarted := make(chan struct{})
-	var requirementsOnce sync.Once
+	// The security and requirements lenses rendezvous: neither proceeds until
+	// both are inside the run, so the overlap is guaranteed rather than timed.
+	var arrived atomic.Int32
+	bothInside := make(chan struct{})
+	requirementsDone := make(chan struct{})
+	// Any lens that enters the run while the rendezvous lenses still hold it
+	// is recorded on this channel, so an over-permissive worker pool is a
+	// signalled event instead of an inferred one.
+	var overBoundPeak atomic.Int32
+	var overBoundOnce sync.Once
+	overBound := make(chan struct{})
 	a := controlledReviewAgent{run: func(ctx context.Context, opts agent.RunOpts) (*agent.Result, error) {
 		validPurpose := false
 		for _, lens := range reviewLensInstructions {
@@ -112,37 +122,64 @@ func TestSpecializedReviewBatch_BoundsConcurrencyAndOrdersResults(t *testing.T) 
 			}
 		}
 		defer active.Add(-1)
-		// The slower security lens waits for the fast requirements lens to enter
-		// its run so overlap does not depend on clone/checkout setup timings.
-		if opts.Purpose == "review-lens:requirements" {
-			requirementsOnce.Do(func() { close(requirementsStarted) })
-		} else if opts.Purpose == "review-lens:security" {
+		if current > wantMaxParallel {
+			overBoundPeak.Store(current)
+			overBoundOnce.Do(func() { close(overBound) })
+		}
+		isSecurity := opts.Purpose == "review-lens:security"
+		isRequirements := opts.Purpose == "review-lens:requirements"
+		if isSecurity || isRequirements {
+			if arrived.Add(1) == 2 {
+				close(bothInside)
+			}
 			select {
-			case <-requirementsStarted:
+			case <-bothInside:
+			case <-overBound:
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
 		}
-		delay := 20 * time.Millisecond
-		if opts.Purpose == "review-lens:security" {
-			delay = 80 * time.Millisecond
-		} else if opts.Purpose == "review-lens:requirements" {
-			delay = 5 * time.Millisecond
-		}
-		select {
-		case <-time.After(delay):
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		// Security completes strictly after requirements, by channel order
+		// rather than by wall-clock delay.
+		if isSecurity {
+			select {
+			case <-requirementsDone:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 		completionMu.Lock()
 		completionOrder = append(completionOrder, opts.Purpose)
 		completionMu.Unlock()
+		if isRequirements {
+			close(requirementsDone)
+		}
+		if isSecurity || isRequirements {
+			// Hold both lenses inside the run until a third execution is
+			// signalled, giving a worker beyond the bound enough time to finish
+			// its setup and enter the run where it is recorded.
+			select {
+			case <-overBound:
+			case <-time.After(3 * time.Second):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		return &agent.Result{Output: json.RawMessage(`{"candidates":[],"inspected_files":[]}`)}, nil
 	}}
 	snapshot := newReviewSnapshot("", "", base, head, "", nil, "", "", "", "")
-	results := runReviewSpecialists(context.Background(), a, dir, snapshot, 2, time.Second, nil, fixtureExecutionPolicy{dir: dir})
-	if peak.Load() != 2 {
-		t.Fatalf("peak concurrency = %d, want 2", peak.Load())
+	results := runReviewSpecialists(context.Background(), a, dir, snapshot, int(wantMaxParallel), 30*time.Second, nil, fixtureExecutionPolicy{dir: dir})
+	if got := overBoundPeak.Load(); got > wantMaxParallel {
+		t.Fatalf("observed %d concurrent lens runs while the configured bound is %d (peak concurrency = %d, want %d)", got, wantMaxParallel, peak.Load(), wantMaxParallel)
+	}
+	if got := peak.Load(); got != wantMaxParallel {
+		var lensErrors []error
+		for _, result := range results {
+			if result.Err != nil {
+				lensErrors = append(lensErrors, result.Err)
+			}
+		}
+		t.Fatalf("peak concurrency = %d, want %d (lens errors: %v)", got, wantMaxParallel, lensErrors)
 	}
 	if len(completionOrder) < 2 || completionOrder[0] != "review-lens:requirements" {
 		t.Fatalf("test did not complete out of order: %v", completionOrder)
