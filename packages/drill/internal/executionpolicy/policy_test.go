@@ -754,6 +754,38 @@ func TestCertificateBundleSymlinkTargetIsBoundAtItsHostPath(t *testing.T) {
 	}
 }
 
+func TestCertificateBundleSymlinkChainIsMaterializedAtEveryHop(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(root, "nix/store/pkg/etc/ssl/certs/ca-bundle.crt")
+	intermediate := filepath.Join(root, "etc/static/ssl/certs/ca-certificates.crt")
+	link := filepath.Join(root, "etc/ssl/certs/ca-certificates.crt")
+	for _, dir := range []string{filepath.Dir(bundle), filepath.Dir(intermediate), filepath.Dir(link)} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(bundle, []byte("roots"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../../../nix/store/pkg/etc/ssl/certs/ca-bundle.crt", intermediate); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../static/ssl/certs/ca-certificates.crt", link); err != nil {
+		t.Fatal(err)
+	}
+	got := certificateTargetBinds(root)
+	want := []string{
+		"--ro-bind", filepath.Dir(bundle), "/nix/store/pkg/etc/ssl/certs",
+		"--ro-bind", bundle, "/etc/static/ssl/certs/ca-certificates.crt",
+	}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("certificate binds = %q, want %q", got, want)
+	}
+}
+
 func TestCertificateBindsAreEmptyWithoutCertificatePaths(t *testing.T) {
 	root := t.TempDir()
 	if got := certificateTargetBinds(root); len(got) != 0 {
