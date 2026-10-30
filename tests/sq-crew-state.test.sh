@@ -785,6 +785,67 @@ test_terminal_failed() {
   pass "terminal failed run is authoritative"
 }
 
+# Synthetic drill database for the review-risk surface: <path> <mode>. Only
+# the columns sq_drill_run_risk reads are modelled. Modes: final-<level> (risk in
+# the step's final findings), round-<level> (final findings NULL, risk only in the
+# newest round), round-after-null-risk (final findings carry a JSON null risk),
+# no-review (a different step only).
+make_risk_db() {
+  local db=$1 mode=$2 step=review final=NULL round=NULL
+  case "$mode" in
+    final-*) final="'{\"risk_level\":\"${mode#final-}\"}'" ;;
+    round-after-null-risk) final="'{\"risk_level\":null}'"; round="'{\"risk_level\":\"medium\"}'" ;;
+    round-*) round="'{\"risk_level\":\"${mode#round-}\"}'" ;;
+    no-review) step="test"; final="'{\"risk_level\":\"high\"}'" ;;
+  esac
+  rm -f "$db"
+  sqlite3 "$db" <<SQL
+CREATE TABLE step_results (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step_name TEXT NOT NULL,
+  step_order INTEGER NOT NULL, findings_json TEXT, started_at INTEGER);
+CREATE TABLE step_rounds (id TEXT PRIMARY KEY, step_result_id TEXT NOT NULL, round INTEGER NOT NULL,
+  findings_json TEXT);
+INSERT INTO step_results VALUES ('sr1', '01RUN', '$step', 2, $final, 1);
+INSERT INTO step_rounds VALUES ('rd1', 'sr1', 1, '{"risk_level":"high"}');
+INSERT INTO step_rounds VALUES ('rd2', 'sr1', 2, $round);
+SQL
+}
+
+test_done_run_surfaces_review_risk() {
+  reset_fakes
+  local d out base mode
+  d=$(new_case risk)
+  make_repo_on_branch "$d/wt" sq/feat-risk
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-risk.meta" "window=fm:sq-feat-risk" "worktree=$d/wt" "kind=strike"
+  SQUAD_FAKE_AXI_STATUS="$(run_passed sq/feat-risk)"
+  base=$(SQUAD_DRILL_STATE="$d/missing.sqlite" run_crew_state "$d" feat-risk)
+  assert_not_contains "$base" 'risk=' 'missing database adds no risk'
+  for mode in final-medium round-medium round-after-null-risk; do
+    make_risk_db "$d/state.sqlite" "$mode"
+    out=$(SQUAD_DRILL_STATE="$d/state.sqlite" run_crew_state "$d" feat-risk)
+    assert_contains "$out" "state: done" "$mode keeps done"
+    assert_contains "$out" "· risk=medium" "$mode surfaces risk=medium"
+    [ "${out/ · risk=medium/}" = "$base" ] || fail "$mode changed more than the risk suffix: $out"
+  done
+  make_risk_db "$d/state.sqlite" final-high
+  out=$(SQUAD_DRILL_STATE="$d/state.sqlite" run_crew_state "$d" feat-risk)
+  assert_contains "$out" "· risk=high" "high level is surfaced"
+  for mode in final-unknown no-review; do
+    make_risk_db "$d/state.sqlite" "$mode"
+    out=$(SQUAD_DRILL_STATE="$d/state.sqlite" run_crew_state "$d" feat-risk)
+    [ "$out" = "$base" ] || fail "$mode changed the output: $out"
+  done
+  printf 'not a database' > "$d/state.sqlite"
+  out=$(SQUAD_DRILL_STATE="$d/state.sqlite" run_crew_state "$d" feat-risk)
+  [ "$out" = "$base" ] || fail "unreadable database changed the output: $out"
+  # A parked or working run never carries a risk suffix.
+  make_risk_db "$d/state.sqlite" final-medium
+  SQUAD_FAKE_AXI_STATUS="$(run_running sq/feat-risk)"
+  out=$(SQUAD_DRILL_STATE="$d/state.sqlite" run_crew_state "$d" feat-risk)
+  assert_not_contains "$out" 'risk=' 'non-done run adds no risk'
+  pass "done run surfaces drill review risk and stays unchanged without it"
+}
+
 # (e) cross-branch attribution: `axi status` returns ANOTHER branch's run (the
 # routine case once more than one crew validates the same underlying repo
 # concurrently - they share ONE drill repo registration), so the helper
@@ -1704,6 +1765,7 @@ test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_terminal_failed
+test_done_run_surfaces_review_risk
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status

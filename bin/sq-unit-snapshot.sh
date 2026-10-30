@@ -29,6 +29,9 @@
 #     sq-classify-lib.sh's authoritative status_open_decisions fold and reconciled
 #     against current_state; hints.pending_decision and hints.blocked_event are
 #     booleans derived from that set.
+#     pr.risk is drill's review risk (low|medium|high) taken from the done
+#     run-step detail of current_state, null when the run is unfinished or reports
+#     none; details from other sources are never treated as a review level.
 #     endpoint.exists is the cheap backend endpoint-presence read.
 #     endpoint.agent_alive is populated for XOs only, where it is useful
 #     return-channel supervision data; other tasks use "not_checked".
@@ -405,7 +408,7 @@ backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
 task_json_lines() {
   local meta id kind harness mode yolo project worktree home projects backend target status_log report_path
   local remote_host remote_root remote_state remote_rc remote_home_present
-  local pr pr_source event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
+  local pr pr_source pr_risk event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
   local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
 
@@ -460,6 +463,16 @@ task_json_lines() {
     event_json=$(status_event_json "$status_log")
     last_event_raw=$(printf '%s' "$event_json" | jq -r '.last_event.raw // ""')
     current_state=$(printf '%s' "$current_json" | jq -r '.state // ""')
+    # Drill's review risk rides on sq-crew-state.sh's done run-step detail, which
+    # already binds the run to this worktree; no second database read here. Only
+    # that source appends a risk token - status-log and pane details are free-form
+    # operator prose, so a `risk=` word in them is not drill's review level.
+    pr_risk=$(printf '%s' "$current_json" | jq -r '
+      if .state == "done" and .source == "run-step" then
+        ((.detail // "") | split(" · ")
+          | map(select(test("^risk=(low|medium|high)$")) | sub("^risk="; ""))
+          | last) // ""
+      else "" end')
     current_source=$(printf '%s' "$current_json" | jq -r '.source // ""')
 
     # Durable keyed open-decision set: fold the WHOLE status stream
@@ -557,6 +570,7 @@ task_json_lines() {
       --arg remote_root "$remote_root" \
       --arg pr "$pr" \
       --arg pr_source "$pr_source" \
+      --arg pr_risk "$pr_risk" \
       --arg agent_alive "$agent_alive" \
       --arg observed_at "$SNAPSHOT_NOW" \
       --arg last_event_raw "$last_event_raw" \
@@ -594,7 +608,7 @@ task_json_lines() {
                   elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                   else "unknown" end),
           observed_at:$observed_at,freshness:"fresh"},
-        pr:{url:($pr | if . == "" then null else . end),source:$pr_source},
+        pr:{url:($pr | if . == "" then null else . end),source:$pr_source,risk:($pr_risk | if . == "" then null else . end)},
         hints:{
           pending_decision:$pending_decision,
           blocked_event:$blocked_event,

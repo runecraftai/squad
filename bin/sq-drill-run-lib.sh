@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared drill axi run attribution and current-run lifecycle primitives.
+# Shared drill axi run attribution, current-run lifecycle, and review-risk primitives.
 #
 # ONE owner for the branch+code-identity matching rule that decides whether a
 # drill run belongs to a given worktree, and for the current-run capture built
@@ -235,4 +235,32 @@ fm_drill_reported_exec_state() {  # <run_state> [recorded-state]
     terminal) printf 'released\n' ;;
     *) [ -z "${2:-}" ] || printf '%s\n' "$2" ;;
   esac
+}
+
+# Drill's review risk level for run $1, read-only: `low`, `medium`, or `high`.
+# `axi status` exposes risk only while a run is parked at the review gate, so a
+# completed run's level comes from the drill database instead (SQUAD_DRILL_STATE
+# overrides ~/.drill/state.sqlite, the same path contract as bin/sq-cost-lib.sh):
+# the review step's final findings, else its newest round. Prints nothing for an
+# absent, `unknown`, or unreadable level and never fails the caller.
+sq_drill_run_risk() {  # <run-id>
+  local run_id=${1:-} database=${SQUAD_DRILL_STATE:-$HOME/.drill/state.sqlite} level
+  case "$run_id" in ''|*[!A-Za-z0-9_-]*) return 0 ;; esac
+  [ -f "$database" ] && command -v sqlite3 >/dev/null 2>&1 || return 0
+  level=$(sqlite3 -readonly "$database" \
+    "WITH review AS (
+       SELECT id, findings_json FROM step_results
+        WHERE run_id = '$run_id' AND step_name = 'review'
+        ORDER BY step_order DESC, started_at DESC LIMIT 1)
+     SELECT lower(COALESCE(
+       CASE WHEN json_valid(NULLIF(findings_json, ''))
+            THEN json_extract(findings_json, '\$.risk_level') END,
+       (SELECT CASE WHEN json_valid(NULLIF(rd.findings_json, ''))
+                    THEN json_extract(rd.findings_json, '\$.risk_level') END
+          FROM step_rounds AS rd
+         WHERE rd.step_result_id = review.id AND NULLIF(rd.findings_json, '') IS NOT NULL
+         ORDER BY rd.round DESC LIMIT 1)))
+       FROM review;" 2>/dev/null) || return 0
+  case "$level" in low|medium|high) printf '%s\n' "$level" ;; esac
+  return 0
 }
