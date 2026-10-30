@@ -1339,13 +1339,20 @@ if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
     # A base run straight from a checkout has no state/ yet, so create it (or
     # fall back to /dev/null) rather than letting the redirect fail silently and
     # skip the sweep the log was meant to record.
-    gc_log=$STATE/.drill-sandbox-gc.log
-    if ! mkdir -p "$STATE" 2>/dev/null || ! : 2>/dev/null >"$gc_log"; then
-      gc_log=/dev/null
+    gc_log=/dev/null
+    gc_tmpdir=${TMPDIR:-/tmp}
+    if mkdir -p "$STATE" 2>/dev/null && : 2>/dev/null >"$STATE/.drill-sandbox-gc.log"; then
+      gc_log=$STATE/.drill-sandbox-gc.log
+      # Keep the bounded runner's own bookkeeping off the tmpfs being reclaimed:
+      # when that tmpfs is out of space or inodes, mktemp in /tmp would fail and
+      # the sweep would be skipped exactly when it is needed.
+      gc_tmpdir=$STATE
     fi
     # fm_run_timed owns the bound so a host without GNU coreutils (macOS
     # exposes only gtimeout) still runs the sweep instead of skipping it.
     (
+      TMPDIR=$gc_tmpdir
+      export TMPDIR
       fm_run_timed 120 "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" \
         >"$gc_log" 2>&1 </dev/null &
     ) 2>/dev/null || true

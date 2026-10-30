@@ -193,6 +193,37 @@ run_gc
 [ ! -e "$SANDBOX_ROOT/drill-execution-policy-ro" ] || fail "read-only sandbox is removed"
 pass "read-only cache trees are removed"
 
+# --- a BSD-style rm that rejects --one-file-system still sweeps --------------
+# Stock macOS rm has no --one-file-system; the script must detect that and fall
+# back to a plain rm -rf instead of failing every candidate.
+reset
+make_sandbox drill-execution-policy-bsd-rm 7
+bsdbin="$TMP_ROOT/bsd-rm-bin"
+mkdir -p "$bsdbin"
+REAL_RM=$(command -v rm)
+cat >"$bsdbin/rm" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    --one-file-system) printf 'rm: illegal option -- one-file-system\n' >&2; exit 1 ;;
+  esac
+done
+exec '$REAL_RM' "\$@"
+SH
+chmod +x "$bsdbin/rm"
+OUT=$(PATH="$bsdbin:$PATH" "$GC" 2>"$TMP_ROOT/err")
+RC=$?
+ERR=$(cat "$TMP_ROOT/err")
+[ "$RC" -eq 0 ] || fail "a BSD-style rm still exits 0 (got $RC)"
+[ ! -e "$SANDBOX_ROOT/drill-execution-policy-bsd-rm" ] \
+  || fail "a stale sandbox is removed even when rm rejects --one-file-system"
+[ -z "$ERR" ] || fail "a BSD-style rm sweep prints nothing on stderr (got: $ERR)"
+case "$OUT" in
+  *"removed 1 stale drill sandbox"*) ;;
+  *) fail "the removal is still summarized (got: $OUT)" ;;
+esac
+pass "a BSD-style rm without --one-file-system still sweeps"
+
 # --- a failed size measurement warns but does not hide the removal -----------
 reset
 make_sandbox drill-execution-policy-unmeasurable 7

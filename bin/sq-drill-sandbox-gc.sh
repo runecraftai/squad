@@ -104,6 +104,20 @@ human_size() {
   }'
 }
 
+# Some rm implementations (BSD/macOS) reject --one-file-system. Probe once with
+# a throwaway directory so an unsupported flag falls back to a plain rm -rf
+# instead of failing every removal. If no probe directory can be created, the
+# plain form is used rather than skipping the sweep.
+rm_supports_one_file_system() {
+  local probe
+  probe=$(mktemp -d "${TMPDIR:-/tmp}/sq-drill-sandbox-gc-probe.XXXXXX" 2>/dev/null) || return 1
+  if rm -rf --one-file-system -- "$probe" 2>/dev/null && [ ! -e "$probe" ]; then
+    return 0
+  fi
+  rm -rf -- "$probe" 2>/dev/null || true
+  return 1
+}
+
 main() {
   case "$GRACE" in
     '' | *[!0-9]*)
@@ -134,6 +148,10 @@ main() {
   fi
 
   local count=0 total_kb=0 kb du_out
+  local -a rm_one_fs=()
+  if [ "$DRY_RUN" -eq 0 ] && rm_supports_one_file_system; then
+    rm_one_fs=(--one-file-system)
+  fi
   for d in "${candidates[@]}"; do
     name=${d##*/}
     if printf '%s\n' "$refs" | grep -qxF -- "$name"; then
@@ -165,7 +183,7 @@ main() {
     else
       # Cache trees can hold read-only directories, which block removal.
       find "$d" -xdev -type d -exec chmod u+rwx {} + 2>/dev/null || true
-      if ! rm -rf --one-file-system -- "$d" 2>/dev/null || [ -e "$d" ]; then
+      if ! rm -rf "${rm_one_fs[@]+"${rm_one_fs[@]}"}" -- "$d" 2>/dev/null || [ -e "$d" ]; then
         warn "could not fully remove $d"
         continue
       fi

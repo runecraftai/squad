@@ -1404,52 +1404,99 @@ ROWS
 
 test_crew_dispatch_model_existence_validation
 
-# --- the detached sandbox sweep runs even when state/ does not exist ---------
-# A base run straight from a checkout has no state/ directory; the sweep must
-# still start and its log must land in the state/ it creates on demand.
-test_sandbox_gc_runs_without_state_dir() {
-  local case_dir fakebin i
-  case_dir="$TMP_ROOT/gc-no-state"
-  mkdir -p "$case_dir/home" "$case_dir/tmp/drill-execution-policy-stale/cache"
-  printf 'x\n' >"$case_dir/tmp/drill-execution-policy-stale/cache/blob"
-  find "$case_dir/tmp" -depth -exec touch -d '7 hours ago' {} +
+# --- the detached sandbox sweep and its log ----------------------------------
+# Run bootstrap against a case home with one stale sandbox and an explicit grace
+# window, so an ambient SQUAD_DRILL_SANDBOX_GRACE_MINUTES cannot keep the 7h
+# fixture. <state_override> lets a case make state/ impossible to create.
+run_bootstrap_sandbox_gc() {
+  local case_dir=$1 path_value=$2 state_override=$3 fakebin
   fakebin=$(make_fake_toolchain "$case_dir")
-  PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+  PATH="$fakebin:$path_value" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+    SQUAD_STATE_OVERRIDE="$state_override" \
     SQUAD_DRILL_SANDBOX_GC=1 SQUAD_DRILL_SANDBOX_ROOT="$case_dir/tmp" \
+    SQUAD_DRILL_SANDBOX_GRACE_MINUTES=360 SQUAD_DRILL_SANDBOX_PROC=/proc \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
-  i=0
-  while [ -e "$case_dir/tmp/drill-execution-policy-stale" ] && [ "$i" -lt 200 ]; do
+}
+
+wait_for_sandbox_removal() {
+  local d=$1 i=0
+  while [ -e "$d" ] && [ "$i" -lt 200 ]; do
     command sleep 0.05
     i=$((i + 1))
   done
-  [ ! -e "$case_dir/tmp/drill-execution-policy-stale" ] \
-    || fail "bootstrap sweeps stale drill sandboxes when state/ is absent"
-  [ -f "$case_dir/home/state/.drill-sandbox-gc.log" ] \
-    || fail "the sweep log lands in the state/ bootstrap creates on demand"
-  pass "bootstrap sweeps stale drill sandboxes when state/ is absent"
 }
 
-test_sandbox_gc_runs_without_state_dir
+make_stale_sandbox_case() {
+  local case_dir=$1
+  mkdir -p "$case_dir/home" "$case_dir/tmp/drill-execution-policy-stale/cache"
+  printf 'x\n' >"$case_dir/tmp/drill-execution-policy-stale/cache/blob"
+  find "$case_dir/tmp" -depth -exec touch -d '7 hours ago' {} +
+}
+
+# The sweep must run and leave its summary in state/, even on a checkout run
+# whose state/ did not exist when bootstrap started.
+test_sandbox_gc_logs_into_created_state_dir() {
+  local case_dir
+  case_dir="$TMP_ROOT/gc-state-log"
+  make_stale_sandbox_case "$case_dir"
+  run_bootstrap_sandbox_gc "$case_dir" "$BASE_PATH" "$case_dir/home/state"
+  wait_for_sandbox_removal "$case_dir/tmp/drill-execution-policy-stale"
+  [ ! -e "$case_dir/tmp/drill-execution-policy-stale" ] \
+    || fail "bootstrap sweeps a stale drill sandbox"
+  [ -f "$case_dir/home/state/.drill-sandbox-gc.log" ] \
+    || fail "the sweep log lands in the state/ bootstrap creates on demand"
+  pass "bootstrap sweeps stale drill sandboxes and logs into state/"
+}
+
+test_sandbox_gc_logs_into_created_state_dir
+
+# state/ can be impossible to create (the redirect would fail). The sweep must
+# still run with its log falling back to /dev/null instead of being skipped.
+test_sandbox_gc_runs_when_state_cannot_be_created() {
+  local case_dir
+  case_dir="$TMP_ROOT/gc-state-blocked"
+  make_stale_sandbox_case "$case_dir"
+  printf 'not a directory\n' >"$case_dir/state-blocker"
+  run_bootstrap_sandbox_gc "$case_dir" "$BASE_PATH" "$case_dir/state-blocker/state"
+  wait_for_sandbox_removal "$case_dir/tmp/drill-execution-policy-stale"
+  [ ! -e "$case_dir/state-blocker/state" ] || fail "the blocked state/ path stays uncreatable"
+  [ ! -e "$case_dir/tmp/drill-execution-policy-stale" ] \
+    || fail "bootstrap still sweeps stale drill sandboxes when state/ cannot be created"
+  pass "bootstrap sweeps stale drill sandboxes when state/ cannot be created"
+}
+
+test_sandbox_gc_runs_when_state_cannot_be_created
+
+# The wrapper's own bookkeeping must not depend on the tmpfs being swept: an
+# unusable ambient TMPDIR (the ENOSPC case) must not silently skip the sweep.
+test_sandbox_gc_survives_unusable_ambient_tmpdir() {
+  local case_dir
+  case_dir="$TMP_ROOT/gc-unusable-tmpdir"
+  make_stale_sandbox_case "$case_dir"
+  (
+    TMPDIR="$case_dir/no-such-tmpdir"
+    SQUAD_TIMEOUT_MECHANISM_OVERRIDE=bash
+    export TMPDIR SQUAD_TIMEOUT_MECHANISM_OVERRIDE
+    run_bootstrap_sandbox_gc "$case_dir" "$BASE_PATH" "$case_dir/home/state"
+  )
+  wait_for_sandbox_removal "$case_dir/tmp/drill-execution-policy-stale"
+  [ ! -e "$case_dir/tmp/drill-execution-policy-stale" ] \
+    || fail "bootstrap sweeps stale drill sandboxes even when the ambient TMPDIR is unusable"
+  pass "bootstrap sweeps stale drill sandboxes with an unusable ambient TMPDIR"
+}
+
+test_sandbox_gc_survives_unusable_ambient_tmpdir
 
 # --- the detached sandbox sweep runs without GNU timeout ---------------------
 # A host with only BSD tools (stock macOS) has no `timeout`; the sweep must use
 # the shared bounded runner instead of skipping itself with a hidden error.
 test_sandbox_gc_runs_without_gnu_timeout() {
-  local case_dir fakebin no_timeout_path i
+  local case_dir no_timeout_path
   case_dir="$TMP_ROOT/gc-no-timeout"
-  mkdir -p "$case_dir/home" "$case_dir/tmp/drill-execution-policy-stale/cache"
-  printf 'x\n' >"$case_dir/tmp/drill-execution-policy-stale/cache/blob"
-  find "$case_dir/tmp" -depth -exec touch -d '7 hours ago' {} +
-  fakebin=$(make_fake_toolchain "$case_dir")
+  make_stale_sandbox_case "$case_dir"
   no_timeout_path=$(path_farm_without "$case_dir/no-timeout-path" "$BASE_PATH" timeout gtimeout)
-  PATH="$fakebin:$no_timeout_path" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
-    SQUAD_DRILL_SANDBOX_GC=1 SQUAD_DRILL_SANDBOX_ROOT="$case_dir/tmp" \
-    SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
-  i=0
-  while [ -e "$case_dir/tmp/drill-execution-policy-stale" ] && [ "$i" -lt 200 ]; do
-    command sleep 0.05
-    i=$((i + 1))
-  done
+  run_bootstrap_sandbox_gc "$case_dir" "$no_timeout_path" "$case_dir/home/state"
+  wait_for_sandbox_removal "$case_dir/tmp/drill-execution-policy-stale"
   [ ! -e "$case_dir/tmp/drill-execution-policy-stale" ] \
     || fail "bootstrap sweeps stale drill sandboxes without a timeout/gtimeout binary"
   pass "bootstrap sweeps stale drill sandboxes without a timeout/gtimeout binary"
