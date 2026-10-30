@@ -1005,6 +1005,59 @@ SH
     || fail "mid-run Drill read failure withholds values gathered before the failure: $out"
   pass "a Drill read failure during the per-task loop warns once and leaves every class insufficient"
 
+  local vanish_db="$dir/vanish.sqlite" vanish_data="$dir/vanish-data" vanish_bin="$dir/vanish-bin"
+  mkdir -p "$vanish_data" "$vanish_bin"
+  rm -f "$dir/vanish-count"
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    echo "- [x] van-$i - Strike $i (kind: strike)"
+  done > "$dir/vanish.md"
+  {
+    echo 'CREATE TABLE runs (id TEXT PRIMARY KEY, branch TEXT NOT NULL);'
+    echo 'CREATE TABLE agent_invocations (
+      id TEXT PRIMARY KEY, run_id TEXT NOT NULL, agent TEXT NOT NULL, model TEXT,
+      model_provider TEXT, step_name TEXT NOT NULL, started_at INTEGER NOT NULL,
+      input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER,
+      cache_creation_tokens INTEGER);'
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      echo "INSERT INTO runs VALUES ('r$i','sq/van-$i');"
+      echo "INSERT INTO agent_invocations VALUES ('a$i','r$i','pi','claude-sonnet-4','anthropic','a',1,1000000,0,0,0);"
+    done
+  } | sqlite3 "$vanish_db"
+  cat > "$vanish_bin/sqlite3" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *sq/van-*)
+      count=\$(( \$(cat "$dir/vanish-count" 2>/dev/null || echo 0) + 1 ))
+      printf '%s\n' "\$count" > "$dir/vanish-count"
+      "$real_sqlite3" "\$@"
+      status=\$?
+      [ "\$count" -ge 6 ] && rm -f "$vanish_db"
+      exit "\$status"
+      ;;
+  esac
+done
+exec "$real_sqlite3" "\$@"
+SH
+  chmod +x "$vanish_bin/sqlite3"
+  out=$(PATH="$vanish_bin:$PATH" SQUAD_DATA_OVERRIDE="$vanish_data" SQUAD_DRILL_STATE="$vanish_db" \
+    "$COST_CLI" summary --archive "$dir/vanish.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "database disappearing mid-run still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "database disappearing mid-run warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "database disappearing mid-run leaves every class insufficient: $out"
+  [ "$(jq '[.classes[] | select(has("median_usd") or has("p90_usd"))] | length' <<<"$out")" = 0 ] \
+    || fail "database disappearing mid-run withholds the partial sample: $out"
+  pass "a database that disappears mid-run warns once and leaves every class insufficient"
+
+  local legacy_missing
+  legacy_missing=$(sq_cost_drill_task_json van-1 "$vanish_db" 2>"$dir/err")
+  [ "$(jq 'length' <<<"$legacy_missing")" = 0 ] || fail "missing database yields no legacy rows: $legacy_missing"
+  [ ! -s "$dir/err" ] || fail "legacy Drill reads stay quiet for a missing database: $(cat "$dir/err")"
+  pass "legacy Drill reads keep their silent empty result for a missing database"
+
   if "$COST_CLI" summary --by task >/dev/null 2>"$dir/err"; then
     fail "unsupported grouping must be a usage error"
   fi
