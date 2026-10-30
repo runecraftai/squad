@@ -30,11 +30,11 @@ List-price calculations are labeled estimates.
 OpenCode Go usage is labeled flat-rate subscription usage and is not presented as token spend.
 The summary lists provider-qualified models and includes both operator and pipeline token totals and costs.
 
-`bin/sq-cost.sh summary --by kind` reports the median and p90 cost per completed task kind from priced Drill invocations on branch `sq/<id>`, with kinds read from `- [x]` items in `data/done-archive.md` and `data/backlog.md`.
+`bin/sq-cost.sh summary --by kind` reports the median and p90 estimated list-price cost per completed task kind from priced Drill invocations on branch `sq/<id>`, with kinds read from canonical `- [x]` task items in `data/done-archive.md` and `data/backlog.md`.
 Classes under five priced samples are marked `insufficient` without values, and ids without priced usage are counted in `no_cost_data`.
-Pass `--json` for machine consumption or `--archive <path>` to read a different done archive; `kind` is the only supported grouping, and any other grouping is a usage error.
+It prints a table by default; `--json` requests machine consumption and `--archive <path>` reads a different done archive, while `kind` is the only supported grouping and any other grouping is a usage error.
 A missing or unreadable Drill database warns on stderr, marks every class `insufficient`, and still exits 0; the command never alerts.
-The script header owns the exact percentile method, per-id counting, and `unclassified` rules.
+The script header owns the command contract; `bin/sq-cost-lib.sh` owns the exact item grammar, per-id counting, percentile method, and `unclassified` rules.
 
 `sq-cost.sh publish <task-id> <pr-url>` publishes one marked comment through `sq-gh`.
 The command updates that comment on later runs rather than creating duplicates.

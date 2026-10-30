@@ -37,12 +37,13 @@
 # PR bodies and can update one marked comment idempotently.
 #
 # `summary --by kind` groups completed items by kind and prints n, median, and
-# p90 of the Drill-derived task cost per class (nearest-rank percentiles; a class
-# under five priced samples prints `insufficient` and no values). Kinds come from
-# `- [x]` items in data/done-archive.md (or --archive) and data/backlog.md, since
-# task metadata is deleted at teardown; each id counts once, an item without a
-# kind marker is `unclassified`, and ids without priced Drill usage count in
-# `no_cost_data`. It never alerts and exits 0 on data problems.
+# p90 of the estimated Drill-derived task cost per class (nearest-rank
+# percentiles; a class under five priced samples prints `insufficient` and no
+# values). Kinds come from canonical `- [x]` task items in data/done-archive.md
+# (or --archive) and data/backlog.md, since task metadata is deleted at teardown;
+# each id counts once, an item without a kind marker is `unclassified`, and ids
+# without priced Drill usage count in `no_cost_data`. It never alerts and exits 0
+# on data problems.
 #
 # When no transcript is found, the legacy command prints an estimate line.
 # The humanized-count and agent-label patterns are based on LangWatch
