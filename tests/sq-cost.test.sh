@@ -904,6 +904,22 @@ SQL
     || fail "table withholds values for a class with no priced samples: $table"
   pass "summary prints a table by default with values only for sufficient classes"
 
+  local no_column_bin="$dir/no-column-bin" table_without_column
+  mkdir -p "$no_column_bin"
+  cat > "$no_column_bin/column" <<'SH'
+#!/usr/bin/env bash
+echo 'column: not installed' >&2
+exit 1
+SH
+  chmod +x "$no_column_bin/column"
+  table_without_column=$(PATH="$no_column_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" \
+    SQUAD_DRILL_STATE="$database" "$COST_CLI" summary --archive "$dir/archive.md" 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "table mode does not require column (got $status): $(cat "$dir/err")"
+  [ "$(printf '%s\n' "$table_without_column" | awk '$1 == "strike" {print $4, $5}')" = "9 30" ] \
+    || fail "table renders without column: $table_without_column"
+  pass "summary table renders without the undeclared column formatter"
+
   local out
   out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$dir/missing.sqlite" \
     "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
@@ -918,6 +934,14 @@ SQL
     || fail "unreadable database still exits 0"
   assert_contains "$(cat "$dir/err")" "Drill database not readable" "unreadable database warns on stderr"
   pass "missing or unreadable database warns and degrades to insufficient"
+
+  out=$(SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "directory archive still exits 0 (got $status)"
+  assert_contains "$(cat "$dir/err")" "warning: archive not readable: $dir" \
+    "a directory archive warns instead of leaking a raw cat failure"
+  pass "a directory passed as the archive warns and is skipped"
 
   local old_db="$dir/old-schema.sqlite"
   sqlite3 "$old_db" <<'SQL'
@@ -1004,6 +1028,33 @@ SH
   [ "$(jq '[.classes[] | select(has("median_usd") or has("p90_usd"))] | length' <<<"$out")" = 0 ] \
     || fail "mid-run Drill read failure withholds values gathered before the failure: $out"
   pass "a Drill read failure during the per-task loop warns once and leaves every class insufficient"
+
+  local jq_fail_bin="$dir/jq-fail-bin" real_jq grouping_total grouping_status
+  real_jq=$(command -v jq)
+  mkdir -p "$jq_fail_bin"
+  cat > "$jq_fail_bin/jq" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *group_by*.model*) echo 'jq: cannot group invocations' >&2; exit 5 ;;
+  esac
+done
+exec "$real_jq" "\$@"
+SH
+  chmod +x "$jq_fail_bin/jq"
+  grouping_total=$(PATH="$jq_fail_bin:$PATH" sq_cost_task_total strike-1 "$database" 2>"$dir/err")
+  grouping_status=$?
+  [ "$grouping_status" = 2 ] || fail "a jq grouping failure is a read failure (got $grouping_status)"
+  [ -z "$grouping_total" ] || fail "a jq grouping failure yields no cost: $grouping_total"
+  out=$(PATH="$jq_fail_bin:$PATH" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_DRILL_STATE="$database" \
+    "$COST_CLI" summary --archive "$dir/archive.md" --json 2>"$dir/err")
+  status=$?
+  [ "$status" = 0 ] || fail "jq grouping failure still exits 0 (got $status)"
+  [ "$(grep -c 'could not read Drill invocations' "$dir/err")" = 1 ] \
+    || fail "jq grouping failure warns once: $(cat "$dir/err")"
+  [ "$(jq '[.classes[] | select(.status != "insufficient")] | length' <<<"$out")" = 0 ] \
+    || fail "jq grouping failure leaves every class insufficient: $out"
+  pass "a jq interpretation failure cannot be mistaken for a task without priced usage"
 
   local vanish_db="$dir/vanish.sqlite" vanish_data="$dir/vanish-data" vanish_bin="$dir/vanish-bin"
   mkdir -p "$vanish_data" "$vanish_bin"

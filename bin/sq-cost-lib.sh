@@ -317,12 +317,14 @@ sq_cost_task_total() {
   if ! rows=$(sq_cost_drill_task_rows "$task_id" "$database"); then
     return 2
   fi
-  groups=$(jq -r '
+  if ! groups=$(jq -r '
     map(select((.model_provider // "") != "opencode-go" and ((.model // "") | startswith("opencode-go") | not)))
     | group_by(.model)[]
     | [.[0].model, (map(.input)|add // 0), (map(.output)|add // 0),
        (map(.cache_read)|add // 0), (map(.cache_write)|add // 0)] | @tsv
-  ' <<<"$rows" 2>/dev/null || true)
+  ' <<<"$rows"); then
+    return 2
+  fi
   [ -n "$groups" ] || return 0
   while IFS=$'\t' read -r model in out cr cw; do
     [ "$((in + out + cr + cw))" -gt 0 ] || continue
@@ -343,7 +345,7 @@ sq_cost_task_total() {
 # skipped silently.
 sq_cost_archive_kinds() {
   local file
-  for file in "$@"; do [ -r "$file" ] && cat -- "$file"; done | awk '
+  for file in "$@"; do [ -f "$file" ] && [ -r "$file" ] && cat -- "$file"; done | awk '
     /^- \[x\] [A-Za-z0-9][A-Za-z0-9._-]* - / {
       id = $3; kind = "unclassified"
       if (match($0, /\(kind: [^)]*\)/)) {
