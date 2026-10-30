@@ -108,6 +108,26 @@ assert_not_contains "$out" "declared_but_untouched" "a normalized declaration mu
 assert_contains "$out" "undeclared src (1): src/sibling.txt" "only the sibling should remain undeclared"
 pass "sq-scope-gate: an absolute worktree declaration is normalized"
 
+# Sub-label prose lines that end in a colon do not end the section: the body is
+# bounded by headings and the known plan-field labels only, as bin/sq-plan-validate.sh does.
+fm_write_meta "$STATE/task4.meta" "worktree=$WT"
+write_brief task4 <<'EOF'
+## Execution plan
+
+Files to touch (exact paths):
+These files change:
+- `src/planned.txt` - the declared change
+
+Ordered steps
+1. edit the declared file
+EOF
+out=$(gate task4); rc=$?
+expect_code 0 "$rc" "a colon sub-label must not fail the gate"
+assert_contains "$out" "declared=1 touched=2" "a colon sub-label should not drop the declared entries"
+assert_contains "$out" "planned src/planned.txt" "the bullet after the colon sub-label should be reported as planned"
+assert_not_contains "$out" "scope-gate: skip" "a brief with a declared path and a colon sub-label must not skip"
+pass "sq-scope-gate: colon sub-labels keep the declared entries"
+
 # A brief without the section is a skip, never an error.
 write_brief noplan <<'EOF'
 ## Execution plan

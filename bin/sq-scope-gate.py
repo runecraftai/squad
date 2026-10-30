@@ -117,9 +117,7 @@ def is_files_body_stop(line):
         return OTHER_LABEL_RE.match(label_text(LIST_MARKER_RE.sub('', line))) is not None
     if not text:
         return False
-    if OTHER_LABEL_RE.match(text):
-        return True
-    return text.endswith(':') and len(text) < 80
+    return OTHER_LABEL_RE.match(text) is not None
 
 
 def entry_head(text):
