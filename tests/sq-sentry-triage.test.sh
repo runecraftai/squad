@@ -4411,11 +4411,13 @@ SH
 # evidence to the daemon as a routine stale reason (the daemon persists/escalates
 # it), and one dirty episode hands off exactly once even when the footer churns.
 # A changed footer takes three polls to reach the deferred-handoff log, so the second
-# watcher polls at 0.2s: that keeps the first log line well inside the window and leaves
-# several more polls in it to catch a repeat. A window shorter than the fourth poll could
-# not tell one log line from a dedupe guard that no longer works.
+# watcher polls at 0.2s. Wait for the first log line instead of assuming it lands inside
+# a fixed wall-clock window, then keep watching several more polls to catch a repeat.
+# A fixed window could expire before a loaded host logged anything, which looked like a
+# missing line rather than a dedupe failure.
 test_away_dirty_work_hands_off_evidence_once() {
   local dir state fakebin out capture_file window key wt pid deferred_before deferred_new
+  local deferred_seen deferred_wait
   pause_worktree_case away-dirty-handoff
   printf 'unfinished\n' > "$wt/untracked"
   date '+%s' > "$state/.afk"
@@ -4431,13 +4433,24 @@ test_away_dirty_work_hands_off_evidence_once() {
   printf 'idle external wait with a changed footer' > "$capture_file"
   deferred_before=$(grep -c 'deferred plain handoff' "$state/.sentry-triage.log" 2>/dev/null || true)
   start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_POLL=0.2
+  deferred_seen=0
+  deferred_wait=0
+  while [ "$deferred_wait" -lt 300 ]; do
+    kill -0 "$pid" 2>/dev/null || break
+    deferred_seen=$(( $(grep -c 'deferred plain handoff' "$state/.sentry-triage.log" 2>/dev/null || true) - ${deferred_before:-0} ))
+    [ "$deferred_seen" -ge 1 ] && break
+    sleep 0.1
+    deferred_wait=$((deferred_wait + 1))
+  done
+  [ "$deferred_seen" -ge 1 ] \
+    || { reap "$pid"; fail "the first deferred-handoff log line never appeared: $(cat "$state/.sentry-triage.log")"; }
   wait_live "$pid" 30 || { reap "$pid"; fail "away dirty episode re-escalated after a footer change: $(cat "$out")"; }
   reap "$pid"
   grep -F 'operator idle with uncommitted work' "$out" >/dev/null \
     && fail "away dirty episode re-escalated after a footer change: $(cat "$out")"
   deferred_new=$(( $(grep -c 'deferred plain handoff' "$state/.sentry-triage.log" 2>/dev/null || true) - ${deferred_before:-0} ))
   [ "$deferred_new" = 1 ] \
-    || fail "expected 1 new deferred-handoff log line in the window, got $deferred_new (0 = not logged in time, 2+ = repeated): $(cat "$state/.sentry-triage.log")"
+    || fail "expected exactly 1 new deferred-handoff log line after the first appeared, got $deferred_new (2+ = repeated): $(cat "$state/.sentry-triage.log")"
   [ "$(grep -c 'operator idle with uncommitted work' "$state/.stand-to-queue")" = 1 ] \
     || fail "away dirty work escalated twice for one episode"
   pass "away idle dirty work hands off its evidence exactly once per episode"

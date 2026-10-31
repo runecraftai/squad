@@ -870,7 +870,10 @@ func TestCertificateDirectoryEntryDoesNotMaterializeDirectoryAsFile(t *testing.T
 }
 
 func TestCertificateBindsAreEmptyWithoutCertificatePaths(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := certificateTargetBinds(root); len(got) != 0 {
 		t.Fatalf("binds without /etc/ssl/certs = %q, want none", got)
 	}
