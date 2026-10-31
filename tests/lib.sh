@@ -34,6 +34,10 @@ SQUAD_TEST_LIB_SOURCED=1
 # strips this to verify real refusal.
 export SQUAD_GATE_REFUSE_BYPASS=1
 
+# Keep tests that run bootstrap from sweeping the real /tmp of the machine they
+# run on (bin/sq-drill-sandbox-gc.sh); its own test drives the script directly.
+export SQUAD_DRILL_SANDBOX_GC=0
+
 # Resolve the repo root from this library's own location. Consumed by sourcing
 # test files, not by this library, so it reads as "unused" here.
 # shellcheck disable=SC2034
