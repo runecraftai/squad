@@ -257,14 +257,9 @@ status_event_json() {  # <status-log>
     '{path:$path,present:$present,kind:"event_history",last_event:{state:$verb,note:$note,raw:$raw}}'
 }
 
-first_pr_url_in_file() {  # <file>
+pr_url_in_file() {  # <file> <head|tail>
   [ -f "$1" ] || return 1
-  grep -Eo 'https?://[^[:space:])"]+/pull/[0-9]+' "$1" 2>/dev/null | head -1
-}
-
-last_pr_url_in_file() {  # <file>
-  [ -f "$1" ] || return 1
-  grep -Eo 'https?://[^[:space:])"]+/pull/[0-9]+' "$1" 2>/dev/null | tail -1
+  grep -Eo 'https?://[^[:space:])"]+/pull/[0-9]+' "$1" 2>/dev/null | "$2" -1
 }
 
 backlog_json() {  # [<backlog-path>] - defaults to this home's $BACKLOG
@@ -454,7 +449,7 @@ task_json_lines() {
     # The URL the operator declared (meta pr=, else the newest status-log URL) is
     # captured before the drill sidecar can overwrite pr, so verification can compare.
     declared_pr=$pr
-    [ -n "$declared_pr" ] || declared_pr=$(last_pr_url_in_file "$STATE/$id.status" || true)
+    [ -n "$declared_pr" ] || declared_pr=$(pr_url_in_file "$STATE/$id.status" tail || true)
     pr_verification=""
     pr_diverging=""
     # Read the drill run's authoritative structured pr field from the sidecar
@@ -476,7 +471,7 @@ task_json_lines() {
       fi
     fi
     if [ -z "$pr" ]; then
-      pr_from_status=$(first_pr_url_in_file "$status_log" || true)
+      pr_from_status=$(pr_url_in_file "$status_log" head || true)
       pr=$pr_from_status
       pr_source=status_event
     fi
