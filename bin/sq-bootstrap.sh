@@ -83,10 +83,15 @@
 #          refresh relays any completed sq-unit-sync.sh output before the
 #          aggregate timeout skip line with timeout and elapsed seconds.
 #          Set SQUAD_FLEET_PRUNE=0 to skip branch pruning during that refresh.
-#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the seven MUTATING sweeps
+#          Every non-detect-only local pass that holds the unit lock
+#          (SQUAD_BOOTSTRAP_LOCKED=1) also starts sq-drill-sandbox-gc.sh
+#          detached, so stale /tmp drill sandboxes never block startup; its last
+#          summary lands in state/.drill-sandbox-gc.log and SQUAD_DRILL_SANDBOX_GC=0
+#          opts out.
+#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the eight MUTATING sweeps
 #          (PR-check migration, XO_sync, XO_liveness_sweep,
-#          XO_handoff_resume, x_mode_setup, retired-mission record sweep,
-#          fleet_sync) while still
+#          XO_handoff_resume, x_mode_setup, detached drill-sandbox sweep,
+#          retired-mission record sweep, fleet_sync) while still
 #          printing every read-only detect line
 #          above; the TANGLE line switches to advisory-only wording with no
 #          checkout command. Used by
@@ -164,6 +169,8 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 # deferred network stage sets, so an ordinary bootstrap run records nothing.
 # shellcheck source=bin/sq-timing-lib.sh disable=SC1091
 . "$SCRIPT_DIR/sq-timing-lib.sh"
+# shellcheck source=bin/sq-timeout-lib.sh disable=SC1091
+. "$SCRIPT_DIR/sq-timeout-lib.sh"
 
 # Network-phase selection (see the header). An unrecognized value resolves to
 # `all` so a malformed override runs every step rather than silently dropping a
@@ -1326,6 +1333,32 @@ if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   fi
   # x_mode_setup writes local Relay artifacts only and never leaves the machine.
   local_phase && x_mode_setup
+  # Stale drill sandboxes under /tmp can fill the tmpfs and wedge step agents.
+  # The sweep runs detached with its output in a log, so a slow scan never delays
+  # startup and never holds this script's stdout open for a capturing caller.
+  if local_phase && [ "${SQUAD_BOOTSTRAP_LOCKED:-0}" = 1 ] \
+    && [ "${SQUAD_DRILL_SANDBOX_GC:-1}" != 0 ] && [ -x "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" ]; then
+    # A base run straight from a checkout has no state/ yet, so create it (or
+    # fall back to /dev/null) rather than letting the redirect fail silently and
+    # skip the sweep the log was meant to record.
+    gc_log=/dev/null
+    gc_tmpdir=${TMPDIR:-/tmp}
+    if mkdir -p "$STATE" 2>/dev/null && : 2>/dev/null >"$STATE/.drill-sandbox-gc.log"; then
+      gc_log=$STATE/.drill-sandbox-gc.log
+      # Keep the bounded runner's own bookkeeping off the tmpfs being reclaimed:
+      # when that tmpfs is out of space or inodes, mktemp in /tmp would fail and
+      # the sweep would be skipped exactly when it is needed.
+      gc_tmpdir=$STATE
+    fi
+    # fm_run_timed owns the bound so a host without GNU coreutils (macOS
+    # exposes only gtimeout) still runs the sweep instead of skipping it.
+    (
+      TMPDIR=$gc_tmpdir
+      export TMPDIR
+      fm_run_timed 120 "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" \
+        >"$gc_log" 2>&1 </dev/null &
+    ) 2>/dev/null || true
+  fi
   if local_phase && [ "${SQUAD_BOOTSTRAP_LOCKED:-0}" = 1 ]; then
     "$SCRIPT_DIR/sq-retired-missions.sh" sweep
   fi

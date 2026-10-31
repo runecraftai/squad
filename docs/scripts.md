@@ -31,6 +31,7 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-card-lint.sh`        | Warning-only decision-card grammar drift check for report and decision records          |
 | `sq-brief.sh`            | Scaffold ship (explicit `--mode`), recon, XO-charter, and Herdr-lab briefs; strike and recon briefs require an explicit playbook decision (`--playbook <id>@<version>`, or a one-line `--no-playbook` reason none applies), and `--profile` attaches a constraint set to a selected playbook   |
 | `sq-drill-drive.sh`      | Drive AXI calls with bounded failed-run custody recovery; its header owns the retry and stop contract |
+| `sq-drill-sandbox-gc.sh` | Remove stale, unreferenced `/tmp/drill-execution-policy-*` drill sandboxes older than a 6-hour grace window (`--grace-minutes`/`SQUAD_DRILL_SANDBOX_GRACE_MINUTES`, `--dry-run` lists only), started detached by bootstrap so a full tmpfs never wedges step agents |
 | `sq-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `sq-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
 | `sq-install-oxlint.sh`   | Install CI's exact-version oxlint with npm tarball URL, SHA-256 pin, and platform binding |
