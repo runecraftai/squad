@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -189,6 +190,7 @@ func (p *Policy) baseArgs(home string) []string {
 	}
 	if _, err := os.Stat("/etc/ssl/certs"); err == nil {
 		args = append(args, "--ro-bind", "/etc/ssl/certs", "/etc/ssl/certs")
+		args = append(args, certificateTargetBinds("")...)
 	}
 	args = append(args, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/run", "--dir", "/run/drill-execution")
 	for _, path := range []string{"/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/host.conf", "/etc/gai.conf"} {
@@ -296,7 +298,7 @@ func (p *Policy) Command(cmd *exec.Cmd) error {
 		tool = resolved
 	}
 	if !isSystemPath(tool) {
-		root := installationRoot(tool)
+		root := toolInstallRoot(tool)
 		if root != "" && !exposesHostCredentials(root) {
 			args = append(args, "--ro-bind", root, root)
 		} else {
@@ -357,6 +359,10 @@ func managedToolDirs() toolDirectories {
 		if err != nil || !info.IsDir() {
 			continue
 		}
+		if root := installRootForBin(path); root != "" && !seenRoots[root] && root != os.TempDir() && !exposesHostCredentials(root) {
+			seenRoots[root] = true
+			result.roots = append(result.roots, root)
+		}
 		if !seenRoots[path] {
 			seenRoots[path] = true
 			result.roots = append(result.roots, path)
@@ -376,7 +382,7 @@ func managedToolDirs() toolDirectories {
 		if err != nil || isSystemPath(path) {
 			continue
 		}
-		root := installationRoot(path)
+		root := toolInstallRoot(path)
 		if root == "" || exposesHostCredentials(root) {
 			continue
 		}
@@ -480,6 +486,166 @@ func installationRoot(path string) string {
 		}
 	}
 	return ""
+}
+
+// installRootTools maps a tool that cannot run from its bin directory alone to
+// a directory that marks its install root (Go resolves GOROOT from the binary
+// location and needs src beside bin).
+var installRootTools = map[string]string{"go": "src"}
+
+// installRootForBin returns the install root of a bin directory holding a tool
+// that needs more than bin, or "" when binDir is not such a directory. The tool
+// must resolve inside the root so a symlink into another tree never widens the
+// mount.
+func installRootForBin(binDir string) string {
+	root := filepath.Dir(binDir)
+	if filepath.Base(binDir) != "bin" || root == string(filepath.Separator) || root == "." {
+		return ""
+	}
+	for tool, marker := range installRootTools {
+		exe, err := filepath.EvalSymlinks(filepath.Join(binDir, tool))
+		if err != nil || !strings.HasPrefix(exe, root+string(filepath.Separator)) {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(root, marker)); err == nil && info.IsDir() {
+			return root
+		}
+	}
+	return ""
+}
+
+// toolInstallRoot is the directory to mount for a resolved executable outside
+// the system paths: its managed installation root, or the install root of a
+// tool that needs more than its bin directory.
+func toolInstallRoot(tool string) string {
+	if root := installationRoot(tool); root != "" {
+		return root
+	}
+	return installRootForBin(filepath.Dir(tool))
+}
+
+const maxCertificateSymlinkHops = 40
+
+type certificateHop struct {
+	source string
+	target string
+}
+
+func pathWithin(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
+}
+
+// certificateSymlinkChain walks the symlinks starting at path and returns each
+// target it passes through, joining relative targets to the link directory and
+// stopping once the chain leaves symlinks.
+func certificateSymlinkChain(path string) []string {
+	var chain []string
+	current := path
+	for i := 0; i < maxCertificateSymlinkHops; i++ {
+		info, err := os.Lstat(current)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return chain
+		}
+		target, err := os.Readlink(current)
+		if err != nil {
+			return chain
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(current), target)
+		}
+		current = filepath.Clean(target)
+		chain = append(chain, current)
+	}
+	return chain
+}
+
+// certificateTargetBinds makes TLS roots reachable at the absolute path a
+// client would open on the host. Entries of /etc/ssl/certs are often symlinks
+// into another tree (for example /etc/ca-certificates/extracted), and binding
+// only /etc/ssl/certs leaves them dangling. hostRoot prefixes host lookups and
+// is empty outside tests. Targets under system paths are already mounted, and
+// anything shallower than two path elements or exposing host credentials is
+// never bound. Every intermediate symlink is materialized as the resolved file
+// so chains through directories like /etc/static work at each hop.
+func certificateTargetBinds(hostRoot string) []string {
+	certs := filepath.Join(hostRoot, "/etc/ssl/certs")
+	entries, err := os.ReadDir(certs)
+	if err != nil {
+		return nil
+	}
+	var dirs []string
+	var hops []certificateHop
+	for _, entry := range entries {
+		entryPath := filepath.Join(certs, entry.Name())
+		resolved, err := filepath.EvalSymlinks(entryPath)
+		if err != nil {
+			continue
+		}
+		info, err := os.Stat(resolved)
+		if err != nil {
+			continue
+		}
+		guest := strings.TrimPrefix(resolved, hostRoot)
+		dir := filepath.Dir(guest)
+		if !strings.HasPrefix(guest+"/", "/etc/ssl/certs/") && !isSystemPath(guest) &&
+			strings.Count(dir, string(filepath.Separator)) >= 2 && !exposesHostCredentials(dir) {
+			dirs = append(dirs, dir)
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		for _, hop := range certificateSymlinkChain(entryPath) {
+			hops = append(hops, certificateHop{source: guest, target: strings.TrimPrefix(hop, hostRoot)})
+		}
+	}
+	sort.Strings(dirs)
+	var args []string
+	var bound []string
+	var last string
+	for _, dir := range dirs {
+		if last != "" && pathWithin(dir, last) {
+			continue
+		}
+		last = dir
+		bound = append(bound, dir)
+		args = append(args, "--ro-bind", filepath.Join(hostRoot, dir), dir)
+	}
+	sort.Slice(hops, func(i, j int) bool { return hops[i].target < hops[j].target })
+	var lastHop string
+	for _, hop := range hops {
+		if hop.target == lastHop || isSystemPath(hop.target) ||
+			strings.HasPrefix(hop.target+"/", "/etc/ssl/certs/") ||
+			strings.Count(hop.target, string(filepath.Separator)) < 2 ||
+			exposesHostCredentials(filepath.Dir(hop.target)) || withinAny(hop.target, bound) ||
+			containsAny(hop.target, bound) {
+			continue
+		}
+		hopInfo, err := os.Stat(filepath.Join(hostRoot, hop.target))
+		if err != nil || !hopInfo.Mode().IsRegular() {
+			continue
+		}
+		lastHop = hop.target
+		args = append(args, "--ro-bind", filepath.Join(hostRoot, hop.source), hop.target)
+	}
+	return args
+}
+
+func withinAny(path string, dirs []string) bool {
+	for _, dir := range dirs {
+		if pathWithin(path, dir) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAny(path string, dirs []string) bool {
+	for _, dir := range dirs {
+		if pathWithin(dir, path) {
+			return true
+		}
+	}
+	return false
 }
 
 var providerCredentialFiles = map[string][]string{
