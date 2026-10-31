@@ -91,8 +91,8 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |
-| `sq-cost.sh`           | Price operator sessions and Drill pipeline invocations per provider/model, render task usage reports, and publish an idempotent PR comment |
-| `sq-cost-lib.sh`       | Shared Claude transcript, Pi session, and Drill invocation parsing and attribution, model normalization, and per-model pricing used by `sq-cost.sh` |
+| `sq-cost.sh`           | Price operator sessions and Drill pipeline invocations per provider/model, render task usage reports, summarize median and p90 cost per task kind, and publish an idempotent PR comment ([cost observability](cost-observability.md)) |
+| `sq-cost-lib.sh`       | Shared Claude transcript, Pi session, and Drill invocation parsing and attribution, model normalization, per-model pricing, and kind cost summaries used by `sq-cost.sh` |
 | `sq-evidence-receipt.sh` | Create, verify, and render private deterministic evidence receipts for local source citations |
 | `sq-observation-pack.sh` | Store, compactly display, and page private task output artifacts; see `sq-observation-pack.py` for the implementation |
 | `sq-observation-pack.py` | Python implementation of observation packs: create --task ID --source PATH, card PACK, and read PACK --offset N --limit M [--receipt] |
@@ -136,8 +136,9 @@ The shared drill gate refusal for unit lifecycle entrypoints is summarized in [a
 | `sq-retired-missions.sh` | Record exact Orca terminal and fob worktree retirement identity before metadata removal, retire the exact terminal, and reconcile orphan records in the locked bootstrap sweep |
 | `sq-verification.sh`     | Record one escaped defect's discovery time, affected merged PR and full SHA, reproduction or explicit unknown reason, regression scenario, and missed pre-merge gate on its existing GitHub issue, and report every recorded defect for one repo |
 | `sq-verification.py`     | Python implementation of the escaped-defect record and report commands, reading and writing issue bodies verbatim through the `sq-gh` TOON decoder |
-| `sq-playbook-validate.sh` | Validate structural completion evidence for a materialized execution playbook; `bin/sq-brief.sh` owns the selectable playbook and profile identities |
+| `sq-playbook-validate.sh` | Validate structural completion evidence for a materialized execution playbook; `bin/sq-brief.sh` owns the selectable playbook and profile identities, and the validator prefixes the report from `bin/sq-scope-gate.py` without letting it change its verdict |
 | `sq-playbook-rule.sh`    | Install the playbook's authoritative oxlint rule, colocated check, rule-only config, and verification command into an adopting project's `tools/oxlint` directory and wire the command into its package scripts and CI |
+| `sq-scope-gate.py`       | Report-only scope gate: compare a brief's declared `Files to touch` entries with the files the task worktree diff actually touched, printing planned, undeclared (grouped by two-component directory), and declared-but-untouched paths; always exits 0 and never writes to state |
 | `sq-promote.sh`          | Promote a recon task in place to a protected strike task with an explicit delivery mode |
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |

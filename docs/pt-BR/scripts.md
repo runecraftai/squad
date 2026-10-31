@@ -101,8 +101,8 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-crew-state.sh`       | Imprimir uma linha determinística de estado atual para um operador                                |
 | `sq-breaker.sh`        | Avaliar os sinais de circuit-breaker de uma tarefa num veredito healthy/steering/constrained/stopped com ação e motivos |
 | `sq-breaker-lib.sh`    | Política compartilhada de escada de circuit-breaker sem efeitos colaterais usada por `sq-breaker.sh` |
-| `sq-cost.sh`           | Precificar sessões de operadores e invocações do pipeline Drill por provedor/modelo, renderizar relatórios de uso por tarefa e publicar um comentário idempotente no PR |
-| `sq-cost-lib.sh`       | Parsing compartilhado de transcrições Claude, sessões Pi e invocações Drill, atribuição, normalização de modelo e preços por modelo usada por `sq-cost.sh` |
+| `sq-cost.sh`           | Precificar sessões de operadores e invocações do pipeline Drill por provedor/modelo, renderizar relatórios de uso por tarefa, resumir mediana e p90 de custo por tipo de tarefa e publicar um comentário idempotente no PR ([observabilidade de custo](../cost-observability.md)) |
+| `sq-cost-lib.sh`       | Parsing compartilhado de transcrições Claude, sessões Pi e invocações Drill, atribuição, normalização de modelo, preços por modelo e resumos de custo por tipo usados por `sq-cost.sh` |
 | `sq-drill-run-lib.sh`       | Atribuição compartilhada de execuções drill e ciclo de vida da execução atual                    |
 | `sq-tangle-lib.sh`       | Resolução compartilhada de branch default e classificação de tangle de checkout primário          |
 | `sq-timeout-lib.sh`      | Único dono da execução de comandos com limite rígido e seu watchdog fallback |
@@ -137,8 +137,9 @@ A recusa compartilhada do gate drill para entrypoints do ciclo de vida da unidad
 | `sq-retired-missions.sh` | Registrar a identidade exata de aposentadoria do terminal Orca e do worktree fob antes da remoção dos metadados, aposentar o terminal exato e reconciliar registros órfãos no sweep do bootstrap travado |
 | `sq-verification.sh`     | Registrar o momento de descoberta de um defeito escapado, o PR mesclado afetado e o SHA completo, a reprodução ou um motivo explícito de desconhecido, o cenário de regressão, e o gate pré-merge que não o pegou na issue GitHub existente dele, e reportar todo defeito registrado de um repo |
 | `sq-verification.py`     | Implementação Python dos comandos de registro e relatório de defeitos escapados, lendo e escrevendo corpos de issue verbatim pelo decodificador TOON do `sq-gh` |
-| `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de perfil |
+| `sq-playbook-validate.sh` | Validar evidência estrutural de conclusão de um playbook de execução materializado; `bin/sq-brief.sh` é dono das identidades selecionáveis de playbook e de perfil, e o validador prefixa o relatório de `bin/sq-scope-gate.py` sem deixar que ele mude seu veredito |
 | `sq-playbook-rule.sh`    | Instalar a regra oxlint autoritativa do playbook, sua checagem colocalizada, sua config exclusiva e seu comando de verificação no diretório `tools/oxlint` de um projeto adotante e conectar o comando aos scripts de pacote e ao CI dele |
+| `sq-scope-gate.py`       | Gate de escopo só relatório: comparar as entradas de `Files to touch` declaradas no brief com os arquivos que o diff do worktree da tarefa realmente tocou, imprimindo caminhos planejados, não declarados (agrupados por diretório de dois componentes) e declarados-mas-intocados; sempre sai 0 e nunca escreve em state |
 | `sq-promote.sh`          | Promover uma tarefa recon in-place a uma tarefa strike protegida com modo de entrega explícito |
 | `sq-teardown.sh`         | Teardown fail-closed: devolver worktrees ship landadas, exigir entregáveis completos de recon, aposentar bases XO |
 | `sq-harness.sh`          | Detectar o harness em execução e resolver crew ou XO harness, modelo e esforço |

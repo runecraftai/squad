@@ -145,7 +145,7 @@ family_for_basename() {
     sq-send-popup-settle.test.sh|sq-send-settle.test.sh|\
     sq-self-heal.test.sh|\
     sq-subagent-pretool-check.test.sh|\
-    sq-supervision-instructions.test.sh|sq-task-delivery.test.sh|\
+    sq-supervision-instructions.test.sh|sq-task-delivery.test.sh|sq-scope-gate.test.sh|\
     sq-tmux-submit-busy.test.sh|sq-trace-context-lib.test.sh|\
     sq-transition-lib.test.sh|sq-window-state.test.sh|sq-sidebar.test.sh|\
     sq-test-run.test.sh|sq-test-isolation-proof.test.sh|sq-rebrand-guard.test.sh|\
