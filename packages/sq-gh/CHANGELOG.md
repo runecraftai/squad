@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.5](https://github.com/runecraftai/squad/compare/sq-gh-v0.1.4...sq-gh-v0.1.5) (2026-10-31)
+
+
+### Features
+
+* **drill:** rename no-mistakes validation pipeline to drill ([#8](https://github.com/runecraftai/squad/issues/8)) ([7a4b094](https://github.com/runecraftai/squad/commit/7a4b094415ae6b4030e38161d6d39f0a9bca306e))
+* **packages:** publish npm packages under the [@runecraft](https://github.com/runecraft) scope ([#49](https://github.com/runecraftai/squad/issues/49)) ([ed8a36c](https://github.com/runecraftai/squad/commit/ed8a36cf4fdcf38402ab11ebbcdf6c3e3437128e))
+* rebrand vendored tool names to sq-* across packages ([#14](https://github.com/runecraftai/squad/issues/14)) ([39bb7bb](https://github.com/runecraftai/squad/commit/39bb7bb60a32f6e8ef8fe276e27a93fac4834cd3))
+* **release:** standalone publication prep for npm and Go binary packages ([#68](https://github.com/runecraftai/squad/issues/68)) ([0288fec](https://github.com/runecraftai/squad/commit/0288fec3ba69b4ea82f330551815fb51c2a67ae0))
+* **release:** wire per-package release-please with npm publish and changelogs ([#39](https://github.com/runecraftai/squad/issues/39)) ([58232bc](https://github.com/runecraftai/squad/commit/58232bca0d6eb5c4cd3ab44fe0de95be393c7464))
+* **sq-gh:** add AXI provider contract with capabilities discovery and JSON output ([45681c2](https://github.com/runecraftai/squad/commit/45681c2bddb486c17f6d928530864f0d84e46656))
+* **sq-gh:** retrofit AXI provider contract ([1f407d0](https://github.com/runecraftai/squad/commit/1f407d05fe5744a2f6c24bc47c2e173275961f50))
+
+
+### Bug Fixes
+
+* **sq-gh:** verify PR head, checks, and mergeability at merge time ([#322](https://github.com/runecraftai/squad/issues/322)) ([02ed21e](https://github.com/runecraftai/squad/commit/02ed21e98e0018567797869fc84a41648028191a))
+
 ## [0.1.3](https://github.com/runecraftai/squad/compare/sq-gh-v0.1.2...sq-gh-v0.1.3) (2026-09-08)
 
 
