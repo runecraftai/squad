@@ -4,6 +4,7 @@ The sergeant at arms drives these; interactive entrypoints work by hand too, whi
 Each row is one purpose clause only: the script's own header comment is the authoritative description of its behavior, flags, and contracts, so read the header before first use.
 If you have changed away from the Squad base in an interactive shell, invoke these scripts by absolute path through the repo's `bin/` directory; the scripts self-locate internally after they start.
 The shared drill gate refusal for unit lifecycle entrypoints is summarized in [architecture.md](architecture.md#drill-gate-authority-boundary), while `docs/sessionstart-nudge.md` covers the silent session-open hook use; `sq-gate-refuse-lib.sh`'s header owns its exact contract.
+Outside the toolbelt, the drill package's manual `make mutation` target runs gremlins over `internal/agent` and `internal/types`; [`packages/drill/Makefile`](../packages/drill/Makefile) owns it.
 
 | Script                   | Purpose                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------ |

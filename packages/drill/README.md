@@ -127,7 +127,6 @@ See the [quick start](https://github.com/runecraftai/squad/tree/main/packages/dr
 ```sh
 make build   # Build bin/drill with version info
 make test    # Run go test -race ./... (excludes the e2e suite)
-make mutation # Mutation-test internal/agent and internal/types with gremlins (manual, slow)
 make e2e     # Run the tagged end-to-end agent journey suite
 make e2e-record # Re-record e2e fixtures when agent wire formats change
 make lint    # Check generated skill drift and run go vet ./...
