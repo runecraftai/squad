@@ -33,10 +33,19 @@ if ! command -v go >/dev/null 2>&1; then
 	exit 1
 fi
 
+if ! go_probe=$(go version 2>&1); then
+	echo "mutation: the go found on PATH cannot run: $go_probe" >&2
+	echo "mutation: gremlins installs on demand with 'go install' and runs 'go test', so a working Go toolchain is required." >&2
+	exit 1
+fi
+
 if [ ! -x "$gremlins" ]; then
 	echo "mutation: installing gremlins $GREMLINS_VERSION into $tool_dir"
 	mkdir -p "$tool_dir/bin"
-	GOBIN="$tool_dir/bin" go install "github.com/go-gremlins/gremlins/cmd/gremlins@$GREMLINS_VERSION"
+	if ! GOBIN="$tool_dir/bin" go install "github.com/go-gremlins/gremlins/cmd/gremlins@$GREMLINS_VERSION"; then
+		echo "mutation: 'go install' failed to install gremlins $GREMLINS_VERSION; check the Go toolchain and access to the module proxy." >&2
+		exit 1
+	fi
 fi
 
 if [ ! -x "$gremlins" ]; then
