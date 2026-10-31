@@ -83,7 +83,8 @@
 #          refresh relays any completed sq-unit-sync.sh output before the
 #          aggregate timeout skip line with timeout and elapsed seconds.
 #          Set SQUAD_FLEET_PRUNE=0 to skip branch pruning during that refresh.
-#          Every non-detect-only local pass also starts sq-drill-sandbox-gc.sh
+#          Every non-detect-only local pass that holds the unit lock
+#          (SQUAD_BOOTSTRAP_LOCKED=1) also starts sq-drill-sandbox-gc.sh
 #          detached, so stale /tmp drill sandboxes never block startup; its last
 #          summary lands in state/.drill-sandbox-gc.log and SQUAD_DRILL_SANDBOX_GC=0
 #          opts out.
@@ -1335,7 +1336,8 @@ if [ "${SQUAD_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   # Stale drill sandboxes under /tmp can fill the tmpfs and wedge step agents.
   # The sweep runs detached with its output in a log, so a slow scan never delays
   # startup and never holds this script's stdout open for a capturing caller.
-  if local_phase && [ "${SQUAD_DRILL_SANDBOX_GC:-1}" != 0 ] && [ -x "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" ]; then
+  if local_phase && [ "${SQUAD_BOOTSTRAP_LOCKED:-0}" = 1 ] \
+    && [ "${SQUAD_DRILL_SANDBOX_GC:-1}" != 0 ] && [ -x "$SCRIPT_DIR/sq-drill-sandbox-gc.sh" ]; then
     # A base run straight from a checkout has no state/ yet, so create it (or
     # fall back to /dev/null) rather than letting the redirect fail silently and
     # skip the sweep the log was meant to record.

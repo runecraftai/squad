@@ -1409,10 +1409,11 @@ test_crew_dispatch_model_existence_validation
 # window, so an ambient SQUAD_DRILL_SANDBOX_GRACE_MINUTES cannot keep the 7h
 # fixture. <state_override> lets a case make state/ impossible to create.
 run_bootstrap_sandbox_gc() {
-  local case_dir=$1 path_value=$2 state_override=$3 fakebin
+  local case_dir=$1 path_value=$2 state_override=$3 locked=${4:-1} fakebin
   fakebin=$(make_fake_toolchain "$case_dir")
   PATH="$fakebin:$path_value" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_STATE_OVERRIDE="$state_override" \
+    SQUAD_BOOTSTRAP_LOCKED="$locked" \
     SQUAD_DRILL_SANDBOX_GC=1 SQUAD_DRILL_SANDBOX_ROOT="$case_dir/tmp" \
     SQUAD_DRILL_SANDBOX_GRACE_MINUTES=360 SQUAD_DRILL_SANDBOX_PROC=/proc \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh" >/dev/null 2>&1
@@ -1503,3 +1504,20 @@ test_sandbox_gc_runs_without_gnu_timeout() {
 }
 
 test_sandbox_gc_runs_without_gnu_timeout
+
+# A pass that does not hold the unit lock has no mutation authority, so it must
+# not delete another run's sandbox or even start the sweep.
+test_sandbox_gc_skipped_without_lock() {
+  local case_dir
+  case_dir="$TMP_ROOT/gc-unlocked"
+  make_stale_sandbox_case "$case_dir"
+  run_bootstrap_sandbox_gc "$case_dir" "$BASE_PATH" "$case_dir/home/state" 0
+  command sleep 1
+  [ -e "$case_dir/tmp/drill-execution-policy-stale" ] \
+    || fail "a lockless bootstrap pass must not sweep drill sandboxes"
+  [ ! -e "$case_dir/home/state/.drill-sandbox-gc.log" ] \
+    || fail "a lockless bootstrap pass must not start the drill sandbox sweep"
+  pass "a lockless bootstrap pass leaves drill sandboxes alone"
+}
+
+test_sandbox_gc_skipped_without_lock
