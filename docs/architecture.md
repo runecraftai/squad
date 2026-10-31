@@ -76,6 +76,8 @@ For whole-unit read-only review, `bin/sq-unit-snapshot.sh --json` emits schema `
 A PR pointer records whether it came from task metadata, a structured drill status event, or an orphaned status event, and the human unit view distinguishes those sources rather than treating a retired poll artifact as monitoring evidence.
 A finished run's crew-state detail also carries `risk=<low|medium|high>` when Drill recorded a review risk, read read-only from the review step's findings in the Drill database because `axi status` exposes a risk only while parked at the review gate, and the snapshot surfaces that level as `pr.risk`.
 An absent, `unknown`, or unreadable level adds no detail token and leaves `pr.risk` null, and nothing gates, blocks, dispatches, or writes on it.
+The same snapshot marks `pr.verification` for the declared PR URL - meta `pr=`, else the newest `/pull/N` in the status log, while `pr.url`/`pr.source` keep their existing source - as `verified` when Drill's sidecar carries the declared URL or none was declared, `diverged` when the declared URL differs and `pr.diverging_url` carries that URL, `unverified` when a URL is declared but the sidecar carries none, or `null` when there is no PR.
+A divergence is recorded and never downgrades or blocks, so a direct-PR or unattributed run that declares a URL stays visibly unverified instead of claiming a verified delivery, while a local-only run that declares no URL reports `null`.
 `bin/sq-unit-view.sh` renders that snapshot as Markdown for humans, while `bin/sq-sitrep-snapshot.sh` provides the bounded sitrep projection, so both views consume one structured contract instead of reparsing raw unit files.
 The script header owns the exact JSON schema.
 

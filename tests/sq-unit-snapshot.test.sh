@@ -116,4 +116,75 @@ printf '%s' "$note" | jq -e '.current_state.state == "done" and .current_state.s
   and (.current_state.detail | contains("risk=high")) and .pr.risk == null' >/dev/null \
   || fail "a status-log detail mentioning risk must not become pr.risk: $note"
 
+# pr.verification: the declared URL (meta pr=, else the newest status-log URL) is
+# compared with drill's sidecar. A mismatch is marked, never blocked or downgraded.
+snap_pr() {  # <task-id> <fakebin-dir>
+  PATH="$2:$PATH" SQUAD_DRILL_STATE="$RISK/missing.sqlite" SQUAD_BASE="$BASE" SQUAD_ROOT="$ROOT" \
+    SQUAD_STATE_OVERRIDE="$BASE/state" SQUAD_DATA_OVERRIDE="$BASE/data" \
+    SQUAD_CONFIG_OVERRIDE="$BASE/config" SQUAD_PROJECTS_OVERRIDE="$BASE/projects" \
+    "$ROOT/bin/sq-unit-snapshot.sh" | jq -c --arg id "$1" '.tasks[] | select(.id == $id) | .pr'
+}
+pr_is() {  # <json> <jq-expr> <message>
+  printf '%s' "$1" | jq -e "$2" >/dev/null || fail "$3: $1"
+}
+
+# verified: no declared URL beside the sidecar. A snapshot run under another task's
+# fake drill clears this sidecar, so warm it up first.
+snap_pr risk-task "$RISK/fakebin" >/dev/null
+got=$(snap_pr risk-task "$RISK/fakebin")
+pr_is "$got" '.verification == "verified" and .diverging_url == null and .source == "drill"' "sidecar alone should be verified"
+
+# verified: the declared URL matches; an older differing status-log URL is ignored.
+printf 'working: opened https://github.com/o/r/pull/5\ndone: PR https://github.com/o/r/pull/9 checks green\n' > "$BASE/state/risk-task.status"
+got=$(snap_pr risk-task "$RISK/fakebin")
+pr_is "$got" '.verification == "verified" and .diverging_url == null and .url == "https://github.com/o/r/pull/9"' "newest matching status-log URL should be the declared one"
+
+# diverged: with no meta pr=, the newest status-log URL is the declaration, so a
+# mismatch is marked and the older matching URL must not be mistaken for it.
+printf 'working: opened https://github.com/o/r/pull/9\ndone: PR https://github.com/o/r/pull/5 checks green\n' > "$BASE/state/risk-task.status"
+got=$(snap_pr risk-task "$RISK/fakebin")
+pr_is "$got" '.verification == "diverged" and .diverging_url == "https://github.com/o/r/pull/5" and .source == "drill"' "a differing newest status-log URL should be diverged"
+rm -f "$BASE/state/risk-task.status"
+
+# Re-warm the sidecar so this fixture does not depend on an earlier snapshot.
+snap_pr risk-task "$RISK/fakebin" >/dev/null
+
+# diverged: the declared URL differs; url and source stay drill's.
+printf 'window=fm:sq-risk-task\nworktree=%s\nkind=strike\npr=https://github.com/o/r/pull/5\n' "$RISK/wt" > "$BASE/state/risk-task.meta"
+got=$(snap_pr risk-task "$RISK/fakebin")
+pr_is "$got" '.verification == "diverged" and .diverging_url == "https://github.com/o/r/pull/5"
+  and .source == "drill" and .url == "https://github.com/o/r/pull/9"' "a differing declared URL should be diverged"
+
+# unverified: a declared URL with no drill sidecar; none: no PR at all.
+printf 'window=fm:sq-note-task\nworktree=%s\nkind=strike\npr=https://github.com/o/r/pull/4\n' "$NOTE/wt" > "$BASE/state/note-task.meta"
+got=$(snap_pr note-task "$NOTE/fakebin")
+pr_is "$got" '.verification == "unverified" and .diverging_url == null and .source == "meta" and .url == "https://github.com/o/r/pull/4"' "no sidecar should be unverified"
+printf 'window=fm:sq-note-task\nworktree=%s\nkind=strike\n' "$NOTE/wt" > "$BASE/state/note-task.meta"
+got=$(snap_pr note-task "$NOTE/fakebin")
+pr_is "$got" '.verification == null and .diverging_url == null and .source == "absent"' "no PR should leave verification null"
+
+# Regression: local HEAD is an ancestor of the run head while the run is still in
+# CI. Drill still attributes the run, so a matching declaration stays verified.
+ANC="$RISK/anc"
+mkdir -p "$ANC/fakebin" "$ANC/wt"
+git -C "$ANC/wt" init -q
+git -C "$ANC/wt" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m init
+git -C "$ANC/wt" checkout -q -b sq/anc-task
+git -C "$ANC/wt" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m "pipeline fix"
+ANC_RUN_HEAD=$(git -C "$ANC/wt" rev-parse HEAD)
+git -C "$ANC/wt" reset -q --hard HEAD~1
+cat > "$ANC/fakebin/drill" <<SH
+#!/usr/bin/env bash
+case "\${1:-}:\${2:-}" in
+  axi:status) printf 'run:\n  id: "01ANC"\n  branch: sq/anc-task\n  status: running\n  step: ci\n  head: "$ANC_RUN_HEAD"\n  pr: "https://github.com/o/r/pull/12"\n  findings: none\n' ;;
+  runs:*) printf 'running sq/anc-task %.7s 2026-10-29\n' "$ANC_RUN_HEAD" ;;
+esac
+exit 0
+SH
+chmod +x "$ANC/fakebin/drill"
+printf 'window=fm:sq-anc-task\nworktree=%s\nkind=strike\npr=https://github.com/o/r/pull/12\n' "$ANC/wt" > "$BASE/state/anc-task.meta"
+snap_pr anc-task "$ANC/fakebin" >/dev/null
+got=$(snap_pr anc-task "$ANC/fakebin")
+pr_is "$got" '.verification == "verified" and .diverging_url == null and .source == "drill"' "ancestor head with the run in CI must stay verified"
+
 pass "sq-unit-snapshot handles backlog JSON without argv transport"
