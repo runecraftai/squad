@@ -379,6 +379,7 @@ if unshare -Urm true 2>/dev/null; then
   make_sandbox drill-execution-policy-unmounted 7
   mkdir -p "$TMP_ROOT/target"
   READY="$TMP_ROOT/ready.mount"
+  # shellcheck disable=SC2016 # $1/$2/$3 expand inside the child bash, not here.
   unshare -Urm bash -c 'mount --bind "$1" "$2" && : >"$3" && exec sleep 300' _ \
     "$SANDBOX_ROOT/drill-execution-policy-mounted" "$TMP_ROOT/target" "$READY" >/dev/null 2>&1 &
   HOLDERS+=("$!")
