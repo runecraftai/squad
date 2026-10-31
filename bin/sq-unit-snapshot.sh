@@ -34,11 +34,14 @@
 #     none; details from other sources are never treated as a review level.
 #     pr.verification compares the declared URL (meta pr=, else the newest
 #     /pull/N in the status log) with drill's sidecar: verified when that sidecar
-#     exists and the URL matches it or none was declared, diverged when the
-#     declared URL differs (pr.diverging_url carries that declared URL),
-#     unverified when a URL is declared but no sidecar exists, and null when there
-#     is no PR. It is informational only: pr.url, pr.source, pr.risk, and task
-#     state are never changed by it, and a divergence never blocks or downgrades.
+#     carries a URL and the declared URL matches it or none was declared, diverged
+#     when the declared URL differs (pr.diverging_url carries that declared URL),
+#     unverified when a URL is declared but the sidecar carries none, and null
+#     when there is no PR. It is informational only: pr.url, pr.source, pr.risk,
+#     and task state are never changed by it, and a divergence never blocks or
+#     downgrades. Because the sidecar is read before this snapshot's crew-state
+#     read can write it, a matching declaration can report unverified on the
+#     first snapshot and verified on the next when no earlier read wrote it.
 #     endpoint.exists is the cheap backend endpoint-presence read.
 #     endpoint.agent_alive is populated for XOs only, where it is useful
 #     return-channel supervision data; other tasks use "not_checked".
