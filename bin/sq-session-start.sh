@@ -19,7 +19,7 @@
 # standalone with unchanged default behavior - other flows (sq-bootstrap.sh
 # install <tools> after consent, /updatesquad, the afk daemon, existing
 # tests) still call them directly. The one seam this script needed -
-# bootstrap running its detect-only diagnostics without its seven mutating
+# bootstrap running its detect-only diagnostics without its mutating
 # sweeps - is an opt-in SQUAD_BOOTSTRAP_DETECT_ONLY=1 flag on sq-bootstrap.sh
 # itself (default unset/0 = unchanged behavior), not a fork.
 #
@@ -30,12 +30,9 @@
 #                       mutating step runs.
 #   2. bootstrap      - base-local stale Herdr projection cleanup runs only
 #                       when this session actually holds the lock. Detect-only
-#                       diagnostics always run. Bootstrap's seven MUTATING sweeps
-#                       (legacy PR-check migration, XO convergence,
-#                       XO liveness, pending remote handoff retry,
-#                       X-mode artifact writes, the retired-mission record
-#                       sweep, unit sync) also run only when
-#                       locked; the four network sweeps run in the deferred
+#                       diagnostics always run. Bootstrap's MUTATING sweeps
+#                       (listed in the sq-bootstrap.sh header) also run only
+#                       when locked; the four network sweeps run in the deferred
 #                       stage rather than this synchronous bootstrap section.
 #   3. stand-to drain     - mutates the durable stand-to queue, so it also only runs
 #                       when locked.
@@ -119,7 +116,7 @@
 # and all of which are safe to compute without verified lock ownership.
 # It deliberately skips the network-only GitHub-auth probe because a read-only
 # session has no dispatch, spawn, steer, or merge action for that verdict to gate.
-# Only projection cleanup, the seven bootstrap mutating sweeps, the
+# Only projection cleanup, the bootstrap mutating sweeps, the
 # stand-to queue drain, and the handoff surfacer (which read-only sessions
 # skip and only list instead) are omitted from the read-only path.
 # The context digest is always read-only, and the unit-state digest's only
@@ -198,10 +195,8 @@
 #   --reemit  This process ALREADY took the helm at its own startup and has
 #             only lost its context (a /clear or a compaction). Skip the
 #             mutating sweeps that startup already reconciled - the stale Herdr
-#             projection cleanup and bootstrap's seven mutating sweeps (unit
-#             sync, XO convergence and liveness, PR-check migration,
-#             pending remote handoff retry, X-mode artifact writes, the
-#             retired-mission record sweep) - and
+#             projection cleanup and bootstrap's mutating sweeps (listed in
+#             `bin/sq-bootstrap.sh`'s header) - and
 #             re-emit the rest. The stand-to queue drain is NOT skipped: queued
 #             records are this turn's work queue, they arrived after startup,
 #             and a session that owns the lock is exactly the session that must

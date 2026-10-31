@@ -87,10 +87,10 @@
 #          detached, so stale /tmp drill sandboxes never block startup; its last
 #          summary lands in state/.drill-sandbox-gc.log and SQUAD_DRILL_SANDBOX_GC=0
 #          opts out.
-#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the seven MUTATING sweeps
+#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the eight MUTATING sweeps
 #          (PR-check migration, XO_sync, XO_liveness_sweep,
-#          XO_handoff_resume, x_mode_setup, retired-mission record sweep,
-#          fleet_sync) while still
+#          XO_handoff_resume, x_mode_setup, detached drill-sandbox sweep,
+#          retired-mission record sweep, fleet_sync) while still
 #          printing every read-only detect line
 #          above; the TANGLE line switches to advisory-only wording with no
 #          checkout command. Used by
