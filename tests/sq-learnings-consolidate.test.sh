@@ -8,6 +8,19 @@ set -u
 CONSOLIDATE="$ROOT/bin/sq-learnings-consolidate.sh"
 TMP_ROOT=$(fm_test_tmproot sq-learnings-consolidate)
 
+# Recent fixture dates must stay recent however long after they were written
+# the suite runs: a fixed calendar date eventually crosses the 60-day stale
+# threshold and turns duplicate/trim assertions into age-removal assertions.
+# GNU date uses -d, BSD/macOS date uses -v.
+relative_date() {  # <days-ago>
+  if date -d "$1 days ago" '+%Y-%m-%d' 2>/dev/null; then
+    return
+  fi
+  date -v-"$1"d '+%Y-%m-%d'
+}
+RECENT_DATE=$(relative_date 1)
+RECENT_DATE_2=$(relative_date 2)
+
 make_home() {
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/data"
@@ -39,8 +52,8 @@ test_exact_duplicate_removal() {
   local home output
   home=$(make_home dedup-exact)
   make_learnings "$home/data/learnings.md" \
-    '- **Test lesson (2026-09-01):** This is a test lesson about something useful.' \
-    '- **Test lesson (2026-09-01):** This is a test lesson about something useful.'
+    "- **Test lesson ($RECENT_DATE):** This is a test lesson about something useful." \
+    "- **Test lesson ($RECENT_DATE):** This is a test lesson about something useful."
 
   output=$(run_consolidate "$home" 2>&1)
   assert_contains "$output" "Entries to remove: 1" "should detect one duplicate"
@@ -53,8 +66,8 @@ test_near_duplicate_removal() {
   home=$(make_home dedup-near)
   # These share >80% contiguous content
   make_learnings "$home/data/learnings.md" \
-    '- **Drill note (2026-09-01):** Operators must never edit drill config or restart the shared daemon.' \
-    '- **Drill note (2026-09-02):** Operators must never edit drill config or restart the shared daemon; report issues as blockers.'
+    "- **Drill note ($RECENT_DATE):** Operators must never edit drill config or restart the shared daemon." \
+    "- **Drill note ($RECENT_DATE_2):** Operators must never edit drill config or restart the shared daemon; report issues as blockers."
 
   output=$(run_consolidate "$home" 2>&1)
   # The second line should be detected as near-duplicate
@@ -66,8 +79,8 @@ test_different_entries_preserved() {
   local home output
   home=$(make_home dedup-diff)
   make_learnings "$home/data/learnings.md" \
-    '- **Security (2026-09-01):** Never expose secrets in code or logs.' \
-    '- **Performance (2026-09-01):** Cache expensive API calls to reduce latency.'
+    "- **Security ($RECENT_DATE):** Never expose secrets in code or logs." \
+    "- **Performance ($RECENT_DATE):** Cache expensive API calls to reduce latency."
 
   output=$(run_consolidate "$home" 2>&1)
   assert_contains "$output" "No changes needed" "distinct entries should not be flagged"
@@ -93,7 +106,7 @@ test_recent_entry_preserved() {
   local home output
   home=$(make_home stale-recent)
   make_learnings "$home/data/learnings.md" \
-    '- **Recent lesson (2026-09-01):** This is recent and should stay.'
+    "- **Recent lesson ($RECENT_DATE):** This is recent and should stay."
 
   output=$(run_consolidate "$home" 2>&1)
   assert_contains "$output" "No changes needed" "recent entries should not be removed"
@@ -116,7 +129,7 @@ test_boundary_entry_exactly_60_days() {
   home=$(make_home stale-boundary)
   # Entry dated exactly 60 days ago should be retired
   local sixty_days_ago
-  sixty_days_ago=$(date -d '60 days ago' '+%Y-%m-%d')
+  sixty_days_ago=$(relative_date 60)
   make_learnings "$home/data/learnings.md" \
     "- **Boundary lesson ($sixty_days_ago):** Entry at exactly the 60-day boundary."
 
@@ -196,7 +209,7 @@ test_long_entry_trimmed() {
   # Create a line longer than 500 chars
   long_text=$(printf 'x%.0s' {1..600})
   make_learnings "$home/data/learnings.md" \
-    "- **Long entry (2026-09-01):** $long_text"
+    "- **Long entry ($RECENT_DATE):** $long_text"
 
   output=$(run_consolidate "$home" 2>&1)
   assert_contains "$output" "Entries to trim: 1" "should flag long entry"
@@ -209,7 +222,7 @@ test_long_entry_applied_trim() {
   home=$(make_home trim-apply)
   long_text=$(printf 'y%.0s' {1..600})
   make_learnings "$home/data/learnings.md" \
-    "- **Long entry (2026-09-01):** $long_text"
+    "- **Long entry ($RECENT_DATE):** $long_text"
 
   run_consolidate "$home" --apply >/dev/null 2>&1
   local result_line
@@ -223,7 +236,7 @@ test_important_entry_not_trimmed() {
   home=$(make_home trim-important)
   important_text=$(printf 'z%.0s' {1..550})
   make_learnings "$home/data/learnings.md" \
-    "- **Important (2026-09-01):** CRITICAL: $important_text"
+    "- **Important ($RECENT_DATE):** CRITICAL: $important_text"
 
   output=$(run_consolidate "$home" 2>&1)
   assert_not_contains "$output" "Entries to trim" "important entries should not be flagged"
@@ -235,7 +248,7 @@ test_never_entry_not_trimmed() {
   home=$(make_home trim-never)
   never_text=$(printf 'w%.0s' {1..550})
   make_learnings "$home/data/learnings.md" \
-    "- **Important (2026-09-01):** NEVER do this: $never_text"
+    "- **Important ($RECENT_DATE):** NEVER do this: $never_text"
 
   output=$(run_consolidate "$home" 2>&1)
   assert_not_contains "$output" "Entries to trim" "NEVER entries should not be flagged"
@@ -249,8 +262,8 @@ test_backup_created_on_apply() {
   home=$(make_home backup-test)
   # Use duplicate entries so there are changes to apply
   make_learnings "$home/data/learnings.md" \
-    '- **Lesson (2026-09-01):** Test lesson about topic X.' \
-    '- **Lesson (2026-09-01):** Test lesson about topic X.'
+    "- **Lesson ($RECENT_DATE):** Test lesson about topic X." \
+    "- **Lesson ($RECENT_DATE):** Test lesson about topic X."
 
   run_consolidate "$home" --apply >/dev/null 2>&1
   backup="$home/data/learnings.md.bak"
@@ -263,9 +276,9 @@ test_apply_preserves_surviving_content() {
   local home result
   home=$(make_home apply-survival)
   make_learnings "$home/data/learnings.md" \
-    '- **Keep (2026-09-01):** This surviving fact must remain after apply.' \
-    '- **Remove (2026-09-01):** This duplicate is removed.' \
-    '- **Remove (2026-09-01):** This duplicate is removed.'
+    "- **Keep ($RECENT_DATE):** This surviving fact must remain after apply." \
+    "- **Remove ($RECENT_DATE):** This duplicate is removed." \
+    "- **Remove ($RECENT_DATE):** This duplicate is removed."
 
   run_consolidate "$home" --apply >/dev/null 2>&1
   result=$(<"$home/data/learnings.md")
@@ -281,8 +294,8 @@ test_backup_not_created_in_dryrun() {
   home=$(make_home backup-dryrun)
   # Use duplicate entries so the script reports changes (but doesn't apply them)
   make_learnings "$home/data/learnings.md" \
-    '- **Lesson (2026-09-01):** Test lesson about topic X.' \
-    '- **Lesson (2026-09-01):** Test lesson about topic X.'
+    "- **Lesson ($RECENT_DATE):** Test lesson about topic X." \
+    "- **Lesson ($RECENT_DATE):** Test lesson about topic X."
 
   run_consolidate "$home" >/dev/null 2>&1
   assert_absent "$home/data/learnings.md.bak" "backup should not exist in dry-run"
@@ -295,8 +308,8 @@ test_dryrun_shows_report() {
   local home output
   home=$(make_home dryrun-report)
   make_learnings "$home/data/learnings.md" \
-    '- **Lesson A (2026-09-01):** This is lesson A about topic X.' \
-    '- **Lesson A (2026-09-01):** This is lesson A about topic X.'
+    "- **Lesson A ($RECENT_DATE):** This is lesson A about topic X." \
+    "- **Lesson A ($RECENT_DATE):** This is lesson A about topic X."
 
   output=$(run_consolidate "$home" 2>&1)
   assert_contains "$output" "# Learnings Consolidation Report" "should print report header"
@@ -313,7 +326,7 @@ test_no_changes_outputs_clean() {
   local home output
   home=$(make_home dryrun-clean)
   make_learnings "$home/data/learnings.md" \
-    '- **Unique (2026-09-01):** Only one entry here.'
+    "- **Unique ($RECENT_DATE):** Only one entry here."
 
   output=$(run_consolidate "$home" 2>&1)
   assert_contains "$output" "No changes needed" "should report clean file"
