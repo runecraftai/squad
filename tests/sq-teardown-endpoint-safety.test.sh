@@ -344,7 +344,7 @@ SH
   [ -z "$(cat "$dir/workspace-name")" ] || fail "TUIOS shared-workspace teardown left the finished task's name behind"
   rm -f "$dir/neighbour-window"
   allocated=$(SQUAD_TEST_TUIOS_DIR="$dir" SQUAD_TUIOS_BIN="$dir/fakebin/tuios" \
-    SQUAD_BACKEND_CONFIG_DIR="$dir/home/config" SQUAD_BACKEND_STATE_DIR="$dir/home/state" \
+    SQUAD_BASE="$dir/home" SQUAD_ROOT_OVERRIDE="$ROOT" \
     bash -c '. "$1/bin/sq-backend.sh"; fm_backend_source tuios; fm_backend_tuios_next_workspace owned' _ "$ROOT")
   [ "$allocated" = 2 ] || fail "the shared workspace was not allocatable after the neighbour left (selected '$allocated')"
   unset SQUAD_TEST_TUIOS_DIR
