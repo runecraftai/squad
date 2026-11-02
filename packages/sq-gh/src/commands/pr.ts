@@ -721,19 +721,23 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
   await ghExec(ghArgs, ctx);
 
   // A zero exit only means gh acted; several paths (auto-merge, a base branch
-  // with a merge queue) leave the PR open, so a landing is confirmed only by a
-  // fresh read that reports MERGED.
-  const afterMergeRequest = await ghJson<PrMergeSnapshot>(
-    ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
-    ctx,
-  );
-  if (!afterMergeRequest || typeof afterMergeRequest !== "object") {
-    throw new AxiError(
-      "merge confirmation read returned unknown data",
-      "VALIDATION_ERROR",
+  // with a merge queue) leave the PR open, and the confirmation read can also
+  // fail or arrive stale. Because the merge command already succeeded, every
+  // outcome except a read reporting MERGED is an unconfirmed result for the
+  // caller to re-read, never a landed merge.
+  let afterMergeRequest: PrMergeSnapshot | null = null;
+  try {
+    const confirmation = await ghJson<PrMergeSnapshot>(
+      ["pr", "view", String(num), "--json", PR_MERGE_SNAPSHOT_FIELDS],
+      ctx,
     );
+    if (confirmation && typeof confirmation === "object") {
+      afterMergeRequest = confirmation;
+    }
+  } catch {
+    afterMergeRequest = null;
   }
-  const finalState = (afterMergeRequest.state ?? "").toUpperCase();
+  const finalState = (afterMergeRequest?.state ?? "").toUpperCase();
   if (finalState === "OPEN") {
     return renderOutput([
       renderDetail(
@@ -746,11 +750,17 @@ async function prMerge(args: string[], ctx?: RepoContext): Promise<string> {
       ),
     ]);
   }
-  if (finalState !== "MERGED") {
-    throw new AxiError(
-      `merge left the PR in an unexpected state: ${finalState || "unknown"}`,
-      "VALIDATION_ERROR",
-    );
+  if (finalState !== "MERGED" || !afterMergeRequest) {
+    return renderOutput([
+      renderDetail(
+        auto ? "auto_merge_unconfirmed" : "merge_unconfirmed",
+        { number: num, status: "unconfirmed", method: method ?? "default" },
+        [field("number"), field("status"), field("method")],
+      ),
+      renderHelp(
+        getSuggestions({ domain: "pr", action: "merge", id: num, repo: ctx }),
+      ),
+    ]);
   }
 
   return renderOutput([

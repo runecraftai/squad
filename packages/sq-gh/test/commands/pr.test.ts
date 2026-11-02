@@ -960,6 +960,44 @@ describe("prCommand", () => {
       expect(mockedGhJson).toHaveBeenCalledTimes(2);
     });
 
+    it("reports an unreadable post-merge confirmation read as unconfirmed", async () => {
+      mockedGhJson
+        .mockResolvedValueOnce(verifiedPr)
+        .mockRejectedValueOnce(new AxiError("gh pr view failed", "UNKNOWN"));
+      mockedGhExec.mockResolvedValue("");
+
+      const result = await prCommand(
+        ["merge", "10", "--expected-head", head, "--squash"],
+        ctx,
+      );
+
+      expect(mockedGhExec).toHaveBeenCalledTimes(1);
+      expect(result).toContain("merge_unconfirmed:");
+      expect(result).toContain("status: unconfirmed");
+      expect(result).not.toContain("status: landed");
+      expect(result).not.toContain("\nmerged:");
+      expect(mockedGhJson).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      ["unknown data", null],
+      ["an unexpected state", { ...verifiedPr, state: "CLOSED" }],
+    ])(
+      "reports %s after the merge as unconfirmed instead of throwing",
+      async (_label, confirmation) => {
+        mockedGhJson
+          .mockResolvedValueOnce(verifiedPr)
+          .mockResolvedValueOnce(confirmation);
+        mockedGhExec.mockResolvedValue("");
+
+        const result = await prCommand(["merge", "10"], ctx);
+
+        expect(mockedGhExec).toHaveBeenCalledTimes(1);
+        expect(result).toContain("merge_unconfirmed:");
+        expect(result).not.toContain("status: landed");
+      },
+    );
+
     it("refuses unrecognized merge arguments before reading or merging", async () => {
       await expect(
         prCommand(["merge", "10", "--expected-head", head, "--admin"], ctx),
