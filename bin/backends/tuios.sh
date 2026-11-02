@@ -263,6 +263,11 @@ fm_backend_tuios_release_task_workspace() {  # <task-id> <meta-file>
   ' 2>/dev/null) || { echo "error: could not identify task window $session:$window" >&2; return 1; }
   [ "$present" = 0 ] || { echo "error: task window $session:$window remains; retaining its workspace claim" >&2; return 1; }
   inventory=$(fm_backend_tuios_list_workspaces_json "$session") || { echo "error: could not read TUIOS workspace inventory for session $session" >&2; return 1; }
+  # Occupancy must be verifiable on every path: the validated inventory lists the
+  # task's workspace exactly once, so an absent or duplicated entry refuses.
+  printf '%s' "$inventory" | jq -e --argjson ws "$workspace" '
+    [.workspaces[] | select(.workspace == $ws)] | length == 1
+  ' >/dev/null 2>&1 || { echo "error: workspace $workspace is absent or duplicated in the TUIOS inventory; retaining task metadata" >&2; return 1; }
   name=$(printf '%s' "$inventory" | jq -r --argjson ws "$workspace" '
     [.workspaces[] | select(.workspace == $ws)] | if length == 1 then (.[0].name // "") else empty end
   ' 2>/dev/null) || { echo "error: could not read workspace $workspace name from TUIOS inventory" >&2; return 1; }

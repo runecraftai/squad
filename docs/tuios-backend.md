@@ -170,7 +170,7 @@ The close is TUIOS's own window-close path (`close-window`, which the CLI surfac
 `run-command` exits 0 even when the close failed, so its result envelope is the only success signal and a refusal is surfaced with the daemon's own message.
 After the exact task window is confirmed gone, cleanup clears only that task's recorded workspace name, whether the workspace is otherwise empty or shared with a neighbouring window.
 A neighbouring window that shares the workspace number does not block teardown: the name is cleared only when the validated workspace inventory lists that workspace exactly once and that name is this task's own `sq-<id>` label, so a name belonging to another label is left untouched, and no other window is closed, moved, or renamed.
-An unreadable window or workspace inventory, a recorded endpoint or task id that does not match this task, and a remaining task window still refuse and keep the task metadata, as does an absent or duplicated inventory entry for a workspace no other window occupies.
+An unreadable window or workspace inventory, a recorded endpoint or task id that does not match this task, a remaining task window, and an absent or duplicated inventory entry for the task's workspace all still refuse and keep the task metadata, whether or not a neighbouring window shares that workspace.
 Cleanup never deletes a session and never touches the daemon.
 
 ## Away-mode supervision

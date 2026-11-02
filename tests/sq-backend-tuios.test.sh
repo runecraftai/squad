@@ -80,6 +80,8 @@ case "${1:-}" in
     fi
     rows=()
     for workspace in $(seq 1 9); do
+      # A contradictory inventory: the named workspace is missing from the list.
+      [ "$workspace" != "${SQUAD_TUIOS_FAKE_OMIT_WORKSPACE:-}" ] || continue
       name= count=0
       case "$workspace" in 1) name=personal; count=1 ;; 4) name=existing; count=1 ;; esac
       if [ -f "$SQUAD_TUIOS_CREATED_WORKSPACE" ] && [ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE")" = "$workspace" ]; then
@@ -1054,6 +1056,31 @@ if fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/shared-ws.
 assert_contains "$(cat "$TMP_ROOT/release-shared-open-error")" 'task window owned:w-opaque_7 remains' 'an open task window in a shared workspace must keep its refusal'
 rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$TMP_ROOT/state/shared-ws.meta"
 unset SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf '\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+# A neighbour in workspace 2 while list-workspaces omits workspace 2 is an
+# unverifiable occupancy: release must refuse, keep the metadata, and mutate nothing.
+cat > "$TMP_ROOT/state/omitted-ws.meta" <<'META'
+window=owned:w-opaque_7
+endpoint_task_id=shared-ws
+backend=tuios
+tuios_session=owned
+tuios_window_id=w-opaque_7
+tuios_workspace_id=2
+META
+printf 'sq-shared-ws\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE=2 SQUAD_TUIOS_FAKE_OMIT_WORKSPACE=2
+export SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE SQUAD_TUIOS_FAKE_OMIT_WORKSPACE
+if fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/omitted-ws.meta" 2>"$TMP_ROOT/release-omitted-error"; then fail 'a neighbour in a workspace the inventory omits must refuse'; fi
+assert_contains "$(cat "$TMP_ROOT/release-omitted-error")" 'workspace 2 is absent or duplicated' 'a contradictory inventory must name the unverifiable workspace'
+assert_present "$TMP_ROOT/state/omitted-ws.meta" 'a contradictory inventory must keep the task metadata'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'CloseWindow' 'a contradictory inventory must never close a window'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a contradictory inventory must not change any workspace name'
+[ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = sq-shared-ws ] || fail 'a contradictory inventory must keep the workspace name'
+unset SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE SQUAD_TUIOS_FAKE_OMIT_WORKSPACE
+rm -f "$TMP_ROOT/state/omitted-ws.meta"
 printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
 printf '\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
 # A wrong workspace must refuse and close only the just-created window.
