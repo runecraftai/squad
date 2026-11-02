@@ -129,12 +129,12 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-peek.sh`             | Print a bounded tail of an operator endpoint                                          |
 | `sq-check-register.sh`   | Bind an intentional custom sentry check to its current bytes                       |
 | `sq-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
-| `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication and identity-bound retirement |
+| `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, bounded post-merge `MERGED` confirmation, and identity-bound retirement |
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
 | `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-artifact-guard.sh` | Warn when a PR changed-file list names this task's own Squad-base artifact paths      |
-| `sq-pr-merge.sh`         | Merge a task's canonical full GitHub URL against a fresh head (matching any recorded head), checks, and mergeability; record PR metadata only after success, then tear the landed task down |
+| `sq-pr-merge.sh`         | Merge a task's canonical full GitHub URL against a fresh head (matching any recorded head), checks, and mergeability; refresh PR metadata only after GitHub confirms the merge, then tear the landed task down |
 | `sq-retired-missions.sh` | Record exact Orca terminal and fob worktree retirement identity before metadata removal, retire the exact terminal, and reconcile orphan records in the locked bootstrap sweep |
 | `sq-verification.sh`     | Record one escaped defect's discovery time, affected merged PR and full SHA, reproduction or explicit unknown reason, regression scenario, and missed pre-merge gate on its existing GitHub issue, and report every recorded defect for one repo |
 | `sq-verification.py`     | Python implementation of the escaped-defect record and report commands, reading and writing issue bodies verbatim through the `sq-gh` TOON decoder |

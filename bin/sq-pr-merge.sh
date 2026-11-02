@@ -7,7 +7,8 @@
 # can arrive before GitHub updates the pull request, so a queued, unconfirmed, or
 # otherwise unclear result is re-read with backoff until GitHub reports the pull
 # request MERGED, and only a confirmed merge refreshes task metadata. A merge
-# GitHub genuinely has not completed still fails after that bounded window.
+# GitHub genuinely has not completed still fails after that bounded window, and
+# a confirmed re-read prints one `merge_confirmed:` line before the refresh.
 # The full canonical GitHub PR URL is parsed by bin/sq-pr-lib.sh and the derived
 # owner/repository and PR number are passed to sq-gh as separate arguments.
 #

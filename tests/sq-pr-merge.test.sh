@@ -22,6 +22,8 @@
 #   (m) a pull request GitHub never reports as merged still fails, unrecorded
 #   (n) an unconfirmed sq-gh result is awaited and, when never merged, keeps the
 #       explicit unconfirmed failure wording
+#   (o) a confirmed merge whose task metadata cannot be refreshed still fails
+#       explicitly instead of reporting a success over a stale durable record
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -803,6 +805,32 @@ SH
   pass "sq-pr-merge hands the resolved state dir to the post-merge teardown"
 }
 
+test_confirmed_merge_with_unrefreshable_metadata_fails() {
+  local case_dir rc
+  case_dir=$(make_case stale-record)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" ffffffffffffffffffffffffffffffffffffffff
+  # sq-pr-check.sh refuses a metadata file that is hard-linked, so the confirmed
+  # merge cannot refresh the durable record and must not claim a success.
+  ln "$case_dir/state/task-x1.meta" "$case_dir/state/task-x1.meta.alias"
+  : > "$case_dir/sq-gh.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/36 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "stale-record: a confirmed merge with unrefreshable metadata must fail"
+  assert_grep 'metadata refresh failed' "$case_dir/stderr" \
+    "stale-record: the explicit metadata-refresh failure wording was not kept"
+  assert_no_grep 'pr=https://github.com/example/repo/pull/36' "$case_dir/state/task-x1.meta" \
+    "stale-record: a stale durable record was reported as a recorded landing"
+  assert_absent "$case_dir/teardown.log" \
+    "stale-record: an unrefreshed landing triggered teardown"
+  pass "sq-pr-merge keeps the explicit failure when a confirmed merge cannot refresh metadata"
+}
+
 test_records_pr_and_head_after_confirmed_merge
 test_merge_failure_propagates_without_recording
 test_sq_gh_refusal_reason_is_surfaced
@@ -826,4 +854,5 @@ test_unconfirmed_sq_gh_result_is_awaited
 test_unconfirmed_sq_gh_result_never_merged_keeps_explicit_failure
 test_open_pr_never_confirmed_still_fails
 test_unconfirmed_merged_report_still_fails
+test_confirmed_merge_with_unrefreshable_metadata_fails
 test_parses_pr_url_for_gh_axi
