@@ -262,10 +262,15 @@ fm_backend_tuios_release_task_workspace() {  # <task-id> <meta-file>
     [.windows[] | select((tids | index($id)) != null)] | length
   ' 2>/dev/null) || { echo "error: could not identify task window $session:$window" >&2; return 1; }
   [ "$present" = 0 ] || { echo "error: task window $session:$window remains; retaining its workspace claim" >&2; return 1; }
-  printf '%s' "$windows" | jq -e --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
-    any(.windows[]; (tworkspaces | index($ws)) != null)
-  ' >/dev/null 2>&1 && { echo "error: workspace $workspace still contains another window; retaining task metadata" >&2; return 1; }
   inventory=$(fm_backend_tuios_list_workspaces_json "$session") || { echo "error: could not read TUIOS workspace inventory for session $session" >&2; return 1; }
+  # A neighbour window that shares the workspace number does not block teardown:
+  # the task's own window is confirmed gone above, and a shared workspace is left
+  # exactly as found - its name and every neighbour stay untouched.
+  if printf '%s' "$windows" | jq -e --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    any(.windows[]; (tworkspaces | index($ws)) != null)
+  ' >/dev/null 2>&1; then
+    return 0
+  fi
   printf '%s' "$inventory" | jq -e --argjson ws "$workspace" '
     [.workspaces[] | select(.workspace == $ws)] as $w
     | ($w | length) == 1 and ($w[0].window_count == 0)
