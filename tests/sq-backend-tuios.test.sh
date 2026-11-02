@@ -89,6 +89,7 @@ case "${1:-}" in
         [ ! -f "$SQUAD_TUIOS_CREATED_WINDOW" ] || count=1
       fi
       [ "$workspace" != "${SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE:-}" ] || count=1
+      [ "$workspace" != "${SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT:-}" ] || count=1
       rows+=("$(jq -cn --argjson ws "$workspace" --arg name "$name" --argjson count "$count" '{workspace:$ws,name:$name,window_count:$count}')")
     done
     printf '{"success":true,"workspaces":[%s]}\n' "$(IFS=,; echo "${rows[*]}")"
@@ -1081,6 +1082,31 @@ assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a contradi
 [ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = sq-shared-ws ] || fail 'a contradictory inventory must keep the workspace name'
 unset SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE SQUAD_TUIOS_FAKE_OMIT_WORKSPACE
 rm -f "$TMP_ROOT/state/omitted-ws.meta"
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf '\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+# A workspace the window list shows empty but the inventory reports occupied is
+# a contradictory occupancy: release must refuse and keep the task metadata.
+cat > "$TMP_ROOT/state/stale-count.meta" <<'META'
+window=owned:w-opaque_7
+endpoint_task_id=stale-count
+backend=tuios
+tuios_session=owned
+tuios_window_id=w-opaque_7
+tuios_workspace_id=2
+META
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf 'sq-stale-count\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT=2
+export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT
+if fm_backend_tuios_release_task_workspace stale-count "$TMP_ROOT/state/stale-count.meta" 2>"$TMP_ROOT/release-stale-count-error"; then fail 'an inventory that reports windows for an empty workspace must refuse'; fi
+assert_contains "$(cat "$TMP_ROOT/release-stale-count-error")" 'workspace 2 is absent or still has windows' 'a contradictory empty workspace must keep its refusal diagnostic'
+assert_present "$TMP_ROOT/state/stale-count.meta" 'a contradictory empty workspace must keep the task metadata'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a contradictory empty workspace must not change any workspace name'
+[ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = sq-stale-count ] || fail 'a contradictory empty workspace must keep the workspace name'
+unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT
+rm -f "$TMP_ROOT/state/stale-count.meta"
 printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
 printf '\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
 # A wrong workspace must refuse and close only the just-created window.
