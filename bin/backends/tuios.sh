@@ -269,20 +269,14 @@ fm_backend_tuios_release_task_workspace() {  # <task-id> <meta-file>
   # A neighbour window that shares the workspace number does not block teardown:
   # the task's own window is confirmed gone above, so only this task's own name
   # is cleared and every neighbour stays untouched.
-  if printf '%s' "$windows" | jq -e --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+  if ! printf '%s' "$windows" | jq -e --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
     any(.windows[]; (tworkspaces | index($ws)) != null)
   ' >/dev/null 2>&1; then
-    [ "$name" = "$label" ] || return 0
-    fm_backend_tuios_name_workspace "$session" "$workspace" '' || {
-      echo "error: could not restore the task workspace name for $id; retaining its metadata" >&2
-      return 1
-    }
-    return 0
+    printf '%s' "$inventory" | jq -e --argjson ws "$workspace" '
+      [.workspaces[] | select(.workspace == $ws)] as $w
+      | ($w | length) == 1 and ($w[0].window_count == 0)
+    ' >/dev/null 2>&1 || { echo "error: workspace $workspace is absent or still has windows; retaining task metadata" >&2; return 1; }
   fi
-  printf '%s' "$inventory" | jq -e --argjson ws "$workspace" '
-    [.workspaces[] | select(.workspace == $ws)] as $w
-    | ($w | length) == 1 and ($w[0].window_count == 0)
-  ' >/dev/null 2>&1 || { echo "error: workspace $workspace is absent or still has windows; retaining task metadata" >&2; return 1; }
   [ "$name" = "$label" ] || return 0
   fm_backend_tuios_name_workspace "$session" "$workspace" '' || {
     echo "error: could not restore the task workspace name for $id; retaining its metadata" >&2
