@@ -18,6 +18,8 @@
 #   (i) --auto and --disable-auto are refused, and a queued merge is not recorded as landed
 #   (j) a teardown refusal after a landed merge keeps the merge successful
 #   (k) the post-merge teardown receives the state dir this script resolved
+#   (l) an unconfirmed post-merge read is re-read until GitHub reports MERGED
+#   (m) a pull request GitHub never reports as merged still fails, unrecorded
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -97,15 +99,50 @@ SH
   chmod +x "$case_dir/fakebin/sq-gh" "$case_dir/fakebin/gh"
 }
 
+# sq-gh mock whose merge call does not confirm the landing, the shape a read that
+# arrives before GitHub updates the pull request produces, plus a gh mock that
+# answers the state re-read from $SQUAD_TEST_STATES: one line per read, repeating
+# the final line once the list is exhausted. Args: case_dir head_sha
+add_gh_mocks_unconfirmed_merge() {
+  local case_dir=$1 head=$2
+  printf 'pr_head=%s\n' "$head" >> "$case_dir/state/task-x1.meta"
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
+printf 'merge_queued:\n  status: queued\n'
+exit 0
+SH
+  cat > "$case_dir/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_GH_LOG"
+case " $* " in
+  *headRefOid*) printf '%s\n' "${SQUAD_TEST_HEAD:-}" ; exit 0 ;;
+  *"--json state"*)
+    state=$(head -1 "$SQUAD_TEST_STATES")
+    rest=$(tail -n +2 "$SQUAD_TEST_STATES")
+    [ -z "$rest" ] || printf '%s\n' "$rest" > "$SQUAD_TEST_STATES"
+    printf '%s\n' "$state"
+    exit 0
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/sq-gh" "$case_dir/fakebin/gh"
+}
+
 run_pr_merge() {
   local case_dir=$1 rc; shift
   SQUAD_ROOT_OVERRIDE="$ROOT" \
   SQUAD_STATE_OVERRIDE="$case_dir/state" \
   SQUAD_DATA_OVERRIDE="$case_dir/data" \
   SQUAD_TEST_SQ_GH_LOG="$case_dir/sq-gh.log" \
+  SQUAD_TEST_GH_LOG="$case_dir/gh.log" \
+  SQUAD_TEST_STATES="$case_dir/states" \
   SQUAD_TEST_TEARDOWN_LOG="$case_dir/teardown.log" \
   SQUAD_TEST_TEARDOWN_STATE_LOG="$case_dir/teardown-state.log" \
   SQUAD_TEARDOWN_BIN="$case_dir/fakebin/sq-teardown" \
+  SQUAD_PR_MERGE_CONFIRM_ATTEMPTS="${SQUAD_TEST_CONFIRM_ATTEMPTS:-1}" \
+  SQUAD_PR_MERGE_CONFIRM_DELAY=0 \
   PATH="$case_dir/fakebin:$PATH" \
     "$PR_MERGE" "$@"
   rc=$?
@@ -114,6 +151,104 @@ run_pr_merge() {
     return 1
   fi
   return "$rc"
+}
+
+test_confirm_waits_for_merged_after_open_read() {
+  local case_dir rc reads
+  case_dir=$(make_case confirm-waits)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks_unconfirmed_merge "$case_dir" ffffffffffffffffffffffffffffffffffffffff
+  printf 'OPEN\nMERGED\n' > "$case_dir/states"
+  : > "$case_dir/sq-gh.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  SQUAD_TEST_CONFIRM_ATTEMPTS=3 SQUAD_TEST_HEAD=ffffffffffffffffffffffffffffffffffffffff \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/37 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "confirm-waits: a later merged read must confirm the landing"
+  reads=$(grep -c 'json state' "$case_dir/gh.log" || true)
+  [ "$reads" -eq 2 ] \
+    || fail "confirm-waits: the guard did not re-read the PR state after an open read: $reads"
+  assert_grep 'merge_confirmed: number: 37 state: MERGED' "$case_dir/stdout" \
+    "confirm-waits: the confirmed landing was not reported"
+  assert_grep 'pr=https://github.com/example/repo/pull/37' "$case_dir/state/task-x1.meta" \
+    "confirm-waits: the confirmed PR was not recorded"
+  assert_grep '"result":"landed"' "$case_dir/data/task-x1/dispatch.jsonl" \
+    "confirm-waits: the confirmed landing was not recorded as landed"
+  assert_contains "$(<"$case_dir/teardown.log")" "task-x1" \
+    "confirm-waits: the confirmed landing did not trigger teardown"
+  pass "sq-pr-merge re-reads an unconfirmed merge until GitHub reports it merged"
+}
+
+test_open_pr_never_confirmed_still_fails() {
+  local case_dir rc reads before after
+  case_dir=$(make_case confirm-never-merged)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks_unconfirmed_merge "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  printf 'OPEN\n' > "$case_dir/states"
+  : > "$case_dir/sq-gh.log"
+  : > "$case_dir/gh.log"
+  before=$(sha256sum "$case_dir/state/task-x1.meta")
+
+  set +e
+  SQUAD_TEST_CONFIRM_ATTEMPTS=2 run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/38 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "confirm-never-merged: a merge GitHub never completed must fail"
+  reads=$(grep -c 'json state' "$case_dir/gh.log" || true)
+  [ "$reads" -eq 2 ] \
+    || fail "confirm-never-merged: the guard stopped re-reading while the window remained: $reads"
+  assert_grep 'queued instead of completed' "$case_dir/stderr" \
+    "confirm-never-merged: the failure wording changed"
+  after=$(sha256sum "$case_dir/state/task-x1.meta")
+  [ "$before" = "$after" ] || fail "confirm-never-merged: a failed merge changed task metadata"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "confirm-never-merged: a failed merge recorded a landing"
+  assert_absent "$case_dir/teardown.log" "confirm-never-merged: a failed merge triggered teardown"
+  pass "sq-pr-merge keeps failing a merge GitHub never confirms as merged"
+}
+
+# The exact 2026-11-02 shape: the merge call reports a merged detail without a
+# landed status while the pull request still reads as open. The first read is not
+# authoritative, so the guard waits, and the bounded window still fails.
+test_unconfirmed_merged_report_still_fails() {
+  local case_dir rc
+  case_dir=$(make_case confirm-stale-shape)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks_unconfirmed_merge "$case_dir" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  cat > "$case_dir/fakebin/sq-gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SQUAD_TEST_SQ_GH_LOG"
+printf 'merged:\n  status: ok\n  method: squash\n'
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/sq-gh"
+  printf 'OPEN\n' > "$case_dir/states"
+  : > "$case_dir/sq-gh.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  SQUAD_TEST_CONFIRM_ATTEMPTS=2 run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/39 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "confirm-stale-shape: an unconfirmed merged report must still fail"
+  assert_no_grep 'merge_confirmed' "$case_dir/stdout" \
+    "confirm-stale-shape: an unconfirmed merge was reported as confirmed"
+  assert_grep 'did not confirm a completed merge' "$case_dir/stderr" \
+    "confirm-stale-shape: the explicit failure wording was not kept"
+  assert_no_grep 'pr=https://github.com/example/repo/pull/39' "$case_dir/state/task-x1.meta" \
+    "confirm-stale-shape: an unconfirmed merge refreshed task metadata"
+  assert_absent "$case_dir/data/task-x1/dispatch.jsonl" \
+    "confirm-stale-shape: an unconfirmed merge recorded a landing"
+  pass "sq-pr-merge refuses the premature merged report that stays open"
 }
 
 test_records_pr_and_head_after_confirmed_merge() {
@@ -609,4 +744,7 @@ test_merge_queue_enqueue_is_not_recorded_as_landed
 test_disable_auto_refuses_before_merge
 test_teardown_refusal_after_landing_keeps_merge_success
 test_teardown_receives_resolved_state_dir
+test_confirm_waits_for_merged_after_open_read
+test_open_pr_never_confirmed_still_fails
+test_unconfirmed_merged_report_still_fails
 test_parses_pr_url_for_gh_axi

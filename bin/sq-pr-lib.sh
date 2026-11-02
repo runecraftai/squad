@@ -214,6 +214,35 @@ fm_pr_url_parse() {
   SQUAD_PR_NUMBER=${BASH_REMATCH[3]}
 }
 
+# Re-read a just-merged GitHub pull request until the forge reports it MERGED.
+# The merge command's own confirmation read can arrive before GitHub finishes
+# updating the pull request, so that first read is not authoritative and only a
+# later MERGED read confirms the landing. An unreadable or still-open read keeps
+# the pull request unconfirmed, and the bounded window returns non-zero when
+# GitHub genuinely has not completed the merge, so a real failure never becomes
+# a success. SQUAD_PR_MERGE_CONFIRM_ATTEMPTS and SQUAD_PR_MERGE_CONFIRM_DELAY
+# set the window, and the delay doubles per attempt up to five seconds.
+# Usage: fm_pr_await_merged <owner> <repository> <number>
+fm_pr_await_merged() {
+  local owner=${1-} repo=${2-} number=${3-} attempts delay attempt state
+  local LC_ALL=C
+  attempts=${SQUAD_PR_MERGE_CONFIRM_ATTEMPTS:-8}
+  delay=${SQUAD_PR_MERGE_CONFIRM_DELAY:-1}
+  case "$attempts" in ''|*[!0-9]*|0) attempts=8 ;; esac
+  case "$delay" in ''|*[!0-9]*) delay=1 ;; esac
+  attempt=1
+  while :; do
+    state=$(gh pr view "$number" --repo "$owner/$repo" --json state -q .state 2>/dev/null) || state=
+    state=$(printf '%s' "$state" | tr -d '[:space:]')
+    [ "$state" = MERGED ] && return 0
+    [ "$attempt" -lt "$attempts" ] || return 1
+    sleep "$delay"
+    attempt=$((attempt + 1))
+    delay=$((delay * 2))
+    [ "$delay" -le 5 ] || delay=5
+  done
+}
+
 fm_pr_head_valid() {
   local head=${1-}
   local LC_ALL=C

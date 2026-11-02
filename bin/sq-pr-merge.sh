@@ -3,6 +3,11 @@
 # mergeability, comparing against a recorded head when present and binding
 # the merge to the fresh SHA otherwise.
 # Record pr= and pr_head= through bin/sq-pr-check.sh only after merge succeeds.
+# A successful merge command is not itself a landing: its own confirmation read
+# can arrive before GitHub updates the pull request, so a queued, unconfirmed, or
+# otherwise unclear result is re-read with backoff until GitHub reports the pull
+# request MERGED, and only a confirmed merge refreshes task metadata. A merge
+# GitHub genuinely has not completed still fails after that bounded window.
 # The full canonical GitHub PR URL is parsed by bin/sq-pr-lib.sh and the derived
 # owner/repository and PR number are passed to sq-gh as separate arguments.
 #
@@ -113,13 +118,22 @@ if [ "$merge_rc" -ne 0 ]; then
   exit "$merge_rc"
 fi
 printf '%s\n' "$MERGE_RESULT"
-if printf '%s\n' "$MERGE_RESULT" | grep -Eq '^(auto_)?merge_queued:'; then
-  echo "error: the merge was queued instead of completed; task merge was not recorded as landed" >&2
-  exit 1
+# The merge command's own confirmation read is not authoritative, so an unclear
+# result is re-read until GitHub reports the pull request MERGED.
+confirmed=0
+if printf '%s\n' "$MERGE_RESULT" | grep -q '^merged:' \
+  && printf '%s\n' "$MERGE_RESULT" | grep -q 'status: landed'; then
+  confirmed=1
+elif fm_pr_await_merged "$PR_OWNER" "$PR_REPO" "$PR_NUMBER"; then
+  confirmed=1
+  echo "merge_confirmed: number: $PR_NUMBER state: MERGED"
 fi
-if ! printf '%s\n' "$MERGE_RESULT" | grep -q '^merged:' \
-  || ! printf '%s\n' "$MERGE_RESULT" | grep -q 'status: landed'; then
-  echo "error: sq-gh did not confirm a completed merge; task metadata was not refreshed or recorded as landed" >&2
+if [ "$confirmed" -eq 0 ]; then
+  if printf '%s\n' "$MERGE_RESULT" | grep -Eq '^(auto_)?merge_queued:'; then
+    echo "error: the merge was queued instead of completed; task merge was not recorded as landed" >&2
+  else
+    echo "error: sq-gh did not confirm a completed merge; task metadata was not refreshed or recorded as landed" >&2
+  fi
   exit 1
 fi
 SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/sq-dispatch-log.sh" "$ID" outcome \
