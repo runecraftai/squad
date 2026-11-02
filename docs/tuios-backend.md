@@ -169,8 +169,8 @@ Cleanup verifies both the exact opaque window id and the recorded task label bef
 The close is TUIOS's own window-close path (`close-window`, which the CLI surfaces as `tuios run-command CloseWindow <id>`) addressed by the exact session and window id - never the tmux compatibility shim, which would resolve a shim pane id instead.
 `run-command` exits 0 even when the close failed, so its result envelope is the only success signal and a refusal is surfaced with the daemon's own message.
 After the exact task window is confirmed gone, cleanup clears only that task's recorded workspace name, whether the workspace is otherwise empty or shared with a neighbouring window.
-A neighbouring window that shares the workspace number does not block teardown: when the shared workspace's name equals this task's own label it is cleared, while a name belonging to another label is left untouched, and no other window is closed, moved, or renamed.
-A mismatch, remaining task window, or unreadable inventory still refuses and preserves the name rather than risking another owner's layout.
+A neighbouring window that shares the workspace number does not block teardown: the name is cleared only when the validated workspace inventory lists that workspace exactly once and that name is this task's own `sq-<id>` label, so a name belonging to another label is left untouched, and no other window is closed, moved, or renamed.
+An unreadable window or workspace inventory, a recorded endpoint or task id that does not match this task, and a remaining task window still refuse and keep the task metadata, as does an absent or duplicated inventory entry for a workspace no other window occupies.
 Cleanup never deletes a session and never touches the daemon.
 
 ## Away-mode supervision
