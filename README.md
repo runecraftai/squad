@@ -142,7 +142,7 @@ Sitrep invocation examples:
 - `/sitrep file` replaces today's `data/status-report-<YYYY-MM-DD>.md` from scratch and links it from the four-section chat digest.
 - `/sitrep file include PRs` combines the dated report with live PR enrichment.
 
-Agent-only reference skills live under `.agents/skills/` and are loaded by Squad at the trigger points named in [`AGENTS.md`](AGENTS.md).
+Agent-only reference skills kept in this repo live under `.agents/skills/`, except `obsidian-axi` (see [`AGENTS.md`](AGENTS.md) section 13), which loads from the commander's shared user skill library; all load at the trigger points named in [`AGENTS.md`](AGENTS.md).
 
 ### Two-tier skill layout
 
