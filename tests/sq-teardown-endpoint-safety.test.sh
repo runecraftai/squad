@@ -275,8 +275,85 @@ SH
   pass "sq-teardown: exact tmux cleanup preserves invalid and prefix-matched neighbors while removing only the recorded target"
 }
 
+test_tuios_shared_workspace_teardown_completes() {
+  local dir id=tuios-shared allocated rc
+  command -v jq >/dev/null 2>&1 || { echo "skip - jq not installed"; return 0; }
+  dir=$(make_case tuios-shared-workspace)
+  cat > "$dir/fakebin/tuios" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=${SQUAD_TEST_TUIOS_DIR:?}
+printf '%s\n' "$*" >> "$dir/tuios.log"
+case "${1:-}" in
+  --version) printf 'tuios version 0.8.0\n' ;;
+  list-windows)
+    if [ -e "$dir/neighbour-window" ]; then
+      printf '{"windows":[{"id":"w-neighbour","name":"sq-neighbour","workspace":2,"cwd":"/tmp/neighbour"}]}\n'
+    else
+      printf '{"windows":[]}\n'
+    fi
+    ;;
+  list-workspaces)
+    printf '{"success":true,"workspaces":['
+    printf '{"workspace":1,"name":"personal","window_count":1},'
+    if [ -e "$dir/neighbour-window" ]; then count=1; else count=0; fi
+    printf '{"workspace":2,"name":"%s","window_count":%s},' \
+      "$(cat "$dir/workspace-name" 2>/dev/null || true)" "$count"
+    for ws in 3 4 5 6 7 8 9; do
+      [ "$ws" = 3 ] || printf ','
+      printf '{"workspace":%s,"name":"","window_count":0}' "$ws"
+    done
+    printf ']}\n'
+    ;;
+  set-workspace-name)
+    shift
+    [ "${1:-}" = --session ] && shift 2
+    ws=${1:-}; shift || true
+    name=${1:-}
+    [ "$ws" = 2 ] && printf '%s' "$name" > "$dir/workspace-name"
+    printf '{"success":true}\n'
+    ;;
+  get-window)
+    printf '{"error":"window w-opaque_7 not found","success":false}\n'
+    exit 1
+    ;;
+  run-command)
+    printf '{"success":true}\n'
+    ;;
+  *) : ;;
+esac
+SH
+  chmod +x "$dir/fakebin/tuios"
+  printf 'sq-%s\n' "$id" > "$dir/workspace-name"
+  : > "$dir/neighbour-window"
+  : > "$dir/tuios.log"
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=owned:w-opaque_7" "endpoint_task_id=$id" \
+    "worktree=$dir/nonexistent-worktree" "project=$dir/nonexistent-project" \
+    "kind=recon" "mode=drill" "backend=tuios" "tuios_session=owned" \
+    "tuios_window_id=w-opaque_7" "tuios_workspace_id=2"
+  export SQUAD_TEST_TUIOS_DIR="$dir"
+  set +e
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "TUIOS shared-workspace teardown failed: $(cat "$dir/stderr")"
+  [ ! -e "$dir/home/state/$id.meta" ] || fail "TUIOS shared-workspace teardown retained the task record"
+  assert_contains "$(cat "$dir/stdout")" "teardown $id complete" "TUIOS shared-workspace teardown did not report completion"
+  assert_not_contains "$(cat "$dir/tuios.log")" 'CloseWindow' "TUIOS shared-workspace teardown closed a window while a neighbour shared the workspace"
+  [ -z "$(cat "$dir/workspace-name")" ] || fail "TUIOS shared-workspace teardown left the finished task's name behind"
+  rm -f "$dir/neighbour-window"
+  allocated=$(SQUAD_TEST_TUIOS_DIR="$dir" SQUAD_TUIOS_BIN="$dir/fakebin/tuios" \
+    SQUAD_BACKEND_CONFIG_DIR="$dir/home/config" SQUAD_BACKEND_STATE_DIR="$dir/home/state" \
+    bash -c '. "$1/bin/sq-backend.sh"; fm_backend_source tuios; fm_backend_tuios_next_workspace owned' _ "$ROOT")
+  [ "$allocated" = 2 ] || fail "the shared workspace was not allocatable after the neighbour left (selected '$allocated')"
+  unset SQUAD_TEST_TUIOS_DIR
+  pass "sq-teardown: a TUIOS task whose window is gone finishes while a neighbour shares its workspace, and the freed workspace is allocatable"
+}
+
 test_invalid_endpoint_records_refuse_before_mutation
 test_supported_backend_endpoint_records_validate
 test_tmux_empty_target_refuses_without_invocation
 test_recorded_process_identity_cleanup_is_exact
+test_tuios_shared_workspace_teardown_completes
 test_isolated_tmux_invalid_and_valid_cleanup

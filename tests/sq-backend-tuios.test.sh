@@ -1016,8 +1016,8 @@ rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS
 rm -f "$TMP_ROOT/state/next-ws.meta"
 # A neighbouring window that shares the task's workspace number must not block
-# teardown once the task window is gone. The neighbour is never closed, and the
-# shared workspace keeps its name, since it is no longer the task's alone.
+# teardown once the task window is gone. Only this task's own name is cleared;
+# the neighbour is never closed or renamed.
 cat > "$TMP_ROOT/state/shared-ws.meta" <<'META'
 window=owned:w-opaque_7
 endpoint_task_id=shared-ws
@@ -1033,9 +1033,15 @@ rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
 SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE=2
 export SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE
 fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/shared-ws.meta" || fail 'a neighbour window sharing the task workspace must not block teardown'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name --session owned 2' 'a shared-workspace teardown must clear the task own workspace name'
 assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'CloseWindow' 'a shared-workspace teardown must never close a window'
-assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a shared workspace must keep its name untouched'
-[ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = sq-shared-ws ] || fail 'a shared workspace must keep its name after teardown'
+[ -z "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" ] || fail 'a shared workspace must not keep the finished task own name'
+printf 'another-task\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+: > "$SQUAD_TUIOS_LOG"
+fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/shared-ws.meta" || fail 'a shared workspace named for another task must not block teardown'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a shared workspace named for another task must keep its name untouched'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'CloseWindow' 'a shared workspace named for another task must never close a window'
+[ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = another-task ] || fail 'a shared workspace named for another task must keep its name after teardown'
 # An unreadable workspace inventory still refuses, even with a neighbour present.
 SQUAD_TUIOS_FAKE_WORKSPACES_FAIL=1
 export SQUAD_TUIOS_FAKE_WORKSPACES_FAIL
