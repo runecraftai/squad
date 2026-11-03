@@ -28,14 +28,15 @@ CHECKLIST=
 if [ -d "$ARTIFACTS" ]; then
   for candidate in "$ARTIFACTS"/*.md; do
     [ -f "$candidate" ] || continue
-    # Only a heading that names the deliverable is selectable: a checklist heading, or a
-    # versioned evidence heading. A bare @<digit> version token never selects an artifact,
-    # so a plan or profile record cannot be scored as the completion checklist.
+    # Only an artifact's title heading is selectable: a checklist title, or a title that pairs
+    # evidence with a version token. Subheadings never count and a bare @<digit> version token
+    # never selects an artifact, so a plan or profile record cannot be scored as the checklist.
     awk '
-      /^#/ {
+      /^#[^#]/ {
         line = tolower($0)
         if (index(line, "checklist") > 0) found = 1
         else if (index(line, "evidence") > 0 && match(line, /@[0-9]/)) found = 1
+        exit(found ? 0 : 1)
       }
       END { exit(found ? 0 : 1) }
     ' "$candidate" || continue

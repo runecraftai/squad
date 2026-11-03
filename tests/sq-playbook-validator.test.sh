@@ -268,20 +268,30 @@ assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbo
 write_multi_phase_v2 'Split the delivery per boundary; reversal: a down migration restores the data; Git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 expect_code 0 "$rc" "multi-phase-plan@2 should accept the contract wording regardless of capitalisation"
-# A plan artifact sorts first here, so a version token alone must not select it as the checklist.
+# A plan artifact sorts first here and carries a checklist-looking subheading, so neither a
+# version token nor a subheading may select it as the checklist.
 id=multi-phase-plan-v2-artifact-discovery
 mkdir -p "$HOME/data/$id/artifacts"
 printf 'playbook=multi-phase-plan\nplaybook_version=2\n' > "$HOME/state/$id.meta"
 plan_artifact="$HOME/data/$id/artifacts/a-plan.md"
 evidence_artifact="$HOME/data/$id/artifacts/b-evidence.md"
-printf '%s\n%s\n' '# multi-phase-plan@2 plan' '## Criterion 1' > "$plan_artifact"
+cat > "$plan_artifact" <<'EOF'
+# multi-phase-plan@2 plan
+
+## Implementation checklist
+Criterion 1: split-or-keep decision recorded
+Proof: split per boundary; reversal: down migration restores the data; command: bin/sq-playbook-validate.sh
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'a plan artifact with a checklist subheading must not satisfy the gate on its own'
+assert_contains "$out" 'missing: checklist artifact' 'the plan artifact title and subheading must not be selected as the checklist'
 v2_checks="$evidence_artifact"
 write_multi_phase_v2 'split-or-keep decided for each delivery boundary with its reason; data change reversal path: data/<id>/plan.md states the recovery and that git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 expect_code 0 "$rc" 'the versioned evidence artifact must satisfy the multi-phase-plan@2 gate beside a plan artifact'
 assert_contains "$out" "playbook evidence valid: multi-phase-plan@2 ($evidence_artifact)" 'the gate must select the evidence artifact, not the plan artifact'
 assert_not_contains "$out" "$plan_artifact" 'a plan heading must never be selected as the completion artifact'
-pass 'sq-playbook validator: a @2 plan heading is not the completion artifact'
+pass 'sq-playbook validator: a @2 plan title and its checklist subheading are not the completion artifact'
 react_proofs=(
   'architecture layers and boundaries path: src/app/routes.tsx command: lint passed'
   'components named functions and kebab-case path: src/pages/sign-in/ui.tsx'
