@@ -4,9 +4,9 @@
 # The dead state/x-sentry.check.sh that Relay (X mode) setup wrote is retired
 # first, before any short-circuit, so it never reads as an unauthenticated
 # check.
-# Pending validated merged-poll retirements finish first. Canonical polls are
-# then rebuilt from validated metadata, remaining provenance-bound polls and
-# registered custom checks remain armed, and every other task poll is
+# Pending validated merged-poll retirements are reconciled next. Canonical
+# polls are then rebuilt from validated metadata, remaining provenance-bound
+# polls and registered custom checks remain armed, and every other task poll is
 # quarantined for private review.
 # Usage: sq-pr-check-migrate.sh [--checks-safe]
 set -u
