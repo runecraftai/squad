@@ -28,8 +28,17 @@ CHECKLIST=
 if [ -d "$ARTIFACTS" ]; then
   for candidate in "$ARTIFACTS"/*.md; do
     [ -f "$candidate" ] || continue
-    # The version token is tooling, not a published contract: any @<digit> version matches.
-    grep -q '^#.*[Cc]hecklist\|^#.*@[0-9]' "$candidate" || continue
+    # Only a heading that names the deliverable is selectable: a checklist heading, or a
+    # versioned evidence heading. A bare @<digit> version token never selects an artifact,
+    # so a plan or profile record cannot be scored as the completion checklist.
+    awk '
+      /^#/ {
+        line = tolower($0)
+        if (index(line, "checklist") > 0) found = 1
+        else if (index(line, "evidence") > 0 && match(line, /@[0-9]/)) found = 1
+      }
+      END { exit(found ? 0 : 1) }
+    ' "$candidate" || continue
     CHECKLIST=$candidate
     break
   done
