@@ -3105,7 +3105,6 @@ if [ "$HARNESS" = claude ]; then
 fi
 if [ "$KIND" = xo ]; then
   sq_home=$(shell_quote "$PROJ_ABS")
-  sq_primary_home=$(shell_quote "$SQUAD_BASE")
   case "$HARNESS" in
     claude) supervision_model=autoarm ;;
     *) supervision_model=persistent ;;
@@ -3117,7 +3116,7 @@ if [ "$KIND" = xo ]; then
   # not enable them across the launch boundary (bin/sq-trace-context-lib.sh header).
   # Reuse the single frozen decision from the carrier resolution above so the
   # injected carrier and this on/off snapshot are guaranteed to agree.
-  LAUNCH="SQUAD_ROOT_OVERRIDE= SQUAD_STATE_OVERRIDE= SQUAD_DATA_OVERRIDE= SQUAD_PROJECTS_OVERRIDE= SQUAD_CONFIG_OVERRIDE= SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME=$sq_primary_home SQUAD_BASE=$sq_home SQUAD_HOME=$sq_home SQUAD_TRACE_CONTEXT=$SPAWN_TRACE_EFFECTIVE SQUAD_SUPERVISION_MODEL=$supervision_model $LAUNCH"
+  LAUNCH="SQUAD_ROOT_OVERRIDE= SQUAD_STATE_OVERRIDE= SQUAD_DATA_OVERRIDE= SQUAD_PROJECTS_OVERRIDE= SQUAD_CONFIG_OVERRIDE= SQUAD_BASE=$sq_home SQUAD_HOME=$sq_home SQUAD_TRACE_CONTEXT=$SPAWN_TRACE_EFFECTIVE SQUAD_SUPERVISION_MODEL=$supervision_model $LAUNCH"
 fi
 # Pin git's commit-message and sequence editors in the operator's pane only.
 # `true` accepts the existing message without blocking for input; sequence

@@ -58,8 +58,7 @@ test_extra_hermetic_candidates_present() {
     tests/sq-send-strict.test.sh \
     tests/sq-spawn-batch.test.sh \
     tests/sq-pr-merge.test.sh \
-    tests/sq-review-diff.test.sh \
-    tests/sq-x-mode.test.sh; do
+    tests/sq-review-diff.test.sh; do
     printf '%s\n' "$listed" | grep -Fxq "$want" \
       || fail "extra hermetic candidate missing: $want"
   done

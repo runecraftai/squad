@@ -310,15 +310,12 @@ export async function addCommand(
           false,
           showFullTextHint(existing),
         ),
-        suggestions:
-          existing.kind === "public-followup"
-            ? []
-            : getSuggestions({
-                action: "add",
-                id,
-                state: existing.state,
-                globals: context?.suggestionGlobals,
-              }),
+        suggestions: getSuggestions({
+          action: "add",
+          id,
+          state: existing.state,
+          globals: context?.suggestionGlobals,
+        }),
       });
     }
   }
@@ -473,15 +470,12 @@ export async function showCommand(
   const isBlocked = blockedIds(all).has(id);
 
   const blocks = [renderTaskDetail(task, all, full)];
-  const help =
-    task.kind === "public-followup"
-      ? []
-      : getSuggestions({
-          action: "show",
-          id,
-          blocked: isBlocked,
-          globals: context?.suggestionGlobals,
-        });
+  const help = getSuggestions({
+    action: "show",
+    id,
+    blocked: isBlocked,
+    globals: context?.suggestionGlobals,
+  });
   if (help.length > 0) blocks.push(renderHelp(help));
   return renderOutput(blocks);
 }

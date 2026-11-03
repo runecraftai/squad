@@ -165,10 +165,6 @@
    "audience": "agent-runtime"
   },
   {
-   "path": ".agents/skills/relay-respond/SKILL.md",
-   "audience": "agent-runtime"
-  },
-  {
    "path": ".agents/skills/reporting/SKILL.md",
    "audience": "agent-runtime"
   },
@@ -741,10 +737,6 @@
    "audience": "maintainer-verification"
   },
   {
-   "path": "docs/verification/public-followup.md",
-   "audience": "maintainer-verification"
-  },
-  {
    "path": "docs/verification/runtime-backends.md",
    "audience": "maintainer-verification"
   },
@@ -754,10 +746,6 @@
   },
   {
    "path": "docs/verification/supervision.md",
-   "audience": "maintainer-verification"
-  },
-  {
-   "path": "docs/verification/telegram-bridge.md",
    "audience": "maintainer-verification"
   },
   {

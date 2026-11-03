@@ -69,12 +69,6 @@ make_fake_root() {
   ln -s "$ROOT/bin/sq-pr-lib.sh" "$fake/bin/sq-pr-lib.sh"
   # sq-durable-custody.sh: teardown and sq-pr-lib.sh consult durable custody first.
   ln -s "$ROOT/bin/sq-durable-custody.sh" "$fake/bin/sq-durable-custody.sh"
-  # sq-public-followup-lib.sh (and the sq-x-lib.sh it sources): teardown sources
-  # it for the relay-activation gate on the promised-public-reply check. Neither
-  # does anything in this fixture, which has no .env, but both are real siblings
-  # teardown now requires.
-  ln -s "$ROOT/bin/sq-public-followup-lib.sh" "$fake/bin/sq-public-followup-lib.sh"
-  ln -s "$ROOT/bin/sq-x-lib.sh" "$fake/bin/sq-x-lib.sh"
   ln -s "$ROOT/bin/sq-xo-registry-lib.sh" "$fake/bin/sq-xo-registry-lib.sh"
   ln -s "$ROOT/bin/sq-xo-parent-lib.sh" "$fake/bin/sq-xo-parent-lib.sh"
   # sq-stand-to-lib.sh: teardown sources it for serialized XO lifecycle locks.
@@ -153,12 +147,6 @@ test_teardown_skips_gracefully_without_tasktmp() {
   ln -s "$ROOT/bin/sq-pr-lib.sh" "$fake/bin/sq-pr-lib.sh"
   # sq-durable-custody.sh: teardown and sq-pr-lib.sh consult durable custody first.
   ln -s "$ROOT/bin/sq-durable-custody.sh" "$fake/bin/sq-durable-custody.sh"
-  # sq-public-followup-lib.sh (and the sq-x-lib.sh it sources): teardown sources
-  # it for the relay-activation gate on the promised-public-reply check. Neither
-  # does anything in this fixture, which has no .env, but both are real siblings
-  # teardown now requires.
-  ln -s "$ROOT/bin/sq-public-followup-lib.sh" "$fake/bin/sq-public-followup-lib.sh"
-  ln -s "$ROOT/bin/sq-x-lib.sh" "$fake/bin/sq-x-lib.sh"
   ln -s "$ROOT/bin/sq-xo-registry-lib.sh" "$fake/bin/sq-xo-registry-lib.sh"
   ln -s "$ROOT/bin/sq-xo-parent-lib.sh" "$fake/bin/sq-xo-parent-lib.sh"
   ln -s "$ROOT/bin/sq-stand-to-lib.sh" "$fake/bin/sq-stand-to-lib.sh"

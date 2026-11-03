@@ -11,7 +11,6 @@
 
 import { activeBlockers, isHoldActive } from "./derive.js";
 import type { State, Task } from "./model.js";
-import { clonePublicFollowup } from "./public-followup.js";
 import { renderHelp, renderOutput } from "./toon.js";
 
 const STATE_LABELS: Record<State, string> = {
@@ -79,22 +78,19 @@ export function renderMutation(output: MutationOutput): string {
  * full task set is supplied.
  */
 export function taskToJson(task: Task, all?: Task[]): Record<string, unknown> {
-  const publicSummary = task.public_followup?.request.public_safe_summary;
   const json: Record<string, unknown> = {
     id: task.id,
-    title: publicSummary ?? task.title,
+    title: task.title,
     state: task.state,
     kind: task.kind ?? null,
-    repo: task.public_followup ? null : (task.repo ?? null),
+    repo: task.repo ?? null,
     priority: task.priority ?? null,
     created: task.created ?? null,
     closed: task.closed ?? null,
     deps: task.deps.map((d) => ({
       type: d.type,
       id: d.id,
-      ...(task.public_followup || d.reason === undefined
-        ? {}
-        : { reason: d.reason }),
+      ...(d.reason === undefined ? {} : { reason: d.reason }),
     })),
     hold: task.hold
       ? {
@@ -103,14 +99,9 @@ export function taskToJson(task: Task, all?: Task[]): Record<string, unknown> {
           until: task.hold.until ?? null,
         }
       : null,
-    links: task.public_followup
-      ? []
-      : task.links.map((l) => ({ kind: l.kind, url: l.url })),
-    body: task.public_followup ? null : (task.body ?? null),
+    links: task.links.map((l) => ({ kind: l.kind, url: l.url })),
+    body: task.body ?? null,
   };
-  if (task.public_followup) {
-    json.public_followup = clonePublicFollowup(task.public_followup);
-  }
   if (all) {
     const blockers = activeBlockers(task, all);
     json.blocked = blockers.length > 0;

@@ -7,35 +7,34 @@
 
 ## Insumos de verificação
 
-As durações atuais de candidatos vieram da prova concorrente de 2026-07-29 registrada em [sq-test-isolation-proof.md](sq-test-isolation-proof.md).
-A prova rodou 24 candidatos com quatro workers e nenhuma falha.
+As durações atuais de candidatos vieram da prova concorrente de 2026-11-03 registrada em [sq-test-isolation-proof.md](sq-test-isolation-proof.md).
+A prova rodou 23 candidatos com quatro workers e 1 falha.
 
 | duration_ms | script |
 |---:|---|
-| 52939 | `tests/sq-x-mode.test.sh` |
-| 48294 | `tests/sq-backend-herdr.test.sh` |
-| 46788 | `tests/sq-arm-pretool-check.test.sh` |
-| 34207 | `tests/sq-cd-pretool-check.test.sh` |
-| 30771 | `tests/sq-decision-hold-lifecycle.test.sh` |
-| 25365 | `tests/sq-crew-state.test.sh` |
-| 15674 | `tests/sq-test-run.test.sh` |
-| 15422 | `tests/sq-herdr-lab.test.sh` |
-| 9065 | `tests/sq-composer-ghost.test.sh` |
-| 8564 | `tests/sq-pr-merge.test.sh` |
-| 6251 | `tests/sq-grok-harness.test.sh` |
-| 5644 | `tests/sq-send-popup-settle.test.sh` |
-| 5237 | `tests/sq-lint.test.sh` |
-| 4816 | `tests/sq-tmux-submit-busy.test.sh` |
-| 2945 | `tests/sq-pi-primary-types.test.sh` |
-| 2911 | `tests/sq-send-settle.test.sh` |
-| 2875 | `tests/sq-review-diff.test.sh` |
-| 2747 | `tests/sq-send-strict.test.sh` |
-| 2224 | `tests/sq-brief.test.sh` |
-| 855 | `tests/sq-spawn-batch.test.sh` |
-| 703 | `tests/sq-supervision-instructions.test.sh` |
-| 581 | `tests/sq-ensure-agents-md.test.sh` |
-| 248 | `tests/sq-transition-lib.test.sh` |
-| 64 | `tests/sq-composer-lib.test.sh` |
+| 43689 | `tests/sq-arm-pretool-check.test.sh` |
+| 31331 | `tests/sq-decision-hold-lifecycle.test.sh` |
+| 18245 | `tests/sq-cd-pretool-check.test.sh` |
+| 18231 | `tests/sq-test-run.test.sh` |
+| 16854 | `tests/sq-crew-state.test.sh` |
+| 15733 | `tests/sq-brief.test.sh` |
+| 11633 | `tests/sq-grok-harness.test.sh` |
+| 6568 | `tests/sq-pr-merge.test.sh` |
+| 6404 | `tests/sq-herdr-lab.test.sh` |
+| 4709 | `tests/sq-send-settle.test.sh` |
+| 1706 | `tests/sq-composer-ghost.test.sh` |
+| 1450 | `tests/sq-lint.test.sh` |
+| 1229 | `tests/sq-tmux-submit-busy.test.sh` |
+| 1086 | `tests/sq-send-popup-settle.test.sh` |
+| 1064 | `tests/sq-review-diff.test.sh` |
+| 1048 | `tests/sq-send-strict.test.sh` |
+| 1036 | `tests/sq-spawn-batch.test.sh` |
+| 381 | `tests/sq-ensure-agents-md.test.sh` |
+| 224 | `tests/sq-backend-herdr.test.sh` |
+| 149 | `tests/sq-supervision-instructions.test.sh` |
+| 74 | `tests/sq-composer-lib.test.sh` |
+| 65 | `tests/sq-transition-lib.test.sh` |
+| 15 | `tests/sq-pi-primary-types.test.sh` |
 
 ## Lanes paralelas
 

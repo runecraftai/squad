@@ -6,8 +6,6 @@
  * a free-form `meta` bag rather than as columns.
  */
 
-import type { PublicFollowup } from "./public-followup.js";
-
 /** The three explicit states (= the three markdown sections). */
 export const STATES = ["queued", "in_flight", "done"] as const;
 export type State = (typeof STATES)[number];
@@ -83,8 +81,6 @@ export interface Task {
   updated?: string;
   /** Maps to `(merged ...)` / `(reported ...)` / `(done ...)` on render. */
   closed?: string;
-  /** Versioned durable public obligation data for kind=public-followup only. */
-  public_followup?: PublicFollowup;
   /** Home, harness, external-tracker id/url, and other exotica. */
   meta?: Record<string, unknown>;
 }
@@ -103,8 +99,6 @@ export interface TaskInput {
   priority?: number;
   created?: string | null;
   closed?: string;
-  /** Accepted only with kind=public-followup through the dedicated command path. */
-  public_followup?: PublicFollowup;
   meta?: Record<string, unknown>;
 }
 

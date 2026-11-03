@@ -319,11 +319,11 @@ test_inert_when_fleet_idle() {
   : > "$dir/state/.claude-autoarm-failure-alarmed"
   write_arm_fixture "$dir" actionable
   out=$(run_autoarm "$dir" 2>/dev/null); status=$?
-  expect_code 0 "$status" "hook must exit 0 in an idle home with no X-mode poll"
+  expect_code 0 "$status" "hook must exit 0 in an idle home with nothing in flight"
   [ ! -e "$dir/state/arm-ran" ] || fail "hook armed an idle home"
   assert_present "$dir/state/.claude-autoarm-failure-notified" "idle state without positive recovery reset the failure notice"
   assert_present "$dir/state/.claude-autoarm-failure-alarmed" "idle state without positive recovery reset the attended alarm"
-  pass "auto-arm: inert with nothing in flight and no X-mode need"
+  pass "auto-arm: inert with nothing in flight"
 }
 
 # --- the armed cycle ----------------------------------------------------------
@@ -498,17 +498,6 @@ test_positive_recovery_budget_contention_preserves_episode() {
   pass "auto-arm: budget contention preserves the episode and forces a reset retry"
 }
 
-test_arms_for_x_mode_poll_need_without_inflight() {
-  local dir out status
-  dir=$(make_primary_dir "$TMP_ROOT/x-need")
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/state/x-sentry.check.sh"
-  write_arm_fixture "$dir" actionable
-  out=$(run_autoarm "$dir" 2>/dev/null); status=$?
-  expect_code 2 "$status" "an X-mode relay poll need must keep the auto-arm active with zero tasks in flight"
-  [ -e "$dir/state/arm-ran" ] || fail "hook did not arm for the X-mode poll need"
-  pass "auto-arm: X-mode poll need arms the cycle even with no tasks in flight"
-}
-
 test_single_flight_admits_exactly_one_owner() {
   local dir rc1 rc2 count
   dir=$(make_primary_dir "$TMP_ROOT/single-flight")
@@ -591,7 +580,6 @@ test_unverified_clean_close_exhausts_retries
 test_post_alarm_actionable_close_is_suppressed
 test_benign_cycle_end_with_live_sentry_is_silent
 test_positive_recovery_budget_contention_preserves_episode
-test_arms_for_x_mode_poll_need_without_inflight
 test_single_flight_admits_exactly_one_owner
 test_need_vanished_mid_cycle_closes_quietly
 test_afk_mid_cycle_suppresses_rewake

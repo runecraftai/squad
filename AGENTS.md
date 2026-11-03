@@ -94,7 +94,7 @@ When that section reports its checks still in progress it names exactly what is 
    A read-only session runs no network checks at all and says so.
 7. **Context digest and next step** - last of the bulk sections, the full contents of `data/projects.md`, `data/XOs.md`, `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md`, each clearly delimited, followed by the closing reminder.
    A file that does not exist prints an explicit `ABSENT` marker, never confused with an empty-but-present file: absence is meaningful (`commander.md` absent means use the Squad repo's built-in defaults, `projects.md` absent means rebuild it from the clones under `projects/`, etc.).
-   The closing reminder points back to the emitted supervision block and preserves only the lock, afk, Relay, and read-once reminders.
+   The closing reminder points back to the emitted supervision block and preserves only the lock, afk, and read-once reminders.
 
 Bootstrap detects first, asks for consent, and installs only after the commander approves in the current session.
 Do not dispatch until the required tools are present and GitHub authentication is good.
@@ -322,7 +322,6 @@ The promoted worker must inventory scratch state, return to a clean default-bran
 Unit supervision is an always-loaded operational contract; `docs/architecture.md`, `docs/turnend-guard.md`, the emitted session-start block, and script help own mechanisms and harness-specific recipes.
 
 Whenever work is under way, keep exactly one live supervision cycle using the emitted protocol for this primary harness.
-Relay may require that same live cycle with no unit work.
 Do not substitute another harness's wait shape, use shell `&` or a `sleep`-based busy-poll loop, or create a second cycle when a healthy one already exists.
 For every actionable wake, follow the ordinary-wake continuation in the emitted protocol; use its repair action only when the live cycle is missing or failed.
 No turn ends blind while work is under way, including turns described as holding or waiting.
@@ -339,11 +338,10 @@ Handle actionable wakes as follows:
 
 1. For `signal:`, read the listed event lines first, then reconcile current state only where action depends on it.
 2. For `stale:`, inspect the recorded endpoint and load `stuck-operator-recovery` for a stopped, looping, confused, or unresponsive worker; an objective stale reason names the unfinished work, stuck signature, or quiet step to inspect, and a deep-inspection reason also requires current-state and validation-log inspection.
-3. For `check:`, act on the named poll result, including merges, Relay events, and process-to-event source results.
+3. For `check:`, act on the named poll result, including merges and process-to-event source results.
 4. For `heartbeat:`, review the whole unit from the structured unit view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged unit as progress.
 
 When any wake reports a merged PR for a project cloned in this base, refresh that clone through the guarded unit-sync path.
-When Relay-linked work reaches a milestone or terminal state, load `relay-respond`; before terminal teardown, use its promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up so the link clears even if earlier follow-ups were spent.
 
 An XO's idle endpoint is healthy, and parent supervision relies on its routed status rather than treating a quiet pane as stale.
 Waiting on a healthy supervision cycle is silent; empty polls, elapsed time, and no-change updates are not commander-facing progress.
@@ -466,7 +464,7 @@ If they appear inside a longer quoted string or code block, they are not aliases
 `data/backlog.md` is the durable queue.
 It tracks work items only, never agents; persistent XOs never appear as backlog items.
 Work routed to an XO is recorded in that XO base's own backlog, not the main backlog.
-When a main-side thread such as a pending commander decision or relay reminder is worth durable tracking, file it as its own work item; use `sq-tasks hold <id> --reason "<reason>" --kind commander` for a commander-gated thread.
+When a main-side thread such as a pending commander decision is worth durable tracking, file it as its own work item; use `sq-tasks hold <id> --reason "<reason>" --kind commander` for a commander-gated thread.
 A queued item with `kind: candidate` is an unvetted proposal from `bin/sq-factory-collect.sh`, held under `kind: commander` so it stays out of `sq-tasks ready` until a human clears it (see [`docs/factory-collect.md`](docs/factory-collect.md)); treat it like a recon finding, evidence toward a decision, never standing authorization to dispatch it.
 Unresolved decisions discovered by investigations or visual reviews follow `decision-hold-lifecycle`, which owns their mandatory backlog lifecycle.
 Update the backlog on every dispatch, completion, and decision for a work item.
@@ -508,7 +506,7 @@ It performs guarded fast-forward updates of Squad and registered XO bases, refre
 
 These skills are not commander-invocable; load them only at their precise triggers.
 
-- `bootstrap-diagnostics` - load whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line (`MISSING:`, `MISSING_MANUAL:`, `BACKEND_INVALID:`, `NEEDS_GH_AUTH`, `TANGLE:`, `STARTUP_MEMORY_BUDGET:`, `CREW_DISPATCH: invalid`, `CREW_DISPATCH: model existence:`, `UNIT_SYNC:`, `NETWORK_CHECKS:`, `PR_CHECK_MIGRATION:`, `XO_SYNC:`, `XO_LIVENESS:`, `XO_HANDOFF:`, `NUDGE_XOS:`, or `SQX:`); silence and `BOOTSTRAP_INFO:` need no load.
+- `bootstrap-diagnostics` - load whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line (`MISSING:`, `MISSING_MANUAL:`, `BACKEND_INVALID:`, `NEEDS_GH_AUTH`, `TANGLE:`, `STARTUP_MEMORY_BUDGET:`, `CREW_DISPATCH: invalid`, `CREW_DISPATCH: model existence:`, `UNIT_SYNC:`, `NETWORK_CHECKS:`, `PR_CHECK_MIGRATION:`, `XO_SYNC:`, `XO_LIVENESS:`, `XO_HANDOFF:`, or `NUDGE_XOS:`); silence and `BOOTSTRAP_INFO:` need no load.
 - `diagnostic-reasoning` - load before scoping a reported bug and before acting on a diagnostic report.
 - `ask-user-authority` - load before deciding any ask-user finding, regardless of the project's `yolo` posture.
 - `quota-array-dispatch` - load before choosing among a matched crew-dispatch profile array from current sq-quota output.
@@ -521,7 +519,6 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `decision-hold-lifecycle` - load before treating an investigation or visual review as complete, before ending a visual review that exposed a decision, and when recording or routing the commander's answer.
 - `process-event-sources` - load before arming a long-polling source, and on any `procevent <adapter> <source-id> <sequence>` check wake.
   Never run a registered source's blocking command yourself in a conversational turn.
-- `relay-respond` - load on an `x-mention <request_id>` `check:` wake to handle the mention, on an `x-mode-error ...` `check:` wake to report the Relay configuration blocker, on a `public-followup ...` `check:` wake or a startup-surfaced public commitment, and on any milestone or terminal wake for a Relay-linked task before posting its completion follow-up; relevant only when Relay is on.
 - `squad-codexapp` - load before coordinating a visible Codex Desktop thread, evaluating a Codex App backend request, or reconciling Codex Desktop host-tool smoke evidence for Squad work.
 - `session-handoff` - load on a `handoff-request` operational wake or a session-start HANDOFF REQUESTS section, and before writing a handoff request at a milestone close (a merged milestone PR or a drained flight queue); the commander owns the /new decision and it must never auto-start.
 - `squad-coding-guidelines` - load before changing Squad's shared, tracked material, as defined by section 1's list, whether editing directly or briefing an operator for a Squad-repo task.
@@ -532,21 +529,6 @@ These skills are not commander-invocable; load them only at their precise trigge
 - `sq-learn` - load when saving a lesson, capturing learning, recording a gotcha, logging a lesson, or invoking `sq-learn`.
 - `skill-verification` - load before promoting an external skill or allowing an imported skill into drill, CI, or production dispatch.
 - `skill-forge` - load when creating, validating, or optimizing a new agent skill; vendored from `runecraftai/skills` (`packages/skills/skills/skill-forge/`), refresh by copying that upstream directory.
-
-## 14. Relay
-
-Relay is the public-mention integration older docs and some emitted lines still call "X mode"; its identifiers keep the `SQX_`, `x-`, and `sq-x-` spellings.
-Relay ships inert and causes no behavior change until the base opts in by placing `SQX_PAIRING_TOKEN` in its gitignored `.env`.
-That token is consent for public replies and normal reversible lifecycle actions from eligible mentions, not authority for destructive, irreversible, or security-sensitive action; those still require trusted-channel confirmation.
-`docs/configuration.md` owns activation, generated state, cadence, wire protocol, and opt-out mechanics.
-
-A Relay-only base still requires the live supervision cycle so mentions can wake it without unit work.
-On an `x-mention <request_id>` or `x-mode-error ...` check wake, load `relay-respond`, which owns classification, public-safety policy, reply or dismissal, task linking, and follow-ups.
-For every Relay-linked terminal outcome, load that owner and use the promised-final reconciliation when a typed public commitment exists, otherwise post the final completion follow-up before teardown.
-
-A promised final public reply is durable state, never conversation memory.
-Load `relay-respond` before promising one, on a `public-followup ...` check wake, and whenever the session-start digest lists a public commitment awaiting delivery.
-Only the base holding the relay consent and thread binding ever posts it, so never ask an XO or operator to find the thread or send the reply, and never recover a terminal result by reading a `done:` sentence.
 
 ## Commander instruction precedence
 

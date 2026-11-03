@@ -135,7 +135,7 @@ export function cleanEnv(
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of STRIPPED_ENV) delete env[name];
   for (const name of Object.keys(env)) {
-    if (name.startsWith("PI_") || name.startsWith("SQX_")) delete env[name];
+    if (name.startsWith("PI_")) delete env[name];
   }
   return { ...env, ...extra };
 }

@@ -412,7 +412,7 @@ test_portable_shard_union_and_coverage_guard() {
     || fail "lanes must not duplicate scripts"
   # LPT order: first script of shard 1 is the longest proven script.
   first=$(printf '%s\n' "$s1" | head -n 1)
-  [ "$first" = "tests/sq-x-mode.test.sh" ] \
+  [ "$first" = "tests/sq-cd-pretool-check.test.sh" ] \
     || fail "shard 1 must start with the longest proven script, got $first"
   pass "portable shard union, disjointness, and coverage guard hold"
 }

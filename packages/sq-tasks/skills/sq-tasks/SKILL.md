@@ -37,8 +37,8 @@ Use sq-tasks whenever a task touches the backlog: filing or dispatching work, mo
 ## Commands
 
 ```
-commands[19]:
-  (none)=dashboard, add, list, show, start, done, reopen, update, rm, block, unblock, hold, unhold, ready, public-followup, mv, prune, render, setup
+commands[18]:
+  (none)=dashboard, add, list, show, start, done, reopen, update, rm, block, unblock, hold, unhold, ready, mv, prune, render, setup
 ```
 
 Run `npx -y @runecraft/sq-tasks --help` for global flags, or `npx -y @runecraft/sq-tasks <command> --help` for per-command usage.

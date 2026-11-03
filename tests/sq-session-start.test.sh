@@ -11,7 +11,7 @@
 #   - output section ordering: the safety preamble leads unchanged, live unit
 #     state precedes the curated memory a truncated tail may take, and the
 #     read-once contract precedes both
-#   - context-aware next-step guidance for read-only, AFK, X mode, and normal
+#   - context-aware next-step guidance for read-only, AFK, and normal
 #     sentry ownership
 #   - status-tail bounding, default and SQUAD_SESSION_START_STATUS_TAIL override
 #   - the per-line status-tail cap and its truncation marker
@@ -160,7 +160,6 @@ case "${1:-}" in
       printf '  ready-%s,queued,ship,Squad,Ready item %s\n' "$i" "$i"
       i=$((i + 1))
     done
-    printf 'ready_public_followups: 0 delivery-ready obligations\n'
     printf 'help[1]:\n'
     printf '%s\n' '  - Run `sq-tasks start <id>` to dispatch one of these'
     exit 0
@@ -1602,8 +1601,8 @@ EOF
   assert_contains "$out" "worktree=$home/projects/Squad" "in-flight recovery worktree identity disappeared from startup digest"
   assert_contains "$out" "Full task bodies remain available on demand: sq-tasks show <id> --full" \
     "compact digest omitted the full-body lookup pointer"
-  assert_contains "$out" "ready_public_followups: 0 delivery-ready obligations" \
-    "the composed listing dropped a real signal from the dispatchable set"
+  assert_contains "$out" "count: 3" \
+    "the composed listing dropped sq-tasks' own count line from the dispatchable set"
   # One section pointer, not one repeated help block per composed group.
   assert_not_contains "$out" "help[1]:" \
     "the composed listing repeated sq-tasks' per-group help block"
@@ -2035,27 +2034,6 @@ EOF
   pass "an empty unit reports (none) for in-flight tasks and an absent AFK flag"
 }
 
-test_next_step_sources_x_mode_cadence() {
-  local rec root home fakebin out
-  rec=$(new_world next-step-x)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  make_fake_toolchain "$fakebin"
-  make_fake_ps_claude "$fakebin"
-  fm_fake_exit0 "$fakebin" curl jq
-  printf 'SQX_PAIRING_TOKEN=tok-next-step\n' > "$home/.env"
-
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-
-  assert_contains "$out" "SQX: X mode on" "bootstrap did not activate X mode"
-  assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude" "supervision block missing"
-  assert_contains "$out" "- X mode: active" "supervision block did not mention X cadence"
-  assert_contains "$out" "Follow the supervision operating instructions block above" "next step did not point back to the emitted supervision block"
-
-  pass "session start emits X-mode cadence guidance in the harness supervision block"
-}
-
 test_next_step_afk_delegates_to_daemon() {
   local rec root home fakebin out
   rec=$(new_world next-step-afk)
@@ -2283,7 +2261,6 @@ test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
-test_next_step_sources_x_mode_cadence
 test_next_step_afk_delegates_to_daemon
 test_supervision_block_exactly_one_and_pi_diagnostic
 test_pi_signed_primary_uses_pi_extensions_without_identity_normalization

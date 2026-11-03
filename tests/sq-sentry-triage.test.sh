@@ -1846,7 +1846,7 @@ test_paused_churning_pane_throttle_refreshes_marker() {
   h="abc123"
   # shell_libs sources every library surface_nonterminal_stale needs, including
   # the sentry source guard that loads the function without entering the loop.
-  shell_libs=". $ROOT/bin/sq-push-transition-lib.sh; . $ROOT/bin/sq-pr-lib.sh; . $ROOT/bin/sq-x-lib.sh; . $ROOT/bin/sq-check-lib.sh; . $ROOT/bin/sq-pending-reply-lib.sh; . $ROOT/bin/sq-busy-lib.sh; . $ROOT/bin/sq-stall-detect.sh; . $ROOT/bin/sq-sentry.sh 2>/dev/null"
+  shell_libs=". $ROOT/bin/sq-push-transition-lib.sh; . $ROOT/bin/sq-pr-lib.sh; . $ROOT/bin/sq-check-lib.sh; . $ROOT/bin/sq-pending-reply-lib.sh; . $ROOT/bin/sq-busy-lib.sh; . $ROOT/bin/sq-stall-detect.sh; . $ROOT/bin/sq-sentry.sh 2>/dev/null"
   sub() { bash -c "export SQUAD_STATE_OVERRIDE='$state'; export SQUAD_PAUSE_RESURFACE_SECS=$1; $shell_libs; surface_nonterminal_stale '$window' '$h'" 2>/dev/null; }
 
   # Phase A: fresh marker - absorb path must run and refresh the marker.

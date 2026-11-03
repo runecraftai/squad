@@ -185,7 +185,6 @@ DATA="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
 CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 XO_REG="$DATA/XOs.md"
 SUB_HOME_MARKER=".sq-xo-home"
-SUB_HOME_PARENT_MARKER=".sq-xo-parent"
 # shellcheck source=bin/sq-tasks-lib.sh
 . "$SCRIPT_DIR/sq-tasks-lib.sh"
 # shellcheck source=bin/sq-backend.sh
@@ -196,8 +195,6 @@ SUB_HOME_PARENT_MARKER=".sq-xo-parent"
 . "$SCRIPT_DIR/sq-gate-refuse-lib.sh"
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
-# shellcheck source=bin/sq-public-followup-lib.sh
-. "$SCRIPT_DIR/sq-public-followup-lib.sh"
 # shellcheck source=bin/sq-xo-registry-lib.sh
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
 # shellcheck source=bin/sq-xo-parent-lib.sh
@@ -510,145 +507,6 @@ KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=strike
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=drill
-PUBLIC_FOLLOWUP_HOME=$SQUAD_BASE
-PUBLIC_FOLLOWUP_STATE=$STATE
-PUBLIC_FOLLOWUP_WORK_HOME=main
-PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
-PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=0
-PUBLIC_FOLLOWUP_RELAY_ACTIVE=0
-public_followup_canonical_home() {
-  local home=$1
-  case "$home" in /*) ;; *) return 1 ;; esac
-  CDPATH='' cd -- "$home" 2>/dev/null && pwd -P
-}
-public_followup_resolve_primary_home() {
-  local parent=$1 child=$2 id=$3 parent_meta registry meta_home
-  fm_pf_home_id_valid "XO:$id" || return 1
-  parent=$(public_followup_canonical_home "$parent") || return 1
-  child=$(public_followup_canonical_home "$child") || return 1
-  [ "$parent" != "$child" ] || return 1
-  parent_meta="$parent/state/$id.meta"
-  [ -f "$parent_meta" ] && [ ! -L "$parent_meta" ] || return 1
-  [ "$(fm_meta_get "$parent_meta" kind)" = xo ] || return 1
-  meta_home=$(fm_meta_get "$parent_meta" home)
-  meta_home=$(CDPATH='' cd -- "$meta_home" 2>/dev/null && pwd -P) || return 1
-  [ "$meta_home" = "$child" ] || return 1
-  registry="$parent/data/XOs.md"
-  XO_registry_validate_bindings "$registry" XO_registry_path_key "$id" "$child" || return 1
-  printf '%s\n' "$parent"
-}
-if [ -f "$SQUAD_BASE/$SUB_HOME_MARKER" ]; then
-  SECOND_MATE_ID=$(sed -n '1p' "$SQUAD_BASE/$SUB_HOME_MARKER")
-  # The durable parent record (written once at seeding, next to the identity
-  # marker) names this base's route to its parent: "local" when they share a
-  # filesystem, "remote" when the parent lives on another machine. Absent for
-  # a base seeded before this record existed, which preserves today's exact
-  # env-var-only behavior for that legacy base rather than guessing its route.
-  PARENT_ROUTE_FILE="$SQUAD_BASE/$SUB_HOME_PARENT_MARKER"
-  PARENT_ROUTE_RECORD=absent
-  PARENT_ROUTE=
-  PARENT_ROUTE_HOME=
-  if [ -e "$PARENT_ROUTE_FILE" ] || [ -L "$PARENT_ROUTE_FILE" ]; then
-    PARENT_ROUTE_RECORD=invalid
-    if fm_XO_parent_record_parse "$PARENT_ROUTE_FILE"; then
-      PARENT_ROUTE=$SQUAD_XO_PARENT_ROUTE
-      PARENT_ROUTE_HOME=$SQUAD_XO_PARENT_HOME
-      PARENT_ROUTE_RECORD=valid
-    fi
-  fi
-  if [ "$PARENT_ROUTE_RECORD" = invalid ]; then
-    PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=1
-  elif [ "$PARENT_ROUTE" = remote ]; then
-    # The entire promised-public-reply subsystem is same-filesystem by
-    # construction (bin/sq-public-followup-emit.sh header): a parent recorded
-    # on another machine can never hold a delegated promise for this child, so
-    # the delegated-parent path is out of scope and never refuses cleanup on
-    # its own. A token committed directly to THIS base's own .env is still a
-    # real, same-filesystem signal, so it is still checked - but read only
-    # from the file, never from the process environment, so an unrelated
-    # export in the remote host's own login shell cannot trigger it the way
-    # fm_pf_relay_active's environment-wins rule would.
-    if [ -f "$SQUAD_BASE/.env" ]; then
-      HOME_ENV_TOKEN=$(fmx_env_get SQX_PAIRING_TOKEN "$SQUAD_BASE/.env")
-      [ -z "$HOME_ENV_TOKEN" ] || PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
-    fi
-    if [ "$PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE" = 1 ]; then
-      PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=1
-    else
-      PUBLIC_FOLLOWUP_HOME=
-      PUBLIC_FOLLOWUP_STATE=
-    fi
-  elif [ "$PARENT_ROUTE" = local ]; then
-    PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=1
-    PRIMARY_HOME_CANDIDATE=${SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME:-$PARENT_ROUTE_HOME}
-    PARENT_BINDINGS_MATCH=1
-    if [ -n "${SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME:-}" ]; then
-      LIVE_PARENT_HOME=$(public_followup_canonical_home \
-        "$SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME") || PARENT_BINDINGS_MATCH=0
-      DURABLE_PARENT_HOME=$(public_followup_canonical_home \
-        "$PARENT_ROUTE_HOME") || PARENT_BINDINGS_MATCH=0
-      if [ "$PARENT_BINDINGS_MATCH" = 1 ] \
-        && [ "$LIVE_PARENT_HOME" != "$DURABLE_PARENT_HOME" ]; then
-        PARENT_BINDINGS_MATCH=0
-      fi
-    fi
-    if [ "$PARENT_BINDINGS_MATCH" = 1 ] \
-      && fm_pf_home_id_valid "XO:$SECOND_MATE_ID"; then
-      PUBLIC_FOLLOWUP_WORK_HOME="XO:$SECOND_MATE_ID"
-      if PUBLIC_FOLLOWUP_HOME=$(public_followup_resolve_primary_home \
-          "$PRIMARY_HOME_CANDIDATE" "$SQUAD_BASE" "$SECOND_MATE_ID"); then
-        PUBLIC_FOLLOWUP_STATE="$PUBLIC_FOLLOWUP_HOME/state"
-        PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
-        if [ "$FORCE" != "--force" ] \
-          && fm_pf_relay_active "$PUBLIC_FOLLOWUP_HOME"; then
-          PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
-        fi
-      else
-        PUBLIC_FOLLOWUP_HOME=
-        PUBLIC_FOLLOWUP_STATE=
-      fi
-    fi
-  else
-    # A base seeded before the durable record existed retains the legacy
-    # launch-time binding behavior unchanged.
-    PRIMARY_HOME_CANDIDATE=${SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME:-}
-    if [ -n "$PRIMARY_HOME_CANDIDATE" ]; then
-      if fm_pf_relay_active "$PRIMARY_HOME_CANDIDATE"; then
-        PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
-      fi
-    elif fm_pf_relay_active "$SQUAD_BASE"; then
-      PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE=1
-    fi
-    if [ "$PUBLIC_FOLLOWUP_PARENT_RELAY_ACTIVE" = 1 ]; then
-      PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=1
-      if fm_pf_home_id_valid "XO:$SECOND_MATE_ID"; then
-        PUBLIC_FOLLOWUP_WORK_HOME="XO:$SECOND_MATE_ID"
-        if PUBLIC_FOLLOWUP_HOME=$(public_followup_resolve_primary_home \
-            "$PRIMARY_HOME_CANDIDATE" "$SQUAD_BASE" "$SECOND_MATE_ID"); then
-          PUBLIC_FOLLOWUP_STATE="$PUBLIC_FOLLOWUP_HOME/state"
-          PUBLIC_FOLLOWUP_PARENT_UNRESOLVED=0
-          if [ "$FORCE" != "--force" ] \
-            && fm_pf_relay_active "$PUBLIC_FOLLOWUP_HOME"; then
-            PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
-          fi
-        else
-          PUBLIC_FOLLOWUP_HOME=
-          PUBLIC_FOLLOWUP_STATE=
-        fi
-      fi
-    else
-      PUBLIC_FOLLOWUP_HOME=
-      PUBLIC_FOLLOWUP_STATE=
-    fi
-  fi
-elif [ "$KIND" = xo ]; then
-  PUBLIC_FOLLOWUP_WORK_HOME="XO:$ID"
-  if [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_BASE"; then
-    PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
-  fi
-elif [ "$FORCE" != "--force" ] && fm_pf_relay_active "$SQUAD_BASE"; then
-  PUBLIC_FOLLOWUP_RELAY_ACTIVE=1
-fi
 
 default_branch() {
   local ref branch
@@ -2299,28 +2157,6 @@ if [ "$FORCE" != "--force" ] && [ -f "$STATE/$ID.status" ] && [ ! -L "$STATE/$ID
     echo "REFUSED: task $ID still has open commander decisions in its status record." >&2
     printf '%s\n' "$_open_decisions" >&2
     echo "Transfer open decisions to commander holds (bin/sq-decision-hold.sh hold + complete), resolve them, or use --force after explicit discard approval." >&2
-    exit 1
-  fi
-fi
-
-# A public commitment is not kept until its final reply lands in the ORIGINAL
-# thread, and this cleanup removes the task records that make the promise
-# reconcilable. Refuse while this base still owes a public reply for exactly this
-# work. Both gates live in bin/sq-public-followup-lib.sh, so a base that never
-# opted into the mySquad relay runs one [ -f ] test and nothing else here.
-if [ "$FORCE" != "--force" ] && [ "$PUBLIC_FOLLOWUP_PARENT_UNRESOLVED" = 1 ]; then
-  echo "REFUSED: cannot resolve the primary home for marked XO $SECOND_MATE_ID; refusing cleanup without its durable parent binding." >&2
-  exit 1
-fi
-if [ "$FORCE" != "--force" ] \
-  && [ -n "$PUBLIC_FOLLOWUP_STATE" ] \
-  && [ "$PUBLIC_FOLLOWUP_RELAY_ACTIVE" = 1 ] \
-  && fm_pf_has_registrations "$PUBLIC_FOLLOWUP_STATE"; then
-  if ! PUBLIC_FOLLOWUP_BLOCKING=$(SQUAD_BASE="$PUBLIC_FOLLOWUP_HOME" SQUAD_STATE_OVERRIDE="$PUBLIC_FOLLOWUP_STATE" \
-      "$SCRIPT_DIR/sq-public-followup.sh" guard-work "$PUBLIC_FOLLOWUP_WORK_HOME" "$ID" 2>/dev/null); then
-    echo "REFUSED: task $ID still owes a public reply through the mySquad relay." >&2
-    printf '%s\n' "$PUBLIC_FOLLOWUP_BLOCKING" >&2
-    echo "Deliver it with bin/sq-public-followup.sh deliver <obligation-id>, waive it with sq-tasks public-followup waive, or use --force after explicit discard approval." >&2
     exit 1
   fi
 fi

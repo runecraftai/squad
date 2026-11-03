@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { refusalLog, REPO_ROOT, runBash, runScript, sandboxBase, scriptEnv, seedTask, stateDigest } from "./custody-helpers.js";
@@ -165,24 +165,6 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(refusalLog(base).slice(logged)).toHaveLength(1);
 	});
 
-	it("propagates a custody refusal from the Relay follow-up writer instead of reporting a cleared link", async () => {
-		const base = sandboxBase();
-		seedTask(base, "dm1-lab", { x_request: "req-1", x_request_ts: "1", x_followups: "0" });
-		const meta = join(base, "state", "dm1-lab.meta");
-		const before = readFileSync(meta, "utf8");
-		const logged = refusalLog(base).length;
-		for (const args of [
-			["dm1-lab", "--text-file", "/dev/null"],
-			["--clear", "dm1-lab"],
-		]) {
-			const result = await runScript("sq-x-followup.sh", args, scriptEnv(base));
-			expect({ args: args.join(" "), code: result.code }).toEqual({ args: args.join(" "), code: 3 });
-			expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
-			expect(readFileSync(meta, "utf8")).toBe(before);
-		}
-		expect(refusalLog(base).slice(logged)).toHaveLength(2);
-	});
-
 	it("refuses a pending outbox holding a durable mission before any transfer or generation bump", async () => {
 		const base = sandboxBase();
 		const handoffDir = join(base, "data", "handoff");
@@ -201,87 +183,6 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(readFileSync(outbox, "utf8")).toBe(body);
 		expect(existsSync(join(base, "state", ".remote-handoff-xo-a.generation"))).toBe(false);
 		expect(refusalLog(base).slice(logged)).toHaveLength(1);
-	});
-
-	it("refuses every Relay meta mutator of a durable mission before it rewrites the record", async () => {
-		const base = sandboxBase();
-		seedTask(base, "dm1-lab");
-		const meta = join(base, "state", "dm1-lab.meta");
-		const before = readFileSync(meta, "utf8");
-		const result = await sourced(
-			"sq-x-lib.sh",
-			[
-				'fmx_meta_link_set "$1" req-1 1700000000 0; printf "link_set=%s\\n" "$?"',
-				'fmx_meta_followups_set "$1" 3; printf "followups_set=%s\\n" "$?"',
-				'fmx_meta_link_clear "$1"; printf "link_clear=%s\\n" "$?"',
-			].join("\n"),
-			[meta],
-			scriptEnv(base),
-		);
-		expect(result.stdout.trim().split("\n")).toEqual(["link_set=3", "followups_set=3", "link_clear=3"]);
-		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
-		expect(readFileSync(meta, "utf8")).toBe(before);
-		expect(refusalLog(base).filter((line) => line.includes("\tdm1-lab\tmetadata\t"))).toHaveLength(1);
-	});
-
-	it("refuses every Relay meta mutator of a durable mission whose meta is deleted, with exit 3 and no state change", async () => {
-		const base = sandboxBase();
-		seedTask(base, "dm1-lab");
-		const meta = join(base, "state", "dm1-lab.meta");
-		rmSync(meta);
-		const before = stateDigest(base);
-		const result = await sourced(
-			"sq-x-lib.sh",
-			[
-				'fmx_meta_link_set "$1" req-1 1700000000 0; printf "link_set=%s\\n" "$?"',
-				'fmx_meta_followups_set "$1" 3; printf "followups_set=%s\\n" "$?"',
-				'fmx_meta_link_clear "$1"; printf "link_clear=%s\\n" "$?"',
-			].join("\n"),
-			[meta],
-			scriptEnv(base),
-		);
-		expect(result.stdout.trim().split("\n")).toEqual(["link_set=3", "followups_set=3", "link_clear=3"]);
-		expect(count(result.stderr, owned("metadata", "dm1-lab", 1))).toBe(3);
-		expect(stateDigest(base)).toBe(before);
-	});
-
-	it("refuses every Relay command of a durable mission whose meta is deleted, before any branch reads or posts", async () => {
-		const base = sandboxBase();
-		seedTask(base, "dm1-lab");
-		rmSync(join(base, "state", "dm1-lab.meta"));
-		const before = stateDigest(base);
-		const logged = refusalLog(base).length;
-		for (const [script, args] of [
-			["sq-x-link.sh", ["dm1-lab", "req-1"]],
-			["sq-x-followup.sh", ["--clear", "dm1-lab"]],
-			["sq-x-followup.sh", ["dm1-lab", "--text-file", "/dev/null"]],
-		] as const) {
-			const result = await runScript(script, [...args], scriptEnv(base));
-			expect({ script, args: args.join(" "), code: result.code }).toEqual({ script, args: args.join(" "), code: 3 });
-			expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
-			expect(result.stderr).not.toContain("no such task");
-			expect(stateDigest(base)).toBe(before);
-		}
-		expect(refusalLog(base).slice(logged)).toHaveLength(3);
-	});
-
-	it("posts no Relay follow-up for a refused durable mission and leaves its link in place", async () => {
-		const base = sandboxBase();
-		const root = join(tempDir(), "root");
-		mkdirSync(join(root, "bin"), { recursive: true });
-		const posted = join(tempDir(), "posted");
-		writeFileSync(join(root, "bin", "sq-x-reply.sh"), `#!/usr/bin/env bash\nprintf posted > "${posted}"\n`, { mode: 0o755 });
-		seedTask(base, "dm1-lab", { x_request: "req-1", x_request_ts: "1700000000", x_followups: "0" });
-		const before = stateDigest(base);
-		const result = await runScript(
-			"sq-x-followup.sh",
-			["dm1-lab", "--text-file", "/dev/null"],
-			scriptEnv(base, { SQUAD_ROOT_OVERRIDE: root, SQX_NOW_OVERRIDE: "1700000100" }),
-		);
-		expect(result.code).toBe(3);
-		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
-		expect(existsSync(posted)).toBe(false);
-		expect(stateDigest(base)).toBe(before);
 	});
 
 	it("refuses a PR-watch migration of a durable mission before it quarantines the mission's legacy poll", async () => {
@@ -410,117 +311,6 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(refusalLog(base)).toHaveLength(1);
 	});
 
-	it("refuses every public-followup mutation and publication of a durable obligation", async () => {
-		const base = sandboxBase();
-		const fakebin = join(tempDir(), "bin");
-		mkdirSync(fakebin, { recursive: true });
-		writeFileSync(
-			join(fakebin, "tasks-axi"),
-			[
-				"#!/usr/bin/env bash",
-				'case "$*" in',
-				'  "public-followup list --json") printf \'%s\' \'{"public_followups":[{"id":"dm1-lab","state":"done","public_followup":{"delivery":{"state":"posted"},"request":{}}}]}\' ;;',
-				"  *) exit 0 ;;",
-				"esac",
-				"",
-			].join("\n"),
-			{ mode: 0o755 },
-		);
-		writeFileSync(join(base, ".env"), "SQX_PAIRING_TOKEN=test-token\n");
-		const state = join(base, "state");
-		const registry = join(state, "public-followup", "registry");
-		mkdirSync(registry, { recursive: true, mode: 0o700 });
-		chmodSync(registry, 0o700);
-		const registration = join(registry, "dm1-lab");
-		writeFileSync(
-			registration,
-			[
-				"obligation_id=dm1-lab",
-				"relation_id=rel",
-				"work_home=main",
-				"work_id=legacy-work",
-				"generation=1",
-				"platform=x",
-				"request_id=req",
-				"",
-			].join("\n"),
-			{ mode: 0o600 },
-		);
-		const events = join(state, "public-followup", "events");
-		mkdirSync(events, { recursive: true, mode: 0o700 });
-		chmodSync(events, 0o700);
-		const consumed = join(state, "public-followup", "consumed");
-		mkdirSync(consumed, { recursive: true, mode: 0o700 });
-		chmodSync(consumed, 0o700);
-		const deliverables = "{}";
-		const eventId = createHash("sha256")
-			.update(["dm1-lab", "rel", "main", "legacy-work", "1", "pr-merged", deliverables].join("\x1f"))
-			.digest("hex");
-		const event = join(events, `${eventId}.json`);
-		writeFileSync(
-			event,
-			JSON.stringify({
-				schema_version: 1,
-				event_id: eventId,
-				obligation_id: "dm1-lab",
-				relation_id: "rel",
-				work_id: "legacy-work",
-				generation: 1,
-				source_home_id: "main",
-				outcome_type: "pr-merged",
-				deliverables: {},
-				public_safe_outcome: "landed",
-				occurred_at: "2026-01-01T00:00:00Z",
-				successor: null,
-			}),
-			{ mode: 0o600 },
-		);
-		const env = scriptEnv(base, { PATH: `${fakebin}:${process.env.PATH ?? ""}` });
-		const before = stateDigest(base);
-		const registrationBefore = readFileSync(registration, "utf8");
-		const commands: [string, string[]][] = [
-			["register", ["dm1-lab", "--relation", "rel", "--work-home", "main", "--work-id", "legacy-work", "--generation", "1"]],
-			["deliver", ["dm1-lab", "--text-file", "/dev/null"]],
-			["record-posted", ["dm1-lab", "--attempt", "1", "--chunks", "1"]],
-			["retire", ["dm1-lab"]],
-			["pending", []],
-			["consume", []],
-		];
-		for (const [command, args] of commands) {
-			const result = await runScript("sq-public-followup.sh", [command, ...args], env);
-			expect({ command, code: result.code }, `${command}\n${result.stderr}`).toEqual({ command, code: 3 });
-			expect(result.stderr, command).toMatch(owned("metadata", "dm1-lab", 1));
-			expect(readFileSync(registration, "utf8"), command).toBe(registrationBefore);
-			expect(existsSync(event), command).toBe(true);
-			expect(stateDigest(base), command).toBe(before);
-		}
-		const emitted = await runScript(
-			"sq-public-followup-emit.sh",
-			[
-				"--home",
-				base,
-				"--obligation",
-				"dm1-lab",
-				"--relation",
-				"rel",
-				"--source-home",
-				"main",
-				"--work-id",
-				"legacy-work",
-				"--generation",
-				"1",
-				"--outcome",
-				"pr-merged",
-				"--outcome-text",
-				"landed",
-			],
-			env,
-		);
-		expect(emitted.code).toBe(3);
-		expect(emitted.stderr).toMatch(owned("metadata", "dm1-lab", 1));
-		expect(stateDigest(base)).toBe(before);
-	});
-
 	it("refuses a durable mission registered as a remote XO before the remote route writes its launch metadata", async () => {
 		const base = sandboxBase();
 		writeFileSync(
@@ -580,71 +370,6 @@ describe("every inventoried consultation point refuses a durable mission before 
 		expect(existsSync(join(state, "DM2-pilot+x.pr-poll"))).toBe(true);
 		expect(existsSync(join(state, "DM2-pilot+x.pr-poll-registration"))).toBe(true);
 		expect(stateDigest(base)).toBe(before);
-	});
-
-	it("reports each durable follow-up event of a relay-inactive batch with exit 3 and leaves every event in place", async () => {
-		const base = sandboxBase();
-		const events = join(base, "state", "public-followup", "events");
-		mkdirSync(events, { recursive: true, mode: 0o700 });
-		const durable = join(events, "dm1-lab-event.json");
-		const legacy = join(events, "legacy-event.json");
-		writeFileSync(durable, JSON.stringify({ obligation_id: "dm1-lab" }), { mode: 0o600 });
-		writeFileSync(legacy, JSON.stringify({ obligation_id: "legacy-obl" }), { mode: 0o600 });
-		const before = stateDigest(base);
-		const result = await runScript("sq-public-followup.sh", ["consume"], scriptEnv(base));
-		expect({ code: result.code }).toEqual({ code: 3 });
-		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
-		expect(existsSync(durable)).toBe(true);
-		expect(existsSync(legacy)).toBe(true);
-		expect(stateDigest(base)).toBe(before);
-	});
-
-	it("consumes the legacy follow-up events of a batch past a durable one, which stays in place with exit 3", async () => {
-		const base = sandboxBase();
-		const fakebin = join(tempDir(), "bin");
-		mkdirSync(fakebin, { recursive: true });
-		writeFileSync(join(fakebin, "tasks-axi"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-		writeFileSync(join(base, ".env"), "SQX_PAIRING_TOKEN=test-token\n");
-		const events = join(base, "state", "public-followup", "events");
-		const consumed = join(base, "state", "public-followup", "consumed");
-		mkdirSync(events, { recursive: true, mode: 0o700 });
-		mkdirSync(consumed, { recursive: true, mode: 0o700 });
-		const eventFor = (obligation: string) => {
-			const eventId = createHash("sha256")
-				.update([obligation, "rel", "main", `${obligation}-work`, "1", "pr-merged", "{}"].join("\x1f"))
-				.digest("hex");
-			const file = join(events, `${eventId}.json`);
-			writeFileSync(
-				file,
-				JSON.stringify({
-					schema_version: 1,
-					event_id: eventId,
-					obligation_id: obligation,
-					relation_id: "rel",
-					work_id: `${obligation}-work`,
-					generation: 1,
-					source_home_id: "main",
-					outcome_type: "pr-merged",
-					deliverables: {},
-					public_safe_outcome: "landed",
-					occurred_at: "2026-01-01T00:00:00Z",
-					successor: null,
-				}),
-				{ mode: 0o600 },
-			);
-			return { eventId, file };
-		};
-		const durable = eventFor("dm1-lab");
-		const legacy = eventFor("legacy-obl");
-		const durableBefore = readFileSync(durable.file, "utf8");
-		const env = scriptEnv(base, { PATH: `${fakebin}:${process.env.PATH ?? ""}` });
-		const result = await runScript("sq-public-followup.sh", ["consume"], env);
-		expect({ code: result.code }).toEqual({ code: 3 });
-		expect(result.stderr).toMatch(owned("metadata", "dm1-lab", 1));
-		expect(existsSync(legacy.file)).toBe(false);
-		expect(existsSync(join(consumed, legacy.eventId))).toBe(true);
-		expect(readFileSync(durable.file, "utf8")).toBe(durableBefore);
-		expect(existsSync(join(consumed, durable.eventId))).toBe(false);
 	});
 
 	it("prints the crew state but exits 3 when custody refused the drill PR sidecar of a durable mission, and 0 for a legacy task", async () => {

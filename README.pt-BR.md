@@ -34,9 +34,9 @@ Você alterna vários projetos ou repositórios ao mesmo tempo - correções, in
 
 Você conversa com o agente. Ele encaminha cada pedido a um operador em seu próprio endpoint de sessão e worktree git, supervisiona a unidade com uma sentinela orientada a eventos que consome zero tokens, e traz PRs prontos, merges locais aprovados ou relatórios de recon. A sentinela dorme sobre a unidade e acorda o sargento só quando algo realmente precisa de você.
 
-XOs opcionais estendem isso para XOs persistentes locais ou remotos de base inteira; perfis de despacho permitem direcionar qual harness cuida de qual tarefa; e o Relay opcional permite que a mesma unidade responda menções públicas no X e no Discord. `codex-app` ainda não é um backend de runtime - [docs/pt-BR/codex-app-backend.md](docs/pt-BR/codex-app-backend.md) é dono dessa fronteira.
+XOs opcionais estendem isso para XOs persistentes locais ou remotos de base inteira, e perfis de despacho permitem direcionar qual harness cuida de qual tarefa. `codex-app` ainda não é um backend de runtime - [docs/pt-BR/codex-app-backend.md](docs/pt-BR/codex-app-backend.md) é dono dessa fronteira.
 
-A arquitetura completa - o motor de supervisão, isolamento de worktrees, XOs, perfis de despacho, modos de projeto, Relay opcional, unit sync e self-update - vive em [docs/pt-BR/architecture.md](docs/pt-BR/architecture.md).
+A arquitetura completa - o motor de supervisão, isolamento de worktrees, XOs, perfis de despacho, modos de projeto, unit sync e self-update - vive em [docs/pt-BR/architecture.md](docs/pt-BR/architecture.md).
 
 ## Começo rápido
 
@@ -118,7 +118,6 @@ Veja o [guia de atualização](.agents/skills/updatesquad/SKILL.md).
 - **Modos de projeto explícitos** - cada projeto entrega via `drill`, `direct-PR` ou `local-only`, com a flag opcional de autonomia `+yolo`.
 - **XOs opcionais** - XOs persistentes rodam a partir de bases Squad isoladas com seu próprio `SQUAD_BASE`, estado, projetos e lock de sessão, localmente ou como uma base inteira em um host SSH alcançável, com updates e recovery protegidos que nunca transformam uma rota remota indisponível em substituta local.
 - **Supervisão orientada a eventos, zero tokens** - uma sentinela em bash acorda o sargento de armas apenas quando algo precisa de você; harnesses primários verificados também recebem um backstop de fim de turno que bloqueia ou dá seguimento a um stop às cegas quando há trabalho em andamento e a supervisão não está ativa.
-- **Relay opcional** - ative com um token de pareamento local em `.env` para que o Squad possa responder suas menções públicas no X e no Discord, agir sobre pedidos normais reversíveis de menção pelo mesmo ciclo dos pedidos de chat, reconhecer trabalho despachado e postar até três follow-ups públicos seguros de conclusão dentro de sete dias - tudo sem alterar o comportamento fora do Relay. Uma resposta final prometida em uma thread vira estado durável reconciliado do disco, então um restart ou uma conversa compactada não pode perdê-la.
 - **Fronteira rígida de projeto** - o sargento de armas é somente leitura sobre seus projetos, exceto pelas operações estreitas, protegidas e aprovadas pelo comandante autorizadas pela [regra dura 1](AGENTS.md#1-identity-and-prime-directives); operadores fazem toda outra mudança de projeto atrás da autoridade de merge configurada.
 - **À prova de restart** - todo estado vive no disco e no backend de sessão ativo (tmux por padrão rígido); derrube a sessão quando quiser e a próxima reconcilia - incluindo agentes XO confirmados como mortos - e segue em frente.
 
@@ -201,7 +200,7 @@ O pacote sq-report usa ambos: a skill pública para descoberta pelo agente e `se
 ## Documentação
 
 - [docs/architecture.md](docs/architecture.md) - arquitetura para mantenedores da squad, supervisão, worktrees, XOs e modos de projeto ([tradução pt-BR](docs/pt-BR/architecture.md)).
-- [docs/configuration.md](docs/configuration.md) - variáveis de ambiente, `SQUAD_BASE`, seleção de backend de runtime, Relay opcional e seus passos de setup para X e Discord, os arquivos que você define e suporte a harness ([tradução pt-BR](docs/pt-BR/configuration.md)).
+- [docs/configuration.md](docs/configuration.md) - variáveis de ambiente, `SQUAD_BASE`, seleção de backend de runtime, os arquivos que você define e suporte a harness ([tradução pt-BR](docs/pt-BR/configuration.md)).
 - [docs/remote-XOs.md](docs/remote-XOs.md) - setup, roteamento, transferência, recovery e segurança atuais para XOs remotos de base inteira ([tradução pt-BR](docs/pt-BR/remote-XOs.md)).
 - [docs/calm.md](docs/calm.md) - comportamento atual do `/calm` do Pi e limites de apresentação suportados ([tradução pt-BR](docs/pt-BR/calm.md)).
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure o alerta ativo para uma entrega de escalação do modo ausente que travar ([tradução pt-BR](docs/pt-BR/wedge-alarm.md)).

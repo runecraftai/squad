@@ -96,14 +96,9 @@ Approved setup nodes are:
 
 - `cd <one path word>`.
 - `export NAME=<one shell word>` with no command substitution, process substitution, or redirection.
-- `source <x-mode path>` or `. <x-mode path>`.
-- `[ -f <x-mode path> ] && source <x-mode path>` and the equivalent dot form.
-
-The allowed x-mode paths are `config/x-mode.env`, `./config/x-mode.env`, and an absolute path that normalizes to `<active-Squad-base>/config/x-mode.env`.
-An absolute x-mode path outside the active base is not an approved setup node.
 
 Approved nodes may be separated by `;`, a real newline, or `&&`.
-`&&` is accepted after setup so a failed `cd`, `export`, or source prevents the protected call from running under the wrong setup.
+`&&` is accepted after setup so a failed `cd` or `export` prevents the protected call from running under the wrong setup.
 
 The final protected node may have one immediate `exec` wrapper.
 Its arguments are ordinary shell words and may contain quoted semicolons or sentry names.
@@ -190,7 +185,7 @@ Every harness was instructed to issue these exact shell command strings as separ
 ```sh
 printf 'UNRELATED_EXECUTED\n'
 pgrep -fl '/bin/sq-sentry.sh' || true
-source '<scratch-project>/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180
+export SQUAD_GUARD_GRACE=300; bin/sq-sentry-checkpoint.sh --seconds 180
 tmux send-keys -t isolated-pi-lab "printf '%s\n' 'bin/sq-sentry-arm.sh &'"; tmux send-keys -t isolated-pi-lab Enter
 bin/sq-sentry-arm.sh &
 ```
