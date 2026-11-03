@@ -95,6 +95,11 @@
 # line described above; any other repo's brief is byte-identical to a guard-free
 # scaffold, because an empty guard contributes no line and no blank line.
 # Ship briefs also carry a worktree-isolation assertion before the branch step.
+# Every strike and recon brief carries one shared "# Frontend acceptance" section,
+# the single owner of what a frontend task's acceptance must declare and prove.
+# It applies itself conditionally because {TASK} is filled after scaffolding, and
+# it cites visual-parity@1 and the Playwright doc by absolute Squad path because a
+# project worktree holds neither and the playbook is materialized only when selected.
 # --mode is refused on recon and XO scaffolds: a recon's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
 # There is no --yolo flag here. The worker never owns approval decisions, so yolo is
@@ -691,6 +696,20 @@ Do not read or write the primary base's `state/` directory, apart from appending
 EOF
 OPERATOR_GUARD=${OPERATOR_GUARD%$'\n'}
 
+# Frontend acceptance: one owner, emitted into both variants. Numbers stay out of
+# it because they must come from the task's own reference or requirement.
+IFS= read -r -d '' FRONTEND_ACCEPTANCE <<EOF || true
+# Frontend acceptance
+This section applies only when this task changes or evaluates a frontend surface; otherwise ignore it.
+The acceptance in \`# Task\` must declare whichever of these are relevant: the viewports, the states and data, the measurements and tolerances where they matter, the narrow-width behavior, the focus and keyboard behavior, and the pertinent accessibility requirements.
+When it omits one the task depends on, take it from the task's reference or requirement, and raise it under rule 6 if neither supplies it; never invent a measurement or tolerance.
+Each declared item needs real evidence: point at the real capture and the real command or test result that proves it, because a description, a text fixture, or a plausible screenshot proves nothing.
+Reuse what \`visual-parity@1\` already requires (\`$SQUAD_ROOT/.agents/skills/execution-playbooks/references/visual-parity-v1.md\`): the same surface, viewport, data, and state identity, repeatable commands, named divergences, and its stop when a capability is unavailable.
+Capture with the tooling in rule 3, and do not invent a board, a visual pipeline, or a new library for this acceptance.
+Visual equivalence never replaces a functional or accessibility criterion: matching a reference can preserve its defect, so prove those criteria on their own.
+EOF
+FRONTEND_ACCEPTANCE=${FRONTEND_ACCEPTANCE%$'\n'}
+
 if [ "$KIND" = recon ]; then
 cat > "$BRIEF" <<EOF
 You are an operator: an autonomous worker agent managed by Squad. Work on your own; do not wait for a human.
@@ -711,7 +730,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; the only files you may write outside it are the report and the status file below.
-3. Use sq-gh for GitHub operations and sq-browser for browser operations; for frontend validation use the Playwright tooling in docs/playwright-validation.md.
+3. Use sq-gh for GitHub operations and sq-browser for browser operations; for frontend validation use the Playwright tooling in \`$SQUAD_ROOT/docs/playwright-validation.md\`.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
@@ -731,6 +750,8 @@ The report is the only thing that survives, so anything worth keeping must be in
 7. Never stop, restart, or update the shared \`drill\` daemon - it is one instance serving
    every lane/base, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
    daemon error, append \`blocked: {the daemon error}\` and stop; only Squad manages the daemon.
+
+$FRONTEND_ACCEPTANCE
 
 # Definition of done
 Write your findings to \`$DATA/$ID/report.md\`.
@@ -850,7 +871,7 @@ If the top-level path is the primary checkout or not the worktree you were launc
 # Rules
 $RULE1
 2. Stay inside this worktree; modify nothing outside it.
-3. Use sq-gh for GitHub operations and sq-browser for browser operations; for frontend validation use the Playwright tooling in docs/playwright-validation.md.
+3. Use sq-gh for GitHub operations and sq-browser for browser operations; for frontend validation use the Playwright tooling in \`$SQUAD_ROOT/docs/playwright-validation.md\`.
 4. Report status by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
@@ -873,6 +894,8 @@ $RULE1
 7. Never stop, restart, or update the shared \`drill\` daemon - it is one instance serving
    every lane/base, so restarting it kills other lanes' in-flight pipeline runs. On ANY drill
    daemon error, append \`blocked: {the daemon error}\` and stop; only Squad manages the daemon.
+
+$FRONTEND_ACCEPTANCE
 
 # Project memory
 If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$SQUAD_ROOT/bin/sq-ensure-agents-md.sh .\` in the worktree.
