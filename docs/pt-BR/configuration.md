@@ -15,14 +15,14 @@ A raiz de código rastreada contém as superfícies de instrução, habilidade, 
 `data/` contém registros privados duráveis da unidade, como os registros de projetos e XOs, preferências do comandante, preferências compartilhadas opcionais do comandante, aprendizados, backlog, briefs e relatórios de recon.
 `data/<id>/dispatch.jsonl` é o log privado de despacho, somente para acréscimo (0600), preservado após a limpeza; `bin/sq-dispatch-log.sh` é dono dos eventos de decisão, spawn, recomendação e resultado; o contrato do evento `recommendation` do Jev é descrito em "Recomendações Jev em modo sombra".
 Uma base operacional normal pode armazenar este log privado sob o fallback da raiz do repositório, enquanto fixtures de teste devem isolá-lo com `SQUAD_DATA_OVERRIDE` para que nenhum log vaze para o checkout.
-`state/` contém registros voláteis de runtime, como metadados de tarefas, eventos de status append-only, sinais de endpoint, coordenação de sentry e fila de stand-to, estado de away-mode, artefatos Relay gerados, gerações de re-leitura de configuração XO privadas com seu estado de retentativa e quarentena, e registros de resposta pendente de XOs de propriedade do pai sob `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
+`state/` contém registros voláteis de runtime, como metadados de tarefas, eventos de status append-only, sinais de endpoint, coordenação de sentry e fila de stand-to, estado de away-mode, gerações de re-leitura de configuração XO privadas com seu estado de retentativa e quarentena, e registros de resposta pendente de XOs de propriedade do pai sob `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
 `state/window-states` é a verdade derivada da sidebar tmux por janela publicada por `bin/sq-window-state.sh`; o cabeçalho desse script é dono do contrato do arquivo, e `bin/sq-crew-state.sh` continua sendo o dono da reconciliação de estado atual que publica.
 `data/durable/` contém o armazenamento do núcleo durável e o log de recusas de custódia, e o cabeçalho de `bin/sq-durable-custody.sh` é dono desse log de recusas e dos sinais de geração `state/.custody-signal-*` que ele escreve.
 `config/` contém escolhas de operação locais e gitignored, e `projects/` contém as cópias locais de projetos que Squad lê mas altera apenas através das exceções restritas, protegidas e concretamente aprovadas pelo comandante em `AGENTS.md`.
 
 `bin/sq-spawn.sh` é dono dos campos de metadados de tarefa base que emite, enquanto a seção de backend de runtime abaixo é dona dos campos específicos do backend e da interpretação do seletor.
-Os helpers de PR e Relay que produzem são donos dos campos que anexam, `bin/sq-classify-lib.sh` é dono do vocabulário de eventos de status, e `bin/sq-crew-state.sh` é dono da reconciliação de estado atual.
-A mecânica de wake, sentry, away-mode e específica do Relay permanece com seus scripts e seções de referência nomeados; a árvore abaixo nomeia esses arquivos sem ser dona dessa mecânica.
+Os helpers de PR que produzem são donos dos campos que anexam, `bin/sq-classify-lib.sh` é dono do vocabulário de eventos de status, e `bin/sq-crew-state.sh` é dono da reconciliação de estado atual.
+A mecânica de wake, sentry e away-mode permanece com seus scripts e seções de referência nomeados; a árvore abaixo nomeia esses arquivos sem ser dona dessa mecânica.
 
 O cabeçalho de `bin/sq-session-start.sh` é o único dono da ordenação de início de sessão, comandos compostos, conteúdo do digest e o mecanismo de startup do digest.
 O cabeçalho de `bin/sq-startup-network.sh` é dono do estágio de rede adiado que mantém todas as chamadas de rede externa fora do caminho de bloqueio do digest, incluindo seus arquivos de estado e o argumento de segurança para executá-los depois.
@@ -53,7 +53,6 @@ skills/              standalone public installer-facing skills, committed; not l
   .pr-check-migration-scan-v1  private marker proving the non-executing scan disabled every unsafe legacy check; .pr-check-migration-v1 separately records completed private repairs
   .retired-terminals/  private Orca terminal retirement records, one `<id>.record` per teardown: kind=, task_id=, base=, retired_at=, backend=, terminal=, runtime_id=, close_attempted=, worktree_id=, worktree_path=; written by bin/sq-retired-missions.sh before teardown may remove task metadata, cleared only once that exact handle's absence is confirmed, and reconciled by the locked bootstrap sweep; never delete one by hand, because it is the only durable identity a later exact-handle retry has
   .retired-worktrees/  private fob worktree retirement records, one `<id>.record` per teardown: kind=, task_id=, base=, retired_at=, project=, worktree_path=, pool_backend=; written by bin/sq-retired-missions.sh before teardown may remove task metadata, and cleared by the locked bootstrap sweep either when fob has taken that reusable worktree back or when no live task record references it, fob no longer owns it, its exact git registration and project identity verify, it is clean, and its HEAD is reachable from the default branch or a remote-tracking ref; a worktree failing any of those checks keeps both itself and its record, and a record is never deleted by hand
-  x-poll.error x-poll.claim-error  generated Relay and offer-claim diagnostic dedupe markers
   .stand-to-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .handoff-queue         durable new-session handoff requests: ts<TAB>seq<TAB>kind<TAB>key<TAB>state<TAB>payload; state pending -> surfaced -> resolved (docs/handoff-request.md)
   .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
@@ -260,7 +259,7 @@ Quando nem `SQUAD_BASE` nem `SQUAD_HOME` estão definidos, `SQUAD_ROOT_OVERRIDE`
 `bin/sq-send.sh` é intencionalmente mais estrito que esse fallback geral: requer `SQUAD_BASE` (ou legado `SQUAD_HOME`) antes de resolver um alvo, então direcionamentos de operadores não podem silenciosamente resolver contra a base errada.
 `SQUAD_STATE_OVERRIDE`, `SQUAD_DATA_OVERRIDE`, `SQUAD_PROJECTS_OVERRIDE` e `SQUAD_CONFIG_OVERRIDE` sobrescrevem diretórios operacionais individuais para testes e setup especializado de harness.
 Antes que `sq-brief.sh`, `sq-spawn.sh` ou `sq-afk-launch.sh` persista um caminho ou passe para outro processo, resolve cada diretório relativo aplicável `SQUAD_BASE` (ou legado `SQUAD_HOME`), `SQUAD_STATE_OVERRIDE` ou `SQUAD_DATA_OVERRIDE` contra o diretório de trabalho do chamador, preserva grafias absolutas inalteradas e rejeita um diretório relativo não resolvível com a variável problemática nomeada.
-O bootstrap aplica a mesma resolução relativa de `SQUAD_BASE` apenas ao incorporar aquela base no shim de poll Relay gerado; outros consumidores transitórios mantêm seu comportamento shell-relativo existente.
+O bootstrap aplica a mesma resolução relativa de `SQUAD_BASE` apenas ao incorporar aquela base em um artefato gerado; outros consumidores transitórios mantêm seu comportamento shell-relativo existente.
 Para o backend herdr, `SQUAD_BASE` também determina o label de workspace usado pelo adaptador.
 Para o backend zellij, `SQUAD_BASE` não divide containers, mas determina o prefixo base legível embutido nos títulos de abas visíveis; use `SQUAD_ZELLIJ_SESSION` quando uma sessão zellij separada for necessária.
 O label base zellij completo também inclui um hash curto do caminho `SQUAD_ROOT` resolvido.
@@ -385,7 +384,6 @@ Um backend resolvido desconhecido emite `BACKEND_INVALID` e bloqueia o dispatch 
 Orca fornece tanto o worktree da tarefa quanto o endpoint de terminal (veja "Backend de runtime" acima), então `backend=orca` requer apenas `orca` além da toolchain universal e pula tanto `fob` quanto o CLI de sessão de cada outro backend.
 Uma base herdr, zellij, cmux ou tuios portanto nunca é instruída de que `tmux` está ausente, e a verificação de upgrade de aluguel durável `fob` é executada apenas para backends que realmente usam fob.
 Quando `config/crew-dispatch.json` existe, bootstrap também requer `jq` para validação de perfil de dispatch.
-Quando Relay está ativado, bootstrap também requer `curl` e `jq` antes de armar o shim de poll do relay.
 `sq-tasks` e `sq-quota` são ferramentas obrigatórias de bootstrap em cada perfil, a mesma classe de `sq-report`.
 Um `sq-tasks` ausente ou incompatível reporta `MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)`; quando `config/backlog-backend` não é `manual` e `sq-tasks` compatível está no `PATH`, bootstrap fica silencioso e Squad usa seus verbos para mutações rotineiras do backlog, caso contrário edita manualmente `data/backlog.md` até que a instalação seja aprovada e concluída.
 Um `sq-gh` ausente ou incompatível reporta `MISSING: sq-gh (install: (cd packages/sq-gh && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-gh && sq-gh setup hooks)`.
@@ -414,148 +412,12 @@ A passagem de herança bootstrap bloqueada usa o mesmo comportamento específico
 A descoberta ao vivo começa a partir dos registros `state/*.meta` com `kind=xo`; `data/XOs.md` apenas preenche `home=` para registros de metadados mais antigos ou incompletos.
 Itens ignorados, como um checkout de destino que ainda não gitignores o item, são avisos visíveis mas não falhas duras.
 
-## Relay (.env)
-
-Relay permite que uma instância Squad responda a menções públicas e aja em solicitações de menção normais e reversíveis através do lifecycle normal do Squad.
-Cobre ambas as superfícies públicas que o relay suporta: menções `@mySquad` no X e menções do bot mySquad em um servidor Discord onde está instalado.
-Ambas as superfícies são o mesmo opt-in e a mesma mecânica — um token de emparelhamento, um poll de relay e um caminho de resposta — então tudo abaixo se aplica a menções Discord a menos que uma linha nomeie uma plataforma explicitamente.
-Está desligado a menos que o `.env` gitignored da base Squad contenha um `SQX_PAIRING_TOKEN` não vazio.
-O token de emparelhamento identifica o inquilino do relay e registra consentimento de opt-in para respostas públicas autônomas e ações de lifecycle elegíveis.
-Pedidos destrutivos, irreversíveis ou sensíveis a segurança são sinalizados para confirmação por canal confiável em vez de serem executados a partir de uma menção pública.
-O relay usa roteamento apenas-do-proprietário: uma menção entregue a uma base é do proprietário/comandante daquela base, enquanto o contexto de thread pai pode ainda incluir outras contas públicas.
-`SQX_RELAY_URL` é opcional e padrão é `https://mySquad.io`, principalmente para desenvolvedores apontando para um relay local.
-Para invocações diretas de cliente, valores de ambiente sobrescrevem `.env`; ativação de bootstrap ainda usa presença de `.env` como chave para que artefatos de sentry sejam estado local explícito de opt-in.
-`SQX_ENV_FILE` pode apontar invocações diretas de poll/resposta de cliente para outro arquivo estilo `.env`, mas não altera a ativação de bootstrap.
-
-Para ligar:
-
-1. Faça login em [mySquad.io](https://mySquad.io) com X ou Discord.
-2. Para a superfície Discord, use o link de instalação do dashboard para adicionar o bot mySquad a um servidor que você administra; a superfície X não precisa de etapa de instalação.
-3. Copie o token de emparelhamento do dashboard para o `.env` gitignored desta base Squad como `SQX_PAIRING_TOKEN=<token>`.
-4. Inicie uma nova sessão Squad para que o bootstrap capte o token, depois mencione `@mySquad` no X ou mencione o bot em um servidor onde está instalado.
-
-O dashboard é dono da criação de conta, vinculação de identidade, instalação do bot e emissão de token; este documento é dono do que a base Squad local faz com o token uma vez que está em `.env`.
-
-A etapa de bootstrap de início de sessão bloqueada transforma o token em estado local gerado.
-Grava `state/x-sentry.check.sh`, um shim de identidade byte-estático para `bin/sq-x-poll.sh`, e `config/x-mode.env`, que exporta `SQUAD_CHECK_INTERVAL=30` para processos de sentry naquela base.
-O sentry aceita o shim apenas quando seus bytes correspondem ao conteúdo gerado esperado, depois invoca o script de poll confiável do repositório diretamente em vez de executar fonte de arquivo de estado.
-Esta seção é a única dona do contrato de cadência do Relay: uma instância Relay faz poll a cada 30 segundos em vez dos 300 padrão, apenas uma instância Relay acelera porque uma base não-Relay não tem `config/x-mode.env`, e o bloco de operações de supervisão do início de sessão inclui a instrução de cadência quando aquele arquivo existe.
-O protocolo de supervisão do harness primário ativo é dona de como a cadência fonte atinge o processo de sentry.
-Como `bin/sq-sentry.sh` lê `SQUAD_CHECK_INTERVAL` apenas no início do processo, uma transição de cadência — opt-in enquanto um sentry já está rodando, ou opt-out — é aplicada reiniciando o sentry com escopo de base através do protocolo de harness emitido; bootstrap deliberadamente nunca reinicia o sentry.
-Enquanto o away mode está ativo, o daemon é dono do sentry e sua cadência padrão se aplica; cadência Relay de away mode é um follow-up adiado.
-Quando o token é removido ou vazio, a próxima etapa de bootstrap de início de sessão bloqueada remove esses artefatos.
-Estado estável desligado é silencioso e não grava nada.
-Relay continua aditivo ao comportamento de lifecycle não-Relay: bases sem os artefatos gerados mantêm a cadência padrão do sentry e não executam o poll do Relay.
-Seu tratamento de requests permanece em scripts `bin/` específicos do Relay e na habilidade `relay-respond`, enquanto o sentry é dono do dispatch autenticado a partir do shim de identidade local gerado.
-
-`bin/sq-x-poll.sh` chama `GET /connector/poll` com `Authorization: Bearer <SQX_PAIRING_TOKEN>`.
-HTTP 204 é silencioso.
-Uma menção pendente recém-oferecida com `text` não vazio é armazenada em `state/x-inbox/<request_id>.json` e acorda Squad exatamente uma vez com `x-mention <request_id>`.
-O poll atomicamente reivindica `state/x-context/<request_id>.offered.json` antes de emitir aquele wake, e ofertas subsequentes do mesmo request ficam silenciosas mesmo após o inbox ser drenado após uma resposta ou dismiss.
-Marcadores de oferta compartilham a retenção limitada a sete dias do registro de contexto, então perder ou expirar o marcador local permite que uma oferta de relay acorde Squad novamente.
-
-O objeto relay completo é preservado, incluindo `in_reply_to: {author_handle, text}` quando a menção é uma resposta em uma conversa ou `null` para menções novas.
-Ao mesmo tempo, o poll grava um contexto de resposta durável por request em `state/x-context/<request_id>.json` (`{request_id, platform, reply_max_chars, recorded_at}`) a partir do mesmo payload autoritário do relay, melhor esforço e com chave por `request_id` para que requests concorrentes nunca sobrescrevam uns aos outros; sobrevive à limpeza do inbox que segue a confirmação, então um follow-up atrasado pode recuperar a plataforma original e orçamento de split mesmo sem vínculo de tarefa.
-`recorded_at` começa como o epoch Unix localmente observado de primeira aparição e permanece inalterado quando o mesmo request é novamente pollado.
-Uma resposta ao vivo inicial bem-sucedida o atualiza para o tempo que o relay estabelece a vinculação do follow-up; dry-runs, respostas falhadas e follow-ups não o atualizam.
-Polls configurados podam registros além da janela local de follow-up, limitados à janela de sete dias do relay; registros legados ou malformados recuam para seu horário de modificação de arquivo para que não possam permanecer indefinidamente.
-O registro é gravado apenas quando uma plataforma ou orçamento explícito é realmente conhecido, então uma menção de plataforma desconhecida não deixa entrada inútil.
-A habilidade `relay-respond` decide se a menção armazenada é uma solicitação acionável, uma pergunta ou um puro reconhecimento.
-Solicitações reversíveis acionáveis são executadas através do fluxo de intake, backlog, dispatch, investigação ou ship conforme apropriado.
-Se o trabalho é concluído naquele turno, a resposta pública reporta o resultado.
-Se a solicitação gera uma tarefa de execução mais longa, Squad publica um reconhecimento através do endpoint de resposta normal, vincula a tarefa à menção com `bin/sq-x-link.sh` e publica até três follow-ups de conclusão em marcos genuínos, terminando com um `--final` para trabalho Relay-linked comum. Quando uma compromisso promised-final tipado é registrado, `bin/sq-public-followup.sh` é dona da resposta terminal e limpa o vínculo legado após sua recepção ser validada.
-Esse vínculo armazena contexto opcional de plataforma de resposta para que follow-ups originados do Discord mantenham o orçamento de mensagem maior do Discord após o arquivo de inbox ter sido drenado.
-Resolução de plataforma/orçamento é em camadas e independente do vínculo de tarefa: uma sobrescrever por eixo `SQX_REPLY_PLATFORM` / `SQX_REPLY_MAX_CHARS` (como `bin/sq-x-followup.sh` passa o contexto de um vínculo gravado) vence.
-Para qualquer eixo sem sobrescrever, `bin/sq-x-lib.sh:fmx_resolve_reply_context` é dona da ordem de fonte: o registro durável por request é consultado primeiro, depois o payload ainda presente do inbox, depois — para um follow-up postado ao vivo por request_id — uma lookup autoritária do relay via `POST /connector/request-context` (`{request_id}` entrada, `{platform, reply_max_chars}` retorno).
-Isso mantém um follow-up de request-id atrasado no orçamento da plataforma original mesmo após o inbox ter sido drenado e com nenhum vínculo de tarefa sobrevivendo; a etapa do relay é confinada ao caminho de follow-up ao vivo para que o caminho de resposta e cada dry-run permaneçam sem rede.
-`bin/sq-x-link.sh` segue a mesma ordem ao gravar o contexto de um vínculo novo e requer `jq`; sua lookup de request-context é melhor esforço: sem token ou `curl`; uma resposta não-2xx; uma resposta não resolvida; ou uma versão do relay sem aquele endpoint deixa o contexto desconhecido.
-Nesse caso o vínculo ainda é gravado mas `bin/sq-x-link.sh` imprime um aviso alto; e quando a plataforma ou orçamento explícito de um follow-up não pode ser resolvido autoritativamente de nenhuma fonte, `bin/sq-x-reply.sh` o recusa (saída segura 8) em vez de postar com um padrão local — Squad retém e retenta uma vez que ambos os valores sejam recuperáveis.
-Vínculos novos começam com `x_followups=0` e o timestamp atual; ao re-vincular a mesma solicitação de relay para uma tarefa sucessora, passe flags pareadas `--carry-count <n> --carry-ts <epoch>` mais qualquer `x_platform=` e `x_reply_max_chars=` anteriores como `--carry-platform <x|discord> --carry-max <n>` para que a sucessora preserve a contagem de follow-up já consumida, a janela original de 7 dias e o orçamento de split de resposta.
-Puros reconhecimentos ou menções sem nada a responder são dispensados através de `bin/sq-x-dismiss.sh` antes que o arquivo de inbox local seja limpo.
-Dismiss envia `POST /connector/dismiss` com `{request_id}`, publica nenhum texto e diz ao relay para descartar a solicitação em vez de re-oferecê-la ou recuar para uma auto-resposta offline; em caso de sucesso, limpa o registro durável de contexto de resposta daquela solicitação, enquanto o marcador de oferta separado permanece para sua retenção limitada para que uma breve re-oferta do relay fique silenciosa.
-Problemas de auth ou config do relay são reportados uma vez como `x-mode-error ...` até a recuperação.
-Uma falha durável de claim de oferta é igualmente reportada uma vez como `x-mode-error cannot record mention offer` e permanece deduplicada através de polls silenciosos sem-pending até que uma oferta posterior confirme um marcador válido existente ou reivindique um novo.
-Respostas ao vivo são publicadas por `bin/sq-x-reply.sh`, que envia `POST /connector/answer` com `{request_id,text}` para respostas de uma mensagem.
-Adicione `--image <path>` para anexar uma PNG, JPEG, GIF, WebP, BMP ou TIFF local como `{media_type,data_base64}` no objeto opcional `image` do relay.
-Follow-ups de conclusão usam `bin/sq-x-followup.sh`, que verifica o vínculo local `state/<id>.meta` e envia a mesma forma de payload através de `POST /connector/followup` chamando `bin/sq-x-reply.sh --followup`, até três vezes por vínculo dentro da janela.
-Adicione `--image <path>` lá também quando um follow-up de conclusão deve carregar uma imagem.
-Uma postagem bem-sucedida incrementa o contador local `x_followups=` e mantém o vínculo, a menos que `--final` tenha sido passado ou a nova contagem atinja o limite, caso em que o vínculo é limpo em vez disso; uma postagem falhada deixa o vínculo e contador intactos para que possa ser retentado.
-O próprio relay rejeita um follow-up além de seu próprio limite ou janela com HTTP 409 e pode incluir `{"error":"followup_unavailable"}` no corpo da resposta; o cliente superfaca qualquer 409 de follow-up como um código de saída distinguível e usa o marcador de corpo apenas para um diagnóstico mais preciso.
-`sq-x-followup.sh` trata essa saída exatamente como uma expiração detectada localmente — limpa o vínculo e pula silenciosamente em vez de retentar — então um relay mais antigo de follow-up único ou uma vinculação já exaurida degrada graciosamente.
-Trata a recusa segura de `sq-x-reply.sh` (saída 8: plataforma ou orçamento explícito não resolvido) diferentemente: essa é uma retenção retentável, então o vínculo é MANTIDO e o follow-up é retentado uma vez que ambos os valores possam ser recuperados, nunca postado com um padrão local.
-Rejeições de relay fora da janela são garantidas apenas enquanto a linha de vinculação expirada ainda existe no lado do relay; após sua varredura de limpeza, uma chamada de follow-up muito tardia pode em vez disso ver um 200 inofensivo de no-op, por isso a poda local de janela e limite continua sendo o principal guard.
-Split de resposta é consciente de plataforma: um campo de plataforma relay explícito (`reply_platform`, `platform`, `target_platform`, `source_platform` ou `provider`) vence, caso contrário um `tweet_id` legado começando com `discord:` seleciona Discord e um `tweet_id` numérico seleciona X.
-Um campo de limite relay explícito (`reply_max_chars`, `reply_max_characters`, `message_max_chars`, `message_limit` ou `max_chars`) vence sobre os padrões da plataforma.
-Se a resposta exceder o orçamento selecionado, o cliente a divide em uma thread numerada em limites de código cercado, parágrafo, linha e palavra e envia `{request_id,text,texts}`, onde `texts` é a lista ordenada de chunks e `text` continua sendo o primeiro chunk para relays mais antigos.
-Quando `--image <path>` está presente em uma resposta dividida, a imagem vai na primeira/mensagem abridora e chunks posteriores ficam apenas texto.
-`SQX_X_REPLY_MAX_CHARS` padrão é 280 e limita a um mínimo de 50; `SQX_DISCORD_REPLY_MAX_CHARS` padrão é 1900, limita a um mínimo de 50 e reseta valores acima do limite de 2000 caracteres do Discord para 1900.
-`SQX_X_THREAD_MAX` padrão é 25 e limita threads de resposta grandes demais para cada plataforma, marcando a última mensagem retida com reticências quando truncamento é necessário.
-`SQX_FOLLOWUP_MAX_AGE_SECS` padrão é 604800 (7 dias) e controla a janela local de follow-up de conclusão; `SQX_FOLLOWUP_MAX_COUNT` padrão é 3 e controla o limite local de follow-ups.
-
-Defina `SQX_DRY_RUN` para pré-visualizar respostas e dismissals sem postar.
-Verdadeiro significa qualquer coisa exceto não-definido, vazio, `0`, `false`, `no` ou `off`; um valor de ambiente explícito vence sobre `.env`.
-Em dry-run, `sq-x-reply.sh` grava o payload que seria para `state/x-outbox/<request_id>.json`, incluindo `texts` para uma thread e um marcador `endpoint` para pré-visualizações de follow-up, imprime um resumo `DRY RUN` no stderr, ecoa o `request_id` e sai com 0.
-Quando uma imagem é anexada, o registro de dry-run usa metadados compactos `{media_type, bytes, source_path}` em vez de gravar os bytes base64.
-Em dry-run, `sq-x-dismiss.sh` grava `{request_id, endpoint:"dismiss"}` no mesmo caminho do outbox, imprime um resumo `DRY RUN`, ecoa o `request_id` e sai com 0.
-Os corpos de resposta e follow-up ao vivo intencionalmente permanecem na mesma forma, incluindo `image` opcional; o relay os distingue por endpoint, e dismiss continua `{request_id}`.
-Esses caminhos precisam de `jq` para construir o payload JSON, mas são executados antes das verificações de token e rede, então não precisam nem de `SQX_PAIRING_TOKEN` nem de `curl`.
-
-### Respostas públicas prometidas (state/public-followup)
-
-Uma solicitação de relay que gera trabalho real pode deixar Squad devendo uma resposta pública específica em uma thread específica.
-Essa promessa é uma obrigação tipada `kind=public-followup` de propriedade exclusiva de `sq-tasks public-followup`, com o contexto completo da solicitação privada permanecendo em `state/x-context/`; Squad não mantém nenhuma cópia paralela de nenhum dos dois.
-`bin/sq-public-followup.sh` é o lado do Squad: registra um compromisso, reconcilia resultados de trabalho tipados terminais nele e publica a resposta final através de `bin/sq-x-reply.sh --followup`.
-Execute `bin/sq-public-followup.sh --help` para os subcomandos e flags exatos.
-
-Registration é o que cria o transporte privado desta base sob `state/public-followup/` (modo 0700): `registry/` para o vínculo público-seguro limitado de cada compromisso vivo, `events/` para resultados terminais tipados aguardando reconciliação, `consumed/` para o ledger de eventos aceitos, `rejected/` para recusas mantidas com uma linha de motivo e `surfaced` para a assinatura last-surfaced do poll.
-A base que detém o compromisso também detém a postagem externa, porque apenas ela detém o consentimento do relay, o contexto da solicitação e a vinculação opaca da thread.
-Trabalho roteado para outro lugar reporta um resultado terminal tipado com `bin/sq-public-followup-emit.sh` e nunca procura a thread; esse emissor recusa escrever em uma base sem registro para a obrigação nomeada.
-O id de um evento terminal é derivado de sua tupla de identidade, então um relatório duplicado, uma retentativa ou uma reprodução após reinicialização resolve para o mesmo evento e não muda nada.
-
-Activation é o mesmo contrato `.env` `SQX_PAIRING_TOKEN` do resto do Relay, sem segunda flag.
-Uma base sem esse token executa um teste de arquivo e para: nenhuma chamada `sq-tasks`, nenhuma varredura de backlog ou request-context, e nenhum diretório `state/public-followup/`.
-Startup comum, polling, limpeza e subcomandos silenciosos do lado da leitura também não produzem saída; comandos que requerem um relay ativo reportam aquele erro de configuração após o mesmo gate.
-Uma base com relay habilitado sem compromisso registrado para em um check de presença O(1) de diretório, então o estado vazio não custa nenhuma chamada CLI e não adiciona nenhuma varredura periódica.
-Resultados terminais não reconciliados usam o poll existente de 30 segundos do relay em vez de um novo processo ou timer: `bin/sq-x-poll.sh` compara a assinatura do evento pendente contra `surfaced` e acorda Squad uma vez por novo conjunto de resultados.
-O digest de início de sessão separadamente imprime uma subseção "Public commitments awaiting delivery" do disco quando, e apenas quando, esta base está relay-ativa e ainda deve uma resposta, então compactação e reinicialização são não-eventos.
-`bin/sq-teardown.sh` recusa limpar uma tarefa enquanto esta base ainda deve uma resposta pública para exatamente aquele trabalho, a menos que `--force` carregue aprovação explícita de descarte.
-`SQUAD_PF_RETRY_BACKOFF_SECS` (padrão 900) define o horário da próxima tentativa gravado com um erro de entrega retentável.
-Veja [verification/public-followup.md](../verification/public-followup.md) para a evidência atual do mantenedor por trás do end-to-end de reinicialização e da garantia de zero-overhead com relay desabilitado.
-
-## Telegram bridge (config/telegram-bridge.env)
-
-O Telegram bridge é um relay local opcional que implementa o contrato de conector da seção Relay acima e o traduz para a Telegram Bot API.
-É o "relay local" que `SQX_RELAY_URL` pode apontar: o `.env` da base precisa apenas de `SQX_RELAY_URL=http://127.0.0.1:8787` ao lado do `SQX_PAIRING_TOKEN` existente, e a base Squad em execução não precisa de alterações de código.
-Apenas o id de usuário Telegram do comandante é aceito como autor da menção, e o conector escuta em 127.0.0.1 por padrão.
-
-Para configurar:
-
-1. Crie um bot com @BotFather e copie seu token.
-2. Grava o token e o id de usuário Telegram do comandante no `config/telegram-bridge.env` gitignored desta base:
-   `TG_BOT_TOKEN=<token do bot>`
-   `TG_ALLOWED_CHAT_IDS=<id de usuário Telegram do comandante>`
-3. Coloque `SQX_PAIRING_TOKEN=<token>` no `.env` gitignored da base (o mesmo token que já está lá quando Relay está ligado) e defina `SQX_RELAY_URL=http://127.0.0.1:8787`.
-
-Execute o bridge como o serviço de usuário fornecido para que inicie na inicialização e reinicie quando crashar:
-
-1. Copie `systemd/sq-tg-bridge.service` para `~/.config/systemd/user/`, ajustando o caminho `SQUAD_BASE` dentro dele quando esta base vive fora do layout padrão `~/Projects/squad`.
-2. `systemctl --user daemon-reload`
-3. `systemctl --user enable --now sq-tg-bridge`
-4. `loginctl enable-linger "$USER"` para que o gerenciador de usuário (e portanto o bridge) inicie na inicialização, não apenas após o login.
-
-Verifique com `systemctl --user status sq-tg-bridge` (ativo, reinicializações registradas) e `journalctl --user -u sq-tg-bridge` (o bridge registra cada início no stderr).
-Remova o serviço com `systemctl --user disable --now sq-tg-bridge`, depois delete o arquivo de unit copiado e execute `systemctl --user daemon-reload`.
-O bridge precisa apenas da biblioteca padrão do Python 3, liga em 127.0.0.1 e registra no stderr (o cabeçalho do script e `--help` são donos dos flags e chaves de config exatos).
-Uma reinicialização é não-destrutiva: estado de solicitação de runtime (a fila de pendências, vinculações de follow-up e o offset de atualização do Telegram) vive em `state/telegram-bridge/state.json` (gitignored) e sobrevive a reinicializações do bridge, então uma reinicialização nunca re-ingere uma mensagem já oferecida e nunca re-responde uma solicitação já respondida.
-
-### Canal dual (chat to chat + Telegram)
+## Espelhamento Telegram (config/telegram-bridge.env)
 
 Quando o comandante quer que respostas de chat também cheguem no Telegram, Squad espelha cada resposta voltada para o comandante com `bin/sq-tg-notify.sh <texto-ou-'-'>` (`-` lê a mensagem do stdin).
-O espelhamento é um ping proativo, não uma solicitação de relay: chama a Telegram Bot API diretamente (`sendMessage`) contra o mesmo `config/telegram-bridge.env`, visa a primeira entrada `TG_ALLOWED_CHAT_IDS` e funciona mesmo quando o bridge está fora.
+É um ping proativo, não um caminho de requisição: chama a Telegram Bot API diretamente (`sendMessage`) contra o `config/telegram-bridge.env` gitignorado desta base, que guarda `TG_BOT_TOKEN` e `TG_ALLOWED_CHAT_IDS`, e visa o primeiro chat id permitido.
 Imprime uma linha `telegram HTTP <code>` para que um chamador possa distinguir um espelhamento entregue de um falhado, e falha fechado (saída 1, nada enviado) quando o arquivo de config, token ou chat id está ausente.
 A base home resolve como os outros scripts `sq-*`: `$SQUAD_BASE`, depois legado `$SQUAD_HOME`, depois a raiz deste repositório.
-O bridge reporta a plataforma `discord` resolvida pelo cliente com um `reply_max_chars` explícito de 4096.
-O cliente relay do Squad resolve apenas as plataformas `x` e `discord` para sua fail-safe de follow-up, e um limite explícito sempre vence sobre o padrão da plataforma, então respostas ainda dividem no orçamento de mensagem de 4096 caracteres do Telegram e follow-ups de conclusão passam a fail-safe.
 
 ## Fontes de processo para evento (state/procevent)
 
@@ -664,7 +526,7 @@ SQUAD_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded opera
 SQUAD_POLL=15              # segundos entre ciclos de poll do sentry
 SQUAD_HEARTBEAT=600        # segundos base entre varreduras de heartbeat; heartbeats sem mudança são absorvidos quando ocioso
 SQUAD_HEARTBEAT_MAX=7200   # teto de backoff do heartbeat
-SQUAD_CHECK_INTERVAL=300   # segundos entre checks lentos (polls de merge autenticados, atividade de passos do Drill, checks customizados ou dispatch do Relay)
+SQUAD_CHECK_INTERVAL=300   # segundos entre checks lentos (polls de merge autenticados, atividade de passos do Drill ou checks customizados)
 SQUAD_CHECK_TIMEOUT=30     # segundos permitidos por script de check lento
 SQUAD_PROCEVENT_MAX_OUTPUT_BYTES=1048576   # limite para um único resultado de processo para evento capturado
 SQUAD_PROCEVENT_CLAIM_ROOT=                # raiz de claim de fonte global na máquina; padrão $XDG_STATE_HOME/Squad/procevent-claims
@@ -674,23 +536,8 @@ SQUAD_TEARDOWN_DRILL_TIMEOUT=10    # segundos permitidos por query de drill ou a
 SQUAD_CREW_STATE_RUNS_LIMIT=200  # linhas recentes de execução de drill escaneadas por sq-crew-state.sh e sq-exec-state.sh quando axi status não pode ser atribuído ao código atual
 SQUAD_CREW_STATE_BIN=bin/sq-crew-state.sh   # sobrescrever de teste para o leitor de estado atual usado por triagem de sentry working/paused
 TYPESAFE_API_KEY=       # recomendações Jev em modo sombra; somente ambiente, nunca argv ou logs (ver "Recomendações Jev em modo sombra")
-SQX_PAIRING_TOKEN=      # token de emparelhamento Relay; opt-in .env autoriza respostas e ações de lifecycle elegíveis
-SQX_RELAY_URL=https://mySquad.io   # sobrescrever endpoint Relay opcional, principalmente para desenvolvimento de relay local
-SQX_ENV_FILE=           # arquivo .env alternativo opcional para invocações diretas de cliente Relay; bootstrap ainda verifica $SQUAD_BASE/.env
-SQX_DRY_RUN=            # verdadeiro pré-visualiza respostas e dismissals do Relay para state/x-outbox/ sem postar ou exigir token
-SQX_X_REPLY_MAX_CHARS=280   # orçamento de split por mensagem de resposta X; valores abaixo de 50 limitam a 50
-SQX_DISCORD_REPLY_MAX_CHARS=1900   # orçamento de split por mensagem de resposta Discord; valores abaixo de 50 limitam a 50, valores acima de 2000 resetam para 1900
-SQX_X_THREAD_MAX=25     # máximo de mensagens em uma thread de resposta auto-dividida
-SQX_FOLLOWUP_MAX_AGE_SECS=604800   # janela local para postar follow-ups de conclusão do Relay (7 dias)
-SQX_FOLLOWUP_MAX_COUNT=3   # limite local de follow-ups de conclusão do Relay por menção vinculada
-TG_BOT_TOKEN=            # Telegram bridge: token do bot do @BotFather (config/telegram-bridge.env)
-TG_ALLOWED_CHAT_IDS=     # Telegram bridge: ids de usuário Telegram do comandante separados por vírgula autorizados a enviar solicitações
-TG_BRIDGE_BIND=127.0.0.1   # Telegram bridge: endereço de escuta do conector
-TG_BRIDGE_PORT=8787     # Telegram bridge: porta de escuta do conector (0 = efêmera)
-TG_BRIDGE_CONFIG=        # Telegram bridge: arquivo env alternativo (padrão <SQUAD_BASE>/config/telegram-bridge.env)
-TG_BRIDGE_STATE_FILE=    # Telegram bridge: arquivo de estado de runtime alternativo (padrão <SQUAD_BASE>/state/telegram-bridge/state.json)
-TG_BRIDGE_SEND_TIMEOUT=8   # Telegram bridge: limite HTTP por envio em segundos (padrão 8; deve ser positivo)
-SQUAD_PF_RETRY_BACKOFF_SECS=900   # segundos antes da próxima tentativa após um erro de entrega de resposta pública prometida retentável
+TG_BOT_TOKEN=            # espelhamento Telegram: token do bot do @BotFather (config/telegram-bridge.env)
+TG_ALLOWED_CHAT_IDS=     # espelhamento Telegram: ids de usuário Telegram do comandante separados por vírgula; o primeiro é o destino do espelhamento
 SQUAD_LOCK_STALE_AFTER=2   # segundos antes que registros de bloqueio de pid-morto possam ser recuperados; bloqueios no meio da aquisição mantêm pelo menos 2s de graça
 SQUAD_GUARD_GRACE=300      # segundos antes que avisos de guard, checks de saúde de armazenamento e o guard de fim de turno primário tratem um beacon de sentry como obsoleto
 SQUAD_CLAUDE_AUTOARM_ATTEMPTS=2   # tentativas limitadas de armazenamento Stop-owned por ciclo de auto-arm do Claude; valores aceitos são 1, 2 ou 3

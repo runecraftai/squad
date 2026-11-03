@@ -291,8 +291,6 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/sq-backend.sh"
 # shellcheck source=bin/sq-tasks-lib.sh
 . "$SCRIPT_DIR/sq-tasks-lib.sh"
-# shellcheck source=bin/sq-public-followup-lib.sh
-. "$SCRIPT_DIR/sq-public-followup-lib.sh"
 # shellcheck source=bin/sq-trace-context-lib.sh
 . "$SCRIPT_DIR/sq-trace-context-lib.sh"
 # shellcheck source=bin/sq-line-cap-lib.sh
@@ -404,7 +402,7 @@ strip_axi_help() {
 
 # Bound the dispatchable-now listing without rewriting the tool's own rendering:
 # `sq-tasks ready` rows are the indented lines under its ready[N]{...} header,
-# and every other line it prints (its count, its public-followup line) passes
+# and every other line it prints (its count line) passes
 # through untouched. Whatever is cut is disclosed exactly.
 print_ready_queued_bounded() {
   local ready=$1 path=$2
@@ -637,8 +635,6 @@ fi
 stage supervision-instructions
 AFK_PRESENT=0
 [ -e "$STATE/.afk" ] && AFK_PRESENT=1
-X_MODE_PRESENT=0
-[ -f "$CONFIG/x-mode.env" ] && X_MODE_PRESENT=1
 
 if [ "$PRIMARY_HARNESS" = pi ] || [ "$PRIMARY_HARNESS" = pi-signed ]; then
   PI_EXT="$SQUAD_ROOT/.pi/extensions/sq-primary-pi-watch.ts"
@@ -658,8 +654,7 @@ fi
 "$SCRIPT_DIR/sq-supervision-instructions.sh" \
   --harness "$PRIMARY_HARNESS" \
   --read-only "$READ_ONLY" \
-  --afk "$AFK_PRESENT" \
-  --x-mode "$X_MODE_PRESENT"
+  --afk "$AFK_PRESENT"
 
 # --- 5. read-once contract -------------------------------------------------
 # Ahead of the two digests it governs, not after them: a truncated tail is
@@ -749,23 +744,6 @@ else
   printf 'absent\n'
 fi
 
-# Public commitments made through the mySquad relay. A promise to reply in a
-# public thread must survive compaction and restart, so it is surfaced from disk
-# here rather than from conversation memory. sq-public-followup-lib.sh owns both
-# gates: a base that never opted into the relay runs one [ -f ] test, prints no
-# subsection, and never reaches sq-public-followup.sh.
-if fm_pf_relay_active "$SQUAD_BASE" \
-  && { fm_pf_has_registrations "$STATE" || fm_pf_has_events "$STATE"; }; then
-  PUBLIC_FOLLOWUP=$("$SCRIPT_DIR/sq-public-followup.sh" pending 2>/dev/null) || PUBLIC_FOLLOWUP=
-  if [ -n "$PUBLIC_FOLLOWUP" ]; then
-    subsection "Public commitments awaiting delivery"
-    printf '%s\n' "$PUBLIC_FOLLOWUP"
-    printf '\nEach line is a public reply this home still owes. Reconcile terminal results with\n'
-    printf '%s/bin/sq-public-followup.sh consume, then deliver a ready one with\n' "$SQUAD_ROOT"
-    printf '%s/bin/sq-public-followup.sh deliver <id>. Load relay-respond for the procedure.\n' "$SQUAD_ROOT"
-  fi
-fi
-
 # Durable new-session handoff requests (docs/handoff-request.md). At a milestone
 # close - a merged milestone PR or a drained flight queue - Squad records a
 # pending request; whichever surface runs first, this digest or the Pi turn-end
@@ -838,13 +816,6 @@ elif [ "$AFK_PRESENT" -eq 1 ]; then
 Away mode is active. Follow the supervision operating instructions block above:
 load /afk and ensure the daemon is running, because the daemon owns sentry
 supervision.
-
-EOF
-elif [ -f "$CONFIG/x-mode.env" ]; then
-  cat <<EOF
-Follow the supervision operating instructions block above for harness '$PRIMARY_HARNESS'.
-X mode is active, so the emitted block's cadence instruction applies.
-This script never starts supervision itself.
 
 EOF
 else

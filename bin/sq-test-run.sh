@@ -204,7 +204,7 @@ family_for_basename() {
       printf '%s\n' backend-dispatch
       ;;
     sq-pr-artifact-guard.test.sh|sq-pr-check-security.test.sh|sq-pr-merge.test.sh|sq-review-diff.test.sh|\
-    sq-teardown.test.sh|sq-x-mode.test.sh)
+    sq-teardown.test.sh)
       printf '%s\n' pr-forge
       ;;
     sq-afk-inject-e2e.test.sh|sq-afk-return.test.sh|sq-afk-orca.test.sh)
@@ -298,7 +298,6 @@ tests/sq-supervision-instructions.test.sh
 tests/sq-test-run.test.sh
 tests/sq-tmux-submit-busy.test.sh
 tests/sq-transition-lib.test.sh
-tests/sq-x-mode.test.sh
 EOF
 }
 
@@ -307,7 +306,6 @@ EOF
 # Execution order is longest first so wall-clock stays near the balanced sum.
 list_portable_parallel_1() {
   cat <<'EOF'
-tests/sq-x-mode.test.sh
 tests/sq-cd-pretool-check.test.sh
 tests/sq-decision-hold-lifecycle.test.sh
 tests/sq-test-run.test.sh
@@ -416,7 +414,6 @@ tests/sq-pi-primary-live-e2e.test.sh 19
 tests/sq-pi-watch-extension.test.sh 16386
 tests/sq-pr-check-security.test.sh 199573
 tests/sq-procevent.test.sh 42789
-tests/sq-public-followup.test.sh 23365
 tests/sq-quota-array-dispatch-live-e2e.test.sh 19
 tests/sq-xo-harness.test.sh 87895
 tests/sq-xo-lifecycle-e2e.test.sh 4929
@@ -949,7 +946,7 @@ families_for_changed_path() {
       printf '%s\n' XO
       ;;
     bin/sq-pr-*|bin/sq-merge-local.sh|bin/sq-teardown.sh|bin/sq-review-diff.sh|\
-    bin/sq-x-*|bin/sq-check*)
+    bin/sq-check*)
       printf '%s\n' pr-forge
       ;;
     bin/sq-drill-run-lib.sh)
@@ -1053,7 +1050,7 @@ families_for_changed_path() {
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
-    README.md|LICENSE|assets/*|docs/*|evidence/*|.gitignore)
+    README.md|README.pt-BR.md|LICENSE|assets/*|docs/*|evidence/*|.gitignore)
       ;;
     *)
       families_for_test_reference "$path" \

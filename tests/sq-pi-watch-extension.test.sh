@@ -1252,56 +1252,6 @@ EOF
   pass "OpenCode sentry plugin uses the effective SQUAD_BASE state"
 }
 
-test_opencode_primary_watch_plugin_sources_effective_config() {
-  local plugin repo home log out status
-  plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
-  repo="$TMP_ROOT/opencode-effective-config-root"
-  home="$TMP_ROOT/opencode-effective-config-home"
-  log="$TMP_ROOT/opencode-effective-config.log"
-  mkdir -p "$repo/bin" "$home/state" "$home/config"
-  git init -q "$repo"
-  : > "$repo/AGENTS.md"
-  printf 'export SQUAD_POLL=7\n' > "$home/config/x-mode.env"
-  cat > "$repo/bin/sq-sentry-arm.sh" <<'SH'
-#!/usr/bin/env bash
-printf 'poll=%s\n' "${SQUAD_POLL:-missing}" >> "${SQUAD_ARM_LOG:?}"
-printf 'sentry: healthy pid=1 (beacon 0s)\n'
-SH
-  chmod +x "$repo/bin/sq-sentry-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" SQUAD_BASE="$home" SQUAD_ARM_LOG="$log" node 2>&1 <<'EOF'
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-
-const mod = await import(pathToFileURL(process.env.PLUGIN).href);
-const client = { session: { promptAsync: async () => {} } };
-const hooks = await mod.FmPrimaryWatchArm({
-  client,
-  directory: process.env.WORKTREE,
-  worktree: process.env.WORKTREE,
-});
-writeFileSync(`${process.env.SQUAD_BASE}/state/.lock`, `${process.pid}\n`);
-await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-// Content poll for the same reason as the effective-state test: the arm opens
-// the log with >> (O_CREAT) before its line lands, so existence alone races.
-let text = "";
-for (let i = 0; i < 250 && !text.includes("poll=7"); i += 1) {
-  if (existsSync(process.env.SQUAD_ARM_LOG)) {
-    text = readFileSync(process.env.SQUAD_ARM_LOG, "utf8");
-  }
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
-if (!text.includes("poll=7")) {
-  console.error(`watch arm did not source the effective config: ${text}`);
-  process.exit(1);
-}
-EOF
-)
-  status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must source SQUAD_BASE config outside the repo root${out:+ (node output: $out)}"
-  [ -z "$out" ] || fail "OpenCode effective-config test printed output: $out"
-  pass "OpenCode sentry plugin sources the effective config"
-}
-
 test_opencode_primary_watch_plugin_requires_session_lock() {
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/sq-primary-watch-arm.js"
@@ -2156,7 +2106,6 @@ test_pi_process_exit_cleanup_listener_lifecycle
 test_pi_process_exit_cleanup_stops_arm_child
 test_opencode_plugin_package_boundary_is_explicit_esm
 test_opencode_primary_watch_plugin_uses_effective_state_home
-test_opencode_primary_watch_plugin_sources_effective_config
 test_opencode_primary_watch_plugin_requires_session_lock
 test_opencode_watch_arm_coordinator_respects_primary_scope
 test_opencode_primary_watch_plugin_rearms_after_wake

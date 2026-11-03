@@ -93,7 +93,7 @@ SQUAD_PAUSE_RESURFACE_SECS_DEFAULT=3600
 # continuing wait in the same instruction.
 # A wake repeating about every 60s indicates the stale/wedge path, not pause
 # resurfacing: the default is 3600s, while `SQUAD_CHECK_INTERVAL=30` only sets
-# Relay loop granularity and does not explain the repetition.
+# poll granularity and does not explain the repetition.
 
 # The resolution verb and durable-backlog-transfer verb that CLOSE a keyed
 # status decision opened by needs-decision or blocked. See status_open_decisions
@@ -1060,7 +1060,7 @@ signal_operator_is_paused() {  # <file> ...
 #   - the task is at least SQUAD_COMPACTION_SILENT_MIN_AGE_SECS old (default
 #     300s / 5 minutes), floored against its armed busy incarnation (the
 #     .busy-gen mtime, minted once at spawn or a documented recovery re-arm
-#     and never rewritten by sq-mcp-link.sh, sq-x-link.sh, or sq-promote.sh
+#     and never rewritten by sq-mcp-link.sh or sq-promote.sh
 #     the way .meta is) so a brand-new task still doing ordinary startup work
 #     - which legitimately has no status line yet - never false-fires;
 #   - this exact busy-state incarnation and seq have not already been

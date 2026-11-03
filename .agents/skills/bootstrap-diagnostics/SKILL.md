@@ -2,7 +2,7 @@
 name: bootstrap-diagnostics
 description: >-
   Agent-only handling playbook for session-start bootstrap diagnostics.
-  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH: invalid, CREW_DISPATCH: model existence:, UNIT_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, XO_SYNC, XO_LIVENESS, XO_HANDOFF, NUDGE_XOS, or SQX - or when a standalone bin/sq-bootstrap.sh or bin/sq-startup-network.sh run prints one of those lines.
+  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH: invalid, CREW_DISPATCH: model existence:, UNIT_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, XO_SYNC, XO_LIVENESS, XO_HANDOFF, or NUDGE_XOS - or when a standalone bin/sq-bootstrap.sh or bin/sq-startup-network.sh run prints one of those lines.
   A silent bootstrap section, or a BOOTSTRAP_INFO fact, means no skill load.
 user-invocable: false
 metadata:
@@ -60,5 +60,3 @@ When any diagnostic needs commander attention, report the plain consequence and 
   An unsafe-outbox variant requires path and file-type inspection before any retry.
 - `NUDGE_XOS: XO <id>: send failed: <reason>` - XO convergence changed a running base's loaded instructions or inherited config, but the deterministic `sq-send.sh sq-<id>` re-read nudge failed.
   Inspect the reason, keep the pending marker under `state/.XO-nudge-pending/` intact, and rerun session start after the endpoint or metadata issue is fixed so bootstrap can retry the exact same marked send on the same local or remote route.
-- `SQX: X mode on ...` / `SQX: X mode off ...` - bootstrap confirmed or removed the local Relay poll artifacts (`docs/configuration.md` "Relay (.env)"); the emitted line still carries Relay's former `X mode` wording.
-  Only when a running sentry needs the cadence transition applied immediately, restart the base-scoped sentry through the emitted harness supervision protocol; bootstrap deliberately never restarts the sentry itself.

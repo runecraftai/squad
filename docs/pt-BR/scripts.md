@@ -146,12 +146,3 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-teardown.sh`         | Teardown fail-closed: devolver worktrees ship landadas, exigir entregáveis completos de recon, aposentar bases XO |
 | `sq-harness.sh`          | Detectar o harness em execução e resolver crew ou XO harness, modelo e esforço |
 | `sq-lock.sh`             | Lock de sessão Squad por base                                                      |
-| `sq-x-lib.sh`            | Helpers compartilhados de config Relay, relay e threading de replies                              |
-| `sq-x-poll.sh`           | Um poll limitado de Relay: guarda menções recentemente oferecidas e emite o acordo delas uma única vez   |
-| `sq-x-reply.sh`          | Postar ou pré-visualizar dry-run uma reply ou follow-up composto de Relay                          |
-| `sq-x-dismiss.sh`        | Dispensar uma menção Relay pulgada no relay sem responder                        |
-| `sq-x-link.sh`           | Ligar uma tarefa spawnada à menção Relay originária dela no meta da tarefa                    |
-| `sq-x-followup.sh`       | Detectar, postar e limitar follow-ups de conclusão para uma tarefa ligada ao Relay                  |
-| `sq-public-followup-lib.sh` | Gate compartilhado de ativação relay, checagens de presença O(1) e caminhos privados de transporte para replies públicas prometidas |
-| `sq-public-followup.sh`  | Reconciliar resultados terminais tipados de trabalho num comprometimento público e entregar sua reply final uma vez |
-| `sq-public-followup-emit.sh` | Reportar um resultado terminal tipado de trabalho para a base que deve a reply pública    |

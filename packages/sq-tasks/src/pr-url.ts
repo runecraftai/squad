@@ -1,7 +1,7 @@
 /**
  * Canonical pull request URL classification - the single seam shared by prose
  * link derivation (deriveLinks), typed-link validation (`done --pr`, `add --pr`,
- * backend normalization), and public-followup `pr_url` deliverables.
+ * backend normalization).
  *
  * Exactly two byte-for-byte shapes are PR URLs:
  *   - GitHub:  https://github.com/<owner>/<repo>/pull/<n>

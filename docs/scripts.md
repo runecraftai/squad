@@ -145,12 +145,3 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |
 | `sq-lock.sh`             | Per-base Squad session lock                                                      |
-| `sq-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |
-| `sq-x-poll.sh`           | One bounded Relay poll: stash newly offered mentions and emit their once-only wake   |
-| `sq-x-reply.sh`          | Post or dry-run preview a composed Relay reply or follow-up                          |
-| `sq-x-dismiss.sh`        | Dismiss a skipped Relay mention at the relay without replying                        |
-| `sq-x-link.sh`           | Link a spawned task to its originating Relay mention in task meta                    |
-| `sq-x-followup.sh`       | Detect, post, and cap completion follow-ups for a Relay-linked task                  |
-| `sq-public-followup-lib.sh` | Shared relay-activation gate, O(1) presence checks, and private transport paths for promised public replies |
-| `sq-public-followup.sh`  | Reconcile typed terminal work results into a public commitment and deliver its final reply once |
-| `sq-public-followup-emit.sh` | Report one typed terminal work result into the base that owes the public reply    |

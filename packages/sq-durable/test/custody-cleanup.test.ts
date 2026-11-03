@@ -172,28 +172,6 @@ describe("conditioned cleanup of engine-owned artifacts", () => {
 });
 
 describe("custody ahead of every gate and mutation of the legacy writers", () => {
-	it("refuses a retire of a durable mission even when the relay is inactive, with no state change", async () => {
-		const { base, env } = await pendingMission();
-		const before = stateDigest(base);
-		const result = await runScript("sq-public-followup.sh", ["retire", MISSION], env);
-		expect(result.code).toBe(3);
-		expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
-		expect(stateDigest(base)).toBe(before);
-	});
-
-	it("refuses an emit for a durable mission even when the owning home's relay is inactive", async () => {
-		const { base, env } = await pendingMission();
-		const before = stateDigest(base);
-		const result = await runScript(
-			"sq-public-followup-emit.sh",
-			["--home", base, "--obligation", MISSION, "--relation", "rel-1", "--source-home", "main", "--work-id", "work-1", "--generation", "1", "--outcome", "done", "--outcome-text", "finished"],
-			env,
-		);
-		expect(result.code).toBe(3);
-		expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
-		expect(stateDigest(base)).toBe(before);
-	});
-
 	it("refuses to remove a non-terminal durable mission's PR-watch records under the sentry-style and migrate callers, leaving every record", async () => {
 		const { base, env } = await pendingMission();
 		const state = join(base, "state");
@@ -246,38 +224,7 @@ describe("custody ahead of every gate and mutation of the legacy writers", () =>
 	});
 });
 
-describe("custody refusals that hold even when the relay is inactive or the sweep repeats", () => {
-	it("refuses every public-followup write subcommand for a durable mission before the relay gate", async () => {
-		const { base, env } = await pendingMission();
-		const before = stateDigest(base);
-		const writes = [
-			["register", MISSION, "--relation", "rel-1", "--work-home", "main", "--work-id", "work-1", "--generation", "1"],
-			["deliver", MISSION],
-			["record-posted", MISSION, "--attempt", "1", "--chunks", "1"],
-			["retire", MISSION],
-			["retire", MISSION, "--force"],
-		];
-		for (const args of writes) {
-			const result = await runScript("sq-public-followup.sh", args, env);
-			expect({ args: args.join(" "), code: result.code }).toEqual({ args: args.join(" "), code: 3 });
-			expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
-		}
-		expect(stateDigest(base)).toBe(before);
-	});
-
-	it("refuses consumption of a durable mission's event before the relay gate, leaving the event unconsumed", async () => {
-		const { base, env } = await pendingMission();
-		const events = join(base, "state", "public-followup", "events");
-		mkdirSync(events, { recursive: true });
-		writeFileSync(join(events, "evt-1.json"), JSON.stringify({ obligation_id: MISSION }));
-		const before = stateDigest(base);
-		const result = await runScript("sq-public-followup.sh", ["consume"], env);
-		expect(result.code).toBe(3);
-		expect(result.stderr).toContain(`refused: metadata of mission ${MISSION} belongs to the durable core (generation 1)`);
-		expect(existsSync(join(events, "evt-1.json"))).toBe(true);
-		expect(stateDigest(base)).toBe(before);
-	});
-
+describe("custody refusals that hold when the sweep repeats", () => {
 	it("fails the PR-check migration, without publishing its marker, for a non-diagnostic durable artifact", async () => {
 		const { base, env } = await pendingMission();
 		const quarantine = join(base, "state", ".pr-check-quarantine");

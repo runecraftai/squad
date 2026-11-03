@@ -225,7 +225,6 @@ describe("legacy metadata writers against dm1-*: the laboratory table gives the 
 			{ name: "check registration", script: "sq-check-register.sh", args: ["dm1-lab"], message: owned("metadata") },
 			{ name: "MCP link", script: "sq-mcp-link.sh", args: ["dm1-lab", "req-1"], message: owned("metadata") },
 			{ name: "PR check", script: "sq-pr-check.sh", args: ["dm1-lab", "https://github.com/o/r/pull/1"], message: owned("metadata") },
-			{ name: "X link", script: "sq-x-link.sh", args: ["dm1-lab", "req-1"], message: owned("metadata") },
 		];
 		for (const writer of writers) {
 			const before = stateDigest(base);

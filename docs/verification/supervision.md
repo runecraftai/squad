@@ -295,7 +295,7 @@ SQUAD_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=80078
 The broader relevant regression pass was rerun on 2026-08-02 without live-base or daemon mutation.
 
 ```sh
-bin/sq-test-run.sh tests/sq-sentry-triage.test.sh tests/sq-sentry-lock.test.sh tests/sq-afk-inject-e2e.test.sh tests/sq-afk-return.test.sh tests/sq-x-mode.test.sh tests/sq-backend.test.sh tests/sq-backend-tmux-smoke.test.sh tests/sq-xo-safety.test.sh
+bin/sq-test-run.sh tests/sq-sentry-triage.test.sh tests/sq-sentry-lock.test.sh tests/sq-afk-inject-e2e.test.sh tests/sq-afk-return.test.sh tests/sq-backend.test.sh tests/sq-backend-tmux-smoke.test.sh tests/sq-xo-safety.test.sh
 ```
 
 Observed output:

@@ -15,7 +15,7 @@ Não infira o escopo, segurança de loop ou tradeoffs de compatibilidade deste g
 
 `bin/sq-guard.sh` é um warning pull-based que roda apenas quando outro comando de supervisão o invoca.
 O turn-end guard fecha a lacuna restante na própria fronteira de turno do primário.
-Quando trabalho, uma fonte process-event ou polling do Relay precisam de supervisão nessa fronteira e nenhuma sentinela com identidade correspondente tem beacon fresco, a integração do harness precisa ou bloquear o fim do turno ou forçar um follow-up limitado que usa a instrução de recuperação do protocolo emitido no início da sessão.
+Quando trabalho ou uma fonte process-event precisam de supervisão nessa fronteira e nenhuma sentinela com identidade correspondente tem beacon fresco, a integração do harness precisa ou bloquear o fim do turno ou forçar um follow-up limitado que usa a instrução de recuperação do protocolo emitido no início da sessão.
 O warning pull no meio do turno usa o veredito de supervisão ciente-do-modelo descrito abaixo, enquanto o turn-end guard mantém o predicado PID-strict de sentinela.
 O guard permanece um backstop; [`sentry-continuity.md`](sentry-continuity.md) é dona da continuidade normal.
 
@@ -31,7 +31,6 @@ Ela também exige `AGENTS.md`, `bin/` e o diretório de estado efetivo.
 Para um primário em escopo, o guard conta trabalho em andamento a partir de `state/*.meta`.
 Registros `state/procevent/*.source` registrados também exigem supervisão mesmo sem metadados de tarefa.
 O modo cross-harness padrão sai silenciosamente sem necessidade de supervisão.
-Todo modo trata `state/x-sentry.check.sh` como necessidade de supervisão, então o polling do Relay permanece protegido sem tarefa em andamento.
 Caso contrário ele chama `fm_sentry_healthy <state-dir> <watch-path> [grace-seconds] [home]` de `bin/sq-stand-to-lib.sh`, a mesma checagem PID-strict de lock com identidade correspondente e beacon fresco usada por `bin/sq-sentry-arm.sh`: um beacon obsoleto bloqueia mesmo quando um pid de sentinela está vivo, e um beacon fresco residual bloqueia quando o lock está ausente, morto ou com identidade divergente.
 O turn-end guard precisa dessa checagem estrita porque dispara na fronteira do turno, onde o auto-arm está trazendo uma sentinela fresca para o período ocioso que vem, e coopera com aquele arm em vez de confiar num beacon deixado pelo ciclo que acabou de terminar.
 `bin/sq-guard.sh`, o warning pull, usa em vez disso o `fm_sentry_supervision_verdict` ciente-do-modelo da mesma biblioteca, porque dispara no meio do turno quando sob o modelo auto-arm nenhuma sentinela roda de forma alguma.
@@ -98,7 +97,7 @@ Esse warning usa `bin/sq-supervision-instructions.sh --repair-line`, então semp
 ## Limites de compatibilidade
 
 - Worktrees filhos de operador e recon estão fora do escopo.
-- Uma base XO válida está em escopo; um endpoint XO ocioso sem poll de Relay permanece saudável porque não tem necessidade de supervisão.
+- Uma base XO válida está em escopo; um endpoint XO ocioso permanece saudável porque não tem necessidade de supervisão.
 - A divisão entre bloqueio direto e follow-up passivo limitado é restrita às integrações primárias listadas acima.
 - O modo headless do OpenCode e hooks de projeto do Grok não confiáveis permanecem fail-open na fronteira do host.
 - Kimi Code CLI 0.29.1 expõe apenas configuração global `[[hooks]]` em `~/.kimi-code/config.toml`, incluindo um evento `Stop` com campos de payload snake_case `hook_event_name`, `session_id`, `cwd` e `stop_hook_active`.

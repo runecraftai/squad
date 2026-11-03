@@ -1669,14 +1669,13 @@ test_XO_teardown_preserves_process_events_on_later_refusal() {
   subhome="$TMP_ROOT/procevent-later-refusal-subhome"
   sweep_log="$TMP_ROOT/procevent-later-refusal-sweep.log"
   err="$TMP_ROOT/procevent-later-refusal.err"
-  mkdir -p "$home/state/public-followup/registry" "$home/data" "$subhome/state/procevent"
+  mkdir -p "$home/state" "$home/data" "$subhome/state/procevent"
   mark_Squad_home "$subhome"
   printf 'domain\n' > "$subhome/.sq-xo-home"
   printf 'adapter=sq-report\n' > "$subhome/state/procevent/source.source"
   install_fake_process_event_sweep "$subhome" "$sweep_log"
-  printf 'SQX_PAIRING_TOKEN=test-token\n' > "$home/.env"
-  printf 'work_home=XO:domain\nwork_id=domain\n' > "$home/state/public-followup/registry/obligation"
   fm_write_XO_meta "$home/state/domain.meta" "$subhome"
+  printf 'needs-decision [key=later-refusal]: choose one\n' > "$home/state/domain.status"
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/XOs.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/procevent-later-refusal-fake")
   log="$TMP_ROOT/procevent-later-refusal-fake/tmux.log"
@@ -1690,9 +1689,9 @@ SH
       SQUAD_FAKE_TMUX_CAPTURE="$TMP_ROOT/procevent-later-refusal-fake/pane.txt" \
       SQUAD_FAKE_PROCEVENT_SWEEP_LOG="$sweep_log" \
       "$ROOT/bin/sq-teardown.sh" domain >/dev/null 2>"$err"; then
-    fail "teardown bypassed a later public-followup refusal"
+    fail "teardown bypassed a later open-decision refusal"
   fi
-  grep -F 'still owes a public reply' "$err" >/dev/null || fail "later public-followup refusal was not reached"
+  grep -F 'still has open commander decisions' "$err" >/dev/null || fail "later open-decision refusal was not reached"
   [ ! -s "$sweep_log" ] || fail "later refusal retired process-event sources before teardown was authorized"
   [ -e "$subhome/state/procevent/source.source" ] || fail "later refusal removed the process-event registration"
   [ -d "$subhome" ] || fail "later refusal removed the XO home"

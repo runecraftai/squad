@@ -5,13 +5,12 @@
 # The dual channel: when the commander wants chat replies to also arrive on
 # Telegram, Squad calls this helper with the same text it just posted here, so
 # the message lands in chat and in Telegram (docs/configuration.md, "Telegram
-# bridge (config/telegram-bridge.env)").  The helper is a proactive ping, not
-# part of the relay request lifecycle: it uses the Telegram Bot API directly
-# (sendMessage) and works even when the bridge is down.
+# mirror (config/telegram-bridge.env)").  The helper is a proactive ping: it
+# uses the Telegram Bot API directly (sendMessage).
 #
-# Config comes from the base's gitignored config/telegram-bridge.env, the same
-# file the bridge uses: TG_BOT_TOKEN (required) and TG_ALLOWED_CHAT_IDS
-# (required; the first id is the mirror target).  The file holds plain
+# Config comes from the base's gitignored config/telegram-bridge.env:
+# TG_BOT_TOKEN (required) and TG_ALLOWED_CHAT_IDS (required; the first id is the
+# mirror target).  The file holds plain
 # unquoted KEY=VALUE lines, one per setting.  The base home resolves like
 # the other sq-* scripts: $SQUAD_BASE, then legacy $SQUAD_HOME, then this repo
 # root.  Fail-closed: missing or unreadable config exits 1 with the reason on
