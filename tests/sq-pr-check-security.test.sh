@@ -2148,6 +2148,49 @@ test_dead_x_mode_check_is_retired() {
   pass "the dead Relay x-sentry check is retired instead of waking as an unauthenticated check"
 }
 
+# A base that already completed both migration phases can still receive the dead
+# Relay shim. Retirement must run before the marker short-circuit, or the sweep
+# re-quarantines it and leaves the current base permanently rejecting it.
+test_dead_x_mode_check_is_retired_after_migration_completes() {
+  local dir state rc
+  dir=$(make_case retired-x-mode-check-after-migration)
+  state="$dir/home/state"
+  chmod 0700 "$state"
+
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/first.out" 2> "$dir/first.err" \
+    || fail "initial migration did not complete: $(cat "$dir/first.err")"
+  assert_valid_migration_marker "$state/.pr-check-migration-v1"
+  assert_valid_scan_marker "$state/.pr-check-migration-scan-v1"
+  cp "$state/.pr-check-migration-v1" "$dir/migration-marker.before"
+  cp "$state/.pr-check-migration-scan-v1" "$dir/scan-marker.before"
+
+  printf '#!/usr/bin/env bash\nprintf "relay-poll\\n"\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -eq 0 ] || fail "completed-marker migration refused the dead x-sentry check: $(cat "$dir/migrate.err")"
+  [ ! -e "$state/x-sentry.check.sh" ] || fail "the dead x-sentry check survived a completed-marker migration"
+  if [ -e "$state/.pr-check-quarantine" ] || [ -L "$state/.pr-check-quarantine" ]; then
+    [ -z "$(find "$state/.pr-check-quarantine" -name 'x-sentry.*' -type f -print)" ] \
+      || fail "the completed-marker migration quarantined the dead x-sentry check"
+  fi
+  assert_valid_migration_marker "$state/.pr-check-migration-v1"
+  assert_valid_scan_marker "$state/.pr-check-migration-scan-v1"
+  cmp -s "$dir/migration-marker.before" "$state/.pr-check-migration-v1" \
+    || fail "the completed-marker migration rewrote the migration marker"
+  cmp -s "$dir/scan-marker.before" "$state/.pr-check-migration-scan-v1" \
+    || fail "the completed-marker migration rewrote the migration scan marker"
+  ! grep -q 'quarantined polls remain unarmed' "$dir/migrate.out" "$dir/migrate.err" \
+    || fail "retirement after completion reported quarantined polls"
+  ! grep -q 'rejected unauthenticated' "$dir/migrate.out" "$dir/migrate.err" \
+    || fail "retirement after completion reported a rejected unauthenticated check"
+  pass "the dead Relay x-sentry check is retired even after both migration markers are complete"
+}
+
 # A canonical PR poll whose task id happens to be x-sentry is user work, not the
 # dead Relay shim, so retirement leaves the published poll armed.
 test_canonical_x_mode_named_poll_survives_retirement() {
@@ -3410,6 +3453,7 @@ test_nonexecuting_migration
 test_bootstrap_migrates_before_other_mutations
 test_bootstrap_isolates_incomplete_poll_migration
 test_dead_x_mode_check_is_retired
+test_dead_x_mode_check_is_retired_after_migration_completes
 test_canonical_x_mode_named_poll_survives_retirement
 test_legacy_x_mode_named_poll_is_rebuilt
 test_ambiguous_x_mode_named_poll_is_quarantined
