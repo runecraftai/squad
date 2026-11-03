@@ -299,7 +299,7 @@ case "$PLAYBOOK@$VERSION" in
       "layer;not|never|no"
       "backlog;handoff|queue"
       "next;action|unresolved|stop"
-      "split|keep;stage|boundary;reversal|recovery;revert&restores&neither|revert&restores&no|revert&does&not&restore|revert&do&not&restore|revert&cannot&restore|revert&can&not&restore|revert&never&restores|revert&never&restore|revert&not&restore"
+      "split|keep;stage|boundary;reversal|recovery;revert&restores&neither|revert&restores&no|revert&does&not&restore|revert&do&not&restore|revert&cannot&restore|revert&can&not&restore|revert&never&restores|revert&never&restore"
     )
     ;;
   eval@1)

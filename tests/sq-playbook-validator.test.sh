@@ -261,6 +261,10 @@ write_multi_phase_v2 'split per boundary; data reversal: git revert the commit s
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a negation that does not apply to the restore verb'
 assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbound restore negation'
+write_multi_phase_v2 'split per boundary; data reversal: git revert the commit and we will not restore the database; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject an unbound not before the restore verb'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbound not before restore'
 write_multi_phase_v2 'Split the delivery per boundary; reversal: a down migration restores the data; Git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 expect_code 0 "$rc" "multi-phase-plan@2 should accept the contract wording regardless of capitalisation"
