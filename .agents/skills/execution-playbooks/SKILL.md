@@ -15,6 +15,7 @@ An execution method has three distinct categories, and each one owns exactly one
   The profile's checkpoint and escalation sections are constraint checkpoints inside the attached playbook's steps and carry no terminal authority of their own, because the playbook owns the sequence, the completion evidence and the stop condition while the profile carries constraints: for a paired brief the attached playbook's gate enforces only its own completion criteria, so the profile's constraints are reviewed by the operator.
 - A **gate** is a mechanical check on one property of the result, such as a lint rule or `bin/sq-playbook-validate.sh`.
   Gates are enforced by the selected playbook and are never selected on their own.
+  A playbook's completion artifact is the first Markdown file under the task's `data/<id>/artifacts/` whose title heading names the deliverable, meaning that heading contains `checklist` case-insensitively or pairs a version token with `evidence`; subheadings never select an artifact, and the gate's refusal names those accepted title forms.
 
 Every strike or recon brief records the decision: a selected playbook, or a one-line `--no-playbook` reason none applies.
 The versioned contract owner is the reference named by the brief; other surfaces only enforce that identity and, for a playbook, its completion evidence.

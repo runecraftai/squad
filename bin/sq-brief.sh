@@ -347,6 +347,7 @@ runtime-forensics@1 recon runtime-forensics-v1.md
 trace-forensics@1 recon trace-forensics-v1.md
 visual-parity@1 recon|strike visual-parity-v1.md
 multi-phase-plan@1 recon multi-phase-plan-v1.md
+multi-phase-plan@2 recon multi-phase-plan-v2.md
 eval@1 recon eval-v1.md
 plan-execute@1 strike plan-execute-v1.md'
 PROFILE_REGISTRY='react@1 strike react-v1.md'

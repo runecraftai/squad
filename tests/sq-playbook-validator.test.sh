@@ -217,6 +217,82 @@ for playbook in multi-phase-plan eval plan-execute; do
   expect_code 0 "$rc" "$playbook evidence should validate"
   assert_contains "$out" "playbook evidence valid: $playbook@1" "$playbook validator identity missing"
 done
+# @2 keeps the five @1 criteria and gates the split-or-keep rule as a sixth.
+id="lifecycle-multi-phase-plan-v2"
+mkdir -p "$HOME/data/$id/artifacts"
+printf 'playbook=multi-phase-plan\nplaybook_version=2\n' > "$HOME/state/$id.meta"
+v2_checks="$HOME/data/$id/artifacts/checks.md"
+write_multi_phase_v2() {
+  local sixth=$1
+  {
+    printf '# multi-phase-plan@2 evidence\n'
+    printf '%s\n' '## Criterion 1' 'Proof: outcome and real dependencies command path' \
+      '## Criterion 2' 'Proof: unit verification command path' \
+      '## Criterion 3' 'Proof: not a layer task decomposition command path' \
+      '## Criterion 4' 'Proof: existing backlog handoff queue command path' \
+      '## Criterion 5' 'Proof: next action unresolved question command path'
+    [ -z "$sixth" ] || printf '%s\n%s\n' '## Criterion 6' "Proof: $sixth"
+  } > "$v2_checks"
+}
+write_multi_phase_v2 'split-or-keep decided for each delivery boundary with its reason; data change reversal path: data/<id>/plan.md states the recovery and that git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" "multi-phase-plan@2 evidence should validate"
+assert_contains "$out" 'playbook evidence valid: multi-phase-plan@2' 'multi-phase-plan@2 validator identity missing'
+write_multi_phase_v2 ''
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject evidence without the split-or-keep criterion'
+assert_contains "$out" 'missing: criterion 6 split-or-keep decision and data reversal proof' 'multi-phase-plan@2 refusal must identify the missing split-or-keep criterion'
+write_multi_phase_v2 'split-or-keep decision recorded for each delivery boundary, path: data/<id>/plan.md'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a split-or-keep proof with no data reversal'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must identify the missing reversal evidence'
+write_multi_phase_v2 'split-or-keep decided for each delivery boundary with its reason; data change reversal path: data/<id>/plan.md records that a git revert does not restore the data or external effects; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" "multi-phase-plan@2 should accept the git revert boundary in another wording"
+write_multi_phase_v2 'split: one stage per boundary; data change reversal: git revert the commit; external: none; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a proof that treats git revert as the data reversal'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject the git revert misreading'
+write_multi_phase_v2 'split per boundary; data reversal: git revert the commit; neither a scheduler nor a second queue is added; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a proof whose negation is unbound from git revert'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbound negation'
+write_multi_phase_v2 'split per boundary; data reversal: git revert the commit so the data is not lost; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a negation that does not apply to the restore verb'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbound restore negation'
+write_multi_phase_v2 'split per boundary; data reversal: git revert the commit and we will not restore the database; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject an unbound not before the restore verb'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbound not before restore'
+write_multi_phase_v2 'Split the delivery per boundary; reversal: a down migration restores the data; Git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" "multi-phase-plan@2 should accept the contract wording regardless of capitalisation"
+# A plan artifact sorts first here and carries a checklist-looking subheading, so neither a
+# version token nor a subheading may select it as the checklist.
+id=multi-phase-plan-v2-artifact-discovery
+mkdir -p "$HOME/data/$id/artifacts"
+printf 'playbook=multi-phase-plan\nplaybook_version=2\n' > "$HOME/state/$id.meta"
+plan_artifact="$HOME/data/$id/artifacts/a-plan.md"
+evidence_artifact="$HOME/data/$id/artifacts/b-evidence.md"
+cat > "$plan_artifact" <<'EOF'
+# multi-phase-plan@2 plan
+
+## Implementation checklist
+Criterion 1: split-or-keep decision recorded
+Proof: split per boundary; reversal: down migration restores the data; command: bin/sq-playbook-validate.sh
+EOF
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'a plan artifact with a checklist subheading must not satisfy the gate on its own'
+assert_contains "$out" 'missing: checklist artifact' 'the plan artifact title and subheading must not be selected as the checklist'
+assert_contains "$out" 'title heading must name a checklist, or pair a version token with evidence' 'the refusal must name the accepted title forms so a title-only miss is self-correcting'
+v2_checks="$evidence_artifact"
+write_multi_phase_v2 'split-or-keep decided for each delivery boundary with its reason; data change reversal path: data/<id>/plan.md states the recovery and that git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" 'the versioned evidence artifact must satisfy the multi-phase-plan@2 gate beside a plan artifact'
+assert_contains "$out" "playbook evidence valid: multi-phase-plan@2 ($evidence_artifact)" 'the gate must select the evidence artifact, not the plan artifact'
+assert_not_contains "$out" "$plan_artifact" 'a plan heading must never be selected as the completion artifact'
+pass 'sq-playbook validator: a @2 plan title and its checklist subheading are not the completion artifact'
 react_proofs=(
   'architecture layers and boundaries path: src/app/routes.tsx command: lint passed'
   'components named functions and kebab-case path: src/pages/sign-in/ui.tsx'

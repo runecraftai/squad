@@ -21,23 +21,36 @@ ARTIFACTS="$DATA/$ID/artifacts"
 PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
 VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
 case "$PLAYBOOK@$VERSION" in
-  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|eval@1|plan-execute@1|react@1) ;;
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|multi-phase-plan@2|eval@1|plan-execute@1|react@1) ;;
   *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
 esac
 CHECKLIST=
 if [ -d "$ARTIFACTS" ]; then
   for candidate in "$ARTIFACTS"/*.md; do
     [ -f "$candidate" ] || continue
-    grep -q '^#.*[Cc]hecklist\|^#.*@1' "$candidate" || continue
+    # Only an artifact's title heading is selectable: a checklist title, or a title that pairs
+    # evidence with a version token. Subheadings never count and a bare @<digit> version token
+    # never selects an artifact, so a plan or profile record cannot be scored as the checklist.
+    awk '
+      /^#[^#]/ {
+        line = tolower($0)
+        if (index(line, "checklist") > 0) found = 1
+        else if (index(line, "evidence") > 0 && match(line, /@[0-9]/)) found = 1
+        exit(found ? 0 : 1)
+      }
+      END { exit(found ? 0 : 1) }
+    ' "$candidate" || continue
     CHECKLIST=$candidate
     break
   done
 fi
-[ -n "$CHECKLIST" ] || { echo "missing: checklist artifact under $ARTIFACTS"; exit 1; }
+[ -n "$CHECKLIST" ] || { echo "missing: checklist artifact under $ARTIFACTS (title heading must name a checklist, or pair a version token with evidence)"; exit 1; }
 FAIL=0
-# matches_any <text> <pipe-separated keywords>: true when any keyword occurs in text.
+# matches_any <text> <pipe-separated keywords>: true when any keyword occurs in text, case-insensitively.
 matches_any() {
-  local text=$1 rest=$2 kwd
+  local text rest kwd
+  text=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  rest=$2
   while [ -n "$rest" ]; do
     if case "$rest" in *"|"*) true ;; *) false ;; esac; then
       kwd="${rest%%|*}"
@@ -47,6 +60,46 @@ matches_any() {
       rest=""
     fi
     case "$text" in *"$kwd"*) return 0 ;; esac
+  done
+  return 1
+}
+# normalize_words <text>: lowercase whole words separated by single spaces.
+normalize_words() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' ' '
+}
+# matches_bound <text> <pipe-separated alternatives>: true when every
+# &-separated keyword of one alternative occurs as a whole word inside one
+# clause of text. A bound group cannot be satisfied by keywords scattered
+# across unrelated clauses.
+matches_bound() {
+  local text=$1 rest=$2 alt clauses clause norm keyword keywords ok
+  clauses=$(printf '%s' "$text" | tr ';.,' '\n')
+  while [ -n "$rest" ]; do
+    if case "$rest" in *"|"*) true ;; *) false ;; esac; then
+      alt="${rest%%|*}"
+      rest="${rest#*|}"
+    else
+      alt="$rest"
+      rest=""
+    fi
+    while IFS= read -r clause; do
+      norm=" $(normalize_words "$clause") "
+      ok=1
+      keywords=$alt
+      while [ -n "$keywords" ]; do
+        if case "$keywords" in *"&"*) true ;; *) false ;; esac; then
+          keyword="${keywords%%&*}"
+          keywords="${keywords#*&}"
+        else
+          keyword="$keywords"
+          keywords=""
+        fi
+        keyword=$(normalize_words "$keyword")
+        [ -n "$keyword" ] || continue
+        case "$norm" in *" $keyword "*) ;; *) ok=0; break ;; esac
+      done
+      [ "$ok" -eq 1 ] && return 0
+    done <<< "$clauses"
   done
   return 1
 }
@@ -110,6 +163,8 @@ react_dimension_problem() {
 # Format: CRITERIA_LABELS, CRITERIA_PATTERNS, CRITERIA_CHECKS are indexed arrays.
 # CRITERIA_CHECKS[i] is a semicolon-separated list of keyword groups.
 # Each group is pipe-separated (OR). All groups must match (AND).
+# Within one group, `&` binds keywords: kw1&kw2 must occur as whole words in
+# the same clause, so a required statement cannot pass on scattered tokens.
 # Example: "before|pre-fix;refutable|observation" means:
 #   - Must contain (before OR pre-fix) AND
 #   - Must contain (refutable OR observation)
@@ -244,6 +299,19 @@ case "$PLAYBOOK@$VERSION" in
       "next;action|unresolved|stop"
     )
     ;;
+  multi-phase-plan@2)
+    # @2 keeps the five @1 criteria and gates the split-or-keep rule as a sixth.
+    CRITERIA_LABELS=("outcome and dependencies" "verifiable units" "no layer task decomposition" "backlog handoff" "next action" "split-or-keep decision and data reversal")
+    CRITERIA_PATTERNS=("outcome" "verification" "layer" "backlog" "action" "split|keep")
+    CRITERIA_CHECKS=(
+      "outcome;dependency|dependencies"
+      "unit;verification|verify"
+      "layer;not|never|no"
+      "backlog;handoff|queue"
+      "next;action|unresolved|stop"
+      "split|keep;stage|boundary;reversal|recovery;revert&restores&neither|revert&restores&no|revert&does&not&restore|revert&do&not&restore|revert&cannot&restore|revert&can&not&restore|revert&never&restores|revert&never&restore"
+    )
+    ;;
   eval@1)
     CRITERIA_LABELS=("baseline and variant" "sanitized candidate view" "blinded evaluation" "chain elicitation prevention" "promotion boundary")
     CRITERIA_PATTERNS=("baseline" "sanitized" "blinded" "chain" "promotion")
@@ -321,7 +389,10 @@ for (( i=0; i<COUNT; i++ )); do
       group="$REST"
       REST=""
     fi
-    matches_any "$PROOF" "$group" || {
+    case "$group" in
+      *"&"*) matches_bound "$PROOF" "$group" ;;
+      *) matches_any "$PROOF" "$group" ;;
+    esac || {
       echo "incompatible: criterion $NUM $LABEL proof quality: expected one of $group"
       FAIL=1
     }
