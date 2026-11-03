@@ -44,7 +44,6 @@ README.md            public overview and development notes
 skills/              standalone public installer-facing skills, committed; not loaded by Squad
                       interview-me is vendored from runecraftai/skills (packages/skills/skills/interview-me/); refresh by copying that upstream directory
 bin/                 helper scripts, committed; read each script's header before first use
-.env                 optional local environment file; LOCAL, gitignored
 config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO base's own operators (AGENTS.md section 4)
 config/crew-dispatch.json  optional operator dispatch profiles; LOCAL, gitignored; Squad-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (AGENTS.md section 4). Inherited by XO bases
 config/jev-dispatch.json  optional Jev shadow opt-in; LOCAL, gitignored; disabled unless listed in `enabled_projects`; see "Jev shadow recommendations"
@@ -324,7 +323,6 @@ When neither `SQUAD_BASE` nor `SQUAD_HOME` is set, `SQUAD_ROOT_OVERRIDE` behaves
 `bin/sq-send.sh` is intentionally stricter than that general fallback: it requires `SQUAD_BASE` (or legacy `SQUAD_HOME`) to be set before resolving a target, so operator steers cannot silently resolve against the wrong base.
 `SQUAD_STATE_OVERRIDE`, `SQUAD_DATA_OVERRIDE`, `SQUAD_PROJECTS_OVERRIDE`, and `SQUAD_CONFIG_OVERRIDE` override individual operational directories for tests and specialized harness setup.
 Before `sq-brief.sh`, `sq-spawn.sh`, or `sq-afk-launch.sh` persists a path or passes it to another process, it resolves each applicable relative `SQUAD_BASE` (or legacy `SQUAD_HOME`), `SQUAD_STATE_OVERRIDE`, or `SQUAD_DATA_OVERRIDE` directory against the caller's working directory, preserves absolute spellings unchanged, and rejects an unresolvable relative directory with the offending variable named.
-Bootstrap applies the same relative `SQUAD_BASE` resolution only when embedding that base in a generated artifact; other transient consumers retain their existing shell-relative behavior.
 For the herdr backend, `SQUAD_BASE` also determines the workspace label used by the adapter.
 For the zellij backend, `SQUAD_BASE` does not split containers, but it determines the readable base prefix embedded in visible tab titles; use `SQUAD_ZELLIJ_SESSION` when a separate zellij session is needed.
 The full zellij base label also includes a short hash of the resolved `SQUAD_ROOT` path.

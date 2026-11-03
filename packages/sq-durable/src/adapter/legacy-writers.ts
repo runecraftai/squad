@@ -404,7 +404,7 @@ const RECORD_VAR_NAME = /^(?:[A-Za-z_]*_)?(?:meta|META|status|STATUS|exec|EXEC)(
 const STATUS_APPEND = /\bstatus_line_append\b/;
 const WRITER_CALLS: readonly RegExp[] = [
 	/\bsq-exec-state(?:\.sh)?["']?\s+["']?(?:claim|running|retry|retry_queued|release|released|after_run|heartbeat|recover|recover-all|transition)\b/,
-	/\b(?:tx|sq-tasks|tasks-axi|tasks_axi)\s+["']?(?:add|done|hold|mv|compact|update|rm|remove|move|unblock|block|release|start|edit|set|note|archive|bind-work|work-event|record-error)\b/,
+	/\b(?:tx|sq-tasks|tasks-axi|tasks_axi)\s+["']?(?:add|done|hold|mv|compact|update|rm|remove|move|unblock|block|release|start|edit|set|note|archive)\b/,
 	/\bSQ_TASKS\s*,\s*["'](?:add|done|hold|mv|update|rm)["']/,
 	/\bsq-(?:merge-local|pr-merge|backlog-handoff|backlog-receive|teardown|spawn|promote|pr-check|decision-hold)\.sh\b/,
 	/\bfm_pr_poll_(?:prepare|publish_prepared|cleanup|revoke_final|retirement_publish|retirement_recover_one)\b/,

@@ -259,7 +259,6 @@ Quando nem `SQUAD_BASE` nem `SQUAD_HOME` estão definidos, `SQUAD_ROOT_OVERRIDE`
 `bin/sq-send.sh` é intencionalmente mais estrito que esse fallback geral: requer `SQUAD_BASE` (ou legado `SQUAD_HOME`) antes de resolver um alvo, então direcionamentos de operadores não podem silenciosamente resolver contra a base errada.
 `SQUAD_STATE_OVERRIDE`, `SQUAD_DATA_OVERRIDE`, `SQUAD_PROJECTS_OVERRIDE` e `SQUAD_CONFIG_OVERRIDE` sobrescrevem diretórios operacionais individuais para testes e setup especializado de harness.
 Antes que `sq-brief.sh`, `sq-spawn.sh` ou `sq-afk-launch.sh` persista um caminho ou passe para outro processo, resolve cada diretório relativo aplicável `SQUAD_BASE` (ou legado `SQUAD_HOME`), `SQUAD_STATE_OVERRIDE` ou `SQUAD_DATA_OVERRIDE` contra o diretório de trabalho do chamador, preserva grafias absolutas inalteradas e rejeita um diretório relativo não resolvível com a variável problemática nomeada.
-O bootstrap aplica a mesma resolução relativa de `SQUAD_BASE` apenas ao incorporar aquela base em um artefato gerado; outros consumidores transitórios mantêm seu comportamento shell-relativo existente.
 Para o backend herdr, `SQUAD_BASE` também determina o label de workspace usado pelo adaptador.
 Para o backend zellij, `SQUAD_BASE` não divide containers, mas determina o prefixo base legível embutido nos títulos de abas visíveis; use `SQUAD_ZELLIJ_SESSION` quando uma sessão zellij separada for necessária.
 O label base zellij completo também inclui um hash curto do caminho `SQUAD_ROOT` resolvido.

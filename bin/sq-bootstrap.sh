@@ -84,9 +84,9 @@
 #          detached, so stale /tmp drill sandboxes never block startup; its last
 #          summary lands in state/.drill-sandbox-gc.log and SQUAD_DRILL_SANDBOX_GC=0
 #          opts out.
-#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the eight MUTATING sweeps
+#          Set SQUAD_BOOTSTRAP_DETECT_ONLY=1 to skip the seven MUTATING sweeps
 #          (PR-check migration, XO_sync, XO_liveness_sweep,
-#          XO_handoff_resume, x_mode_setup, detached drill-sandbox sweep,
+#          XO_handoff_resume, detached drill-sandbox sweep,
 #          retired-mission record sweep, fleet_sync) while still
 #          printing every read-only detect line
 #          above; the TANGLE line switches to advisory-only wording with no
@@ -94,7 +94,7 @@
 #          sq-session-start.sh's read-only path when another live session holds
 #          the unit lock, so a second concurrent session never race-mutates
 #          PR-check artifacts, XO bases, pending handoff outboxes,
-#          X-mode artifacts, retirement records and worktree registrations,
+#          retirement records and worktree registrations,
 #          project clones, or repair instructions.
 #          Unset/0 (the default) runs every sweep exactly as before - this flag
 #          is purely additive.
@@ -108,8 +108,8 @@
 #                 `gh auth status`, XO_liveness_sweep, XO_sync,
 #                 XO_handoff_resume, and fleet_sync.
 #            only - ONLY those network steps and nothing else. No tool detection,
-#                 no version floors, no tangle check, no PR-check migration, no
-#                 x_mode_setup: those already ran on the local pass.
+#                 no version floors, no tangle check, no PR-check migration:
+#                 those already ran on the local pass.
 #          SQUAD_BOOTSTRAP_DETECT_ONLY composes with it unchanged, so `only` plus
 #          detect-only is the read-only `gh auth status` probe on its own.
 #          bin/sq-startup-network.sh owns the deferral: it runs the `only` phase

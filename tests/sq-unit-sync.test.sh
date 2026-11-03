@@ -461,7 +461,7 @@ test_bootstrap_relays_recovered_and_stuck() {
   advance_origin "$home" rec-clone C1
   git -C "$rec" checkout --detach --quiet
 
-  # Full bootstrap: no state/ dir -> XO sync no-ops; no .env -> X mode off.
+  # Full bootstrap: no state/ dir -> XO sync no-ops.
   # We only assert the unit-sync relay lines; other detect lines are irrelevant.
   out=$(SQUAD_BASE="$home" SQUAD_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/sq-bootstrap.sh" 2>/dev/null)
 

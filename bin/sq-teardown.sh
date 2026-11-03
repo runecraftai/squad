@@ -197,8 +197,6 @@ SUB_HOME_MARKER=".sq-xo-home"
 . "$SCRIPT_DIR/sq-pr-lib.sh"
 # shellcheck source=bin/sq-xo-registry-lib.sh
 . "$SCRIPT_DIR/sq-xo-registry-lib.sh"
-# shellcheck source=bin/sq-xo-parent-lib.sh
-. "$SCRIPT_DIR/sq-xo-parent-lib.sh"
 # shellcheck source=bin/sq-stand-to-lib.sh
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
 # shellcheck source=bin/sq-classify-lib.sh
