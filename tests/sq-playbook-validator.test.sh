@@ -257,6 +257,13 @@ write_multi_phase_v2 'split per boundary; data reversal: git revert the commit; 
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a proof whose negation is unbound from git revert'
 assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbound negation'
+write_multi_phase_v2 'split per boundary; data reversal: git revert the commit so the data is not lost; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a negation that does not apply to the restore verb'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject an unbound restore negation'
+write_multi_phase_v2 'Split the delivery per boundary; reversal: a down migration restores the data; Git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+expect_code 0 "$rc" "multi-phase-plan@2 should accept the contract wording regardless of capitalisation"
 react_proofs=(
   'architecture layers and boundaries path: src/app/routes.tsx command: lint passed'
   'components named functions and kebab-case path: src/pages/sign-in/ui.tsx'

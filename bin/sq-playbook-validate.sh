@@ -36,9 +36,11 @@ if [ -d "$ARTIFACTS" ]; then
 fi
 [ -n "$CHECKLIST" ] || { echo "missing: checklist artifact under $ARTIFACTS"; exit 1; }
 FAIL=0
-# matches_any <text> <pipe-separated keywords>: true when any keyword occurs in text.
+# matches_any <text> <pipe-separated keywords>: true when any keyword occurs in text, case-insensitively.
 matches_any() {
-  local text=$1 rest=$2 kwd
+  local text rest kwd
+  text=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  rest=$2
   while [ -n "$rest" ]; do
     if case "$rest" in *"|"*) true ;; *) false ;; esac; then
       kwd="${rest%%|*}"
@@ -297,7 +299,7 @@ case "$PLAYBOOK@$VERSION" in
       "layer;not|never|no"
       "backlog;handoff|queue"
       "next;action|unresolved|stop"
-      "split|keep;stage|boundary;reversal|recovery;revert&neither|revert&not|revert&never|revert&cannot"
+      "split|keep;stage|boundary;reversal|recovery;revert&restores&neither|revert&restores&no|revert&does&not&restore|revert&do&not&restore|revert&cannot&restore|revert&can&not&restore|revert&never&restores|revert&never&restore|revert&not&restore"
     )
     ;;
   eval@1)
