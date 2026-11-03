@@ -60,7 +60,7 @@
 # Family labels, the changed-file map, and production portable-shard composition
 # live in this script only (one owner). The proven-isolated candidate set remains
 # owned by bin/sq-test-isolation-proof.sh; portable parallel shards are a
-# duration-balanced partition of that exact set (see docs/sq-test-portable-shards.md).
+# fixed partition of that exact set (see docs/sq-test-portable-shards.md).
 #
 # portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
 # split it across separate runners, so two of its stateful scripts still never

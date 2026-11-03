@@ -2044,6 +2044,27 @@ test_nonexecuting_migration() {
   snap_after=$(state_snapshot "$state")
   [ "$snap_after" = "$snap_before" ] || fail "completed migration changed a later custom check"
 
+  dir=$(make_case migration-x-linked)
+  state="$dir/home/state"
+  fm_write_meta "$state/task-x.meta" \
+    'window=sq-task-x' \
+    'pr=https://github.com/o/r/pull/12' \
+    'pr_head=0123456789abcdef0123456789abcdef01234567' \
+    'x_request=req-42' \
+    'x_request_ts=1700000000' \
+    'x_followups=1' \
+    'x_platform=discord' \
+    'x_reply_max_chars=1900'
+  printf 'legacy X-linked bytes\n' > "$state/task-x.check.sh"
+  snap_before=$(cat "$state/task-x.meta")
+  SQUAD_BASE="$dir/home" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+    || fail "X-linked migration failed"
+  [ "$(cat "$dir/migrate.out")" = 'PR_CHECK_MIGRATION: canonical polls rebuilt and armed; resume supervision for this base' ] \
+    || fail "X-linked migration did not report an armed canonical poll"
+  fm_pr_poll_artifacts_valid "$state" task-x "$POLL" || fail "X-linked migration did not arm a valid pair"
+  snap_after=$(cat "$state/task-x.meta")
+  [ "$snap_after" = "$snap_before" ] || fail "X-linked migration changed task metadata"
+
   dir=$(make_case migration-ambiguous)
   state="$dir/home/state"
   fm_write_meta "$state/task-b.meta" \
