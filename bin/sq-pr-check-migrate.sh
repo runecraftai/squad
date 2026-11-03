@@ -93,8 +93,27 @@ current_checks_authenticated() {
 # rejected unauthenticated check - and the marker short-circuit below can return
 # before the sweep would quarantine it into a permanent diagnostic obligation.
 # Retire that one known dead artifact before any short-circuit. A trust record or
-# a canonical PR poll under that same id is user data, so leave both alone; a
-# custom check with stale trust reaches quarantine, not this sweep.
+# any PR poll state under that same id is user data, so leave it alone for the
+# normal sweep; a custom check with stale trust reaches quarantine, not this
+# sweep.
+#
+# A real poll record is either a published sidecar/registration or a meta with a
+# pr= line (canonical, legacy, or ambiguous); only the dead shim has none.
+x_mode_poll_state_present() {
+  local meta="$STATE/x-sentry.meta" artifact line
+  for artifact in "$STATE/x-sentry.pr-poll" "$STATE/x-sentry.pr-poll-registration"; do
+    [ -e "$artifact" ] || [ -L "$artifact" ] || continue
+    return 0
+  done
+  [ -f "$meta" ] && [ ! -L "$meta" ] && [ -r "$meta" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      pr=*) return 0 ;;
+    esac
+  done < "$meta"
+  return 1
+}
+
 retire_dead_x_mode_check() {
   local check="$STATE/x-sentry.check.sh" trust="$STATE/x-sentry.check-trust"
   fm_custom_check_registered "$STATE" x-sentry && return 0
@@ -102,7 +121,7 @@ retire_dead_x_mode_check() {
   if [ -e "$trust" ] || [ -L "$trust" ]; then
     return 0
   fi
-  fm_pr_poll_artifacts_valid "$STATE" x-sentry "$TEMPLATE" && return 0
+  x_mode_poll_state_present && return 0
   rm -f -- "$check" || true
   if [ -e "$check" ] || [ -L "$check" ]; then
     echo "PR_CHECK_MIGRATION: the retired x-sentry check could not be removed; the sentry keeps rejecting it" >&2
