@@ -133,7 +133,7 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-skill-rollback.sh`   | Reverter uma skill para um snapshot anterior, interativamente ou por timestamp             |
 | `sq-pr-lib.sh`           | Ser dono da validação canônica de tarefa e PR mais publicação atômica privada de PR-poll, confirmação limitada de `MERGED` pós-merge, e aposentadoria ligada a identidade |
 | `sq-pr-poll.sh`          | Fornecer o programa byte-estático de sentinela para sidecars validados de poll de PR/MR           |
-| `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução e reconstruir apenas polls canônicos       |
+| `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução, retirar o check morto do modo X e reconstruir apenas polls canônicos       |
 | `sq-pr-check.sh`         | Registrar valores validados de `pr=` e `pr_head=`, então armar atomicamente um poll estático de merge |
 | `sq-pr-merge.sh`         | Mesclar a URL completa canônica GitHub do PR da tarefa contra o head fresco (igual ao registrado, se houver), checks frescos e mergeability; atualizar metadados do PR somente depois que o GitHub confirma o merge, então derrubar a tarefa landada |
 | `sq-retired-missions.sh` | Registrar a identidade exata de aposentadoria do terminal Orca e do worktree fob antes da remoção dos metadados, aposentar o terminal exato e reconciliar registros órfãos no sweep do bootstrap travado |

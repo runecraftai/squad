@@ -1,154 +1,154 @@
 {
   "concurrency": 4,
-  "finished_at": "2026-11-03T01:29:27Z",
+  "finished_at": "2026-11-03T09:58:25Z",
   "fm_test_run_jobs_enabled": false,
   "kind": "isolation-proof",
   "production_sharding_enabled": false,
-  "run_id": "sq-isolation-1793669267812-3667561",
+  "run_id": "sq-isolation-1793699744983-4020941",
   "scripts": [
     {
-      "duration_ms": 43689,
+      "duration_ms": 51141,
       "exit": 0,
       "path": "tests/sq-arm-pretool-check.test.sh",
       "worker": 1
     },
     {
-      "duration_ms": 224,
-      "exit": 1,
+      "duration_ms": 32255,
+      "exit": 0,
       "path": "tests/sq-backend-herdr.test.sh",
       "worker": 2
     },
     {
-      "duration_ms": 15733,
+      "duration_ms": 9606,
       "exit": 0,
       "path": "tests/sq-brief.test.sh",
       "worker": 3
     },
     {
-      "duration_ms": 18245,
+      "duration_ms": 29727,
       "exit": 0,
       "path": "tests/sq-cd-pretool-check.test.sh",
       "worker": 4
     },
     {
-      "duration_ms": 1706,
+      "duration_ms": 2724,
       "exit": 0,
       "path": "tests/sq-composer-ghost.test.sh",
       "worker": 5
     },
     {
-      "duration_ms": 74,
+      "duration_ms": 128,
       "exit": 0,
       "path": "tests/sq-composer-lib.test.sh",
       "worker": 6
     },
     {
-      "duration_ms": 16854,
+      "duration_ms": 25426,
       "exit": 0,
       "path": "tests/sq-crew-state.test.sh",
       "worker": 7
     },
     {
-      "duration_ms": 31331,
+      "duration_ms": 56122,
       "exit": 0,
       "path": "tests/sq-decision-hold-lifecycle.test.sh",
       "worker": 8
     },
     {
-      "duration_ms": 381,
+      "duration_ms": 331,
       "exit": 0,
       "path": "tests/sq-ensure-agents-md.test.sh",
       "worker": 9
     },
     {
-      "duration_ms": 11633,
+      "duration_ms": 7930,
       "exit": 0,
       "path": "tests/sq-grok-harness.test.sh",
       "worker": 10
     },
     {
-      "duration_ms": 6404,
+      "duration_ms": 9487,
       "exit": 0,
       "path": "tests/sq-herdr-lab.test.sh",
       "worker": 11
     },
     {
-      "duration_ms": 1450,
+      "duration_ms": 11922,
       "exit": 0,
       "path": "tests/sq-lint.test.sh",
       "worker": 12
     },
     {
-      "duration_ms": 15,
+      "duration_ms": 28,
       "exit": 0,
       "path": "tests/sq-pi-primary-types.test.sh",
       "worker": 13
     },
     {
-      "duration_ms": 6568,
+      "duration_ms": 14717,
       "exit": 0,
       "path": "tests/sq-pr-merge.test.sh",
       "worker": 14
     },
     {
-      "duration_ms": 1064,
+      "duration_ms": 2032,
       "exit": 0,
       "path": "tests/sq-review-diff.test.sh",
       "worker": 15
     },
     {
-      "duration_ms": 1086,
+      "duration_ms": 2402,
       "exit": 0,
       "path": "tests/sq-send-popup-settle.test.sh",
       "worker": 16
     },
     {
-      "duration_ms": 4709,
+      "duration_ms": 5753,
       "exit": 0,
       "path": "tests/sq-send-settle.test.sh",
       "worker": 17
     },
     {
-      "duration_ms": 1048,
+      "duration_ms": 2143,
       "exit": 0,
       "path": "tests/sq-send-strict.test.sh",
       "worker": 18
     },
     {
-      "duration_ms": 1036,
+      "duration_ms": 28431,
       "exit": 0,
       "path": "tests/sq-spawn-batch.test.sh",
       "worker": 19
     },
     {
-      "duration_ms": 149,
+      "duration_ms": 250,
       "exit": 0,
       "path": "tests/sq-supervision-instructions.test.sh",
       "worker": 20
     },
     {
-      "duration_ms": 18231,
+      "duration_ms": 34945,
       "exit": 0,
       "path": "tests/sq-test-run.test.sh",
       "worker": 21
     },
     {
-      "duration_ms": 1229,
+      "duration_ms": 1750,
       "exit": 0,
       "path": "tests/sq-tmux-submit-busy.test.sh",
       "worker": 22
     },
     {
-      "duration_ms": 65,
+      "duration_ms": 153,
       "exit": 0,
       "path": "tests/sq-transition-lib.test.sh",
       "worker": 23
     }
   ],
-  "started_at": "2026-11-03T01:27:47Z",
+  "started_at": "2026-11-03T09:55:44Z",
   "summary": {
-    "duration_ms": 100049,
-    "failed": 1,
+    "duration_ms": 160325,
+    "failed": 0,
     "total": 23
   }
 }

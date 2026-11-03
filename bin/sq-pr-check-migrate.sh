@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Non-executing migration for sentry PR checks created by older Squad
 # versions. Legacy check files are never run, sourced, or parsed by Bash.
+# The dead state/x-sentry.check.sh that Relay (X mode) setup wrote is retired
+# first, before any short-circuit, so it never reads as an unauthenticated
+# check.
 # Pending validated merged-poll retirements finish first. Canonical polls are
 # then rebuilt from validated metadata, remaining provenance-bound polls and
 # registered custom checks remain armed, and every other task poll is
@@ -83,6 +86,24 @@ current_checks_authenticated() {
     fm_custom_check_registered "$STATE" "$id" && continue
     fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE" || return 1
   done
+}
+
+# Relay (X mode) was removed, and only its deleted setup wrote
+# state/x-sentry.check.sh. No trust record can ever authenticate that filename,
+# so a base that once opted in keeps reporting it as a rejected unauthenticated
+# check - and the marker short-circuit below can return before the sweep would
+# quarantine it into a permanent diagnostic obligation. Retire that one known
+# dead artifact before any short-circuit, and leave a check registered under
+# that same id alone.
+retire_dead_x_mode_check() {
+  local check="$STATE/x-sentry.check.sh" trust="$STATE/x-sentry.check-trust"
+  fm_custom_check_registered "$STATE" x-sentry && return 0
+  [ -e "$check" ] || [ -L "$check" ] || [ -e "$trust" ] || [ -L "$trust" ] || return 0
+  rm -f -- "$check" "$trust" || true
+  if [ -e "$check" ] || [ -L "$check" ]; then
+    echo "PR_CHECK_MIGRATION: the retired x-sentry check could not be removed; the sentry keeps rejecting it" >&2
+  fi
+  return 0
 }
 
 private_migration_boundaries_valid() {
@@ -241,6 +262,8 @@ migration_complete() {
   fm_pr_private_file_valid "$MARKER" 600 "$state_device" || return 1
   migration_marker_content_valid "$MARKER"
 }
+
+retire_dead_x_mode_check
 
 # Marker short-circuits apply only when generated artifact identities are current.
 if migration_complete; then

@@ -2098,6 +2098,62 @@ test_bootstrap_migrates_before_other_mutations() {
   pass "bootstrap runs the non-executing migration at the locked session boundary"
 }
 
+# Relay (X mode) was removed, and only its deleted setup wrote
+# state/x-sentry.check.sh. That filename can never pass registration, so a base
+# that once opted in would otherwise keep reporting it as a rejected
+# unauthenticated check; the migration retires it instead of quarantining it
+# like an unknown legacy poll.
+test_dead_x_mode_check_is_retired() {
+  local dir state rc
+  dir=$(make_case retired-x-mode-check)
+  state="$dir/home/state"
+  chmod 0700 "$state"
+  printf '#!/usr/bin/env bash\nprintf "relay-poll\\n"\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+  printf 'sq-custom-check-v1\n%064d\n' 0 > "$state/x-sentry.check-trust"
+  chmod 0600 "$state/x-sentry.check-trust"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -eq 0 ] || fail "retiring the dead x-sentry check failed: $(cat "$dir/migrate.err")"
+  [ ! -e "$state/x-sentry.check.sh" ] || fail "the dead x-sentry check was left in place"
+  [ ! -e "$state/x-sentry.check-trust" ] || fail "its dead trust record was left in place"
+  [ ! -e "$state/.pr-check-quarantine/x-sentry.diagnostic.ambiguous" ] \
+    || fail "the dead x-sentry check was quarantined instead of retired"
+  grep -q 'quarantined polls remain unarmed' "$dir/migrate.err" \
+    && fail "retiring a known dead check still reported quarantined polls"
+  assert_valid_migration_marker "$state/.pr-check-migration-v1"
+  pass "the dead Relay x-sentry check is retired instead of waking as an unauthenticated check"
+}
+
+# A check registered under that same id is a real custom check, not the dead
+# Relay artifact, so retirement leaves the check and its trust record alone.
+test_registered_x_mode_named_check_survives_retirement() {
+  local dir state rc
+  dir=$(make_case registered-x-mode-named-check)
+  state="$dir/home/state"
+  chmod 0700 "$state"
+  printf '#!/usr/bin/env bash\nprintf "custom-ready\\n"\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+  SQUAD_BASE="$dir/home" "$REGISTER" x-sentry >/dev/null \
+    || fail "could not register a custom check under the retired id"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -eq 0 ] || fail "migration failed beside a registered custom check: $(cat "$dir/migrate.err")"
+  [ -e "$state/x-sentry.check.sh" ] || fail "retirement removed a registered custom check"
+  [ -e "$state/x-sentry.check-trust" ] || fail "retirement removed a registered custom check's trust record"
+  fm_custom_check_registered "$state" x-sentry \
+    || fail "the registered custom check no longer authenticates after migration"
+  pass "retirement leaves a check registered under the same id alone"
+}
+
 test_bootstrap_isolates_incomplete_poll_migration() {
   local dir state fakebin fleet_marker rc
   dir=$(make_case bootstrap-migration-isolation)
@@ -3230,6 +3286,8 @@ test_obligation_namespace_compatibility
 test_nonexecuting_migration
 test_bootstrap_migrates_before_other_mutations
 test_bootstrap_isolates_incomplete_poll_migration
+test_dead_x_mode_check_is_retired
+test_registered_x_mode_named_check_survives_retirement
 test_custom_snapshot_cleanup_on_signal
 test_returned_custom_check_descendants_are_drained
 test_teardown_removes_poll_artifacts

@@ -301,9 +301,11 @@ tests/sq-transition-lib.test.sh
 EOF
 }
 
-# Portable parallel shard 1: LPT balance of the proven-isolated set using the
-# current concurrent-proof durations in docs/sq-test-isolation-proof.json.
-# Execution order is longest first so wall-clock stays near the balanced sum.
+# Portable parallel shard 1: the first half of the recorded partition of the
+# proven-isolated set. Membership is deliberately stable rather than re-balanced
+# whenever the concurrent-proof durations in
+# docs/sq-test-isolation-proof.json move; docs/sq-test-portable-shards.md owns
+# the recorded sums and the imbalance between the two lanes.
 list_portable_parallel_1() {
   cat <<'EOF'
 tests/sq-cd-pretool-check.test.sh
@@ -319,7 +321,7 @@ tests/sq-transition-lib.test.sh
 EOF
 }
 
-# Portable parallel shard 2: the complementary LPT half of the proven set.
+# Portable parallel shard 2: the complementary half of that recorded partition.
 list_portable_parallel_2() {
   cat <<'EOF'
 tests/sq-backend-herdr.test.sh

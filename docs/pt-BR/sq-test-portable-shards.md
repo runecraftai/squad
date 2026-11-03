@@ -8,43 +8,44 @@
 ## Insumos de verificação
 
 As durações atuais de candidatos vieram da prova concorrente de 2026-11-03 registrada em [sq-test-isolation-proof.md](sq-test-isolation-proof.md).
-A prova rodou 23 candidatos com quatro workers e 1 falha.
+A prova rodou 23 candidatos com quatro workers e nenhuma falha.
 
 | duration_ms | script |
 |---:|---|
-| 43689 | `tests/sq-arm-pretool-check.test.sh` |
-| 31331 | `tests/sq-decision-hold-lifecycle.test.sh` |
-| 18245 | `tests/sq-cd-pretool-check.test.sh` |
-| 18231 | `tests/sq-test-run.test.sh` |
-| 16854 | `tests/sq-crew-state.test.sh` |
-| 15733 | `tests/sq-brief.test.sh` |
-| 11633 | `tests/sq-grok-harness.test.sh` |
-| 6568 | `tests/sq-pr-merge.test.sh` |
-| 6404 | `tests/sq-herdr-lab.test.sh` |
-| 4709 | `tests/sq-send-settle.test.sh` |
-| 1706 | `tests/sq-composer-ghost.test.sh` |
-| 1450 | `tests/sq-lint.test.sh` |
-| 1229 | `tests/sq-tmux-submit-busy.test.sh` |
-| 1086 | `tests/sq-send-popup-settle.test.sh` |
-| 1064 | `tests/sq-review-diff.test.sh` |
-| 1048 | `tests/sq-send-strict.test.sh` |
-| 1036 | `tests/sq-spawn-batch.test.sh` |
-| 381 | `tests/sq-ensure-agents-md.test.sh` |
-| 224 | `tests/sq-backend-herdr.test.sh` |
-| 149 | `tests/sq-supervision-instructions.test.sh` |
-| 74 | `tests/sq-composer-lib.test.sh` |
-| 65 | `tests/sq-transition-lib.test.sh` |
-| 15 | `tests/sq-pi-primary-types.test.sh` |
+| 56122 | `tests/sq-decision-hold-lifecycle.test.sh` |
+| 51141 | `tests/sq-arm-pretool-check.test.sh` |
+| 34945 | `tests/sq-test-run.test.sh` |
+| 32255 | `tests/sq-backend-herdr.test.sh` |
+| 29727 | `tests/sq-cd-pretool-check.test.sh` |
+| 28431 | `tests/sq-spawn-batch.test.sh` |
+| 25426 | `tests/sq-crew-state.test.sh` |
+| 14717 | `tests/sq-pr-merge.test.sh` |
+| 11922 | `tests/sq-lint.test.sh` |
+| 9606 | `tests/sq-brief.test.sh` |
+| 9487 | `tests/sq-herdr-lab.test.sh` |
+| 7930 | `tests/sq-grok-harness.test.sh` |
+| 5753 | `tests/sq-send-settle.test.sh` |
+| 2724 | `tests/sq-composer-ghost.test.sh` |
+| 2402 | `tests/sq-send-popup-settle.test.sh` |
+| 2143 | `tests/sq-send-strict.test.sh` |
+| 2032 | `tests/sq-review-diff.test.sh` |
+| 1750 | `tests/sq-tmux-submit-busy.test.sh` |
+| 331 | `tests/sq-ensure-agents-md.test.sh` |
+| 250 | `tests/sq-supervision-instructions.test.sh` |
+| 153 | `tests/sq-transition-lib.test.sh` |
+| 128 | `tests/sq-composer-lib.test.sh` |
+| 28 | `tests/sq-pi-primary-types.test.sh` |
 
 ## Lanes paralelas
 
-As duas lanes paralelas usam atribuição longest-processing-time a partir dessas durações medidas.
+As duas lanes paralelas mantêm uma partição fixa daquele conjunto provado, então a estimativa de uma lane é a soma dos seus scripts medidos, não uma divisão longest-processing-time recém-rebalanceada.
+A tabela abaixo registra as somas das pertenças atuais.
 
 | Lane | Contagem de scripts | Duração estimada |
 |---|---:|---:|
-| `portable-parallel-1` | 11 | 162436 ms (~162.4 s) |
-| `portable-parallel-2` | 13 | 162754 ms (~162.8 s) |
-| desbalanceamento | | 318 ms |
+| `portable-parallel-1` | 10 | 155189 ms (~155.2 s) |
+| `portable-parallel-2` | 13 | 174214 ms (~174.2 s) |
+| desbalanceamento | | 19025 ms (~19.0 s) |
 
 `bin/sq-test-run.sh` contém as pertenças exatas ordenadas em `list_portable_parallel_1` e `list_portable_parallel_2`.
 

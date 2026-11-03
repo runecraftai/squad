@@ -410,10 +410,11 @@ test_portable_shard_union_and_coverage_guard() {
   # No duplicates across the four partitions.
   [ "$(printf '%s\n' "$s1" "$s2" "$serial" "$herdr" | LC_ALL=C sort | uniq -d | wc -l | tr -d ' ')" = "0" ] \
     || fail "lanes must not duplicate scripts"
-  # LPT order: first script of shard 1 is the longest proven script.
+  # Shard 1 opens with its recorded first member: the published partition in
+  # docs/sq-test-portable-shards.md owns that order, and it is not an LPT claim.
   first=$(printf '%s\n' "$s1" | head -n 1)
   [ "$first" = "tests/sq-cd-pretool-check.test.sh" ] \
-    || fail "shard 1 must start with the longest proven script, got $first"
+    || fail "shard 1 must start with its recorded first member, got $first"
   pass "portable shard union, disjointness, and coverage guard hold"
 }
 
