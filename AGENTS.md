@@ -486,6 +486,7 @@ Preserve durable structured identifiers, dependencies, and completion artifact l
 `bin/sq-brief.sh` and its help own scaffold syntax, generated variants, status protocol, delivery-mode definitions of done, and exact safety mechanics.
 Use its scaffold as the contract, then replace every `{TASK}` placeholder with a clear task description, acceptance criteria, constraints, and necessary context before dispatch or seeding.
 Keep additions task-specific rather than repeating lifecycle instructions, and alter generated sections only when the task genuinely differs from the standard shape.
+For a frontend task, write the acceptance criteria in `# Task` as the scaffold's `# Frontend acceptance` section requires.
 
 Every ship brief must retain the worktree-isolation assertion and stop if launched in the primary checkout.
 If a strike task touches Squad's shared tracked material, explicitly require `squad-coding-guidelines` before editing.

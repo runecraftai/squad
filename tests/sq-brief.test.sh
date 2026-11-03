@@ -1086,6 +1086,60 @@ test_operator_guard_leads_strike_and_recon_briefs() {
   pass "sq-brief: strike and recon briefs open with the operator guard, the XO charter keeps its preamble"
 }
 
+assert_frontend_acceptance() {
+  local brief="$1" label="$2" count section reference line_rules line_section required
+  assert_present "$brief" "$label brief was not scaffolded"
+  count=$(grep -cxF "# Frontend acceptance" "$brief")
+  [ "$count" -eq 1 ] || fail "$label brief must carry the frontend acceptance section exactly once (found $count)"
+  line_rules=$(grep -nxF "# Rules" "$brief" | head -1 | cut -d: -f1)
+  line_section=$(grep -nxF "# Frontend acceptance" "$brief" | head -1 | cut -d: -f1)
+  [ "$line_rules" -lt "$line_section" ] || fail "$label brief must place frontend acceptance after the rules it cites"
+  section=$(awk '/^# Frontend acceptance$/ { on=1; next } on && /^# / { exit } on' "$brief")
+  for required in \
+    "only when this task changes or evaluates a frontend surface" \
+    "the viewports" "the states and data" "measurements and tolerances" \
+    "narrow-width behavior" "focus and keyboard behavior" "accessibility requirements" \
+    "real capture" "real command or test result" \
+    "\`visual-parity@1\`" "do not invent a board, a visual pipeline, or a new library" \
+    "never invent a measurement or tolerance" \
+    "Visual equivalence never replaces a functional or accessibility criterion"; do
+    assert_contains "$section" "$required" "$label frontend acceptance must name: $required"
+  done
+  # The operator must be able to open the contract and tooling from any project
+  # worktree, so both citations resolve to real Squad files through absolute paths.
+  reference=$(printf '%s\n' "$section" | grep -oE '/[^`[:space:]]*visual-parity-v1\.md' | head -1)
+  [ -n "$reference" ] || fail "$label frontend acceptance must cite visual-parity@1 by absolute path"
+  [ -s "$reference" ] || fail "$label visual-parity@1 citation must resolve to a non-empty contract file: $reference"
+  assert_present "$ROOT/docs/playwright-validation.md" "Playwright doc must exist"
+  assert_grep "Playwright tooling in \`$ROOT/docs/playwright-validation.md\`" "$brief" \
+    "$label rule 3 must cite the Playwright doc by absolute path"
+}
+
+# A frontend task's acceptance guidance reaches every strike mode and recon, and
+# an XO charter is not a delivery contract, so it stays without it.
+test_frontend_acceptance_reaches_strike_and_recon_briefs() {
+  local home mode
+  home="$TMP_ROOT/frontend-acceptance-home"
+  mkdir -p "$home/data"
+
+  for mode in drill direct-PR local-only; do
+    SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" "brief-frontend-$mode" some-proj --mode "$mode" --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+      || fail "sq-brief.sh $mode strike scaffold exited non-zero"
+    assert_frontend_acceptance "$home/data/brief-frontend-$mode/brief.md" "$mode strike"
+  done
+
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-frontend-recon some-proj --recon --no-playbook "test fixture: no execution playbook applies" >/dev/null 2>&1 \
+    || fail "sq-brief.sh recon scaffold exited non-zero"
+  assert_frontend_acceptance "$home/data/brief-frontend-recon/brief.md" "recon"
+
+  SQUAD_XO_CHARTER='Supervise the alpha domain.' \
+    SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" brief-frontend-xo --xo alpha >/dev/null 2>&1 \
+    || fail "sq-brief.sh XO scaffold exited non-zero"
+  assert_no_grep "# Frontend acceptance" "$home/data/brief-frontend-xo/brief.md" \
+    "XO charter is not a delivery contract and must not carry frontend acceptance"
+  pass "sq-brief: strike and recon briefs carry frontend acceptance, the XO charter does not"
+}
+
 # Status instruction enforcement: every scaffold must include the status
 # reporting instruction. The validation catches any future heredoc that
 # omits the >> ...status pattern. assert_grep uses -F (fixed string), so
@@ -1464,6 +1518,7 @@ test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_XO_load_decision_hold_policy
 test_scout_and_XO_scaffold
 test_operator_guard_leads_strike_and_recon_briefs
+test_frontend_acceptance_reaches_strike_and_recon_briefs
 test_status_instruction_is_present_in_all_scaffolds
 test_ambiguity_rule_stops_coding_and_asks
 test_repo_squad_guard_and_recon_action_line
