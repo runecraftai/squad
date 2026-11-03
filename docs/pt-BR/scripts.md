@@ -131,11 +131,11 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-check-lib.sh`        | Validar registros de checagem customizada e preparar snapshots privados de execução          |
 | `sq-skill-snapshot.sh`   | Snapshotar um diretório de skill antes de uma atualização, com dedup por hash e poda do mais antigo |
 | `sq-skill-rollback.sh`   | Reverter uma skill para um snapshot anterior, interativamente ou por timestamp             |
-| `sq-pr-lib.sh`           | Ser dono da validação canônica de tarefa e PR mais publicação atômica privada de PR-poll e aposentadoria ligada a identidade |
+| `sq-pr-lib.sh`           | Ser dono da validação canônica de tarefa e PR mais publicação atômica privada de PR-poll, confirmação limitada de `MERGED` pós-merge, e aposentadoria ligada a identidade |
 | `sq-pr-poll.sh`          | Fornecer o programa byte-estático de sentinela para sidecars validados de poll de PR/MR           |
 | `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução e reconstruir apenas polls canônicos       |
 | `sq-pr-check.sh`         | Registrar valores validados de `pr=` e `pr_head=`, então armar atomicamente um poll estático de merge |
-| `sq-pr-merge.sh`         | Mesclar a URL completa canônica GitHub do PR da tarefa contra o head fresco (igual ao registrado, se houver), checks frescos e mergeability; registrar metadados do PR somente após sucesso, então derrubar a tarefa landada |
+| `sq-pr-merge.sh`         | Mesclar a URL completa canônica GitHub do PR da tarefa contra o head fresco (igual ao registrado, se houver), checks frescos e mergeability; atualizar metadados do PR somente depois que o GitHub confirma o merge, então derrubar a tarefa landada |
 | `sq-retired-missions.sh` | Registrar a identidade exata de aposentadoria do terminal Orca e do worktree fob antes da remoção dos metadados, aposentar o terminal exato e reconciliar registros órfãos no sweep do bootstrap travado |
 | `sq-verification.sh`     | Registrar o momento de descoberta de um defeito escapado, o PR mesclado afetado e o SHA completo, a reprodução ou um motivo explícito de desconhecido, o cenário de regressão, e o gate pré-merge que não o pegou na issue GitHub existente dele, e reportar todo defeito registrado de um repo |
 | `sq-verification.py`     | Implementação Python dos comandos de registro e relatório de defeitos escapados, lendo e escrevendo corpos de issue verbatim pelo decodificador TOON do `sq-gh` |
