@@ -246,6 +246,10 @@ write_multi_phase_v2 'split-or-keep decision recorded for each delivery boundary
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a split-or-keep proof with no data reversal'
 assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must identify the missing reversal evidence'
+write_multi_phase_v2 'split: one stage per boundary; data change reversal: git revert the commit; external: none; command: bin/sq-playbook-validate.sh'
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail 'multi-phase-plan@2 must reject a proof that treats git revert as the data reversal'
+assert_contains "$out" 'quality' 'multi-phase-plan@2 refusal must reject the git revert misreading'
 react_proofs=(
   'architecture layers and boundaries path: src/app/routes.tsx command: lint passed'
   'components named functions and kebab-case path: src/pages/sign-in/ui.tsx'

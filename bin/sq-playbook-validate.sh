@@ -255,7 +255,7 @@ case "$PLAYBOOK@$VERSION" in
       "layer;not|never|no"
       "backlog;handoff|queue"
       "next;action|unresolved|stop"
-      "split|keep;stage|boundary;reversal|recovery;revert|external"
+      "split|keep;stage|boundary;reversal|recovery;revert;neither"
     )
     ;;
   eval@1)
