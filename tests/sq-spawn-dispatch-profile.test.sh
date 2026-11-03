@@ -846,6 +846,30 @@ test_react_profile_identity_survives_spawn() {
   pass 'React profile scaffold launches with its paired playbook'
 }
 
+test_multi_phase_plan_recon_spawn_dispatches() {
+  local rec id out status launch
+  id=multi-phase-plan-recon
+  rec=$(make_spawn_case multi-phase-plan-recon pi)
+  read_case_record "$rec"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --recon --playbook multi-phase-plan@2 >/dev/null 2>&1 \
+    || fail "multi-phase-plan@2 recon brief should scaffold"
+  sed -i 's/^{TASK}$/Decide the split-or-keep boundaries./' "$HOME_DIR/data/$id/brief.md"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "a strike spawn must refuse the recon-only multi-phase-plan@2 brief: $out"
+  assert_contains "$out" 'multi-phase-plan@2 is compatible only with kind: recon' 'the kind refusal must name the selected version'
+  assert_absent "$HOME_DIR/state/$id.meta" 'the multi-phase-plan@2 kind refusal created task metadata'
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --recon)
+  status=$?
+  expect_code 0 "$status" "multi-phase-plan@2 recon brief must dispatch: $out"
+  assert_contains "$out" "spawned $id" 'spawn did not report the multi-phase-plan@2 task'
+  assert_grep 'playbook=multi-phase-plan' "$HOME_DIR/state/$id.meta" 'spawn lost the multi-phase-plan playbook identity'
+  assert_grep 'playbook_version=2' "$HOME_DIR/state/$id.meta" 'spawn lost the multi-phase-plan@2 version'
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "$HOME_DIR/data/$id/brief.md" 'multi-phase-plan@2 spawn must deliver its materialized brief'
+  pass 'spawn dispatches a multi-phase-plan@2 recon brief with its identity and version'
+}
+
 test_react_as_playbook_is_refused_at_spawn() {
   local rec id out status brief
   id=react-as-playbook-spawn
@@ -916,6 +940,7 @@ test_malformed_profile_identity_is_refused_at_spawn() {
 
 test_no_profile_keeps_claude_profile_defaults
 test_react_profile_identity_survives_spawn
+test_multi_phase_plan_recon_spawn_dispatches
 test_react_as_playbook_is_refused_at_spawn
 test_malformed_profile_identity_is_refused_at_spawn
 test_relative_home_overrides_launch_with_absolute_cross_process_paths

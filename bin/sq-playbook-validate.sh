@@ -51,6 +51,46 @@ matches_any() {
   done
   return 1
 }
+# normalize_words <text>: lowercase whole words separated by single spaces.
+normalize_words() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' ' '
+}
+# matches_bound <text> <pipe-separated alternatives>: true when every
+# &-separated keyword of one alternative occurs as a whole word inside one
+# clause of text. A bound group cannot be satisfied by keywords scattered
+# across unrelated clauses.
+matches_bound() {
+  local text=$1 rest=$2 alt clauses clause norm keyword keywords ok
+  clauses=$(printf '%s' "$text" | tr ';.,' '\n')
+  while [ -n "$rest" ]; do
+    if case "$rest" in *"|"*) true ;; *) false ;; esac; then
+      alt="${rest%%|*}"
+      rest="${rest#*|}"
+    else
+      alt="$rest"
+      rest=""
+    fi
+    while IFS= read -r clause; do
+      norm=" $(normalize_words "$clause") "
+      ok=1
+      keywords=$alt
+      while [ -n "$keywords" ]; do
+        if case "$keywords" in *"&"*) true ;; *) false ;; esac; then
+          keyword="${keywords%%&*}"
+          keywords="${keywords#*&}"
+        else
+          keyword="$keywords"
+          keywords=""
+        fi
+        keyword=$(normalize_words "$keyword")
+        [ -n "$keyword" ] || continue
+        case "$norm" in *" $keyword "*) ;; *) ok=0; break ;; esac
+      done
+      [ "$ok" -eq 1 ] && return 0
+    done <<< "$clauses"
+  done
+  return 1
+}
 CRITERION_HEADING_PREFIX='^##[[:space:]]+Criterion[[:space:]]+'
 CRITERION_HEADING_SUFFIX='([^0-9]|$)'
 # criterion_heading_regex <number>: the one criterion-heading predicate shared by awk and grep.
@@ -111,6 +151,8 @@ react_dimension_problem() {
 # Format: CRITERIA_LABELS, CRITERIA_PATTERNS, CRITERIA_CHECKS are indexed arrays.
 # CRITERIA_CHECKS[i] is a semicolon-separated list of keyword groups.
 # Each group is pipe-separated (OR). All groups must match (AND).
+# Within one group, `&` binds keywords: kw1&kw2 must occur as whole words in
+# the same clause, so a required statement cannot pass on scattered tokens.
 # Example: "before|pre-fix;refutable|observation" means:
 #   - Must contain (before OR pre-fix) AND
 #   - Must contain (refutable OR observation)
@@ -255,7 +297,7 @@ case "$PLAYBOOK@$VERSION" in
       "layer;not|never|no"
       "backlog;handoff|queue"
       "next;action|unresolved|stop"
-      "split|keep;stage|boundary;reversal|recovery;revert;neither"
+      "split|keep;stage|boundary;reversal|recovery;revert&neither|revert&not|revert&never|revert&cannot"
     )
     ;;
   eval@1)
@@ -335,7 +377,10 @@ for (( i=0; i<COUNT; i++ )); do
       group="$REST"
       REST=""
     fi
-    matches_any "$PROOF" "$group" || {
+    case "$group" in
+      *"&"*) matches_bound "$PROOF" "$group" ;;
+      *) matches_any "$PROOF" "$group" ;;
+    esac || {
       echo "incompatible: criterion $NUM $LABEL proof quality: expected one of $group"
       FAIL=1
     }
