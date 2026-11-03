@@ -11,8 +11,8 @@
 # trusting the sender. The remote code root is cloned into an absent base,
 # project origins are cloned on this host, the project registry and charter are
 # published, the durable .sq-xo-parent record names this base's route to its parent as
-# "remote" - a later reseed validates it so a base bound to one parent is never
-# reseeded against a different one - and the
+# "remote" - diagnostic routing data that a later reseed does not revalidate for
+# a remote route - and the
 # .sq-xo-home marker commits the complete seed last.
 # A newly created base is removed on failure. An existing matching seeded base
 # is converged only through guarded ordinary-file updates and new project clones.
