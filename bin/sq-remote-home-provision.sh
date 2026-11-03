@@ -11,9 +11,8 @@
 # trusting the sender. The remote code root is cloned into an absent base,
 # project origins are cloned on this host, the project registry and charter are
 # published, the durable .sq-xo-parent record names this base's route to its parent as
-# "remote" - read by bin/sq-teardown.sh's cleanup gate so a delegated public
-# reply promise, which the subsystem can only carry on the parent's own
-# filesystem, is never mistaken for one this child could hold - and the
+# "remote" - a later reseed validates it so a base bound to one parent is never
+# reseeded against a different one - and the
 # .sq-xo-home marker commits the complete seed last.
 # A newly created base is removed on failure. An existing matching seeded base
 # is converged only through guarded ordinary-file updates and new project clones.

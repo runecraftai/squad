@@ -131,7 +131,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
 | `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, bounded post-merge `MERGED` confirmation, and identity-bound retirement |
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
-| `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
+| `sq-pr-check-migrate.sh` | Quarantine older task polls without execution, retire the dead X mode check, and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-artifact-guard.sh` | Warn when a PR changed-file list names this task's own Squad-base artifact paths      |
 | `sq-pr-merge.sh`         | Merge a task's canonical full GitHub URL against a fresh head (matching any recorded head), checks, and mergeability; refresh PR metadata only after GitHub confirms the merge, then tear the landed task down |

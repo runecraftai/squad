@@ -9,20 +9,23 @@ Este registro é a prova de isolamento concorrente para o conjunto portátil de 
 ## Verificação
 
 - Data: 2026-11-03
-- Comando: `bin/sq-test-isolation-proof.sh --jobs 4 --json docs/sq-test-isolation-proof.json`
-- Resultado: `SQUAD_ISOLATION_SUMMARY total=23 failed=1 concurrency=4 duration_ms=100049`
+- Comando: `unshare -m --map-root-user` em volta de `bin/sq-test-isolation-proof.sh --jobs 4 --json docs/sq-test-isolation-proof.json`, com `/usr/bin/herdr` escondido por um mount overlay de `/usr/bin`
+- Resultado: `SQUAD_ISOLATION_SUMMARY total=23 failed=0 concurrency=4 duration_ms=160325`
 
 | Campo | Valor |
 |---|---|
-| `run_id` | `sq-isolation-1793669267812-3667561` |
-| `started_at` | `2026-11-03T01:27:47Z` |
-| `finished_at` | `2026-11-03T01:29:27Z` |
+| `run_id` | `sq-isolation-1793699744983-4020941` |
+| `started_at` | `2026-11-03T09:55:44Z` |
+| `finished_at` | `2026-11-03T09:58:25Z` |
 | concorrência | 4 |
 | candidatos | 23 |
-| falhas | 1 |
-| duração de parede | 100049 ms |
+| falhas | 0 |
+| duração de parede | 160325 ms |
 
-A única falha é `tests/sq-backend-herdr.test.sh`, cujo caso de recusa sem herdr não pode passar em um host que tem `herdr` no `PATH` (o host de gravação tinha `/usr/bin/herdr 0.9.1`); todos os outros candidatos passaram.
+Todos os candidatos passaram, o que exige um `PATH` sem `herdr`: `tests/sq-backend-herdr.test.sh` tem um caso de recusa sem herdr que não pode passar enquanto o binário está instalado.
+Esta execução, portanto, escondeu `/usr/bin/herdr` atrás de um mount overlay de `/usr/bin` num namespace de mount privado (`unshare -m --map-root-user`).
+Mascarar o binário com `/dev/null` não é equivalente, porque o adaptador passa a relatar uma falha de permissão em vez de um CLI ausente.
+As durações são de relógio de parede numa máquina de desenvolvimento compartilhada, então leia-as como limites superiores conservadores, não como uma base de máquina ociosa.
 
 ## Conjunto candidato
 
@@ -54,29 +57,29 @@ A única falha é `tests/sq-backend-herdr.test.sh`, cujo caso de recusa sem herd
 
 | duration_ms | exit | worker | script |
 |---:|---:|---:|---|
-| 43689 | 0 | 1 | `tests/sq-arm-pretool-check.test.sh` |
-| 31331 | 0 | 8 | `tests/sq-decision-hold-lifecycle.test.sh` |
-| 18245 | 0 | 4 | `tests/sq-cd-pretool-check.test.sh` |
-| 18231 | 0 | 21 | `tests/sq-test-run.test.sh` |
-| 16854 | 0 | 7 | `tests/sq-crew-state.test.sh` |
-| 15733 | 0 | 3 | `tests/sq-brief.test.sh` |
-| 11633 | 0 | 10 | `tests/sq-grok-harness.test.sh` |
-| 6568 | 0 | 14 | `tests/sq-pr-merge.test.sh` |
-| 6404 | 0 | 11 | `tests/sq-herdr-lab.test.sh` |
-| 4709 | 0 | 17 | `tests/sq-send-settle.test.sh` |
-| 1706 | 0 | 5 | `tests/sq-composer-ghost.test.sh` |
-| 1450 | 0 | 12 | `tests/sq-lint.test.sh` |
-| 1229 | 0 | 22 | `tests/sq-tmux-submit-busy.test.sh` |
-| 1086 | 0 | 16 | `tests/sq-send-popup-settle.test.sh` |
-| 1064 | 0 | 15 | `tests/sq-review-diff.test.sh` |
-| 1048 | 0 | 18 | `tests/sq-send-strict.test.sh` |
-| 1036 | 0 | 19 | `tests/sq-spawn-batch.test.sh` |
-| 381 | 0 | 9 | `tests/sq-ensure-agents-md.test.sh` |
-| 224 | 1 | 2 | `tests/sq-backend-herdr.test.sh` |
-| 149 | 0 | 20 | `tests/sq-supervision-instructions.test.sh` |
-| 74 | 0 | 6 | `tests/sq-composer-lib.test.sh` |
-| 65 | 0 | 23 | `tests/sq-transition-lib.test.sh` |
-| 15 | 0 | 13 | `tests/sq-pi-primary-types.test.sh` |
+| 56122 | 0 | 8 | `tests/sq-decision-hold-lifecycle.test.sh` |
+| 51141 | 0 | 1 | `tests/sq-arm-pretool-check.test.sh` |
+| 34945 | 0 | 21 | `tests/sq-test-run.test.sh` |
+| 32255 | 0 | 2 | `tests/sq-backend-herdr.test.sh` |
+| 29727 | 0 | 4 | `tests/sq-cd-pretool-check.test.sh` |
+| 28431 | 0 | 19 | `tests/sq-spawn-batch.test.sh` |
+| 25426 | 0 | 7 | `tests/sq-crew-state.test.sh` |
+| 14717 | 0 | 14 | `tests/sq-pr-merge.test.sh` |
+| 11922 | 0 | 12 | `tests/sq-lint.test.sh` |
+| 9606 | 0 | 3 | `tests/sq-brief.test.sh` |
+| 9487 | 0 | 11 | `tests/sq-herdr-lab.test.sh` |
+| 7930 | 0 | 10 | `tests/sq-grok-harness.test.sh` |
+| 5753 | 0 | 17 | `tests/sq-send-settle.test.sh` |
+| 2724 | 0 | 5 | `tests/sq-composer-ghost.test.sh` |
+| 2402 | 0 | 16 | `tests/sq-send-popup-settle.test.sh` |
+| 2143 | 0 | 18 | `tests/sq-send-strict.test.sh` |
+| 2032 | 0 | 15 | `tests/sq-review-diff.test.sh` |
+| 1750 | 0 | 22 | `tests/sq-tmux-submit-busy.test.sh` |
+| 331 | 0 | 9 | `tests/sq-ensure-agents-md.test.sh` |
+| 250 | 0 | 20 | `tests/sq-supervision-instructions.test.sh` |
+| 153 | 0 | 23 | `tests/sq-transition-lib.test.sh` |
+| 128 | 0 | 6 | `tests/sq-composer-lib.test.sh` |
+| 28 | 0 | 13 | `tests/sq-pi-primary-types.test.sh` |
 
 ## Escopo
 
