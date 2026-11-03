@@ -2120,10 +2120,10 @@ test_bootstrap_migrates_before_other_mutations() {
 }
 
 # Relay (X mode) was removed, and only its deleted setup wrote
-# state/x-sentry.check.sh. That filename can never pass registration, so a base
-# that once opted in would otherwise keep reporting it as a rejected
-# unauthenticated check; the migration retires it instead of quarantining it
-# like an unknown legacy poll.
+# state/x-sentry.check.sh, never a trust record. That filename can never pass
+# registration, so a base that once opted in would otherwise keep reporting it
+# as a rejected unauthenticated check; the migration retires it instead of
+# quarantining it like an unknown legacy poll.
 test_dead_x_mode_check_is_retired() {
   local dir state rc
   dir=$(make_case retired-x-mode-check)
@@ -2131,8 +2131,6 @@ test_dead_x_mode_check_is_retired() {
   chmod 0700 "$state"
   printf '#!/usr/bin/env bash\nprintf "relay-poll\\n"\n' > "$state/x-sentry.check.sh"
   chmod 0700 "$state/x-sentry.check.sh"
-  printf 'sq-custom-check-v1\n%064d\n' 0 > "$state/x-sentry.check-trust"
-  chmod 0600 "$state/x-sentry.check-trust"
 
   set +e
   SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
@@ -2141,13 +2139,64 @@ test_dead_x_mode_check_is_retired() {
 
   [ "$rc" -eq 0 ] || fail "retiring the dead x-sentry check failed: $(cat "$dir/migrate.err")"
   [ ! -e "$state/x-sentry.check.sh" ] || fail "the dead x-sentry check was left in place"
-  [ ! -e "$state/x-sentry.check-trust" ] || fail "its dead trust record was left in place"
+  [ ! -e "$state/x-sentry.check-trust" ] || fail "retirement created a trust record"
   [ ! -e "$state/.pr-check-quarantine/x-sentry.diagnostic.ambiguous" ] \
     || fail "the dead x-sentry check was quarantined instead of retired"
-  grep -q 'quarantined polls remain unarmed' "$dir/migrate.err" \
+  grep -q 'quarantined polls remain unarmed' "$dir/migrate.out" \
     && fail "retiring a known dead check still reported quarantined polls"
   assert_valid_migration_marker "$state/.pr-check-migration-v1"
   pass "the dead Relay x-sentry check is retired instead of waking as an unauthenticated check"
+}
+
+# A canonical PR poll whose task id happens to be x-sentry is user work, not the
+# dead Relay shim, so retirement leaves the published poll armed.
+test_canonical_x_mode_named_poll_survives_retirement() {
+  local dir state
+  dir=$(make_case canonical-x-mode-named-poll)
+  state="$dir/home/state"
+  write_poll_meta "$state" x-sentry https://github.com/o/r/pull/21
+  fm_pr_poll_prepare "$state" x-sentry github https://github.com/o/r/pull/21 github.com o/r 21 "$POLL" \
+    || fail "could not prepare a canonical x-sentry poll fixture"
+  fm_pr_poll_publish_prepared || fail "could not publish a canonical x-sentry poll fixture"
+
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err" \
+    || fail "migration refused a canonical poll named x-sentry: $(cat "$dir/migrate.err")"
+  fm_pr_poll_artifacts_valid "$state" x-sentry "$POLL" \
+    || fail "retirement disarmed a canonical poll named x-sentry"
+  [ -f "$state/x-sentry.meta" ] || fail "retirement removed the canonical poll's metadata"
+  [ ! -e "$state/.pr-check-quarantine/x-sentry.diagnostic.ambiguous" ] \
+    || fail "a canonical poll named x-sentry was quarantined"
+  assert_valid_migration_marker "$state/.pr-check-migration-v1"
+  pass "retirement leaves a canonical poll whose id is x-sentry armed"
+}
+
+# A custom check edited after registration keeps its trust record but no longer
+# authenticates; retirement must not delete user-owned evidence, so the normal
+# migration quarantines it for repair.
+test_x_mode_named_check_with_stale_trust_is_quarantined() {
+  local dir state rc
+  dir=$(make_case stale-x-mode-check-trust)
+  state="$dir/home/state"
+  printf '#!/usr/bin/env bash\nprintf "custom-ready\\n"\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+  SQUAD_BASE="$dir/home" "$REGISTER" x-sentry >/dev/null \
+    || fail "could not register a custom check under the retired id"
+  printf '#!/usr/bin/env bash\nprintf "edited-after-trust\\n"\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -eq 0 ] || fail "stale custom check migration failed: $(cat "$dir/migrate.err")"
+  [ -e "$state/x-sentry.check-trust" ] || fail "retirement deleted a user-owned trust record"
+  [ ! -e "$state/x-sentry.check.sh" ] || fail "stale custom check was not quarantined"
+  find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f | grep -q . \
+    || fail "stale custom check was not quarantined for repair"
+  grep -q 'quarantined polls remain unarmed' "$dir/migrate.out" \
+    || fail "quarantining a stale custom check was not reported"
+  pass "retirement quarantines a stale custom check instead of deleting it"
 }
 
 # A check registered under that same id is a real custom check, not the dead
@@ -3308,6 +3357,8 @@ test_nonexecuting_migration
 test_bootstrap_migrates_before_other_mutations
 test_bootstrap_isolates_incomplete_poll_migration
 test_dead_x_mode_check_is_retired
+test_canonical_x_mode_named_poll_survives_retirement
+test_x_mode_named_check_with_stale_trust_is_quarantined
 test_registered_x_mode_named_check_survives_retirement
 test_custom_snapshot_cleanup_on_signal
 test_returned_custom_check_descendants_are_drained

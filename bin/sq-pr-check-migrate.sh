@@ -89,17 +89,21 @@ current_checks_authenticated() {
 }
 
 # Relay (X mode) was removed, and only its deleted setup wrote
-# state/x-sentry.check.sh. No trust record can ever authenticate that filename,
-# so a base that once opted in keeps reporting it as a rejected unauthenticated
-# check - and the marker short-circuit below can return before the sweep would
-# quarantine it into a permanent diagnostic obligation. Retire that one known
-# dead artifact before any short-circuit, and leave a check registered under
-# that same id alone.
+# state/x-sentry.check.sh. A base that once opted in keeps reporting it as a
+# rejected unauthenticated check - and the marker short-circuit below can return
+# before the sweep would quarantine it into a permanent diagnostic obligation.
+# Retire that one known dead artifact before any short-circuit. A trust record or
+# a canonical PR poll under that same id is user data, so leave both alone; a
+# custom check with stale trust reaches quarantine, not this sweep.
 retire_dead_x_mode_check() {
   local check="$STATE/x-sentry.check.sh" trust="$STATE/x-sentry.check-trust"
   fm_custom_check_registered "$STATE" x-sentry && return 0
-  [ -e "$check" ] || [ -L "$check" ] || [ -e "$trust" ] || [ -L "$trust" ] || return 0
-  rm -f -- "$check" "$trust" || true
+  [ -e "$check" ] || [ -L "$check" ] || return 0
+  if [ -e "$trust" ] || [ -L "$trust" ]; then
+    return 0
+  fi
+  fm_pr_poll_artifacts_valid "$STATE" x-sentry "$TEMPLATE" && return 0
+  rm -f -- "$check" || true
   if [ -e "$check" ] || [ -L "$check" ]; then
     echo "PR_CHECK_MIGRATION: the retired x-sentry check could not be removed; the sentry keeps rejecting it" >&2
   fi
