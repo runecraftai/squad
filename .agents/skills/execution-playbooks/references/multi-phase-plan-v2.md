@@ -30,6 +30,7 @@ The split decision adds no field, enum, scheduler, or second queue; it is record
 ## Required evidence
 
 - A plan path containing the outcome, dependency graph, unit boundaries, and per-unit verification blocks.
+- A completion artifact whose first `# ` heading names the deliverable, such as `# multi-phase-plan@2 evidence` or any title containing `checklist`, because `bin/sq-playbook-validate.sh` selects only such a title heading and never a subheading; a title such as `# multi-phase-plan@2 plan` is not selectable.
 - A proof that units are independently meaningful and are not a layer-by-layer task decomposition.
 - An explicit handoff to the existing backlog without adding a field, enum, scheduler, or second queue.
 - A next-action record and unresolved-question record when planning cannot safely proceed.

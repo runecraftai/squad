@@ -44,7 +44,7 @@ if [ -d "$ARTIFACTS" ]; then
     break
   done
 fi
-[ -n "$CHECKLIST" ] || { echo "missing: checklist artifact under $ARTIFACTS"; exit 1; }
+[ -n "$CHECKLIST" ] || { echo "missing: checklist artifact under $ARTIFACTS (title heading must name a checklist, or pair a version token with evidence)"; exit 1; }
 FAIL=0
 # matches_any <text> <pipe-separated keywords>: true when any keyword occurs in text, case-insensitively.
 matches_any() {

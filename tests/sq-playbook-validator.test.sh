@@ -285,6 +285,7 @@ EOF
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail 'a plan artifact with a checklist subheading must not satisfy the gate on its own'
 assert_contains "$out" 'missing: checklist artifact' 'the plan artifact title and subheading must not be selected as the checklist'
+assert_contains "$out" 'title heading must name a checklist, or pair a version token with evidence' 'the refusal must name the accepted title forms so a title-only miss is self-correcting'
 v2_checks="$evidence_artifact"
 write_multi_phase_v2 'split-or-keep decided for each delivery boundary with its reason; data change reversal path: data/<id>/plan.md states the recovery and that git revert restores neither the data nor external effects; command: bin/sq-playbook-validate.sh'
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
