@@ -262,18 +262,26 @@ fm_backend_tuios_release_task_workspace() {  # <task-id> <meta-file>
     [.windows[] | select((tids | index($id)) != null)] | length
   ' 2>/dev/null) || { echo "error: could not identify task window $session:$window" >&2; return 1; }
   [ "$present" = 0 ] || { echo "error: task window $session:$window remains; retaining its workspace claim" >&2; return 1; }
-  printf '%s' "$windows" | jq -e --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
-    any(.windows[]; (tworkspaces | index($ws)) != null)
-  ' >/dev/null 2>&1 && { echo "error: workspace $workspace still contains another window; retaining task metadata" >&2; return 1; }
   inventory=$(fm_backend_tuios_list_workspaces_json "$session") || { echo "error: could not read TUIOS workspace inventory for session $session" >&2; return 1; }
+  # Occupancy must be verifiable on every path: the validated inventory lists the
+  # task's workspace exactly once, so an absent or duplicated entry refuses.
   printf '%s' "$inventory" | jq -e --argjson ws "$workspace" '
-    [.workspaces[] | select(.workspace == $ws)] as $w
-    | ($w | length) == 1 and ($w[0].window_count == 0)
-  ' >/dev/null 2>&1 || { echo "error: workspace $workspace is absent or still has windows; retaining task metadata" >&2; return 1; }
+    [.workspaces[] | select(.workspace == $ws)] | length == 1
+  ' >/dev/null 2>&1 || { echo "error: workspace $workspace is absent or duplicated in the TUIOS inventory; retaining task metadata" >&2; return 1; }
   name=$(printf '%s' "$inventory" | jq -r --argjson ws "$workspace" '
     [.workspaces[] | select(.workspace == $ws)] | if length == 1 then (.[0].name // "") else empty end
   ' 2>/dev/null) || { echo "error: could not read workspace $workspace name from TUIOS inventory" >&2; return 1; }
-  [ -n "$name" ] || return 0
+  # A neighbour window that shares the workspace number does not block teardown:
+  # the task's own window is confirmed gone above, so only this task's own name
+  # is cleared and every neighbour stays untouched.
+  if ! printf '%s' "$windows" | jq -e --argjson ws "$workspace" "$SQUAD_BACKEND_TUIOS_JQ_LIB"'
+    any(.windows[]; (tworkspaces | index($ws)) != null)
+  ' >/dev/null 2>&1; then
+    printf '%s' "$inventory" | jq -e --argjson ws "$workspace" '
+      [.workspaces[] | select(.workspace == $ws)] as $w
+      | ($w | length) == 1 and ($w[0].window_count == 0)
+    ' >/dev/null 2>&1 || { echo "error: workspace $workspace is absent or still has windows; retaining task metadata" >&2; return 1; }
+  fi
   [ "$name" = "$label" ] || return 0
   fm_backend_tuios_name_workspace "$session" "$workspace" '' || {
     echo "error: could not restore the task workspace name for $id; retaining its metadata" >&2

@@ -80,12 +80,16 @@ case "${1:-}" in
     fi
     rows=()
     for workspace in $(seq 1 9); do
+      # A contradictory inventory: the named workspace is missing from the list.
+      [ "$workspace" != "${SQUAD_TUIOS_FAKE_OMIT_WORKSPACE:-}" ] || continue
       name= count=0
       case "$workspace" in 1) name=personal; count=1 ;; 4) name=existing; count=1 ;; esac
       if [ -f "$SQUAD_TUIOS_CREATED_WORKSPACE" ] && [ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE")" = "$workspace" ]; then
         name=$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME" 2>/dev/null || printf '')
         [ ! -f "$SQUAD_TUIOS_CREATED_WINDOW" ] || count=1
       fi
+      [ "$workspace" != "${SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE:-}" ] || count=1
+      [ "$workspace" != "${SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT:-}" ] || count=1
       rows+=("$(jq -cn --argjson ws "$workspace" --arg name "$name" --argjson count "$count" '{workspace:$ws,name:$name,window_count:$count}')")
     done
     printf '{"success":true,"workspaces":[%s]}\n' "$(IFS=,; echo "${rows[*]}")"
@@ -136,6 +140,15 @@ case "${1:-}" in
       printf '{"error":{"code":"daemon_unreachable"},"windows":[]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_STRING_WINDOW:-0}" = 1 ]; then
       printf '{"windows":[{"window":"w-opaque_7","name":"sq-task-1","workspace":4}]}\n'
+    elif [ -n "${SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE:-}" ]; then
+      # A neighbouring window occupies the task's workspace number; the task
+      # window is listed only while it still exists.
+      neighbour=$(printf '{"id":"w-neighbour","name":"neighbour","workspace":%s,"cwd":"/tmp/other"}' "$SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE")
+      if [ -f "$SQUAD_TUIOS_CREATED_WINDOW" ]; then
+        printf '{"windows":[%s,{"id":"w-opaque_7","name":"sq-shared-ws","workspace":%s,"cwd":"/tmp/wt"}]}\n' "$neighbour" "$SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE"
+      else
+        printf '{"windows":[%s]}\n' "$neighbour"
+      fi
     elif [ "${SQUAD_TUIOS_FAKE_MISSING:-0}" = 1 ] || { [ "${SQUAD_TUIOS_FAKE_EMPTY_WINDOWS:-0}" = 1 ] && [ ! -f "$SQUAD_TUIOS_CREATED_WINDOW" ]; }; then
       printf '{"windows":[]}\n'
     elif [ "${SQUAD_TUIOS_FAKE_RESTORED_WINDOW:-0}" = 1 ]; then
@@ -1005,6 +1018,97 @@ assert_contains "$(cat "$TMP_ROOT/release-open-window-error")" 'task window owne
 rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
 unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS
 rm -f "$TMP_ROOT/state/next-ws.meta"
+# A neighbouring window that shares the task's workspace number must not block
+# teardown once the task window is gone. Only this task's own name is cleared;
+# the neighbour is never closed or renamed.
+cat > "$TMP_ROOT/state/shared-ws.meta" <<'META'
+window=owned:w-opaque_7
+endpoint_task_id=shared-ws
+backend=tuios
+tuios_session=owned
+tuios_window_id=w-opaque_7
+tuios_workspace_id=2
+META
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf 'sq-shared-ws\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE=2
+export SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE
+fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/shared-ws.meta" || fail 'a neighbour window sharing the task workspace must not block teardown'
+assert_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name --session owned 2' 'a shared-workspace teardown must clear the task own workspace name'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'CloseWindow' 'a shared-workspace teardown must never close a window'
+[ -z "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" ] || fail 'a shared workspace must not keep the finished task own name'
+printf 'another-task\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+: > "$SQUAD_TUIOS_LOG"
+fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/shared-ws.meta" || fail 'a shared workspace named for another task must not block teardown'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a shared workspace named for another task must keep its name untouched'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'CloseWindow' 'a shared workspace named for another task must never close a window'
+[ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = another-task ] || fail 'a shared workspace named for another task must keep its name after teardown'
+# An unreadable workspace inventory still refuses, even with a neighbour present.
+SQUAD_TUIOS_FAKE_WORKSPACES_FAIL=1
+export SQUAD_TUIOS_FAKE_WORKSPACES_FAIL
+if fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/shared-ws.meta" 2>"$TMP_ROOT/release-shared-inventory-error"; then fail 'an unreadable inventory must refuse even when the workspace is shared'; fi
+assert_contains "$(cat "$TMP_ROOT/release-shared-inventory-error")" 'could not read TUIOS workspace inventory' 'an unreadable inventory must keep its diagnostic when the workspace is shared'
+unset SQUAD_TUIOS_FAKE_WORKSPACES_FAIL
+# A task window still open in the shared workspace keeps its claim.
+: > "$SQUAD_TUIOS_CREATED_WINDOW"
+if fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/shared-ws.meta" 2>"$TMP_ROOT/release-shared-open-error"; then fail 'an open task window must still refuse in a shared workspace'; fi
+assert_contains "$(cat "$TMP_ROOT/release-shared-open-error")" 'task window owned:w-opaque_7 remains' 'an open task window in a shared workspace must keep its refusal'
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW" "$TMP_ROOT/state/shared-ws.meta"
+unset SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf '\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+# A neighbour in workspace 2 while list-workspaces omits workspace 2 is an
+# unverifiable occupancy: release must refuse, keep the metadata, and mutate nothing.
+cat > "$TMP_ROOT/state/omitted-ws.meta" <<'META'
+window=owned:w-opaque_7
+endpoint_task_id=shared-ws
+backend=tuios
+tuios_session=owned
+tuios_window_id=w-opaque_7
+tuios_workspace_id=2
+META
+printf 'sq-shared-ws\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE=2 SQUAD_TUIOS_FAKE_OMIT_WORKSPACE=2
+export SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE SQUAD_TUIOS_FAKE_OMIT_WORKSPACE
+if fm_backend_tuios_release_task_workspace shared-ws "$TMP_ROOT/state/omitted-ws.meta" 2>"$TMP_ROOT/release-omitted-error"; then fail 'a neighbour in a workspace the inventory omits must refuse'; fi
+assert_contains "$(cat "$TMP_ROOT/release-omitted-error")" 'workspace 2 is absent or duplicated' 'a contradictory inventory must name the unverifiable workspace'
+assert_present "$TMP_ROOT/state/omitted-ws.meta" 'a contradictory inventory must keep the task metadata'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'CloseWindow' 'a contradictory inventory must never close a window'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a contradictory inventory must not change any workspace name'
+[ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = sq-shared-ws ] || fail 'a contradictory inventory must keep the workspace name'
+unset SQUAD_TUIOS_FAKE_NEIGHBOUR_WORKSPACE SQUAD_TUIOS_FAKE_OMIT_WORKSPACE
+rm -f "$TMP_ROOT/state/omitted-ws.meta"
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf '\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+# A workspace the window list shows empty but the inventory reports occupied is
+# a contradictory occupancy: release must refuse and keep the task metadata.
+cat > "$TMP_ROOT/state/stale-count.meta" <<'META'
+window=owned:w-opaque_7
+endpoint_task_id=stale-count
+backend=tuios
+tuios_session=owned
+tuios_window_id=w-opaque_7
+tuios_workspace_id=2
+META
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf 'sq-stale-count\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
+rm -f "$SQUAD_TUIOS_CREATED_WINDOW"
+: > "$SQUAD_TUIOS_LOG"
+SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT=2
+export SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT
+if fm_backend_tuios_release_task_workspace stale-count "$TMP_ROOT/state/stale-count.meta" 2>"$TMP_ROOT/release-stale-count-error"; then fail 'an inventory that reports windows for an empty workspace must refuse'; fi
+assert_contains "$(cat "$TMP_ROOT/release-stale-count-error")" 'workspace 2 is absent or still has windows' 'a contradictory empty workspace must keep its refusal diagnostic'
+assert_present "$TMP_ROOT/state/stale-count.meta" 'a contradictory empty workspace must keep the task metadata'
+assert_not_contains "$(cat "$SQUAD_TUIOS_LOG")" 'set-workspace-name' 'a contradictory empty workspace must not change any workspace name'
+[ "$(cat "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME")" = sq-stale-count ] || fail 'a contradictory empty workspace must keep the workspace name'
+unset SQUAD_TUIOS_FAKE_EMPTY_WINDOWS SQUAD_TUIOS_FAKE_STALE_WORKSPACE_COUNT
+rm -f "$TMP_ROOT/state/stale-count.meta"
+printf '2\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE"
+printf '\n' > "$SQUAD_TUIOS_CREATED_WORKSPACE_NAME"
 # A wrong workspace must refuse and close only the just-created window.
 : > "$SQUAD_TUIOS_LOG"
 SQUAD_TUIOS_FAKE_PLACEMENT=1 SQUAD_TUIOS_FAKE_EMPTY_WINDOWS=1 SQUAD_TUIOS_FAKE_WINDOW_NAME=sq-wrong-place
