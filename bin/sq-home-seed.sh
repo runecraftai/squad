@@ -949,8 +949,8 @@ seed_home() {
 
   projects_csv=$(join_projects "$@")
   # Durable record of this base's route to its parent, written once here next
-  # to the identity marker: a later reseed validates it so a base bound to one
-  # parent can never be reseeded against a different one.
+  # to the identity marker: a later local-route reseed refuses a different
+  # parent, while remote provisioning rewrites the record as diagnostic data.
   {
     printf 'schema=sq-xo-parent.v1\n'
     printf 'route=local\n'
