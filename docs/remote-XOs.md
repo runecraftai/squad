@@ -141,7 +141,7 @@ It does not copy project trees or the primary process environment.
 A known provisioning failure rolls back the new route, while SSH exit 255 preserves it because remote completion is unknown and must be reconciled on the same host.
 
 Seeding also writes a durable `.sq-xo-parent` record next to the base's `.sq-xo-home` identity marker, naming this base's route to its parent as `local` or `remote`.
-The promised-public-reply subsystem is same-filesystem by construction, so a remote route can never carry a delegated public-reply promise; `bin/sq-teardown.sh`'s cleanup gate reads this record to treat a remote parent as out of scope rather than an unresolved binding.
+A later reseed validates this record, so a base bound to one parent can never be reseeded against a different one.
 
 Local XOs keep the existing route form and need no migration.
 A unit may contain local and remote routes together.
