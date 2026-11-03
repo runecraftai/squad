@@ -101,7 +101,7 @@
 #
 # Why lock first: the old documented order (bootstrap, THEN lock) let a
 # SECOND concurrent session run bootstrap's mutating sweeps - converging
-# XO bases, retrying pending handoff outboxes, writing X-mode artifacts,
+# XO bases, retrying pending handoff outboxes,
 # and fetching or fast-forwarding every project clone - before ever discovering
 # another session already holds the lock. Two sessions racing those sweeps is
 # exactly the hazard the lock exists to prevent, so locking first closes the
@@ -516,7 +516,7 @@ if [ "$REEMIT" -eq 1 ]; then
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
   printf 'reprinted, but the sweeps startup already reconciled - project clone refresh,\n'
   printf 'XO convergence and liveness, PR-check migration, pending remote handoff\n'
-  printf 'retry, X-mode artifact writes, the retired-mission record sweep, and stale\n'
+  printf 'retry, the retired-mission record sweep, and stale\n'
   printf 'Herdr child cleanup - are NOT repeated.\n'
   printf 'Queued wakes ARE still drained: they arrived after startup and are this turn work.\n'
 else
@@ -537,7 +537,7 @@ if [ "$LOCK_RC" -ne 0 ]; then
     printf '●  READ-ONLY SESSION - UNIT LOCK OWNERSHIP WAS NOT VERIFIED\n'
     printf '●  %s\n' "$LOCK_OUT"
     printf '●  Skipping every mutating step: PR-check migration, stale Herdr child cleanup,\n'
-    printf '●  XO convergence, XO liveness, pending remote handoff retry, X-mode artifacts,\n'
+    printf '●  XO convergence, XO liveness, pending remote handoff retry,\n'
     printf '●  retired-mission record sweep, unit sync, and stand-to queue drain.\n'
     printf '●  Detect-only bootstrap diagnostics and the rest of this read-only-safe digest\n'
     printf '●  still ran below.\n'
