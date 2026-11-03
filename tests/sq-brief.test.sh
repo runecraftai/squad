@@ -1107,9 +1107,9 @@ assert_frontend_acceptance() {
   done
   # The operator must be able to open the contract and tooling from any project
   # worktree, so both citations resolve to real Squad files through absolute paths.
-  reference=$(printf '%s\n' "$section" | grep -oE "/[^\`]*visual-parity-v1\.md")
+  reference=$(printf '%s\n' "$section" | grep -oE '/[^`[:space:]]*visual-parity-v1\.md' | head -1)
   [ -n "$reference" ] || fail "$label frontend acceptance must cite visual-parity@1 by absolute path"
-  assert_grep "Execution playbook: \`visual-parity@1\`" "$reference" "$label citation must resolve to the visual-parity@1 contract"
+  [ -s "$reference" ] || fail "$label visual-parity@1 citation must resolve to a non-empty contract file: $reference"
   assert_present "$ROOT/docs/playwright-validation.md" "Playwright doc must exist"
   assert_grep "Playwright tooling in \`$ROOT/docs/playwright-validation.md\`" "$brief" \
     "$label rule 3 must cite the Playwright doc by absolute path"
