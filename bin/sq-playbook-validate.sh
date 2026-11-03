@@ -21,14 +21,15 @@ ARTIFACTS="$DATA/$ID/artifacts"
 PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
 VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
 case "$PLAYBOOK@$VERSION" in
-  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|eval@1|plan-execute@1|react@1) ;;
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|multi-phase-plan@2|eval@1|plan-execute@1|react@1) ;;
   *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
 esac
 CHECKLIST=
 if [ -d "$ARTIFACTS" ]; then
   for candidate in "$ARTIFACTS"/*.md; do
     [ -f "$candidate" ] || continue
-    grep -q '^#.*[Cc]hecklist\|^#.*@1' "$candidate" || continue
+    # The version token is tooling, not a published contract: any @<digit> version matches.
+    grep -q '^#.*[Cc]hecklist\|^#.*@[0-9]' "$candidate" || continue
     CHECKLIST=$candidate
     break
   done
@@ -242,6 +243,19 @@ case "$PLAYBOOK@$VERSION" in
       "layer;not|never|no"
       "backlog;handoff|queue"
       "next;action|unresolved|stop"
+    )
+    ;;
+  multi-phase-plan@2)
+    # @2 keeps the five @1 criteria and gates the split-or-keep rule as a sixth.
+    CRITERIA_LABELS=("outcome and dependencies" "verifiable units" "no layer task decomposition" "backlog handoff" "next action" "split-or-keep decision and data reversal")
+    CRITERIA_PATTERNS=("outcome" "verification" "layer" "backlog" "action" "split|keep")
+    CRITERIA_CHECKS=(
+      "outcome;dependency|dependencies"
+      "unit;verification|verify"
+      "layer;not|never|no"
+      "backlog;handoff|queue"
+      "next;action|unresolved|stop"
+      "split|keep;stage|boundary;reversal|recovery;revert|external"
     )
     ;;
   eval@1)
