@@ -2170,6 +2170,59 @@ test_canonical_x_mode_named_poll_survives_retirement() {
   pass "retirement leaves a canonical poll whose id is x-sentry armed"
 }
 
+# A legacy (not yet rebuilt) PR poll whose id is x-sentry is user work too, so
+# retirement must leave the record for the normal migration to rebuild.
+test_legacy_x_mode_named_poll_is_rebuilt() {
+  local dir state rc
+  dir=$(make_case legacy-x-mode-named-poll)
+  state="$dir/home/state"
+  write_poll_meta "$state" x-sentry https://github.com/o/r/pull/22
+  printf 'legacy relay poll bytes\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -eq 0 ] || fail "migration of a legacy x-sentry poll failed: $(cat "$dir/migrate.err")"
+  fm_pr_poll_artifacts_valid "$state" x-sentry "$POLL" \
+    || fail "retirement disarmed a legacy poll whose id is x-sentry"
+  cmp -s "$POLL" "$state/x-sentry.check.sh" \
+    || fail "the legacy x-sentry poll was not rebuilt into a canonical check"
+  pass "retirement leaves a rebuildable legacy poll whose id is x-sentry to migration"
+}
+
+# A partially published or ambiguous poll whose id is x-sentry must reach the
+# normal quarantine path instead of losing its check and orphaning its sidecars.
+test_ambiguous_x_mode_named_poll_is_quarantined() {
+  local dir state rc
+  dir=$(make_case ambiguous-x-mode-named-poll)
+  state="$dir/home/state"
+  fm_write_meta "$state/x-sentry.meta" \
+    'window=sq-x-sentry' \
+    'pr=https://github.com/o/r/pull/23' \
+    'window=injected-after-pr'
+  printf 'legacy ambiguous bytes\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+  printf 'partial sidecar\n' > "$state/x-sentry.pr-poll"
+  chmod 0600 "$state/x-sentry.pr-poll"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -eq 0 ] || fail "ambiguous x-sentry poll migration failed: $(cat "$dir/migrate.err")"
+  [ ! -e "$state/x-sentry.check.sh" ] || fail "ambiguous x-sentry poll left a runnable check"
+  [ ! -e "$state/x-sentry.pr-poll" ] || fail "ambiguous x-sentry poll orphaned its sidecar"
+  find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f | grep -q . \
+    || fail "ambiguous x-sentry poll was not quarantined"
+  grep -q 'quarantined polls remain unarmed' "$dir/migrate.out" \
+    || fail "quarantining the ambiguous x-sentry poll was not reported"
+  pass "retirement leaves an ambiguous poll whose id is x-sentry to quarantine"
+}
+
 # A custom check edited after registration keeps its trust record but no longer
 # authenticates; retirement must not delete user-owned evidence, so the normal
 # migration quarantines it for repair.
@@ -3358,6 +3411,8 @@ test_bootstrap_migrates_before_other_mutations
 test_bootstrap_isolates_incomplete_poll_migration
 test_dead_x_mode_check_is_retired
 test_canonical_x_mode_named_poll_survives_retirement
+test_legacy_x_mode_named_poll_is_rebuilt
+test_ambiguous_x_mode_named_poll_is_quarantined
 test_x_mode_named_check_with_stale_trust_is_quarantined
 test_registered_x_mode_named_check_survives_retirement
 test_custom_snapshot_cleanup_on_signal
