@@ -187,10 +187,12 @@ Todo harness recebeu instruções de emitir estas strings exatas de comando shel
 ```sh
 printf 'UNRELATED_EXECUTED\n'
 pgrep -fl '/bin/sq-sentry.sh' || true
-export SQUAD_GUARD_GRACE=300; bin/sq-sentry-checkpoint.sh --seconds 180
+source '<projeto-scratch>/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180
 tmux send-keys -t isolated-pi-lab "printf '%s\n' 'bin/sq-sentry-arm.sh &'"; tmux send-keys -t isolated-pi-lab Enter
 bin/sq-sentry-arm.sh &
 ```
+
+Este registro mantém o comando como emitido; o exemplo documentado de setup permitido mudou depois que `config/x-mode.env` foi removido, então `source config/x-mode.env` não é mais um nó de setup aprovado.
 
 Os comandos reais de lançamento dos harnesses foram:
 

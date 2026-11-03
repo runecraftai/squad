@@ -143,7 +143,7 @@ Ele não copia árvores de projeto nem o ambiente do processo primário.
 Uma falha de provisionamento conhecida faz rollback da nova rota, enquanto SSH exit 255 preserva-a porque a conclusão remota é desconhecida e deve ser reconciliada no mesmo host.
 
 Seed também escreve um registro durável `.sq-xo-parent` ao lado do marcador de identidade `.sq-xo-home` da base, nomeando a rota desta base para seu pai como `local` ou `remote`.
-O subsistema de resposta-pública-prometida é same-system-por-construção, então uma rota remota nunca pode carregar uma promessa delegada de resposta pública; o gate de cleanup de `bin/sq-teardown.sh` lê este registro para tratar um pai remoto como fora do escopo em vez de binding não resolvido.
+Um novo seed posterior valida este registro, então uma base vinculada a um pai nunca pode ser semeada novamente contra um pai diferente.
 
 XOs locais mantêm o formato de rota existente e não precisam de migração.
 Uma unidade pode conter rotas locais e remotas juntas.

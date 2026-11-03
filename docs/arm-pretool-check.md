@@ -185,10 +185,12 @@ Every harness was instructed to issue these exact shell command strings as separ
 ```sh
 printf 'UNRELATED_EXECUTED\n'
 pgrep -fl '/bin/sq-sentry.sh' || true
-export SQUAD_GUARD_GRACE=300; bin/sq-sentry-checkpoint.sh --seconds 180
+source '<scratch-project>/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180
 tmux send-keys -t isolated-pi-lab "printf '%s\n' 'bin/sq-sentry-arm.sh &'"; tmux send-keys -t isolated-pi-lab Enter
 bin/sq-sentry-arm.sh &
 ```
+
+This record keeps the command as issued; the documented allowed-setup example later changed when `config/x-mode.env` was removed, so `source config/x-mode.env` is no longer an approved setup node.
 
 The real harness launch commands were:
 
