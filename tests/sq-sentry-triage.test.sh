@@ -4212,6 +4212,12 @@ test_dirty_pause_protections() {
       terminal)
         printf 'done: finished\n' > "$state/held.status"
         printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+        # The terminal-agentless skip retires this status signature after the
+        # commander-relevant done: notice has been delivered once. Record that
+        # delivery here so this case measures the dirty/pause protection rather
+        # than re-testing the first-notice surface (owned by
+        # test_terminal_agentless_notice_surfaces_once_then_stays_quiet).
+        printf 'done: finished' > "$state/.hb-surfaced-held"
         start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_FAKE_CREW_STATE='state: done · source: run-step · passed'
         ;;
       clean)
