@@ -43,11 +43,6 @@ import {
   renderCommand,
 } from "./commands/maintain.js";
 import { homeCommand } from "./commands/home.js";
-import {
-  PUBLIC_FOLLOWUP_HELP,
-  publicFollowupCommand,
-  publicFollowupSubcommandHelp,
-} from "./commands/public-followup.js";
 import { SETUP_HELP, setupCommand } from "./commands/setup.js";
 import type { SuggestionGlobals } from "./suggestions.js";
 import { VERSION } from "./version.js";
@@ -63,8 +58,8 @@ type MainOptions = {
 };
 
 export const TOP_HELP = `usage: sq-tasks [command] [args] [flags]
-commands[19]:
-  (none)=dashboard, add, list, show, start, done, reopen, update, rm, block, unblock, hold, unhold, ready, public-followup, mv, prune, render, setup
+commands[18]:
+  (none)=dashboard, add, list, show, start, done, reopen, update, rm, block, unblock, hold, unhold, ready, mv, prune, render, setup
 flags[4]:
   --backend <name> (after command), --file <path> (after command), --json (mutations: machine-readable result), --help, -v/-V/--version
 examples:
@@ -76,7 +71,6 @@ examples:
   sq-tasks block sq-x --by fob-lease-t4
   sq-tasks hold sq-x --reason "commander decision pending" --kind commander
   sq-tasks ready
-  sq-tasks public-followup ready --json
   sq-tasks setup hooks
 `;
 
@@ -102,7 +96,6 @@ const COMMANDS: Record<string, CommandFn> = {
   hold: withContext(holdCommand),
   unhold: withContext(unholdCommand),
   ready: withContext(readyCommand),
-  "public-followup": withContext(publicFollowupCommand),
   mv: withContext(mvCommand),
   prune: withContext(pruneCommand),
   render: withContext(renderCommand),
@@ -128,7 +121,6 @@ const COMMAND_HELP: Record<string, string> = {
   hold: HOLD_HELP,
   unhold: UNHOLD_HELP,
   ready: READY_HELP,
-  "public-followup": PUBLIC_FOLLOWUP_HELP,
   mv: MV_HELP,
   prune: PRUNE_HELP,
   render: RENDER_HELP,
@@ -139,13 +131,6 @@ export async function main(options: MainOptions = {}): Promise<void> {
   const argv = options.argv ?? process.argv.slice(2);
   // The noun `task` is optional: `sq-tasks task add ...` === `sq-tasks add ...`.
   const normalized = argv[0] === "task" ? argv.slice(1) : argv;
-  if (normalized[0] === "public-followup" && normalized[2] === "--help") {
-    const help = publicFollowupSubcommandHelp(normalized[1]);
-    if (help !== undefined) {
-      (options.stdout ?? process.stdout).write(help);
-      return;
-    }
-  }
 
   await runAxiCli<TasksContext | undefined>({
     argv: normalized,

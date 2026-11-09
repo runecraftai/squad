@@ -35,14 +35,8 @@ matrix_case A06 allow "$ROOT/bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A07 allow "cd '$ROOT'; exec bin/sq-sentry-arm.sh"
 matrix_case A08 allow "cd '../Squad'; bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case A09 allow "export SQUAD_BASE='$ROOT'; bin/sq-sentry-checkpoint.sh --seconds 180"
-matrix_case A10 allow 'source config/x-mode.env; bin/sq-sentry-checkpoint.sh --seconds 180'
-matrix_case A11 allow "source 'config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
-matrix_case A12 allow "source './config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
-matrix_case A13 allow "source '$ROOT/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
-matrix_case A14 allow "[ -f 'config/x-mode.env' ] && source 'config/x-mode.env'; exec bin/sq-sentry-arm.sh"
 matrix_case A15 allow "cd $ROOT && exec bin/sq-sentry-arm.sh"
 matrix_case A16 allow "export SQUAD_BASE=$ROOT && bin/sq-sentry-checkpoint.sh --seconds 180"
-matrix_case A17 allow $'source "config/x-mode.env"\nbin/sq-sentry-checkpoint.sh --seconds 180'
 
 matrix_case R01 allow "pgrep -fl '/bin/sq-sentry.sh' || true"
 matrix_case R02 allow "ps aux | rg '/bin/sq-sentry.sh'"
@@ -126,10 +120,10 @@ matrix_case D58 deny 'until false; do kill $(pgrep -f sq-sentry); done'
 matrix_case E01 allow "bin/sq-sentry-checkpoint.sh --seconds '180;still-one-arg'"
 matrix_case E02 allow "bin/sq-sentry-checkpoint.sh --label 'sq-sentry-arm.sh; literal argument'"
 matrix_case E03 allow 'bin/sq-sentry-arm.sh # output > file &'
-matrix_case E04 allow $'# setup comment with sq-sentry.sh; && >\nsource "config/x-mode.env"\nbin/sq-sentry-checkpoint.sh --seconds 180'
+matrix_case E04 allow $'# setup comment with sq-sentry.sh; && >\ncd "'"$ROOT"'"\nbin/sq-sentry-checkpoint.sh --seconds 180'
 matrix_case E05 deny "SQUAD_BASE=$ROOT bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case E06 deny "env SQUAD_BASE=$ROOT bin/sq-sentry-arm.sh"
-matrix_case E07 deny "source '/tmp/not-Squad/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seconds 180"
+matrix_case E07 deny "source '/tmp/not-Squad/config/env.local'; bin/sq-sentry-checkpoint.sh --seconds 180"
 matrix_case E08 deny "bash -lc 'bin/sq-sentry-checkpoint.sh --seconds 180'"
 matrix_case E09 deny '(bin/sq-sentry-checkpoint.sh --seconds 180)'
 matrix_case E10 deny "eval 'bin/sq-sentry-arm.sh &'"

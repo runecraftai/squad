@@ -6,7 +6,7 @@
 # no `data/<id>/brief.md`. Only `bin/sq-spawn.sh` writes that metadata, and
 # untracked project work contributes nothing to the in-flight branch of
 # bin/sq-supervision-lib.sh or bin/sq-turnend-guard.sh. So such work is not
-# merely unsupervised: absent an independent X-mode need, it makes the whole
+# merely unsupervised: absent an independent supervision need, it makes the whole
 # guard stack structurally inert, and it dies with the primary session instead
 # of living in its own backend session.
 #

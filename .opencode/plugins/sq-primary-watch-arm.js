@@ -102,7 +102,6 @@ async function isPrimaryRoot(root, home) {
 
 function shouldArm(paths) {
   if (existsSync(`${paths.state}/.afk`)) return false;
-  if (existsSync(`${paths.config}/x-mode.env`)) return true;
   try {
     return readdirSync(paths.state).some((name) => name.endsWith(".meta"));
   } catch {
@@ -291,7 +290,7 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     SQUAD_CONFIG_OVERRIDE: paths.config,
     SQUAD_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
-  const armChild = spawn("bash", ["-lc", 'config_dir="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec "$SQUAD_ROOT_OVERRIDE/bin/sq-sentry-arm.sh" --restart'], {
+  const armChild = spawn("bash", ["-lc", 'exec "$SQUAD_ROOT_OVERRIDE/bin/sq-sentry-arm.sh" --restart'], {
     cwd: paths.root,
     env,
     stdio: ["ignore", "pipe", "pipe"],

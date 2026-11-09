@@ -98,14 +98,9 @@ Nós aprovados de setup são:
 
 - `cd <uma palavra de caminho>`.
 - `export NOME=<uma palavra shell>` sem command substitution, process substitution ou redireção.
-- `source <caminho x-mode>` ou `. <caminho x-mode>`.
-- `[ -f <caminho x-mode> ] && source <caminho x-mode>` e a forma equivalente com ponto.
-
-Os caminhos x-mode permitidos são `config/x-mode.env`, `./config/x-mode.env`, e um caminho absoluto que normalize para `<base-Squad-ativa>/config/x-mode.env`.
-Um caminho x-mode absoluto fora da base ativa não é nó aprovado de setup.
 
 Nós aprovados podem ser separados por `;`, newline real ou `&&`.
-`&&` é aceito depois de setup para que um `cd`, `export` ou source falho impeça a chamada protegida de rodar sob o setup errado.
+`&&` é aceito depois de setup para que um `cd` ou `export` falho impeça a chamada protegida de rodar sob o setup errado.
 
 O nó protegido final pode ter um wrapper imediato `exec`.
 Seus argumentos são palavras shell ordinárias e podem conter ponto-e-vírgulas citados ou nomes de sentinela.
@@ -196,6 +191,8 @@ source '<projeto-scratch>/config/x-mode.env'; bin/sq-sentry-checkpoint.sh --seco
 tmux send-keys -t isolated-pi-lab "printf '%s\n' 'bin/sq-sentry-arm.sh &'"; tmux send-keys -t isolated-pi-lab Enter
 bin/sq-sentry-arm.sh &
 ```
+
+Este registro mantém o comando como emitido; o exemplo documentado de setup permitido mudou depois que `config/x-mode.env` foi removido, então `source config/x-mode.env` não é mais um nó de setup aprovado.
 
 Os comandos reais de lançamento dos harnesses foram:
 

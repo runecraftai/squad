@@ -34,9 +34,9 @@ You juggle several projects or repos at once - fixes, investigations, audits - a
 
 You chat with the agent. It routes each request to an operator in its own session endpoint and git worktree, supervises the unit with a zero-token event-driven sentry, and brings you finished PRs, approved local merges, or recon reports. The sentry sleeps on the unit and wakes the sergeant only when something actually needs you.
 
-Optional XOs extend this to persistent local or whole-base remote XOs; dispatch profiles let you steer which harness handles which task; and opt-in Relay lets the same unit answer public mentions on X and Discord. `codex-app` is not a runtime backend yet - [docs/codex-app-backend.md](docs/codex-app-backend.md) owns that boundary.
+Optional XOs extend this to persistent local or whole-base remote XOs, and dispatch profiles let you steer which harness handles which task. `codex-app` is not a runtime backend yet - [docs/codex-app-backend.md](docs/codex-app-backend.md) owns that boundary.
 
-Full architecture - the supervision engine, worktree isolation, XOs, dispatch profiles, project modes, optional Relay, unit sync, and self-update - lives in [docs/architecture.md](docs/architecture.md).
+Full architecture - the supervision engine, worktree isolation, XOs, dispatch profiles, project modes, unit sync, and self-update - lives in [docs/architecture.md](docs/architecture.md).
 
 ## Quick Start
 
@@ -118,7 +118,6 @@ See [the update guide](.agents/skills/updatesquad/SKILL.md).
 - **Explicit project modes** - each project deploys via `drill`, `direct-PR`, or `local-only`, with an optional `+yolo` autonomy flag.
 - **Optional XOs** - persistent XOs run from isolated Squad bases with their own `SQUAD_BASE`, state, projects, and session lock, locally or as a whole base on an SSH-reachable host, with guarded updates and recovery that never turns an unavailable remote route into a local replacement.
 - **Event-driven, zero-token supervision** - a bash sentry wakes the sergeant at arms only when something needs you; verified primary harnesses also get a turn-end backstop that blocks or follows up on a blind stop when work is under way and supervision is not live.
-- **Optional Relay** - opt in with one local `.env` pairing token so Squad can answer your public mentions on X and Discord, act on normal reversible mention requests through the same lifecycle as chat requests, acknowledge spawned work, and post up to three public-safe completion follow-ups within seven days - all without changing non-Relay behavior. A final reply promised in a thread becomes durable state reconciled from disk, so a restart or compacted conversation cannot lose it.
 - **Strict project boundary** - the sergeant at arms is read-only over your projects except for the narrow guarded and commander-approved operations authorized by [hard rule 1](AGENTS.md#1-identity-and-prime-directives); operators make every other project change behind the configured merge authority.
 - **Restart-proof** - all state lives on disk and in the active session backend (tmux by hard default); kill the session anytime and the next one reconciles - including confirmed-dead XO agents - and carries on.
 
@@ -202,7 +201,7 @@ The sq-report package uses both: the public skill for agent discovery and `setup
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) - maintainer architecture for the squad, supervision, worktrees, XOs, and project modes.
-- [docs/configuration.md](docs/configuration.md) - environment variables, `SQUAD_BASE`, runtime backend selection, optional Relay and its X and Discord setup steps, the files you set, and harness support.
+- [docs/configuration.md](docs/configuration.md) - environment variables, `SQUAD_BASE`, runtime backend selection, the files you set, and harness support.
 - [docs/remote-XOs.md](docs/remote-XOs.md) - current setup, routing, transfer, recovery, and safety behavior for whole-base remote XOs.
 - [docs/calm.md](docs/calm.md) - current Pi `/calm` behavior and supported presentation limits.
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure the active alert for an away-mode escalation delivery that gets stuck.

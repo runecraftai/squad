@@ -142,8 +142,6 @@ mkdir -p "$STATE"
 . "$SCRIPT_DIR/sq-push-transition-lib.sh"
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
-# shellcheck source=bin/sq-x-lib.sh
-. "$SCRIPT_DIR/sq-x-lib.sh"
 # shellcheck source=bin/sq-check-lib.sh
 . "$SCRIPT_DIR/sq-check-lib.sh"
 # Parent-owned XO missed-report guards: durable pending-reply
@@ -1460,37 +1458,26 @@ while :; do
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
       is_pr_poll=0
-      if [ "$(basename "$c")" = x-sentry.check.sh ]; then
-        if fmx_poll_shim_valid "$c" "$SQUAD_BASE" "$SQUAD_ROOT" \
-          && [ -f "$SQUAD_ROOT/bin/sq-x-poll.sh" ] && [ ! -L "$SQUAD_ROOT/bin/sq-x-poll.sh" ]; then
-          SQUAD_BASE="$SQUAD_BASE" run_check_capture "$SQUAD_ROOT/bin/sq-x-poll.sh" || exit 1
-          out=$SQUAD_CHECK_RESULT
-        else
-          rejected_checks="$rejected_checks $c"
-          continue
-        fi
+      id=$(basename "$c" .check.sh)
+      if fm_pr_poll_snapshot_capture "$STATE" "$id" "$SCRIPT_DIR/sq-pr-poll.sh"; then
+        is_pr_poll=1
+        provider=$SQUAD_PR_POLL_SNAPSHOT_PROVIDER
+        url=$SQUAD_PR_POLL_SNAPSHOT_URL
+        host=$SQUAD_PR_POLL_SNAPSHOT_HOST
+        path=$SQUAD_PR_POLL_SNAPSHOT_PATH
+        number=$SQUAD_PR_POLL_SNAPSHOT_NUMBER
+        run_check_capture "$SCRIPT_DIR/sq-pr-poll.sh" --validated \
+          "$provider" "$url" "$host" "$path" "$number" || exit 1
+        out=$SQUAD_CHECK_RESULT
+      elif fm_custom_check_snapshot_prepare "$STATE" "$id"; then
+        custom_snapshot=$SQUAD_CUSTOM_CHECK_SNAPSHOT
+        run_check_capture "$custom_snapshot" || exit 1
+        out=$SQUAD_CHECK_RESULT
+        fm_custom_check_snapshot_cleanup
       else
-        id=$(basename "$c" .check.sh)
-        if fm_pr_poll_snapshot_capture "$STATE" "$id" "$SCRIPT_DIR/sq-pr-poll.sh"; then
-          is_pr_poll=1
-          provider=$SQUAD_PR_POLL_SNAPSHOT_PROVIDER
-          url=$SQUAD_PR_POLL_SNAPSHOT_URL
-          host=$SQUAD_PR_POLL_SNAPSHOT_HOST
-          path=$SQUAD_PR_POLL_SNAPSHOT_PATH
-          number=$SQUAD_PR_POLL_SNAPSHOT_NUMBER
-          run_check_capture "$SCRIPT_DIR/sq-pr-poll.sh" --validated \
-            "$provider" "$url" "$host" "$path" "$number" || exit 1
-          out=$SQUAD_CHECK_RESULT
-        elif fm_custom_check_snapshot_prepare "$STATE" "$id"; then
-          custom_snapshot=$SQUAD_CUSTOM_CHECK_SNAPSHOT
-          run_check_capture "$custom_snapshot" || exit 1
-          out=$SQUAD_CHECK_RESULT
-          fm_custom_check_snapshot_cleanup
-        else
-          fm_custom_check_snapshot_cleanup
-          rejected_checks="$rejected_checks $c"
-          continue
-        fi
+        fm_custom_check_snapshot_cleanup
+        rejected_checks="$rejected_checks $c"
+        continue
       fi
       if [ -n "$out" ]; then
         reason="check: $c: $out"

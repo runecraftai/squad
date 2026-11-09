@@ -60,7 +60,7 @@
 # Family labels, the changed-file map, and production portable-shard composition
 # live in this script only (one owner). The proven-isolated candidate set remains
 # owned by bin/sq-test-isolation-proof.sh; portable parallel shards are a
-# duration-balanced partition of that exact set (see docs/sq-test-portable-shards.md).
+# fixed partition of that exact set (see docs/sq-test-portable-shards.md).
 #
 # portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
 # split it across separate runners, so two of its stateful scripts still never
@@ -139,6 +139,7 @@ family_for_basename() {
     sq-crew-state.test.sh|sq-decision-hold-lifecycle.test.sh|\
     sq-documentation-audiences.test.sh|sq-ensure-agents-md.test.sh|sq-grok-harness.test.sh|\
     sq-kimi-harness.test.sh|sq-muse-harness.test.sh|sq-herdr-lab.test.sh|sq-lint.test.sh|\
+    sq-install-herdr.test.sh|\
     sq-operational-input.test.sh|sq-pi-primary-types.test.sh|\
     sq-backend-pretool-check.test.sh|sq-poll-pretool-check.test.sh|sq-push-pretool-check.test.sh|\
     sq-primary-pretool-wiring.test.sh|\
@@ -204,7 +205,7 @@ family_for_basename() {
       printf '%s\n' backend-dispatch
       ;;
     sq-pr-artifact-guard.test.sh|sq-pr-check-security.test.sh|sq-pr-merge.test.sh|sq-review-diff.test.sh|\
-    sq-teardown.test.sh|sq-x-mode.test.sh)
+    sq-teardown.test.sh)
       printf '%s\n' pr-forge
       ;;
     sq-afk-inject-e2e.test.sh|sq-afk-return.test.sh|sq-afk-orca.test.sh)
@@ -298,16 +299,16 @@ tests/sq-supervision-instructions.test.sh
 tests/sq-test-run.test.sh
 tests/sq-tmux-submit-busy.test.sh
 tests/sq-transition-lib.test.sh
-tests/sq-x-mode.test.sh
 EOF
 }
 
-# Portable parallel shard 1: LPT balance of the proven-isolated set using the
-# current concurrent-proof durations in docs/sq-test-isolation-proof.json.
-# Execution order is longest first so wall-clock stays near the balanced sum.
+# Portable parallel shard 1: the first half of the recorded partition of the
+# proven-isolated set. Membership is deliberately stable rather than re-balanced
+# whenever the concurrent-proof durations in
+# docs/sq-test-isolation-proof.json move; docs/sq-test-portable-shards.md owns
+# the recorded sums and the imbalance between the two lanes.
 list_portable_parallel_1() {
   cat <<'EOF'
-tests/sq-x-mode.test.sh
 tests/sq-cd-pretool-check.test.sh
 tests/sq-decision-hold-lifecycle.test.sh
 tests/sq-test-run.test.sh
@@ -321,7 +322,7 @@ tests/sq-transition-lib.test.sh
 EOF
 }
 
-# Portable parallel shard 2: the complementary LPT half of the proven set.
+# Portable parallel shard 2: the complementary half of that recorded partition.
 list_portable_parallel_2() {
   cat <<'EOF'
 tests/sq-backend-herdr.test.sh
@@ -416,7 +417,6 @@ tests/sq-pi-primary-live-e2e.test.sh 19
 tests/sq-pi-watch-extension.test.sh 16386
 tests/sq-pr-check-security.test.sh 199573
 tests/sq-procevent.test.sh 42789
-tests/sq-public-followup.test.sh 23365
 tests/sq-quota-array-dispatch-live-e2e.test.sh 19
 tests/sq-xo-harness.test.sh 87895
 tests/sq-xo-lifecycle-e2e.test.sh 4929
@@ -949,7 +949,7 @@ families_for_changed_path() {
       printf '%s\n' XO
       ;;
     bin/sq-pr-*|bin/sq-merge-local.sh|bin/sq-teardown.sh|bin/sq-review-diff.sh|\
-    bin/sq-x-*|bin/sq-check*)
+    bin/sq-check*)
       printf '%s\n' pr-forge
       ;;
     bin/sq-drill-run-lib.sh)
@@ -1053,7 +1053,7 @@ families_for_changed_path() {
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
-    README.md|LICENSE|assets/*|docs/*|evidence/*|.gitignore)
+    README.md|README.pt-BR.md|LICENSE|assets/*|docs/*|evidence/*|.gitignore)
       ;;
     *)
       families_for_test_reference "$path" \

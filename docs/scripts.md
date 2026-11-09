@@ -131,7 +131,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
 | `sq-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, bounded post-merge `MERGED` confirmation, and identity-bound retirement |
 | `sq-pr-poll.sh`          | Provide the byte-static sentry program for validated PR/MR-poll sidecars           |
-| `sq-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
+| `sq-pr-check-migrate.sh` | Quarantine older task polls without execution, retire the dead X mode check, and rebuild only canonical polls       |
 | `sq-pr-check.sh`         | Record validated `pr=` and `pr_head=` values, then atomically arm a static merge poll |
 | `sq-pr-artifact-guard.sh` | Warn when a PR changed-file list names this task's own Squad-base artifact paths      |
 | `sq-pr-merge.sh`         | Merge a task's canonical full GitHub URL against a fresh head (matching any recorded head), checks, and mergeability; refresh PR metadata only after GitHub confirms the merge, then tear the landed task down |
@@ -145,12 +145,3 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed recon deliverables, retire XO bases |
 | `sq-harness.sh`          | Detect the running harness and resolve crew or XO harness, model, and effort |
 | `sq-lock.sh`             | Per-base Squad session lock                                                      |
-| `sq-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |
-| `sq-x-poll.sh`           | One bounded Relay poll: stash newly offered mentions and emit their once-only wake   |
-| `sq-x-reply.sh`          | Post or dry-run preview a composed Relay reply or follow-up                          |
-| `sq-x-dismiss.sh`        | Dismiss a skipped Relay mention at the relay without replying                        |
-| `sq-x-link.sh`           | Link a spawned task to its originating Relay mention in task meta                    |
-| `sq-x-followup.sh`       | Detect, post, and cap completion follow-ups for a Relay-linked task                  |
-| `sq-public-followup-lib.sh` | Shared relay-activation gate, O(1) presence checks, and private transport paths for promised public replies |
-| `sq-public-followup.sh`  | Reconcile typed terminal work results into a public commitment and deliver its final reply once |
-| `sq-public-followup-emit.sh` | Report one typed terminal work result into the base that owes the public reply    |

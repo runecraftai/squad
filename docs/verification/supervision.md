@@ -298,6 +298,8 @@ The broader relevant regression pass was rerun on 2026-08-02 without live-base o
 bin/sq-test-run.sh tests/sq-sentry-triage.test.sh tests/sq-sentry-lock.test.sh tests/sq-afk-inject-e2e.test.sh tests/sq-afk-return.test.sh tests/sq-x-mode.test.sh tests/sq-backend.test.sh tests/sq-backend-tmux-smoke.test.sh tests/sq-xo-safety.test.sh
 ```
 
+This record keeps the command as issued; `tests/sq-x-mode.test.sh` was later deleted with the Relay (X mode) removal.
+
 Observed output:
 
 ```text

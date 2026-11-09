@@ -128,14 +128,14 @@ const STRIPPED_ENV = [
   "GH_TOKEN",
 ];
 
-/** Child environments carry no live base, provider credential or Relay token. */
+/** Child environments carry no live base or provider credential. */
 export function cleanEnv(
   extra: Record<string, string> = {},
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of STRIPPED_ENV) delete env[name];
   for (const name of Object.keys(env)) {
-    if (name.startsWith("PI_") || name.startsWith("SQX_")) delete env[name];
+    if (name.startsWith("PI_")) delete env[name];
   }
   return { ...env, ...extra };
 }

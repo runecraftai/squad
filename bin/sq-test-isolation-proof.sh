@@ -172,7 +172,6 @@ tests/sq-supervision-instructions.test.sh
 tests/sq-test-run.test.sh
 tests/sq-tmux-submit-busy.test.sh
 tests/sq-transition-lib.test.sh
-tests/sq-x-mode.test.sh
 EOF
 }
 

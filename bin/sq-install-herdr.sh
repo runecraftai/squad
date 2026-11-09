@@ -10,7 +10,8 @@
 #
 # Pins Herdr v0.8.0 (protocol 19), the suite-verified protocol-19 release (local matrix).
 # Selects the official GitHub Releases asset for the host OS/arch, downloads
-# with a bounded max size, verifies SHA-256 before install, then refuses to
+# with bounded curl-level retries plus an outer retry horizon for transient
+# release-CDN failures, verifies SHA-256 before install, then refuses to
 # finish unless the binary reports the exact pin version and a client protocol
 # at or above the required floor (16 for the real-Herdr family).
 set -eu
@@ -59,9 +60,26 @@ TMP=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sq-herdr.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 printf 'sq-install-herdr.sh: downloading %s from %s\n' "$ASSET" "$URL" >&2
-# --fail: HTTP errors; --location: follow redirects; --max-filesize: bound.
-curl -fsSL --max-filesize "$SQUAD_HERDR_CI_MAX_BYTES" "$URL" -o "$TMP/$ASSET" \
-  || die "download failed for $URL (bounded at $SQUAD_HERDR_CI_MAX_BYTES bytes)"
+# The release CDN intermittently returns 5xx responses (including 504) or
+# drops mid-transfer connections. curl retries those transient failures itself
+# with bounded backoff, and the outer loop adds a wider retry horizon so a
+# multi-minute CDN outage does not fail the required real-Herdr lane.
+DOWNLOAD_ATTEMPTS=8
+download_attempt=1
+while ! curl -fsSL --max-filesize "$SQUAD_HERDR_CI_MAX_BYTES" \
+    --retry 4 --retry-all-errors --retry-connrefused \
+    --retry-delay 2 --connect-timeout 15 --max-time 300 \
+    "$URL" -o "$TMP/$ASSET"; do
+  [ "$download_attempt" -lt "$DOWNLOAD_ATTEMPTS" ] || \
+    die "download failed after $DOWNLOAD_ATTEMPTS attempts for $URL (bounded at $SQUAD_HERDR_CI_MAX_BYTES bytes)"
+  printf 'sq-install-herdr.sh: download attempt %s failed; retrying\n' "$download_attempt" >&2
+  # Exponential backoff with jitter, capped at 60s, so a long outage costs
+  # bounded CI time and parallel jobs do not re-hit the CDN in lockstep.
+  sleep_secs=$((2 ** (download_attempt + 1) + RANDOM % 5))
+  [ "$sleep_secs" -le 60 ] || sleep_secs=60
+  sleep "$sleep_secs"
+  download_attempt=$((download_attempt + 1))
+done
 
 if command -v sha256sum >/dev/null 2>&1; then
   ACTUAL_SHA256=$(sha256sum "$TMP/$ASSET" | awk '{print $1}')

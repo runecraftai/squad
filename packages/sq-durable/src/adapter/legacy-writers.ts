@@ -156,15 +156,12 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 	guard("bin/sq-pr-merge.sh", ["landing"], "guarded PR merge; a direct call for a durable mission is refused"),
 	guard("bin/sq-procevent-remote-reply.sh", ["xo-routing"], "mirrors a remote XO's status lines into its parent status"),
 	guard("bin/sq-promote.sh", ["admission"], "promotes a recon to a strike by rewriting its meta"),
-	guard("bin/sq-public-followup-emit.sh", ["metadata"], "publishes a typed terminal event for an obligation into the owning base's inbox"),
-	guard("bin/sq-public-followup.sh", ["metadata"], "public-followup obligations: register, consume, pending, deliver, record-posted and retire consult metadata before any backlog, registry or post write"),
 	guard("bin/sq-remote-home-seed.sh", ["xo-routing"], "seeds a remote XO base and its charter brief"),
 	guard("bin/sq-self-heal.sh", ["cleanup"], "housekeeping that archives a status log whose meta is gone"),
 	guard("bin/sq-send.sh", ["approval"], "--resolve-key closes a task's open decision; checked on the named and on the resolved task"),
 	guard("bin/sq-spawn.sh", ["admission", "spawn", "retry", "xo-routing"], "launch metadata, endpoint records and status of a task; an XO launch consults xo-routing"),
 	guard("bin/sq-stall-detect.sh", ["wait", "retry"], "sourced by the sentry: stall interrupts and status (wait), due retry claims (retry)"),
 	guard("bin/sq-teardown.sh", ["cleanup"], "removes a task's records, endpoint and copy; --force never bypasses custody"),
-	guard("bin/sq-x-lib.sh", ["metadata"], "Relay link fields of a task's meta, through fmx_meta_custody"),
 	guard("bin/sq-xo-report.sh", ["xo-routing"], "an XO's routed reply into its parent status"),
 	{
 		path: "bin/sq-bootstrap.sh",
@@ -193,18 +190,6 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 			lines: ['rm -f "$f" && dropped=$((dropped + 1))', `printf '%s' "$last" > "$(_hb_surfaced_path "$task")"`],
 		},
 		note: "long-running; task records change only through sq-exec-state, the pr-lib mutators and the sourced sq-stall-detect, whose custody generation is pinned when the sentry starts",
-	},
-	{
-		path: "bin/sq-x-followup.sh",
-		consults: ["metadata"],
-		delegatesTo: ["bin/sq-x-lib.sh"],
-		note: "Relay follow-ups change meta only through the x-lib mutators, and consult metadata before posting",
-	},
-	{
-		path: "bin/sq-x-link.sh",
-		consults: ["metadata"],
-		delegatesTo: ["bin/sq-x-lib.sh"],
-		note: "Relay links change meta only through the x-lib mutators",
 	},
 	{
 		path: "bin/sq-push-transition-lib.sh",
@@ -322,6 +307,9 @@ export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>
 	"bin/sq-mcp-link.sh": [
 		"mv -f \"$TMP\" \"$META\"",
 	],
+	"bin/sq-pr-check-migrate.sh": [
+		'rm -f -- "$check" || true',
+	],
 	"bin/sq-pr-check.sh": [
 		"[ -z \"$META_TMP\" ] || rm -f -- \"$META_TMP\"",
 		"*) printf '%s\\n' \"$line\" >> \"$META_TMP\" || exit 1 ;;",
@@ -343,14 +331,6 @@ export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>
 	],
 	"bin/sq-promote.sh": [
 		"mv \"$TMP\" \"$META\"",
-	],
-	"bin/sq-public-followup.sh": [
-		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
-		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
-		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
-		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
-		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
-		"rm -f -- \"$(fm_pf_registry_dir \"$STATE\")/$id\" 2>/dev/null || true",
 	],
 	"bin/sq-remote-home-seed.sh": [
 		"[ \"$BRIEF_CREATED\" -eq 0 ] || rm -f -- \"$BRIEF\"",
@@ -380,11 +360,6 @@ export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>
 		"rm -f \"$sub_state/$child_id.status\" \"$sub_state/$child_id.turn-ended\" \\",
 		"rm -f \"$HERDR_PRESENTATION_JOURNAL\"",
 		"rm -f \"$STATE/$ID.status\" \"$STATE/$ID.turn-ended\" \"$STATE/$ID.meta\" \\",
-	],
-	"bin/sq-x-lib.sh": [
-		"mv -f \"$tmp\" \"$meta\" || { rm -f \"$tmp\"; return 1; }",
-		"mv -f \"$tmp\" \"$meta\" || { rm -f \"$tmp\"; return 1; }",
-		"mv -f \"$tmp\" \"$meta\" || { rm -f \"$tmp\"; return 1; }",
 	],
 });
 
@@ -432,12 +407,10 @@ const RECORD_VAR_NAME = /^(?:[A-Za-z_]*_)?(?:meta|META|status|STATUS|exec|EXEC)(
 const STATUS_APPEND = /\bstatus_line_append\b/;
 const WRITER_CALLS: readonly RegExp[] = [
 	/\bsq-exec-state(?:\.sh)?["']?\s+["']?(?:claim|running|retry|retry_queued|release|released|after_run|heartbeat|recover|recover-all|transition)\b/,
-	/\b(?:tx|sq-tasks|tasks-axi|tasks_axi)\s+["']?(?:public-followup\s+)?(?:add|done|hold|mv|compact|update|rm|remove|move|unblock|block|release|start|edit|set|note|archive|bind-work|work-event|record-error|record-delivery|begin-delivery|record-posted|waive)\b/,
+	/\b(?:tx|sq-tasks|tasks-axi|tasks_axi)\s+["']?(?:add|done|hold|mv|compact|update|rm|remove|move|unblock|block|release|start|edit|set|note|archive)\b/,
 	/\bSQ_TASKS\s*,\s*["'](?:add|done|hold|mv|update|rm)["']/,
 	/\bsq-(?:merge-local|pr-merge|backlog-handoff|backlog-receive|teardown|spawn|promote|pr-check|decision-hold)\.sh\b/,
 	/\bfm_pr_poll_(?:prepare|publish_prepared|cleanup|revoke_final|retirement_publish|retirement_recover_one)\b/,
-	/\bfmx_meta_(?:link_set|followups_set|link_clear)\b/,
-	/\bfmx_private_artifact_publish_stdin(?:_once)?\b[^\n]*\bfm_pf_(?:registry|events|consumed|rejected)_dir\b/,
 ];
 const SCANNED = new Set([".sh", ".py", ".mjs", ".js", ""]);
 const SKIPPED_DIRS = new Set(["__pycache__", "vendor", "node_modules"]);
@@ -467,7 +440,7 @@ function insideQuotes(line: string, index: number): boolean {
 	return enclosingQuote(line, index) >= 0;
 }
 
-/** A writer named inside quotes is still a call when the quoted word is its path: `"$SCRIPT_DIR/sq-x.sh" args`. */
+/** A writer named inside quotes is still a call when the quoted word is its path: `"$SCRIPT_DIR/sq-task.sh" args`. */
 function quotedInvocation(line: string, index: number): boolean {
 	const open = enclosingQuote(line, index);
 	if (open < 0) return true;
@@ -532,7 +505,7 @@ function codeLines(text: string, python: boolean): (string | undefined)[] {
 }
 
 /** A command substitution that computes a record path, such as `$(path_for "$id")`. */
-const RECORD_PATH_CALL = /\$\(\s*(?:[A-Za-z_]*path[A-Za-z_]*|[A-Za-z_]+_for|fm_pf_(?:registry|events|consumed|rejected)_dir)\s/;
+const RECORD_PATH_CALL = /\$\(\s*(?:[A-Za-z_]*path[A-Za-z_]*|[A-Za-z_]+_for)\s/;
 
 function writesRecordVariable(line: string, recordVars: ReadonlySet<string>, helperCall: RegExp | null): boolean {
 	const isRecord = (name: string) => recordVars.has(name) || RECORD_VAR_NAME.test(name);
@@ -618,7 +591,7 @@ export function scanText(text: string, self = "", python = false, helpers: Reado
 		for (const pattern of WRITER_CALLS) {
 			const call = pattern.exec(line);
 			if (call === null || !quotedInvocation(line, call.index)) continue;
-			// A case pattern (`bin/sq-x.sh|...`) or the file's own name in its usage text is not a call.
+			// A case pattern (`bin/sq-task.sh|...`) or the file's own name in its usage text is not a call.
 			if (/^[|)]/.test(line.slice(call.index + call[0].length))) continue;
 			if (self !== "" && call[0] === self) continue;
 			hits.push({ line: at, text, signature: "writer-call" });

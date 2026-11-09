@@ -2,7 +2,7 @@
 name: bootstrap-diagnostics
 description: >-
   Agent-only handling playbook for session-start bootstrap diagnostics.
-  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH: invalid, CREW_DISPATCH: model existence:, UNIT_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, XO_SYNC, XO_LIVENESS, XO_HANDOFF, NUDGE_XOS, or SQX - or when a standalone bin/sq-bootstrap.sh or bin/sq-startup-network.sh run prints one of those lines.
+  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH: invalid, CREW_DISPATCH: model existence:, UNIT_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, XO_SYNC, XO_LIVENESS, XO_HANDOFF, or NUDGE_XOS - or when a standalone bin/sq-bootstrap.sh or bin/sq-startup-network.sh run prints one of those lines.
   A silent bootstrap section, or a BOOTSTRAP_INFO fact, means no skill load.
 user-invocable: false
 metadata:
@@ -50,6 +50,8 @@ When any diagnostic needs commander attention, report the plain consequence and 
   Read the private mode-`0600` per-task outcome record, verify the task's recorded PR independently, and rearm only through `bin/sq-pr-check.sh` with canonical inputs.
 - `PR_CHECK_MIGRATION: migration completed safely; resume supervision for this base` - migration crossed the update boundary without rebuilding or quarantining a task poll after pausing the prior sentry.
   Resume the emitted supervision protocol after finishing the session-start wake handling.
+- `PR_CHECK_MIGRATION: the retired x-sentry check could not be removed; the sentry refuses to start until it is gone` - the one known dead Relay artifact at `state/x-sentry.check.sh` survived retirement, so the migration stopped there without quarantining or rearming anything and the sentry exited instead of running state checks.
+  This is a refusal, not a completed migration: inspect the private state directory's ownership and mode, remove only that exact file once it is removable, then rerun session start, and never register it as a custom check or restore Relay behavior.
 - Any other `PR_CHECK_MIGRATION:` refusal means migration did not complete safely, whether because sentry exclusion, a private path, a diagnostic, quarantine validation, or marker publication could not be proved.
   Keep each affected poll unavailable, inspect the named private state path, and do not bypass the migration or execute a quarantined artifact; a completed safe-scan marker allows unrelated authenticated polls to continue while private repair remains pending.
 - `XO_SYNC: XO <id>: skipped: <reason>` - XO convergence left a live base on its existing checkout because the base was dirty, diverged, unsafe, on the wrong branch, missing its placement-specific target commit, unreachable, or otherwise not fast-forwardable, or because inherited local-material propagation failed; bootstrap continued, but inspect the reason because the XO's tracked instructions, inherited settings, or shared commander preferences may be stale after a primary update.
@@ -60,5 +62,3 @@ When any diagnostic needs commander attention, report the plain consequence and 
   An unsafe-outbox variant requires path and file-type inspection before any retry.
 - `NUDGE_XOS: XO <id>: send failed: <reason>` - XO convergence changed a running base's loaded instructions or inherited config, but the deterministic `sq-send.sh sq-<id>` re-read nudge failed.
   Inspect the reason, keep the pending marker under `state/.XO-nudge-pending/` intact, and rerun session start after the endpoint or metadata issue is fixed so bootstrap can retry the exact same marked send on the same local or remote route.
-- `SQX: X mode on ...` / `SQX: X mode off ...` - bootstrap confirmed or removed the local Relay poll artifacts (`docs/configuration.md` "Relay (.env)"); the emitted line still carries Relay's former `X mode` wording.
-  Only when a running sentry needs the cadence transition applied immediately, restart the base-scoped sentry through the emitted harness supervision protocol; bootstrap deliberately never restarts the sentry itself.

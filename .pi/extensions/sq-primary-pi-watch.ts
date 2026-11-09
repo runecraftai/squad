@@ -379,7 +379,7 @@ export default function (pi: ExtensionAPI) {
       SQUAD_WATCH_ARM_SCRIPT: armScript,
       SQUAD_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
     };
-    const armChild = spawn("bash", ["-lc", "config_dir=\"${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}\"; [ -f \"$config_dir/x-mode.env\" ] && . \"$config_dir/x-mode.env\"; exec \"$SQUAD_WATCH_ARM_SCRIPT\" --restart"], {
+    const armChild = spawn("bash", ["-lc", "exec \"$SQUAD_WATCH_ARM_SCRIPT\" --restart"], {
       cwd: fmRoot,
       env,
       stdio: ["ignore", "pipe", "pipe"],

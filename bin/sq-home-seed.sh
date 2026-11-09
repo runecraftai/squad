@@ -949,10 +949,8 @@ seed_home() {
 
   projects_csv=$(join_projects "$@")
   # Durable record of this base's route to its parent, written once here next
-  # to the identity marker: the cleanup check in sq-teardown.sh reads it so a
-  # restart that drops the launch-time SQUAD_PUBLIC_FOLLOWUP_PRIMARY_HOME prefix
-  # can still resolve the real parent instead of silently treating its relay
-  # as inactive.
+  # to the identity marker: a later local-route reseed refuses a different
+  # parent, while remote provisioning rewrites the record as diagnostic data.
   {
     printf 'schema=sq-xo-parent.v1\n'
     printf 'route=local\n'

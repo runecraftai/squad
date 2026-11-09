@@ -1846,7 +1846,7 @@ test_paused_churning_pane_throttle_refreshes_marker() {
   h="abc123"
   # shell_libs sources every library surface_nonterminal_stale needs, including
   # the sentry source guard that loads the function without entering the loop.
-  shell_libs=". $ROOT/bin/sq-push-transition-lib.sh; . $ROOT/bin/sq-pr-lib.sh; . $ROOT/bin/sq-x-lib.sh; . $ROOT/bin/sq-check-lib.sh; . $ROOT/bin/sq-pending-reply-lib.sh; . $ROOT/bin/sq-busy-lib.sh; . $ROOT/bin/sq-stall-detect.sh; . $ROOT/bin/sq-sentry.sh 2>/dev/null"
+  shell_libs=". $ROOT/bin/sq-push-transition-lib.sh; . $ROOT/bin/sq-pr-lib.sh; . $ROOT/bin/sq-check-lib.sh; . $ROOT/bin/sq-pending-reply-lib.sh; . $ROOT/bin/sq-busy-lib.sh; . $ROOT/bin/sq-stall-detect.sh; . $ROOT/bin/sq-sentry.sh 2>/dev/null"
   sub() { bash -c "export SQUAD_STATE_OVERRIDE='$state'; export SQUAD_PAUSE_RESURFACE_SECS=$1; $shell_libs; surface_nonterminal_stale '$window' '$h'" 2>/dev/null; }
 
   # Phase A: fresh marker - absorb path must run and refresh the marker.
@@ -2805,8 +2805,12 @@ test_busy_tall_pane_above_tail_progress_resets_expiry() {
   }
 
   write_tall_pane row-a "$capture_file"
-  poll_tall_pane
-  [ -s "$state/.stale-since-$key" ] || fail "a static busy tall pane did not start the expiry clock"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+  pid=$!
+  wait_numeric_file "$state/.stale-since-$key" 200 \
+    || { reap "$pid"; fail "a static busy tall pane did not start the expiry clock"; }
+  reap "$pid"
 
   # Only the above-tail row changes: the busy claim is not static, so no expiry.
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
@@ -4212,6 +4216,12 @@ test_dirty_pause_protections() {
       terminal)
         printf 'done: finished\n' > "$state/held.status"
         printf '%s' "$(seen_sig "$state/held.status")" > "$state/.seen-held_status"
+        # The terminal-agentless skip retires this status signature after the
+        # commander-relevant done: notice has been delivered once. Record that
+        # delivery here so this case measures the dirty/pause protection rather
+        # than re-testing the first-notice surface (owned by
+        # test_terminal_agentless_notice_surfaces_once_then_stays_quiet).
+        printf 'done: finished' > "$state/.hb-surfaced-held"
         start_pause_watch env SQUAD_STALE_ESCALATE_SECS=1 SQUAD_FAKE_CREW_STATE='state: done · source: run-step · passed'
         ;;
       clean)

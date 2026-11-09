@@ -375,8 +375,8 @@ Fiar o Grok adequadamente ainda requer a verificação por token-matcher descrit
 
 Esta mudança não fecha o defeito mais profundo agnóstico-a-harness.
 O branch de trabalho-em-andamento de todo guard do Squad é chaveado em `state/<id>.meta`, e apenas `bin/sq-spawn.sh` escreve aquele registro.
-`bin/sq-supervision-lib.sh` também reconhece um poll de Relay como necessidade de supervisão, mas trabalho primário não contabilizado ainda não contribui nada para aquele predicado.
-Sem uma necessidade de Relay independente, trabalho primário não contabilizado portanto é lido como ocioso em vez de suspeito.
+`bin/sq-supervision-lib.sh` também reconhece trabalho rastreado em andamento e fontes de evento registradas como necessidade de supervisão, mas trabalho primário não contabilizado ainda não contribui nada para aquele predicado.
+Sem uma necessidade de supervisão independente, trabalho primário não contabilizado portanto é lido como ocioso em vez de suspeito.
 
 A correção durável para aquela classe é fazer os guards tratarem "o primário está fazendo trabalho com formato de projeto com zero arquivos `state/*.meta`" como estado suspeito em vez de ocioso.
 Isso pegaria esta classe em qualquer harness, incluindo trabalho criado através de `Bash`.

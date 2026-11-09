@@ -133,7 +133,7 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-skill-rollback.sh`   | Reverter uma skill para um snapshot anterior, interativamente ou por timestamp             |
 | `sq-pr-lib.sh`           | Ser dono da validação canônica de tarefa e PR mais publicação atômica privada de PR-poll, confirmação limitada de `MERGED` pós-merge, e aposentadoria ligada a identidade |
 | `sq-pr-poll.sh`          | Fornecer o programa byte-estático de sentinela para sidecars validados de poll de PR/MR           |
-| `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução e reconstruir apenas polls canônicos       |
+| `sq-pr-check-migrate.sh` | Quarentenair polls de tarefa antigos sem execução, retirar o check morto do modo X e reconstruir apenas polls canônicos       |
 | `sq-pr-check.sh`         | Registrar valores validados de `pr=` e `pr_head=`, então armar atomicamente um poll estático de merge |
 | `sq-pr-merge.sh`         | Mesclar a URL completa canônica GitHub do PR da tarefa contra o head fresco (igual ao registrado, se houver), checks frescos e mergeability; atualizar metadados do PR somente depois que o GitHub confirma o merge, então derrubar a tarefa landada |
 | `sq-retired-missions.sh` | Registrar a identidade exata de aposentadoria do terminal Orca e do worktree fob antes da remoção dos metadados, aposentar o terminal exato e reconciliar registros órfãos no sweep do bootstrap travado |
@@ -146,12 +146,3 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-teardown.sh`         | Teardown fail-closed: devolver worktrees ship landadas, exigir entregáveis completos de recon, aposentar bases XO |
 | `sq-harness.sh`          | Detectar o harness em execução e resolver crew ou XO harness, modelo e esforço |
 | `sq-lock.sh`             | Lock de sessão Squad por base                                                      |
-| `sq-x-lib.sh`            | Helpers compartilhados de config Relay, relay e threading de replies                              |
-| `sq-x-poll.sh`           | Um poll limitado de Relay: guarda menções recentemente oferecidas e emite o acordo delas uma única vez   |
-| `sq-x-reply.sh`          | Postar ou pré-visualizar dry-run uma reply ou follow-up composto de Relay                          |
-| `sq-x-dismiss.sh`        | Dispensar uma menção Relay pulgada no relay sem responder                        |
-| `sq-x-link.sh`           | Ligar uma tarefa spawnada à menção Relay originária dela no meta da tarefa                    |
-| `sq-x-followup.sh`       | Detectar, postar e limitar follow-ups de conclusão para uma tarefa ligada ao Relay                  |
-| `sq-public-followup-lib.sh` | Gate compartilhado de ativação relay, checagens de presença O(1) e caminhos privados de transporte para replies públicas prometidas |
-| `sq-public-followup.sh`  | Reconciliar resultados terminais tipados de trabalho num comprometimento público e entregar sua reply final uma vez |
-| `sq-public-followup-emit.sh` | Reportar um resultado terminal tipado de trabalho para a base que deve a reply pública    |

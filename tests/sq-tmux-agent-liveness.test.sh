@@ -47,24 +47,35 @@ chmod +x "$LAB/shim/tmux"
 PATH="$LAB/shim:$PATH"
 export PATH
 
-# Stand-in "harness" binaries. These are SYMLINKS to a real long-running system
-# binary, never copies: a copied platform binary fails code-signing validation
-# and is killed on macOS arm64. The symlink name is what the kernel records as
-# the executable identity, which is exactly the signal under test.
-ln -s "$SLEEP_BIN" "$LAB/bin/claude-link"
-ln -s "$SLEEP_BIN" "$LAB/bin/pi"
-ln -s "$SLEEP_BIN" "$LAB/bin/notaharness"
+# Stand-in "harness" binaries. Prefer a tiny compiled spinner under each name:
+# Ubuntu 26's sleep can be a single-binary coreutils applet that dispatches by
+# argv[0], so a harness-named symlink to it is not a reliable long-running
+# process. The compiled executable's own name is the kernel-recorded identity
+# under test. Fall back to the sleep symlink only where no C compiler exists.
+CC_BIN=$(command -v cc 2>/dev/null || command -v gcc 2>/dev/null || true)
+make_spin() {  # <path>
+  [ -n "$CC_BIN" ] || return 1
+  [ -f "$LAB/spin.c" ] \
+    || printf '%s\n' '#include <unistd.h>' 'int main(void){for(;;)sleep(60);return 0;}' > "$LAB/spin.c" || return 1
+  "$CC_BIN" -o "$1" "$LAB/spin.c" 2>/dev/null
+}
+make_standin() {  # <path>
+  make_spin "$1" || ln -s "$SLEEP_BIN" "$1"
+}
+make_standin "$LAB/bin/claude-link"
+make_standin "$LAB/bin/pi"
+make_standin "$LAB/bin/notaharness"
 # muse's installed binary is muse-bin-<version>: the launcher execs it, so the
 # version is the LIVE process name and it changes on every auto-update. Unlike
 # Claude Code's version-named binary there is no `muse` path component to fall
 # back on (~/.local/bin/muse-bin-<version>), so the executable name is the ONLY
 # signal, and `muse` alone is a common English fragment that must not widen into
 # a substring match. The last two names are the decoys that would be misread.
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-bin-0.1.0-R708.1"
-ln -s "$SLEEP_BIN" "$LAB/bin/musescore"
-ln -s "$SLEEP_BIN" "$LAB/bin/amuse"
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-binary"
-ln -s "$SLEEP_BIN" "$LAB/bin/muse-bind"
+make_standin "$LAB/bin/muse-bin-0.1.0-R708.1"
+make_standin "$LAB/bin/musescore"
+make_standin "$LAB/bin/amuse"
+make_standin "$LAB/bin/muse-binary"
+make_standin "$LAB/bin/muse-bind"
 
 # A launcher whose own process identity is a bare shell, running the harness as
 # a child in the same foreground process group - the shape the real Pi Launcher
@@ -179,11 +190,7 @@ pass "tmux liveness: unrelated muse-containing command names stay ambiguous"
 # real executable file rather than a symlink, because macOS takes the title
 # from the resolved target's name, so it is skipped where no C compiler exists.
 
-CC_BIN=$(command -v cc 2>/dev/null || command -v gcc 2>/dev/null || true)
-if [ -n "$CC_BIN" ] &&
-  printf '%s\n' '#include <unistd.h>' 'int main(void){for(;;)sleep(60);return 0;}' > "$LAB/spin.c" &&
-  "$CC_BIN" -o "$LAB/bin/claude/2.1.220" "$LAB/spin.c" 2>/dev/null &&
-  "$CC_BIN" -o "$LAB/bin/decoy/2.1.220" "$LAB/spin.c" 2>/dev/null; then
+if make_spin "$LAB/bin/claude/2.1.220" && make_spin "$LAB/bin/decoy/2.1.220"; then
   new_window titled "$LAB/bin/claude/2.1.220"
   wait_for_state "$SESSION:titled" alive \
     || fail "a version-named executable under a harness install path must classify alive"

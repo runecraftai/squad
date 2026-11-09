@@ -13,14 +13,14 @@ Tracked files hold shared instructions and tooling: the tracked code root contai
 `data/` holds durable private unit records such as the project and XO registries, commander preferences, optional shared commander preferences, learnings, backlog, briefs, and recon reports.
 `data/<id>/dispatch.jsonl` is the private, append-only dispatch log (0600), retained after teardown; `bin/sq-dispatch-log.sh` owns its decision, spawn, recommendation, and outcome events; the Jev `recommendation` contract is described in "Jev shadow recommendations".
 A normal operational base may store this private log under the repository-root fallback, while test fixtures must isolate it with `SQUAD_DATA_OVERRIDE` so no log leaks into the checkout.
-`state/` holds volatile runtime records such as task metadata, append-only status events, endpoint signals, sentry and stand-to queue coordination, away-mode state, generated Relay artifacts, private XO config-reread generations with their retry and quarantine state, and parent-owned XO pending-reply records under `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
+`state/` holds volatile runtime records such as task metadata, append-only status events, endpoint signals, sentry and stand-to queue coordination, away-mode state, private XO config-reread generations with their retry and quarantine state, and parent-owned XO pending-reply records under `state/pending-replies/` (`bin/sq-pending-reply-lib.sh`).
 `state/window-states` is the derived per-window tmux sidebar truth published by `bin/sq-window-state.sh`; that script's header owns the file contract, and `bin/sq-crew-state.sh` remains the owner of the current-state reconciliation it publishes.
 `data/durable/` holds the durable-core store and custody refusal log, and `bin/sq-durable-custody.sh`'s header owns that refusal log and the `state/.custody-signal-*` generation signals it writes.
 `config/` holds local gitignored operating choices, and `projects/` holds the local project clones that Squad reads but changes only through the narrow guarded and concrete commander-approved exceptions in `AGENTS.md`.
 
 `bin/sq-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
-The producing PR and Relay helpers own the fields they append, `bin/sq-classify-lib.sh` owns status-event vocabulary, and `bin/sq-crew-state.sh` owns current-state reconciliation.
-Wake, sentry, away-mode, and Relay-specific state mechanics remain with their named scripts and reference sections; the tree below names those files without owning their mechanics.
+The producing PR helpers own the fields they append, `bin/sq-classify-lib.sh` owns status-event vocabulary, and `bin/sq-crew-state.sh` owns current-state reconciliation.
+Wake, sentry, and away-mode state mechanics remain with their named scripts and reference sections; the tree below names those files without owning their mechanics.
 
 `bin/sq-session-start.sh`'s header is the single owner of session-start ordering, composed commands, digest contents, and the digest's startup mechanism.
 `bin/sq-startup-network.sh`'s header owns the deferred network stage that keeps every external-network call off that digest's blocking path, including its state files and the safety argument for running them later.
@@ -44,7 +44,6 @@ README.md            public overview and development notes
 skills/              standalone public installer-facing skills, committed; not loaded by Squad
                       interview-me is vendored from runecraftai/skills (packages/skills/skills/interview-me/); refresh by copying that upstream directory
 bin/                 helper scripts, committed; read each script's header before first use
-.env                 optional Relay pairing token; LOCAL, gitignored; presence-gates AGENTS.md section 14
 config/crew-harness  operator harness override; LOCAL, gitignored; absent or "default" = same as Squad. Inherited as the literal file: a concrete primary adapter value also controls an XO base's own operators (AGENTS.md section 4)
 config/crew-dispatch.json  optional operator dispatch profiles; LOCAL, gitignored; Squad-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (AGENTS.md section 4). Inherited by XO bases
 config/jev-dispatch.json  optional Jev shadow opt-in; LOCAL, gitignored; disabled unless listed in `enabled_projects`; see "Jev shadow recommendations"
@@ -58,7 +57,6 @@ config/herdr-presentation-spaces  optional "off" opt-out from, or "on" opt-in to
 config/trace-context  optional presence flag enabling default-off native W3C trace-context propagation to spawned agents; LOCAL, gitignored; inherited by XO bases; see docs/configuration.md "Trace context propagation" and docs/trace-context.md
 config/cmux-socket-password  optional cmux control-socket password; LOCAL, gitignored; read fresh on every cmux CLI call and passed through without ever overriding an operator's own ambient CMUX_SOCKET_PASSWORD when absent (docs/cmux-backend.md "Setup")
 config/wedge-alarm  optional away-mode wedge-alarm active-alert directives; LOCAL, gitignored; absent means auto (macOS Notification Center when available); see docs/wedge-alarm.md
-config/x-mode.env    generated Relay sentry cadence; LOCAL, gitignored; source before arming sentry when present
 data/                personal unit records; LOCAL, gitignored as a whole
   backlog.md         task queue, dependencies, history
   commander.md         this base's domain-local commander preferences and working style; LOCAL, gitignored, canonical even if harness memory mirrors it, and updated with inspect-then-update
@@ -76,10 +74,10 @@ state/               volatile runtime signals; gitignored
   <id>.grok-turnend-token   Squad-owned grok hook registry token for the task; removed by teardown
   <id>.kimi-turnend-token   Squad-owned Kimi hook registry token for the task; removed by teardown
   <id>.muse-session  muse busy-source binding (sessions root plus task worktree) written by sq-spawn; removed by teardown
-  <id>.meta          written by sq-spawn: window=, endpoint_task_id=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; an optional traceparent= only when trace context is enabled (docs/configuration.md "Trace context propagation"); a found WORKFLOW.md records workflow= and base64-encoded workflow_config= (docs/workflow-spec.md); kind=xo also records home= and projects=, plus remote_host=/remote_root=/remote_backend=/remote_herdr_session=/remote_target= for a remote route; an MCP-originated task records mcp_request= through bin/sq-mcp-link.sh; a non-default runtime backend records further backend-specific fields (docs/configuration.md "Runtime backend"; bin/sq-backend.sh, AGENTS.md section 8); sq-pr-check records one canonical pr= and the forge's pr_head= when available (GitHub pull requests and GitLab merge requests; docs/gitlab-merge-sentry.md), and sq-pr-merge compares a recorded pr_head= when present or uses the fresh forge head otherwise, verifies the checks and mergeability afresh, and only records pr= after the confirmed merge; sq-x-link appends x_request=, x_request_ts=, x_followups=, and optional x_platform=/x_reply_max_chars= for a Relay-originated task (AGENTS.md section 14)
+  <id>.meta          written by sq-spawn: window=, endpoint_task_id=, worktree=, project=, harness=, model=, effort=, kind=, mode=, yolo=, tasktmp=; an optional traceparent= only when trace context is enabled (docs/configuration.md "Trace context propagation"); a found WORKFLOW.md records workflow= and base64-encoded workflow_config= (docs/workflow-spec.md); kind=xo also records home= and projects=, plus remote_host=/remote_root=/remote_backend=/remote_herdr_session=/remote_target= for a remote route; an MCP-originated task records mcp_request= through bin/sq-mcp-link.sh; a non-default runtime backend records further backend-specific fields (docs/configuration.md "Runtime backend"; bin/sq-backend.sh, AGENTS.md section 8); sq-pr-check records one canonical pr= and the forge's pr_head= when available (GitHub pull requests and GitLab merge requests; docs/gitlab-merge-sentry.md), and sq-pr-merge compares a recorded pr_head= when present or uses the fresh forge head otherwise, verifies the checks and mergeability afresh, and only records pr= after the confirmed merge
   <id>.exec          per-attempt execution state sidecar: exec_state=, exec_attempt=, exec_retry_count=, exec_started_at=, exec_last_activity=, exec_previous_state=, exec_error=, exec_next_retry_at=, exec_max_retries=, exec_workflow_version=, exec_workspace=, exec_backend=, exec_harness=; missing for legacy tasks (unclaimed); managed by bin/sq-exec-state.sh; state machine: unclaimed -> claimed -> running -> retry_queued -> released, with a still-executing bound run adopting retry_queued back to running as the same attempt (no extra retry spent, attempt number and pinned workflow version preserved), and exec_next_retry_at= is written only by a queued retry; `get` reports the current branch/head-bound drill run over the record (active or gate-parked run -> running, terminal run -> released) while `get-recorded` reads the raw dispatch record that dispatch decisions must use; claim refuses an executing run, holds a gate-parked run only while its recorded owner endpoint is alive, and lets an authoritatively gone owner or an ended run resume instead (an ended run only affects the `get` projection and never blocks a claim or retires a record); a terminal done:/failed: .status line retires the id to released, which also happens during recovery; recovery repairs only queued/claimed/running records through those transitions and never resurrects a released id
   <id>.herdr-presentation  quarantinable attempt and restart-binding journal for Herdr's optional visual projection; never task or endpoint authority; see docs/herdr-backend.md "Presentation spaces"
-  <id>.check.sh      authenticated slow poll; the sentry dispatches validated PR data and the byte-identified Relay shim through trusted repository scripts, runs registered custom checks from hash-validated private snapshots, and rejects every other state check without execution
+  <id>.check.sh      authenticated slow poll; the sentry dispatches validated PR data through trusted repository scripts, runs registered custom checks from hash-validated private snapshots, and rejects every other state check without execution
   <id>.check-trust   private content binding created by sq-check-register.sh for an intentional custom check
   <id>.pr-poll       private validated data sidecar for the byte-static PR merge poll
   <id>.pr-poll-registration  private transactional provenance record binding the task, canonical metadata identity, sidecar, and static poll publication
@@ -89,15 +87,9 @@ state/               volatile runtime signals; gitignored
   .pr-check-migration-scan-v1  private marker proving the non-executing scan disabled every unsafe legacy check; .pr-check-migration-v1 separately records completed private repairs
   .retired-terminals/  private Orca terminal retirement records, one `<id>.record` per teardown: kind=, task_id=, base=, retired_at=, backend=, terminal=, runtime_id=, close_attempted=, worktree_id=, worktree_path=; written by bin/sq-retired-missions.sh before teardown may remove task metadata, cleared only once that exact handle's absence is confirmed, and reconciled by the locked bootstrap sweep; never delete one by hand, because it is the only durable identity a later exact-handle retry has
   .retired-worktrees/  private fob worktree retirement records, one `<id>.record` per teardown: kind=, task_id=, base=, retired_at=, project=, worktree_path=, pool_backend=; written by bin/sq-retired-missions.sh before teardown may remove task metadata, and cleared by the locked bootstrap sweep either when fob has taken that reusable worktree back or when no live task record references it, fob no longer owns it, its exact git registration and project identity verify, it is clean, and its HEAD is reachable from the default branch or a remote-tracking ref; a worktree failing any of those checks keeps both itself and its record, and a record is never deleted by hand
-  x-sentry.check.sh  generated Relay poll shim; present only when opted in (AGENTS.md section 14)
   pending-replies/   parent-owned XO pending-reply records (correlation id, delivery vs reply, recovery, escalation); sq-pending-reply-lib.sh
   procevent/         registered process-to-event sources, one private record per canonical source id; written only by bin/sq-procevent.sh, and their presence alone keeps supervision required (AGENTS.md section 13)
   procevent-inbox/   private captured results and their durable handled-acknowledgement markers; source output lives here and never in an event line
-  x-inbox/           generated Relay pending mention payloads; relay-respond drains it (AGENTS.md section 14)
-  x-context/         generated Relay durable per-request reply context and one-wake offer markers, keyed by request_id; survives inbox cleanup and expires within seven days (AGENTS.md section 14; bin/sq-x-lib.sh)
-  x-outbox/          generated Relay dry-run reply and dismiss previews; inspect it when SQX_DRY_RUN is set (AGENTS.md section 14)
-  public-followup/   generated private transport for promised public replies: commitment registrations, typed terminal-result inbox, accepted/rejected ledgers (AGENTS.md section 14; bin/sq-public-followup.sh)
-  x-poll.error x-poll.claim-error  generated Relay and offer-claim diagnostic dedupe markers
   .startup-network.*  status, report, per-step elapsed timings, inline-print claim, and lock for the deferred network stage session start runs off its blocking path; bin/sq-startup-network.sh
   .stand-to-queue        durable queued wakes: epoch<TAB>seq<TAB>kind<TAB>key<TAB>payload
   .handoff-queue         durable new-session handoff requests: ts<TAB>seq<TAB>kind<TAB>key<TAB>state<TAB>payload; state pending -> surfaced -> resolved (docs/handoff-request.md)
@@ -139,7 +131,7 @@ It never acquires, writes, repairs, or removes the primary `state/.lock`, and an
 Rotation is offline: the same lock refuses a live owner, and a stopped service publishes a new token by synced temporary file and atomic rename.
 
 The service process runs on Node (verified on 25.2.1, minimum 22.19), because the pinned Chord node entry needs `node:module.registerHooks` and the pinned `ws` shim under Bun does not preserve Chord's text framing; the package toolchain (Vitest, `tsc`, Oxlint, Prettier) remains on Bun.
-Squad's own supervision, task metadata, and Relay state are unchanged, and no service directory is a substitute for `state/.lock`, `state/<id>.meta`, or any existing private record.
+Squad's own supervision and task metadata are unchanged, and no service directory is a substitute for `state/.lock`, `state/<id>.meta`, or any existing private record.
 
 ## Pi Calm preference (config/calm)
 
@@ -331,7 +323,6 @@ When neither `SQUAD_BASE` nor `SQUAD_HOME` is set, `SQUAD_ROOT_OVERRIDE` behaves
 `bin/sq-send.sh` is intentionally stricter than that general fallback: it requires `SQUAD_BASE` (or legacy `SQUAD_HOME`) to be set before resolving a target, so operator steers cannot silently resolve against the wrong base.
 `SQUAD_STATE_OVERRIDE`, `SQUAD_DATA_OVERRIDE`, `SQUAD_PROJECTS_OVERRIDE`, and `SQUAD_CONFIG_OVERRIDE` override individual operational directories for tests and specialized harness setup.
 Before `sq-brief.sh`, `sq-spawn.sh`, or `sq-afk-launch.sh` persists a path or passes it to another process, it resolves each applicable relative `SQUAD_BASE` (or legacy `SQUAD_HOME`), `SQUAD_STATE_OVERRIDE`, or `SQUAD_DATA_OVERRIDE` directory against the caller's working directory, preserves absolute spellings unchanged, and rejects an unresolvable relative directory with the offending variable named.
-Bootstrap applies the same relative `SQUAD_BASE` resolution only when embedding that base in the generated Relay poll shim; other transient consumers retain their existing shell-relative behavior.
 For the herdr backend, `SQUAD_BASE` also determines the workspace label used by the adapter.
 For the zellij backend, `SQUAD_BASE` does not split containers, but it determines the readable base prefix embedded in visible tab titles; use `SQUAD_ZELLIJ_SESSION` when a separate zellij session is needed.
 The full zellij base label also includes a short hash of the resolved `SQUAD_ROOT` path.
@@ -494,7 +485,6 @@ An unknown resolved backend emits `BACKEND_INVALID` and blocks dispatch instead 
 Orca provides both the task worktree and terminal endpoint (see "Runtime backend" above), so `backend=orca` requires only `orca` on top of the universal toolchain and skips both `fob` and every other backend's session CLI.
 A herdr, zellij, cmux, or tuios base is therefore never told `tmux` is missing, and the `fob` durable-lease upgrade check runs only for the backends that actually use fob.
 When `config/crew-dispatch.json` exists, bootstrap also requires `jq` for dispatch profile validation.
-When Relay is opted in, bootstrap also requires `curl` and `jq` before arming the relay poll shim.
 `sq-tasks` and `sq-quota` are required bootstrap tools in every profile, the same class as `sq-report`.
 An absent or incompatible `sq-tasks` reports `MISSING: sq-tasks (install: (cd packages/sq-tasks && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-tasks)`; when `config/backlog-backend` is not `manual` and compatible `sq-tasks` is on `PATH`, bootstrap stays silent and Squad uses its verbs for routine backlog mutations, otherwise it hand-edits `data/backlog.md` until installation is approved and completed.
 An absent or incompatible `sq-gh` reports `MISSING: sq-gh (install: (cd packages/sq-gh && npx -y pnpm@11.1.1 install --frozen-lockfile && npx -y pnpm@11.1.1 run build) && npm install -g ./packages/sq-gh && sq-gh setup hooks)`.
@@ -523,147 +513,12 @@ The locked bootstrap inheritance pass uses the same placement-specific behavior;
 That live discovery starts from `state/*.meta` records with `kind=xo`; `data/XOs.md` only backfills `home=` for older or incomplete meta records.
 Skipped items, such as a destination checkout that does not yet gitignore the item, are visible warnings but not hard failures.
 
-## Relay (.env)
-
-Relay lets a Squad instance answer public mentions and act on normal reversible mention requests through Squad's normal lifecycle.
-It covers both public surfaces the relay supports: `@mySquad` mentions on X, and mentions of the mySquad bot in a Discord server where it is installed.
-Both surfaces are the same opt-in and the same machinery - one pairing token, one relay poll, and one reply path - so everything below applies to Discord mentions unless a line names a platform explicitly.
-It is off unless the Squad base's gitignored `.env` contains a non-empty `SQX_PAIRING_TOKEN`.
-The pairing token both identifies the relay tenant and records opt-in consent for autonomous public replies and eligible lifecycle actions.
-Destructive, irreversible, or security-sensitive asks are flagged for trusted-channel confirmation instead of being executed from a public mention.
-The relay uses owner-only routing: a mention delivered to a base is from that base's owner/commander, while parent-thread context may still include other public accounts.
-`SQX_RELAY_URL` is optional and defaults to `https://mySquad.io`, mainly for developers pointing at a local relay.
-For direct client invocations, environment values override `.env`; bootstrap activation still keys off `.env` presence so sentry artifacts are explicit local opt-in state.
-`SQX_ENV_FILE` can point direct poll/reply client invocations at another `.env`-style file, but it does not change bootstrap activation.
-
-To turn it on:
-
-1. Sign in at [mySquad.io](https://mySquad.io) with X or Discord.
-2. For the Discord surface, use the dashboard's install link to add the mySquad bot to a server you administer; the X surface needs no install step.
-3. Copy the pairing token from the dashboard into this Squad base's gitignored `.env` as `SQX_PAIRING_TOKEN=<token>`.
-4. Start a new Squad session so bootstrap picks the token up, then mention `@mySquad` on X or mention the bot in a server where it is installed.
-
-The dashboard owns account creation, identity linking, bot installation, and token issuance; this document owns only what the local Squad base does with the token once it is in `.env`.
-
-The locked session-start bootstrap step turns the token into local generated state.
-It writes `state/x-sentry.check.sh`, a byte-static identity shim for `bin/sq-x-poll.sh`, and `config/x-mode.env`, which exports `SQUAD_CHECK_INTERVAL=30` for sentry processes in that base.
-The sentry accepts the shim only when its bytes match the expected generated content, then invokes the trusted repository poll script directly instead of executing state-file source.
-This section is the single owner of the Relay cadence contract: a Relay instance polls every 30 seconds instead of the default 300, only a Relay instance speeds up because a non-Relay base has no `config/x-mode.env`, and the session-start supervision operating block includes the cadence instruction when that file exists.
-The active primary-harness supervision protocol owns how that sourced cadence reaches the sentry process.
-Because `bin/sq-sentry.sh` reads `SQUAD_CHECK_INTERVAL` only at process start, a cadence transition - opt-in while a sentry is already running, or opt-out - is applied by restarting the base-scoped sentry through the emitted harness protocol; bootstrap deliberately never restarts the sentry itself.
-While away mode is active the daemon owns the sentry and its default cadence applies; away-mode Relay cadence is a deferred follow-up.
-When the token is removed or empty, the next locked session-start bootstrap step removes those artifacts.
-Steady-state off is silent and writes nothing.
-Relay remains additive to non-Relay lifecycle behavior: bases without the generated artifacts keep the default sentry cadence and do not run the Relay poll.
-Its request handling remains in Relay-specific `bin/` scripts and the `relay-respond` skill, while the sentry owns authenticated dispatch from the generated local identity shim.
-
-`bin/sq-x-poll.sh` calls `GET /connector/poll` with `Authorization: Bearer <SQX_PAIRING_TOKEN>`.
-HTTP 204 is silent.
-A newly offered pending mention with non-empty `text` is stored at `state/x-inbox/<request_id>.json` and wakes Squad exactly once with `x-mention <request_id>`.
-The poll atomically claims `state/x-context/<request_id>.offered.json` before emitting that wake, and subsequent offers of the same request stay silent even after the inbox is drained following an answer or dismiss.
-Offer markers share the context registry's bounded seven-day retention, so losing or expiring the local marker lets a relay offer wake Squad again.
-The full relay object is preserved, including `in_reply_to: {author_handle, text}` when the mention is a reply in a conversation or `null` for fresh mentions.
-At the same time the poll records a durable per-request reply context at `state/x-context/<request_id>.json` (`{request_id, platform, reply_max_chars, recorded_at}`) from the same authoritative relay payload, best-effort and keyed by `request_id` so concurrent requests never overwrite each other; it survives the inbox cleanup that follows the acknowledgement, so a delayed follow-up can recover the original platform and split budget even with no task link.
-`recorded_at` begins as the locally observed first-seen Unix epoch and remains unchanged when the same request is polled again.
-A successful live initial answer refreshes it to the time that the relay establishes the follow-up binding; dry-runs, failed answers, and follow-ups do not refresh it.
-Configured polls prune records beyond the local follow-up window, capped at the relay's seven-day window; legacy or malformed records fall back to their file modification time so they cannot remain indefinitely.
-The record is written only when a platform or explicit budget is actually known, so an unknown-platform mention leaves no useless entry.
-The `relay-respond` skill decides whether the stashed mention is an actionable request, a question, or a pure acknowledgment.
-Actionable reversible requests are run through intake, backlog, dispatch, investigation, or ship flow as appropriate.
-If the work completes in that turn, the public reply reports the outcome.
-If the request spawns a longer-running task, Squad posts an acknowledgement through the normal answer endpoint, links the task to the mention with `bin/sq-x-link.sh`, and posts up to three completion follow-ups on genuine milestones, finishing with a `--final` one for ordinary Relay-linked work. When a typed promised-final commitment is registered, `bin/sq-public-followup.sh` owns the terminal reply and clears the legacy link after its receipt is validated.
-That link stores optional reply-platform context so Discord-originated follow-ups keep Discord's larger message budget after the inbox file has been drained.
-Platform/budget resolution is layered and independent of the task link: a per-axis `SQX_REPLY_PLATFORM` / `SQX_REPLY_MAX_CHARS` override (how `bin/sq-x-followup.sh` passes a recorded link's context) wins.
-For either axis without an override, `bin/sq-x-lib.sh:fmx_resolve_reply_context` owns the source order: the durable per-request registry is consulted first, then the still-present inbox payload, then - for a follow-up posted live by request_id - an authoritative relay lookup via `POST /connector/request-context` (`{request_id}` in, `{platform, reply_max_chars}` back).
-This is what keeps a delayed request-id follow-up on the original platform's budget even after the inbox is drained and with no task link surviving; the relay step is confined to the live follow-up path so the answer path and every dry-run stay network-free.
-`bin/sq-x-link.sh` follows the same ordering when recording a fresh link's context and requires `jq`; its request-context lookup is best-effort: no token or `curl`; a non-2xx response; an unresolved response; or a relay version without that endpoint leaves the context unknown.
-In that case the link is still recorded but `bin/sq-x-link.sh` prints a loud warning; and when either a follow-up's platform or explicit budget cannot be authoritatively resolved from any source, `bin/sq-x-reply.sh` refuses it (fail-safe exit 8) rather than posting with a local default - Squad holds and retries it once both values are recoverable.
-Fresh links start with `x_followups=0` and the current timestamp; when relinking the same relay request onto a successor task, pass paired `--carry-count <n> --carry-ts <epoch>` flags plus any prior `x_platform=` and `x_reply_max_chars=` as `--carry-platform <x|discord> --carry-max <n>` so the successor preserves the already-consumed follow-up count, original 7-day window, and reply split budget.
-Pure acknowledgments or mentions with nothing to answer are dismissed through `bin/sq-x-dismiss.sh` before the local inbox file is cleared.
-Dismiss sends `POST /connector/dismiss` with `{request_id}`, posts no text, and tells the relay to drop the request instead of re-offering it or falling back to an offline auto-reply; on success it clears that request's durable reply-context record, while the separate offer marker remains for its bounded retention so a brief relay re-offer stays silent.
-Relay auth or config problems are reported once as `x-mode-error ...` until recovery.
-A failed durable offer claim is likewise reported once as `x-mode-error cannot record mention offer` and remains deduplicated through quiet no-pending polls until a later offer confirms an existing valid marker or claims a new one.
-Live replies are posted by `bin/sq-x-reply.sh`, which sends `POST /connector/answer` with `{request_id,text}` for one-message replies.
-Add `--image <path>` to attach one local PNG, JPEG, GIF, WebP, BMP, or TIFF as `{media_type,data_base64}` in the relay's optional `image` object.
-Completion follow-ups use `bin/sq-x-followup.sh`, which checks the local `state/<id>.meta` link and sends the same payload shape through `POST /connector/followup` by calling `bin/sq-x-reply.sh --followup`, up to three times per link within the window.
-Add `--image <path>` there too when a completion follow-up should carry an image.
-A successful post increments the local `x_followups=` counter and keeps the link, unless `--final` was passed or the new count reaches the cap, in which case the link is cleared instead; a failed post leaves the link and counter untouched so it can be retried.
-The relay itself rejects a follow-up past its own cap or window with HTTP 409 and may include `{"error":"followup_unavailable"}` in the response body; the client surfaces any follow-up 409 as a distinguishable exit code and uses the body marker only for a sharper diagnostic.
-`sq-x-followup.sh` treats that exit exactly like a locally-detected expiry - clearing the link and skipping quietly rather than retrying - so an older single-follow-up relay or an already-exhausted binding degrades gracefully.
-It treats `sq-x-reply.sh`'s fail-safe refusal (exit 8: platform or explicit budget unresolved) differently: that is a retryable hold, so the link is KEPT and the follow-up is retried once both values can be recovered, never posted with a local default.
-Past-window relay rejections are only guaranteed while the expired binding row still exists on the relay side; after its cleanup sweep, a very-late follow-up call may instead see a benign no-op 200, which is why the local window and cap pruning remains the primary guard.
-Reply splitting is platform-aware: an explicit relay platform field (`reply_platform`, `platform`, `target_platform`, `source_platform`, or `provider`) wins, otherwise a legacy `tweet_id` beginning with `discord:` selects Discord and a numeric `tweet_id` selects X.
-An explicit relay limit field (`reply_max_chars`, `reply_max_characters`, `message_max_chars`, `message_limit`, or `max_chars`) wins over the platform defaults.
-If the reply exceeds the selected budget, the client splits it into a numbered thread on fenced-code, paragraph, line, and word boundaries and sends `{request_id,text,texts}`, where `texts` is the ordered chunk list and `text` remains the first chunk for older relays.
-When `--image <path>` is present on a split reply, the image rides the first/opener message and later chunks stay text-only.
-`SQX_X_REPLY_MAX_CHARS` defaults to 280 and clamps to a minimum of 50; `SQX_DISCORD_REPLY_MAX_CHARS` defaults to 1900, clamps to a minimum of 50, and resets values above Discord's 2000-character limit back to 1900.
-`SQX_X_THREAD_MAX` defaults to 25 and caps oversized reply threads for every platform, marking the last retained message with an ellipsis when truncation is needed.
-`SQX_FOLLOWUP_MAX_AGE_SECS` defaults to 604800 (7 days) and controls the local completion follow-up window; `SQX_FOLLOWUP_MAX_COUNT` defaults to 3 and controls the local follow-up cap.
-
-Set `SQX_DRY_RUN` to preview replies and dismissals without posting.
-Truthy means anything except unset, empty, `0`, `false`, `no`, or `off`; an explicit environment value wins over `.env`.
-In dry-run, `sq-x-reply.sh` records the would-be payload to `state/x-outbox/<request_id>.json`, including `texts` for a thread and an `endpoint` marker for follow-up previews, prints a `DRY RUN` summary to stderr, echoes the `request_id`, and exits 0.
-When an image is attached, the dry-run record uses compact `{media_type, bytes, source_path}` metadata instead of writing the base64 bytes.
-In dry-run, `sq-x-dismiss.sh` records `{request_id, endpoint:"dismiss"}` to the same outbox path, prints a `DRY RUN` summary, echoes the `request_id`, and exits 0.
-The live answer and follow-up bodies intentionally stay the same shape, including optional `image`; the relay distinguishes them by endpoint, and dismiss stays `{request_id}`.
-These paths need `jq` to build the JSON payload, but they run before token and network checks, so they need neither `SQX_PAIRING_TOKEN` nor `curl`.
-
-### Promised public replies (state/public-followup)
-
-A relay request that spawns real work can leave Squad owing a specific public reply in a specific thread.
-That promise is a typed `kind=public-followup` obligation owned entirely by `sq-tasks public-followup`, with the full private request context staying in `state/x-context/`; Squad keeps no parallel copy of either.
-`bin/sq-public-followup.sh` is Squad's side: it registers a commitment, reconciles typed terminal work results into it, and posts the final reply through `bin/sq-x-reply.sh --followup`.
-Run `bin/sq-public-followup.sh --help` for the exact subcommands and flags.
-
-Registration is what creates this base's private transport under `state/public-followup/` (mode 0700): `registry/` for the bounded public-safe binding of each live commitment, `events/` for typed terminal results awaiting reconciliation, `consumed/` for the accepted-event ledger, `rejected/` for refusals kept with a one-line reason, and `surfaced` for the poll's last-surfaced signature.
-The base that owns the commitment also owns the outward post, because only it holds the relay consent, the request context, and the opaque thread binding.
-Work routed elsewhere reports a typed terminal result with `bin/sq-public-followup-emit.sh` and never looks for the thread; that emitter refuses to write into a base with no registration for the named obligation.
-A terminal event's id is derived from its identity tuple, so a duplicate report, a retry, or a replay after restart resolves to the same event and changes nothing.
-
-Activation is the same `.env` `SQX_PAIRING_TOKEN` contract as the rest of Relay, with no second flag.
-A base without that token runs one file test and stops: no `sq-tasks` call, no backlog or request-context scan, and no `state/public-followup/` directory.
-Ordinary startup, polling, cleanup, and silent read-side subcommands also produce no output; commands that require an active relay report that configuration error after the same gate.
-A relay-enabled base with no registered commitment stops at an O(1) directory presence check, so the empty state costs no CLI call and adds no periodic scan.
-Unreconciled terminal results ride the existing 30-second relay poll rather than a new process or timer: `bin/sq-x-poll.sh` compares the pending-event signature against `surfaced` and wakes Squad once per new result set.
-The session-start digest separately prints an "Public commitments awaiting delivery" subsection from disk when, and only when, this base is relay-active and still owes a reply, so compaction and restart are non-events.
-`bin/sq-teardown.sh` refuses to clean up a task while this base still owes a public reply for exactly that work, unless `--force` carries explicit discard approval.
-`SQUAD_PF_RETRY_BACKOFF_SECS` (default 900) sets the next-attempt time recorded with a retryable delivery error.
-See [verification/public-followup.md](verification/public-followup.md) for the current maintainer evidence behind the restart end-to-end and the relay-disabled zero-overhead guarantee.
-
-## Telegram bridge (config/telegram-bridge.env)
-
-The Telegram bridge is an optional local relay that implements the connector contract of the Relay section above and translates it to the Telegram Bot API.
-It is the "local relay" `SQX_RELAY_URL` can point at: the base's `.env` needs only `SQX_RELAY_URL=http://127.0.0.1:8787` next to the existing `SQX_PAIRING_TOKEN`, and the running Squad base needs no code changes.
-Only the commander's Telegram user id is accepted as a mention author, and the connector listens on 127.0.0.1 by default.
-
-To set it up:
-
-1. Create a bot with @BotFather and copy its token.
-2. Write the token and the commander's Telegram user id to this base's gitignored `config/telegram-bridge.env`:
-   `TG_BOT_TOKEN=<bot token>`
-   `TG_ALLOWED_CHAT_IDS=<commander Telegram user id>`
-3. Put `SQX_PAIRING_TOKEN=<token>` in the base's gitignored `.env` (the same token already there when Relay is on) and set `SQX_RELAY_URL=http://127.0.0.1:8787`.
-
-Run the bridge as the shipped user service so it starts at boot and restarts when it crashes:
-
-1. Copy `systemd/sq-tg-bridge.service` to `~/.config/systemd/user/`, adjusting the `SQUAD_BASE` path inside it when this base lives outside the standard `~/Projects/squad` layout.
-2. `systemctl --user daemon-reload`
-3. `systemctl --user enable --now sq-tg-bridge`
-4. `loginctl enable-linger "$USER"` so the user manager (and therefore the bridge) starts at boot, not only after login.
-
-Verify with `systemctl --user status sq-tg-bridge` (active, restarts recorded) and `journalctl --user -u sq-tg-bridge` (the bridge logs each start to stderr).
-Remove the service with `systemctl --user disable --now sq-tg-bridge`, then delete the copied unit file and run `systemctl --user daemon-reload`.
-The bridge needs only the Python 3 standard library, binds 127.0.0.1, and logs to stderr (the script header and `--help` own the exact flags and config keys).
-A restart is non-lossy: runtime request state (the pending queue, follow-up bindings, and the Telegram update offset) lives in `state/telegram-bridge/state.json` (gitignored) and survives bridge restarts, so a restart never re-ingests an already-offered message and never re-answers an answered request.
-
-### Dual channel (chat to chat + Telegram)
+## Telegram mirror (config/telegram-bridge.env)
 
 When the commander wants chat replies to also arrive on Telegram, Squad mirrors each commander-facing reply with `bin/sq-tg-notify.sh <text-or-'-'>` (`-` reads the message from stdin).
-The mirror is a proactive ping, not a relay request: it calls the Telegram Bot API directly (`sendMessage`) against the same `config/telegram-bridge.env`, targets the first `TG_ALLOWED_CHAT_IDS` entry, and works even when the bridge is down.
+It is a proactive ping rather than a request path: it calls the Telegram Bot API directly (`sendMessage`) against this base's gitignored `config/telegram-bridge.env`, which holds `TG_BOT_TOKEN` and `TG_ALLOWED_CHAT_IDS`, and targets the first allowed chat id.
 It prints one `telegram HTTP <code>` line so a caller can tell a delivered mirror from a failed one, and fails closed (exit 1, nothing sent) when the config file, token, or chat id is missing.
 The base home resolves like the other `sq-*` scripts: `$SQUAD_BASE`, then legacy `$SQUAD_HOME`, then this repo root.
-The bridge reports the client-resolved `discord` platform with an explicit `reply_max_chars` of 4096.
-The Squad relay client resolves only the `x` and `discord` platforms for its follow-up fail-safe, and an explicit limit always wins over the platform default, so replies still split at Telegram's 4096-character message budget and completion follow-ups pass the fail-safe.
 
 ## Process-to-event sources (state/procevent)
 
@@ -777,7 +632,7 @@ SQUAD_RETRY_BACKOFF_BASE=10 # base seconds for exponential retry backoff on stal
 SQUAD_RETRY_BACKOFF_MAX=300 # cap seconds for exponential retry backoff
 SQUAD_STALL_AGENT_STATE=   # override for agent-state probe during stall detection (set by tests; bin/sq-stall-detect.sh)
 SQUAD_EXEC_OWNER_STATE=    # override for the recorded owner-endpoint liveness read that keeps a gate-parked attempt bound during exec-state claim or recovery (set by tests; bin/sq-exec-state.sh)
-SQUAD_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, Drill step activity, custom checks, or Relay dispatch)
+SQUAD_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, Drill step activity, or custom checks)
 SQUAD_CHECK_TIMEOUT=30     # seconds allowed per slow check script
 SQUAD_PROCEVENT_MAX_OUTPUT_BYTES=1048576   # bound on one captured process-to-event result
 SQUAD_PROCEVENT_CLAIM_ROOT=                # machine-wide source claim root; default $XDG_STATE_HOME/Squad/procevent-claims
@@ -787,23 +642,8 @@ SQUAD_TEARDOWN_DRILL_TIMEOUT=10    # seconds allowed per drill query or abort in
 SQUAD_CREW_STATE_RUNS_LIMIT=200  # recent drill run rows scanned by sq-crew-state.sh and sq-exec-state.sh when axi status cannot be attributed to the current code
 SQUAD_CREW_STATE_BIN=bin/sq-crew-state.sh   # test override for the current-state reader used by working/paused sentry triage
 TYPESAFE_API_KEY=       # Jev shadow recommendations; environment only, never argv or logs (see "Jev shadow recommendations")
-SQX_PAIRING_TOKEN=      # Relay pairing token; .env opt-in authorizes replies and eligible lifecycle actions
-SQX_RELAY_URL=https://mySquad.io   # optional Relay endpoint override, mainly for local relay development
-SQX_ENV_FILE=           # optional alternate .env file for direct Relay client invocations; bootstrap still checks $SQUAD_BASE/.env
-SQX_DRY_RUN=            # truthy previews Relay replies and dismissals to state/x-outbox/ without posting or requiring a token
-SQX_X_REPLY_MAX_CHARS=280   # X reply per-message split budget; values below 50 clamp to 50
-SQX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; values below 50 clamp to 50, values above 2000 reset to 1900
-SQX_X_THREAD_MAX=25     # maximum messages in one auto-split reply thread
-SQX_FOLLOWUP_MAX_AGE_SECS=604800   # local window for posting Relay completion follow-ups (7 days)
-SQX_FOLLOWUP_MAX_COUNT=3   # local cap on Relay completion follow-ups per linked mention
-TG_BOT_TOKEN=            # Telegram bridge: bot token from @BotFather (config/telegram-bridge.env)
-TG_ALLOWED_CHAT_IDS=     # Telegram bridge: comma-separated commander Telegram user ids allowed to send requests
-TG_BRIDGE_BIND=127.0.0.1   # Telegram bridge: connector listen address
-TG_BRIDGE_PORT=8787     # Telegram bridge: connector listen port (0 = ephemeral)
-TG_BRIDGE_CONFIG=        # Telegram bridge: alternate env file (default <SQUAD_BASE>/config/telegram-bridge.env)
-TG_BRIDGE_STATE_FILE=    # Telegram bridge: alternate runtime state file (default <SQUAD_BASE>/state/telegram-bridge/state.json)
-TG_BRIDGE_SEND_TIMEOUT=8   # Telegram bridge: per-send HTTP cap in seconds (default 8; must be positive)
-SQUAD_PF_RETRY_BACKOFF_SECS=900   # seconds before the next attempt after a retryable promised-public-reply delivery error
+TG_BOT_TOKEN=            # Telegram mirror: bot token from @BotFather (config/telegram-bridge.env)
+TG_ALLOWED_CHAT_IDS=     # Telegram mirror: comma-separated commander Telegram user ids; the first is the mirror destination
 SQUAD_LOCK_STALE_AFTER=2   # seconds before dead-pid lock records can be reclaimed; mid-acquire locks keep at least 2s grace
 SQUAD_GUARD_GRACE=300      # seconds before guard warnings, arm health checks, and the primary turn-end guard treat a sentry beacon as stale
 SQUAD_CLAUDE_AUTOARM_ATTEMPTS=2   # bounded Stop-owned arm attempts per Claude auto-arm cycle; accepted values are 1, 2, or 3

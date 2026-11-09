@@ -18,8 +18,8 @@
 #   - AFK: while state/.afk exists the away daemon owns the sentry and triage;
 #     this hook exits 0 and NEVER rewakes the primary (checked again at
 #     translation time so a mid-cycle AFK transition is honored).
-#   - Need: arms only while work is in flight (state/*.meta) or X mode has a
-#     relay poll to run (state/x-sentry.check.sh); an idle base exits 0.
+#   - Need: arms only while work is in flight (state/*.meta) or a process-to-event
+#     source is registered; an idle base exits 0.
 #   - Single-flight: Claude does not dedupe async hooks, so a base-scoped owner
 #     lock (state/.claude-autoarm.lock) admits exactly one owner; every other
 #     concurrent firing exits 0 without translating, which keeps one event
@@ -58,7 +58,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
-CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 GRACE=${SQUAD_GUARD_GRACE:-300}
 OWNER_LOCK="$STATE/.claude-autoarm.lock"
 EPOCH="$STATE/.claude-autoarm-epoch"
@@ -105,7 +104,7 @@ fi
 # --- AFK: the away daemon owns the sentry and triage; never rewake ----------
 [ -e "$STATE/.afk" ] && exit 0
 
-# --- need: in-flight work or an X-mode relay poll ----------------------------
+# --- need: in-flight work or a registered event source ----------------------
 need_supervision() {
   fm_supervision_needed "$STATE" "$GRACE"
 }
@@ -146,11 +145,6 @@ write_epoch() {  # <outcome>
 }
 
 write_epoch arming
-
-# X mode cadence: source the generated config so an X instance polls at its
-# 30s cadence (sq-bootstrap.sh x_mode_setup contract).
-# shellcheck source=/dev/null
-[ -f "$CONFIG/x-mode.env" ] && . "$CONFIG/x-mode.env"
 
 # --- foreground the real arm wrapper ------------------------------------------
 # NO shell &: this hook process tree is the harness-owned lifecycle. The arm

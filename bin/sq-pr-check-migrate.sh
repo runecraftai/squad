@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Non-executing migration for sentry PR checks created by older Squad
 # versions. Legacy check files are never run, sourced, or parsed by Bash.
-# Pending validated merged-poll retirements finish first. Canonical polls are
-# then rebuilt from validated metadata, remaining provenance-bound polls and
-# registered custom checks remain armed, and every other task poll is
-# quarantined for private review. A current X-mode shim is preserved by exact
-# content, while the recognized older byte-static shim is refreshed in place.
+# The dead state/x-sentry.check.sh that Relay (X mode) setup wrote is retired
+# first, before any short-circuit, so it never reads as an unauthenticated
+# check.
+# Pending validated merged-poll retirements are reconciled next. Canonical
+# polls are then rebuilt from validated metadata, remaining provenance-bound
+# polls and registered custom checks remain armed, and every other task poll is
+# quarantined for private review.
 # Usage: sq-pr-check-migrate.sh [--checks-safe]
 set -u
 
@@ -37,8 +39,6 @@ fi
 . "$SCRIPT_DIR/sq-durable-custody.sh"
 # shellcheck source=bin/sq-pr-lib.sh
 . "$SCRIPT_DIR/sq-pr-lib.sh"
-# shellcheck source=bin/sq-x-lib.sh
-. "$SCRIPT_DIR/sq-x-lib.sh"
 # shellcheck source=bin/sq-check-lib.sh
 . "$SCRIPT_DIR/sq-check-lib.sh"
 
@@ -82,14 +82,49 @@ current_checks_authenticated() {
   local check id
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
-      continue
-    fi
     id=$(basename "$check" .check.sh)
     fm_custom_check_registered "$STATE" "$id" && continue
     fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE" || return 1
   done
+}
+
+# Relay (X mode) was removed, and only its deleted setup wrote
+# state/x-sentry.check.sh. A base that once opted in keeps reporting it as a
+# rejected unauthenticated check - and the marker short-circuit below can return
+# before the sweep would quarantine it into a permanent diagnostic obligation.
+# Retire that one known dead artifact before any short-circuit. A trust record or
+# any PR poll state under that same id is user data, so leave it alone for the
+# normal sweep; a custom check with stale trust reaches quarantine, not this
+# sweep.
+#
+# A real poll record is either a published sidecar/registration or a meta with a
+# pr= line (canonical, legacy, or ambiguous); only the dead shim has none.
+x_mode_poll_state_present() {
+  local meta="$STATE/x-sentry.meta" artifact line
+  for artifact in "$STATE/x-sentry.pr-poll" "$STATE/x-sentry.pr-poll-registration"; do
+    [ -e "$artifact" ] || [ -L "$artifact" ] || continue
+    return 0
+  done
+  [ -e "$meta" ] || [ -L "$meta" ] || return 1
+  [ -f "$meta" ] && [ ! -L "$meta" ] && [ -r "$meta" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      pr=*) return 0 ;;
+    esac
+  done < "$meta" || return 0
+  return 1
+}
+
+retire_dead_x_mode_check() {
+  local check="$STATE/x-sentry.check.sh" trust="$STATE/x-sentry.check-trust"
+  fm_custom_check_registered "$STATE" x-sentry && return 0
+  [ -e "$check" ] || [ -L "$check" ] || return 0
+  if [ -e "$trust" ] || [ -L "$trust" ]; then
+    return 0
+  fi
+  x_mode_poll_state_present && return 0
+  rm -f -- "$check" || true
+  [ ! -e "$check" ] && [ ! -L "$check" ]
 }
 
 private_migration_boundaries_valid() {
@@ -249,19 +284,16 @@ migration_complete() {
   migration_marker_content_valid "$MARKER"
 }
 
-x_shim_locked_scan_needed() {
-  local shim="$STATE/x-sentry.check.sh"
-  [ -e "$shim" ] || [ -L "$shim" ] || return 1
-  fmx_poll_shim_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT" && return 1
-  return 0
-}
+if ! retire_dead_x_mode_check; then
+  echo "PR_CHECK_MIGRATION: the retired x-sentry check could not be removed; the sentry refuses to start until it is gone" >&2
+  exit 1
+fi
 
 # Marker short-circuits apply only when generated artifact identities are current.
-# Otherwise sentry exclusion comes before every check scan and state mutation.
-if ! x_shim_locked_scan_needed; then
-  migration_complete && exit 0
-  [ "$ALLOW_INCOMPLETE_REPAIRS" -eq 1 ] && scan_complete && exit 0
+if migration_complete; then
+  exit 0
 fi
+[ "$ALLOW_INCOMPLETE_REPAIRS" -eq 1 ] && scan_complete && exit 0
 
 # shellcheck source=bin/sq-stand-to-lib.sh disable=SC1091
 . "$SCRIPT_DIR/sq-stand-to-lib.sh"
@@ -300,7 +332,7 @@ while [ "$i" -lt 100 ]; do
   # Its validated marker proves the old sentry crossed the boundary, so this
   # process can continue to the normal sentry singleton instead of competing
   # with the newly started sentry for a second migration lock.
-  if migration_complete && ! x_shim_locked_scan_needed; then
+  if migration_complete; then
     exit 0
   fi
   sleep 0.05
@@ -316,10 +348,8 @@ MIGRATION_SCAN_MARKER_TMP=
 MIGRATION_LOG_TMP=
 MIGRATION_OBLIGATION_TMP=
 MIGRATION_QUARANTINE_TMP=
-MIGRATION_X_SHIM_TMP=
 migration_cleanup() {
   fm_pr_poll_cleanup
-  [ -z "$MIGRATION_X_SHIM_TMP" ] || rm -f -- "$MIGRATION_X_SHIM_TMP"
   [ -z "$MIGRATION_QUARANTINE_TMP" ] || rm -f -- "$MIGRATION_QUARANTINE_TMP"
   [ -z "$MIGRATION_OBLIGATION_TMP" ] || rm -f -- "$MIGRATION_OBLIGATION_TMP"
   [ -z "$MIGRATION_LOG_TMP" ] || rm -f -- "$MIGRATION_LOG_TMP"
@@ -343,25 +373,6 @@ if [ "$retirement_rc" -ne 0 ]; then
   [ "$retirement_rc" -ne 3 ] || exit 3
   exit 1
 fi
-refresh_v1_x_shim() {
-  local shim="$STATE/x-sentry.check.sh"
-  fmx_poll_shim_v1_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT" "$STATE_DEVICE" || return 0
-  fm_pr_regular_destination_on_device_or_absent "$shim" "$STATE_DEVICE" || return 1
-  MIGRATION_X_SHIM_TMP=$(mktemp "$STATE/.sq-x-sentry.XXXXXX") || return 1
-  fmx_poll_shim_content "$SQUAD_BASE" "$SQUAD_ROOT" > "$MIGRATION_X_SHIM_TMP" || return 1
-  chmod 0700 "$MIGRATION_X_SHIM_TMP" || return 1
-  fmx_poll_shim_valid "$MIGRATION_X_SHIM_TMP" "$SQUAD_BASE" "$SQUAD_ROOT" || return 1
-  fmx_poll_shim_v1_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT" "$STATE_DEVICE" || return 1
-  mv -f -- "$MIGRATION_X_SHIM_TMP" "$shim" || return 1
-  MIGRATION_X_SHIM_TMP=
-  [ "$(fm_pr_file_device "$shim")" = "$STATE_DEVICE" ] || return 1
-  [ "$(fm_pr_file_mode "$shim")" = 700 ] || return 1
-  fmx_poll_shim_valid "$shim" "$SQUAD_BASE" "$SQUAD_ROOT"
-}
-if ! refresh_v1_x_shim; then
-  echo "PR_CHECK_MIGRATION: authenticated X poll shim could not be refreshed; migration did not complete safely" >&2
-  exit 1
-fi
 # A marker contradicted by a pending or failed obligation is not authoritative.
 # Remove only an ordinary marker under exclusion; unsafe marker paths remain a
 # hard refusal for the publication checks below.
@@ -379,10 +390,6 @@ migration_needed() {
   local check id
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
-      continue
-    fi
     id=$(basename "$check" .check.sh)
     fm_custom_check_registered "$STATE" "$id" && continue
     if ! fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE"; then
@@ -396,10 +403,6 @@ unsafe_checks_absent() {
   local check id
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
-      continue
-    fi
     id=$(basename "$check" .check.sh)
     fm_custom_check_registered "$STATE" "$id" && continue
     fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE" || return 1
@@ -1046,10 +1049,6 @@ if migration_needed; then
 
   for check in "$STATE"/*.check.sh; do
     [ -e "$check" ] || [ -L "$check" ] || continue
-    if [ "$(basename "$check")" = x-sentry.check.sh ] \
-      && fmx_poll_shim_valid "$check" "$SQUAD_BASE" "$SQUAD_ROOT"; then
-      continue
-    fi
     id=$(basename "$check" .check.sh)
     fm_custom_check_registered "$STATE" "$id" && continue
     fm_pr_poll_artifacts_valid "$STATE" "$id" "$TEMPLATE" && continue

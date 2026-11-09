@@ -2731,7 +2731,16 @@ const handoff = `${state}/.pi-away-handoff`;
 mkdirSync(handoff, { recursive: true, mode: 0o700 });
 const ready = () => JSON.parse(readFileSync(`${handoff}/ready.lab.window.json`, "utf8"));
 const requests = (id, message) => writeFileSync(`${handoff}/request.json`, JSON.stringify({ id, session: "lab", window: "window", message }));
+const interval = 1000;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const waitFor = async (predicate, message, timeout = 5000) => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try { if (predicate()) return; } catch {}
+    await wait(25);
+  }
+  assert.fail(message);
+};
 requests("a".repeat(64), "digest");
 const listeners = new Map();
 const sent = [];
@@ -2739,18 +2748,15 @@ const pi = { on: (name, handler) => listeners.set(name, handler), sendUserMessag
 const ctx = { idle: false, editor: "draft", isIdle() { return this.idle; }, ui: { getEditorText: () => ctx.editor } };
 (await import(pathToFileURL(extensionPath).href)).default(pi);
 await listeners.get("session_start")({}, ctx);
-await wait(1100);
+await waitFor(() => ready().version === 3 && ready().idle === false && ready().sending === false,
+  "the handoff extension must publish its initial delivery-state record");
 assert.equal(sent.length, 0, "busy Pi must not receive a handoff");
-assert.equal(ready().version, 3, "the handoff extension must report its delivery-state schema");
-assert.equal(ready().idle, false, "ready state must report the live idle flag");
-assert.equal(ready().sending, false, "ready state must report the in-flight-send flag");
 ctx.idle = true;
-await wait(1100);
+await wait(interval + 250);
 assert.equal(sent.length, 0, "non-empty editor must defer the handoff");
 assert.equal(ready().draft, true, "ready state must report a present editor draft");
 ctx.editor = "";
-await wait(1100);
-assert.equal(sent.length, 1, "idle Pi with an empty editor should accept one handoff");
+await waitFor(() => sent.length === 1, "idle Pi with an empty editor should accept one handoff");
 assert.match(sent[0][0], /SQUAD_PI_AFK_HANDOFF:/);
 listeners.get("before_agent_start")({ prompt: sent[0][0] }, ctx);
 assert.equal(JSON.parse(readFileSync(`${handoff}/result.json`, "utf8")).status, "handled", "matching prompt start must acknowledge consumption");
@@ -2758,12 +2764,11 @@ assert.equal(JSON.parse(readFileSync(`${handoff}/result.json`, "utf8")).status, 
 // positive signal, so an open prompt must defer delivery even while idle.
 requests("b".repeat(64), "modal digest");
 listeners.get("ui_prompt_start")({}, ctx);
-await wait(1100);
+await waitFor(() => ready().prompts === 1, "ready state must report the open prompt count");
+await wait(interval + 250);
 assert.equal(sent.length, 1, "an open Pi prompt must defer the handoff");
-assert.equal(ready().prompts, 1, "ready state must report the open prompt count");
 listeners.get("ui_prompt_end")({}, ctx);
-await wait(1100);
-assert.equal(sent.length, 2, "closing the prompt must release the queued handoff");
+await waitFor(() => sent.length === 2, "closing the prompt must release the queued handoff");
 assert.match(sent[1][0], /SQUAD_PI_AFK_HANDOFF:/);
 listeners.get("session_shutdown")?.();
 NODE
@@ -2789,7 +2794,16 @@ const [extensionPath, state] = process.argv.slice(2);
 const handoff = `${state}/.pi-away-handoff`;
 mkdirSync(handoff, { recursive: true, mode: 0o700 });
 const requests = (id, message) => writeFileSync(`${handoff}/request.json`, JSON.stringify({ id, session: "lab", window: "window", message }));
+const interval = 1000;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const waitFor = async (predicate, message, timeout = 5000) => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try { if (predicate()) return; } catch {}
+    await wait(25);
+  }
+  assert.fail(message);
+};
 const rejections = [];
 process.on("unhandledRejection", (reason) => rejections.push(reason));
 const listeners = new Map();
@@ -2802,15 +2816,13 @@ const ctx = { idle: true, editor: "", isIdle() { return this.idle; }, ui: { getE
 // and wedge delivery forever.
 requests("a".repeat(64), "first digest");
 await listeners.get("session_start")({}, ctx);
-await wait(1100);
-assert.equal(sent.length, 1, "the first session should deliver once");
+await waitFor(() => sent.length === 1, "the first session should deliver once");
 listeners.get("before_agent_start")({ prompt: sent[0][0] }, ctx);
 listeners.get("ui_prompt_start")({}, ctx);
 listeners.get("session_shutdown")?.();
 requests("b".repeat(64), "second digest");
 await listeners.get("session_start")({}, ctx);
-await wait(1100);
-assert.equal(sent.length, 2, "a replaced session must not inherit a stale open-prompt count");
+await waitFor(() => sent.length === 2, "a replaced session must not inherit a stale open-prompt count");
 
 // A stale/ throwing context must neither crash the primary via an unhandled
 // rejection nor permanently stop delivery once the context is usable again.
@@ -2820,11 +2832,10 @@ listeners.get("before_agent_start")({ prompt: sent[1][0] }, ctx);
 listeners.get("session_shutdown")?.();
 requests("c".repeat(64), "third digest");
 await listeners.get("session_start")({}, stale);
-await wait(1100);
+await wait(interval + 250);
 assert.equal(rejections.length, 0, "a throwing context must not cause an unhandled rejection");
 throwing = false;
-await wait(1100);
-assert.equal(sent.length, 3, "delivery must resume once the context is usable again");
+await waitFor(() => sent.length === 3, "delivery must resume once the context is usable again");
 listeners.get("session_shutdown")?.();
 NODE
   local status=$?
@@ -3157,7 +3168,16 @@ const handoff = `${state}/.pi-away-handoff`;
 mkdirSync(handoff, { recursive: true, mode: 0o700 });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const request = { id: "a".repeat(64), session: "lab", window: "win/1 é", message: "digest" };
-const run = async (lock, id, overrides = {}) => {
+const interval = 1000;
+const waitFor = async (predicate, message, timeout = 5000) => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try { if (predicate()) return; } catch {}
+    await wait(25);
+  }
+  assert.fail(message);
+};
+const run = async (lock, id, overrides = {}, expectsDelivery = false) => {
   try { unlinkSync(`${handoff}/result.json`); } catch {}
   if (lock === null) {
     try { unlinkSync(`${state}/.lock`); } catch {}
@@ -3171,7 +3191,13 @@ const run = async (lock, id, overrides = {}) => {
   const ctx = { isIdle: () => true, ui: { getEditorText: () => "" } };
   (await import(`${pathToFileURL(extensionPath).href}?lock=${lock ?? "missing"}&id=${id}`)).default(pi);
   await listeners.get("session_start")({}, ctx);
-  await wait(1200);
+  if (expectsDelivery) {
+    await waitFor(() => sent.length === 1, `expected one handoff delivery for ${id}`);
+  } else {
+    // Cover at least one full timer tick so a wrongly permitted worker cannot
+    // pass merely because the first asynchronous pump happened to be slow.
+    await wait(interval * 2 + 250);
+  }
   const files = readdirSync(handoff).filter((name) => /^ready\..*\.json$/.test(name));
   listeners.get("before_agent_start")({ prompt: `[SQUAD_PI_AFK_HANDOFF:${id}]` }, ctx);
   let handled = null;
@@ -3198,17 +3224,17 @@ assert.equal(malformed.sent.length, 0, "a malformed lock must not accept an away
 assert.equal(malformed.handled, null, "a malformed lock must never acknowledge the request");
 // A stale numeric lock naming a dead process is the crash-relaunch shape: it
 // counts as absent, so the relaunched primary engages again.
-const stale = await run("999999", "f".repeat(64));
+const stale = await run("999999", "f".repeat(64), {}, true);
 assert.deepEqual(stale.files, [process.env.EXPECTED_READY], "a dead lock holder must leave the primary permitted to publish");
 assert.equal(stale.sent.length, 1, "a dead lock holder must leave the primary permitted to accept");
 assert.equal(stale.handled, "handled", "a permitted primary must acknowledge consuming its own request");
 // An absent lock is the normal acquisition window, so publishing is permitted.
-const missing = await run(null, "c".repeat(64));
+const missing = await run(null, "c".repeat(64), {}, true);
 assert.deepEqual(missing.files, [process.env.EXPECTED_READY], "a missing lock must leave this session permitted to publish");
 assert.equal(missing.sent.length, 1, "a missing lock must leave this session permitted to accept");
 assert.equal(missing.handled, "handled", "a permitted primary must acknowledge consuming its own request");
 // Exact ownership, which is what the daemon requires, publishes and accepts.
-const primary = await run("self", "d".repeat(64));
+const primary = await run("self", "d".repeat(64), {}, true);
 assert.deepEqual(primary.files, [process.env.EXPECTED_READY], "the primary must publish exactly the per-target file the daemon derives");
 assert.equal(primary.sent.length, 1, "the primary must accept the request");
 assert.equal(primary.handled, "handled", "the primary must acknowledge consuming its own request");

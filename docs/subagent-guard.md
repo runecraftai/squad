@@ -372,8 +372,8 @@ Wiring Grok properly still requires the matcher-token verification described abo
 
 This change does not close the deeper harness-agnostic defect.
 Every Squad guard's in-flight-work branch keys off `state/<id>.meta`, and only `bin/sq-spawn.sh` writes that record.
-`bin/sq-supervision-lib.sh` also recognizes a Relay poll as supervision need, but unaccounted primary work still contributes nothing to that predicate.
-Without an independent Relay need, unaccounted primary work therefore reads as idle rather than suspicious.
+`bin/sq-supervision-lib.sh` recognizes in-flight tracked work and registered event sources as supervision need, but unaccounted primary work still contributes nothing to that predicate.
+Without an independent supervision need, unaccounted primary work therefore reads as idle rather than suspicious.
 
 The durable fix for that class is to make the guards treat "the primary is doing project-shaped work with zero `state/*.meta` files" as a suspicious state rather than an idle one.
 That would catch this class on any harness, including work created through `Bash`.

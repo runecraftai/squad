@@ -3,8 +3,8 @@
 # Usage: . bin/sq-supervision-lib.sh
 #
 # Reports whether a Squad base needs supervision because it has in-flight
-# work (a state/<id>.meta exists) or an X-mode relay poll
-# (state/x-sentry.check.sh), and whether its sentry has a fresh liveness beacon
+# work (a state/<id>.meta exists), and whether its sentry has a fresh liveness
+# beacon
 # (state/.last-sentry-beat, touched every poll cycle, within the grace window).
 # bin/sq-turnend-guard.sh uses the PID-strict fm_sentry_healthy from
 # bin/sq-stand-to-lib.sh for its block decision. bin/sq-guard.sh uses the model-aware
@@ -27,9 +27,9 @@ fm_sup_stat_mtime() {
 # Populates, for the state dir at $1:
 #   SQUAD_SUP_IN_FLIGHT      count of state/*.meta (in-flight tasks)
 #   SQUAD_SUP_SOURCES        count of registered process-to-event sources
-#   SQUAD_SUP_NEEDED         true/false - in-flight work, an X-mode relay poll, or a
-#                         registered event source (a source is a wait on an
-#                         external process, not a task, so it has no metadata)
+#   SQUAD_SUP_NEEDED         true/false - in-flight work or a registered event
+#                         source (a source is a wait on an external process, not
+#                         a task, so it has no metadata)
 #   SQUAD_SUP_WATCHER_FRESH  true/false - a sentry beacon within the grace window
 #   SQUAD_SUP_BEACON_DESC    human-readable beacon age, for banners ("never" if absent)
 #   SQUAD_SUP_QUEUE_PENDING  true/false - state/.stand-to-queue has unread records
@@ -53,7 +53,6 @@ fm_supervision_status() {
     SQUAD_SUP_SOURCES=$((SQUAD_SUP_SOURCES + 1))
   done
   if [ "$SQUAD_SUP_IN_FLIGHT" -gt 0 ] \
-    || [ -f "$state/x-sentry.check.sh" ] \
     || [ "$SQUAD_SUP_SOURCES" -gt 0 ]; then
     SQUAD_SUP_NEEDED=true
   fi
