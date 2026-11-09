@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/runecraftai/squad/compare/sq-tasks-v0.1.2...sq-tasks-v0.1.3) (2026-11-09)
+
+
+### Features
+
+* **bin:** remove the Relay (X mode) public-mention integration ([#346](https://github.com/runecraftai/squad/issues/346)) ([7f9f50a](https://github.com/runecraftai/squad/commit/7f9f50ab363f7e9406adadc20d274bd45ab20f49))
+
 ## [0.1.2](https://github.com/runecraftai/squad/compare/sq-tasks-v0.1.1...sq-tasks-v0.1.2) (2026-08-18)
 
 
