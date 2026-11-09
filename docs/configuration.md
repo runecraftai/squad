@@ -515,18 +515,10 @@ Skipped items, such as a destination checkout that does not yet gitignore the it
 
 ## Telegram mirror (config/telegram-bridge.env)
 
-When the commander wants chat replies to also arrive on Telegram, Squad mirrors each
-commander-facing reply with `bin/sq-tg-notify.sh <text-or-'-'>` (`-` reads the message
-from the stdin).
-It is a proactive ping rather than a request path: it calls the Telegram Bot API
-directly (`sendMessage`) against this base's gitignored `config/telegram-bridge.env`,
-which holds `TG_BOT_TOKEN` and `TG_ALLOWED_CHAT_IDS`, and targets the first allowed
-chat id.
-It prints one `telegram HTTP <code>` line so a caller can tell a delivered mirror from a
-failed one, and fails closed (exit 1, nothing sent) when the config file, token, or chat
-id is missing.
-The base home resolves like the other `sq-*` scripts: `$SQUAD_BASE`, then legacy
-`$SQUAD_HOME`, then this repo root.
+When the commander wants chat replies to also arrive on Telegram, Squad mirrors each commander-facing reply with `bin/sq-tg-notify.sh <text-or-'-'>` (`-` reads the message from stdin).
+It is a proactive ping rather than a request path: it calls the Telegram Bot API directly (`sendMessage`) against this base's gitignored `config/telegram-bridge.env`, which holds `TG_BOT_TOKEN` and `TG_ALLOWED_CHAT_IDS`, and targets the first allowed chat id.
+It prints one `telegram HTTP <code>` line so a caller can tell a delivered mirror from a failed one, and fails closed (exit 1, nothing sent) when the config file, token, or chat id is missing.
+The base home resolves like the other `sq-*` scripts: `$SQUAD_BASE`, then legacy `$SQUAD_HOME`, then this repo root.
 
 ## Process-to-event sources (state/procevent)
 
