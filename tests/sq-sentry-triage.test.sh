@@ -2805,8 +2805,12 @@ test_busy_tall_pane_above_tail_progress_resets_expiry() {
   }
 
   write_tall_pane row-a "$capture_file"
-  poll_tall_pane
-  [ -s "$state/.stale-since-$key" ] || fail "a static busy tall pane did not start the expiry clock"
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=240
+  pid=$!
+  wait_numeric_file "$state/.stale-since-$key" 200 \
+    || { reap "$pid"; fail "a static busy tall pane did not start the expiry clock"; }
+  reap "$pid"
 
   # Only the above-tail row changes: the busy claim is not static, so no expiry.
   echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"

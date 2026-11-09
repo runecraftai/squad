@@ -462,6 +462,8 @@ func createStandardClone(t *testing.T, root string) string {
 	git(t, source, "commit", "-m", "fixture")
 	repo := filepath.Join(root, "clone")
 	git(t, root, "clone", "-q", source, repo)
+	git(t, repo, "config", "user.name", "Policy Test")
+	git(t, repo, "config", "user.email", "policy@example.invalid")
 	return repo
 }
 

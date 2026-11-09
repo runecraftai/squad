@@ -307,6 +307,9 @@ export const CONSULTED_RECORD_WRITES: Readonly<Record<string, readonly string[]>
 	"bin/sq-mcp-link.sh": [
 		"mv -f \"$TMP\" \"$META\"",
 	],
+	"bin/sq-pr-check-migrate.sh": [
+		'rm -f -- "$check" || true',
+	],
 	"bin/sq-pr-check.sh": [
 		"[ -z \"$META_TMP\" ] || rm -f -- \"$META_TMP\"",
 		"*) printf '%s\\n' \"$line\" >> \"$META_TMP\" || exit 1 ;;",
