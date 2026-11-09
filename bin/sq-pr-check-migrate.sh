@@ -105,12 +105,13 @@ x_mode_poll_state_present() {
     [ -e "$artifact" ] || [ -L "$artifact" ] || continue
     return 0
   done
-  [ -f "$meta" ] && [ ! -L "$meta" ] && [ -r "$meta" ] || return 1
+  [ -e "$meta" ] || [ -L "$meta" ] || return 1
+  [ -f "$meta" ] && [ ! -L "$meta" ] && [ -r "$meta" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       pr=*) return 0 ;;
     esac
-  done < "$meta"
+  done < "$meta" || return 0
   return 1
 }
 
@@ -123,10 +124,7 @@ retire_dead_x_mode_check() {
   fi
   x_mode_poll_state_present && return 0
   rm -f -- "$check" || true
-  if [ -e "$check" ] || [ -L "$check" ]; then
-    echo "PR_CHECK_MIGRATION: the retired x-sentry check could not be removed; the sentry keeps rejecting it" >&2
-  fi
-  return 0
+  [ ! -e "$check" ] && [ ! -L "$check" ]
 }
 
 private_migration_boundaries_valid() {
@@ -286,7 +284,10 @@ migration_complete() {
   migration_marker_content_valid "$MARKER"
 }
 
-retire_dead_x_mode_check
+if ! retire_dead_x_mode_check; then
+  echo "PR_CHECK_MIGRATION: the retired x-sentry check could not be removed; the sentry refuses to start until it is gone" >&2
+  exit 1
+fi
 
 # Marker short-circuits apply only when generated artifact identities are current.
 if migration_complete; then

@@ -2266,6 +2266,63 @@ test_ambiguous_x_mode_named_poll_is_quarantined() {
   pass "retirement leaves an ambiguous poll whose id is x-sentry to quarantine"
 }
 
+# A meta that exists but cannot be read conclusively - here a symlink - is not
+# proof that the check is the dead Relay artifact. Retirement must leave the
+# check and its sidecars to the normal quarantine instead of deleting the check
+# and orphaning the poll record.
+test_unreadable_x_mode_meta_is_quarantined() {
+  local dir state rc launch_output
+  dir=$(make_case unreadable-x-mode-meta)
+  state="$dir/home/state"
+  chmod 0700 "$state"
+  printf 'pr=https://github.com/o/r/pull/24\n' > "$dir/elsewhere.meta"
+  ln -s "$dir/elsewhere.meta" "$state/x-sentry.meta"
+  printf 'legacy relay poll bytes\n' > "$state/x-sentry.check.sh"
+  chmod 0700 "$state/x-sentry.check.sh"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -eq 0 ] || fail "x-sentry poll with an unreadable meta failed to migrate: $(cat "$dir/migrate.err")"
+  [ -L "$state/x-sentry.meta" ] || fail "retirement removed a meta it could not read"
+  find "$state/.pr-check-quarantine" -name 'x-sentry.check.*' -type f | grep -q . \
+    || fail "a check with an unreadable meta was deleted instead of quarantined"
+  launch_output=$(cat "$dir/migrate.out")
+  case "$launch_output" in
+    *"quarantined polls remain unarmed"*) ;;
+    *) fail "quarantining an x-sentry poll with an unreadable meta was not reported: $launch_output" ;;
+  esac
+  pass "retirement leaves an x-sentry poll with an unreadable meta to quarantine"
+}
+
+# A check that survives retirement (here a directory at that exact path) is a
+# refusal, not a completed migration: the sentry must not start over it.
+test_unremovable_x_mode_check_refuses_migration() {
+  local dir state rc last
+  dir=$(make_case unremovable-x-mode-check)
+  state="$dir/home/state"
+  chmod 0700 "$state"
+  mkdir "$state/x-sentry.check.sh"
+
+  set +e
+  SQUAD_BASE="$dir/home" PATH="$BASE_PATH" "$MIGRATE" > "$dir/migrate.out" 2> "$dir/migrate.err"
+  rc=$?
+  set -e
+
+  [ "$rc" -ne 0 ] || fail "migration succeeded with an unremovable x-sentry check"
+  grep -q 'the retired x-sentry check could not be removed' "$dir/migrate.err" \
+    || fail "migration did not report the unremovable x-sentry check"
+  last=$(tail -n 1 "$dir/migrate.err")
+  case "$last" in
+    *"the retired x-sentry check could not be removed"*) ;;
+    *) fail "the retirement refusal was not the terminal diagnostic: $last" ;;
+  esac
+  [ ! -e "$state/.pr-check-migration-v1" ] || fail "migration published a marker over an unremovable check"
+  pass "an unremovable x-sentry check refuses the migration instead of reporting completion"
+}
+
 # A custom check edited after registration keeps its trust record but no longer
 # authenticates; retirement must not delete user-owned evidence, so the normal
 # migration quarantines it for repair.
@@ -3457,6 +3514,8 @@ test_dead_x_mode_check_is_retired_after_migration_completes
 test_canonical_x_mode_named_poll_survives_retirement
 test_legacy_x_mode_named_poll_is_rebuilt
 test_ambiguous_x_mode_named_poll_is_quarantined
+test_unreadable_x_mode_meta_is_quarantined
+test_unremovable_x_mode_check_refuses_migration
 test_x_mode_named_check_with_stale_trust_is_quarantined
 test_registered_x_mode_named_check_survives_retirement
 test_custom_snapshot_cleanup_on_signal
