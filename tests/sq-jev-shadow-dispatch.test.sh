@@ -122,7 +122,7 @@ PY
 test_recommendation_never_changes_actual_dispatch() {
   local baseline shadow case_base case_shadow home_shadow proj_shadow proj_real
   local out_shadow jev_port status requests
-  local reply='{"type":"choice","choice":"grok/grok-4","confidence":0.9,"probabilities":{"grok/grok-4":0.9,"codex/gpt-5":0.1}}'
+  local reply='{"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.9,"probabilities":{"grok/grok-4":0.9,"codex/gpt-5":0.1}}}}'
   baseline=$(make_case shadow-off)
   shadow=$(make_case shadow-on)
   IFS='|' read -r case_base _ <<< "$baseline"
@@ -156,12 +156,15 @@ import sys
 
 request = json.loads(open(sys.argv[1]).readline())
 assert request["auth"] == "Bearer runtime-test-key"
-assert request["body"]["type"] == "choice"
-assert set(request["body"]) == {"type", "criteria", "instructions"}
-assert request["body"]["criteria"] == {"codex/gpt-5": "codex/gpt-5", "grok/grok-4": "grok/grok-4"}
-projection = json.loads(request["body"]["instructions"].split("Task projection: ", 1)[1])
+assert set(request["body"]) == {"state", "model", "questions"}
+assert request["body"]["model"] == "jev-latest"
+question = request["body"]["questions"]["lane"]
+assert question["type"] == "choice"
+assert question["criteria"] == {"codex/gpt-5": "codex/gpt-5", "grok/grok-4": "grok/grok-4"}
+projection = json.loads(request["body"]["state"])
 assert set(projection) == {"task_type", "title", "description", "file_count"}
 assert "codex/gpt-5" not in json.dumps(projection) and "grok/grok-4" not in json.dumps(projection)
+assert "codex/gpt-5" not in question["instructions"] and "grok/grok-4" not in question["instructions"]
 PY
 
   diff <(dispatch_rows "$case_base/home/data/$ID/dispatch.jsonl") \

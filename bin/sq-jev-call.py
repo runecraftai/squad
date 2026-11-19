@@ -13,6 +13,9 @@ import urllib.request
 from pathlib import Path
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
+MODEL = "jev-latest"
+QUESTION_KEY = "lane"
+INSTRUCTIONS = "Recommend the best-fitting lane for this task."
 MAX_TEXT = 240
 MAX_RESPONSE = 65536
 DEADLINE_SECONDS = 3
@@ -123,7 +126,13 @@ def load_lanes(args):
     return set(lanes) if isinstance(lanes, (dict, set)) else set()
 
 
-def classify(answer, lanes):
+def classify(body, lanes):
+    answers = body.get("answers") if isinstance(body, dict) else None
+    if not isinstance(answers, dict):
+        return {"status": "unavailable", "reason": "invalid_response"}
+    answer = answers.get(QUESTION_KEY)
+    if answer is None:
+        return {"status": "unavailable", "reason": "answer_missing"}
     if not isinstance(answer, dict) or answer.get("type") != "choice":
         return {"status": "unavailable", "reason": "invalid_response"}
     choice = answer.get("choice")
@@ -202,10 +211,11 @@ def main():
         "file_count": file_count,
     }
     payload = {
-        "type": "choice",
-        "criteria": {lane: lane for lane in sorted(lanes)},
-        "instructions": "Recommend the best-fitting lane for this task. Task projection: "
-        + json.dumps(projection, ensure_ascii=True, separators=(",", ":")),
+        "state": json.dumps(projection, ensure_ascii=True, separators=(",", ":")),
+        "model": MODEL,
+        "questions": {QUESTION_KEY: {"type": "choice",
+                                     "instructions": INSTRUCTIONS,
+                                     "criteria": {lane: lane for lane in sorted(lanes)}}},
     }
     body = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
     if args.dry_run:

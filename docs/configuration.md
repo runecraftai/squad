@@ -423,12 +423,16 @@ It is disabled by default and opt-in per project: `config/jev-dispatch.json` is 
 An absent, malformed, or unlisted project means no request is sent.
 A recommendation never changes the dispatch: `bin/sq-jev-call.py` appends it to `data/<id>/dispatch.jsonl` as a labelled `recommendation` event through `bin/sq-dispatch-log.sh`, `sq-spawn.sh` discards the client output, and no harness, model, effort, account, or script is selected from it.
 `config/crew-dispatch.json` routing is unchanged by Jev.
-The request contains only the task type, a title and description, the tracked file count, and the configured lane candidates.
+The request body is the documented shape: a fixed `model` (`jev-latest`), a `state`, and a `questions` map holding one `choice` question keyed `lane` whose `criteria` map the configured lane candidates.
+The request contains only the task type, a title and description, the tracked file count, and those configured lane candidates.
+That redacted projection is serialized into `state` - the text the model reasons over - not into the question's `instructions`.
 The title and description come from the brief's first heading and body text unless supplied directly, and they are redacted before truncation to 240 characters.
 Redaction covers secret-shaped values, URL credentials, and harness and model identifiers, including the names of the lanes in `config/crew-dispatch.json`; the file count is the number of `git ls-files` entries.
+The recommendation is read back from `answers.lane`: a `choice` naming a configured lane is recorded with its `confidence` and its lane-scoped `probabilities`, while any other choice is `no_lane_match`.
 `TYPESAFE_API_KEY` is read only from the environment and is sent only as the bearer credential; it is never passed in argv, written to a log or to `dispatch.jsonl`, or stored in a fixture.
 The client contacts only the fixed service URL (a loopback-only `SQUAD_JEV_URL_OVERRIDE` exists for tests), refuses redirects, and enforces a 3-second deadline.
-Every failure is recorded as `status: "unavailable"` with one non-sensitive `reason`: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `no_lane_match`, or `service_error`.
+Every failure is recorded as `status: "unavailable"` with one non-sensitive `reason`: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `answer_missing`, `no_lane_match`, or `service_error`.
+`invalid_response` covers a body with no `answers` map or an answer that is not a `choice` question, and `answer_missing` covers an `answers` map with no `lane` entry, so an unexpected answer is never a silent success.
 `bin/sq-jev-call.py --dry-run --project <path> --task-type <type>` prints the exact request body without the opt-in, the key, or a network call.
 `tests/sq-jev-call.test.sh` and `tests/sq-jev-shadow-dispatch.test.sh` verify the client and the non-influence guarantee offline; neither calls the live service.
 

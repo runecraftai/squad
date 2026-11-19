@@ -19,8 +19,25 @@ root = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location("jev", root / "bin/sq-jev-call.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-OK_REPLY = {"type": "choice", "choice": "claude/sonnet", "confidence": .8,
-            "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}}
+QUESTION = "lane"
+LANES = {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"}
+
+
+def answer(choice, **extra):
+    return {"answers": {QUESTION: {"type": "choice", "choice": choice, **extra}}}
+
+
+def expected_body(description, file_count):
+    state = json.dumps({"task_type": "feature", "title": "title", "description": description,
+                        "file_count": file_count}, ensure_ascii=True, separators=(",", ":"))
+    return {"state": state, "model": "jev-latest",
+            "questions": {QUESTION: {"type": "choice",
+                                     "instructions": "Recommend the best-fitting lane for this task.",
+                                     "criteria": LANES}}}
+
+
+OK_REPLY = answer("claude/sonnet", confidence=.8,
+                  probabilities={"claude/sonnet": .8, "pi/gpt": .2})
 
 
 def serve(record, state):
@@ -101,15 +118,12 @@ with tempfile.TemporaryDirectory() as td:
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "missing_key"}]
         (data / "task/dispatch.jsonl").unlink()
+        description = ("~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
+                       "https://[REDACTED]@example.invalid [REDACTED]")
         dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
         payload = json.loads(dry.stdout)
-        assert payload == {"type":"choice",
-                           "criteria":{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"},
-                           "instructions":"Recommend the best-fitting lane for this task. Task projection: "
-                           + json.dumps({"task_type":"feature","title":"title","description":
-                           "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
-                           "https://[REDACTED]@example.invalid [REDACTED]","file_count":3},
-                           ensure_ascii=True,separators=(",",":"))}
+        assert payload == expected_body(description, 3)
+        assert set(payload) == {"state", "model", "questions"}
         assert not captured
         config.write_text('{"enabled_projects":[]}')
         dry_opt_out = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, check=True)
@@ -130,7 +144,7 @@ with tempfile.TemporaryDirectory() as td:
         state["location"] = None
 
         captured.clear()
-        state["reply"] = {"type": "choice", "choice": ["claude/sonnet"], "confidence": .8}
+        state["reply"] = answer(["claude/sonnet"], confidence=.8)
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unhashable.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
         assert unhashable.stderr == "" and recorded() == [
@@ -138,14 +152,36 @@ with tempfile.TemporaryDirectory() as td:
              "status": "unavailable", "reason": "no_lane_match"}]
         (data / "task/dispatch.jsonl").unlink()
         captured.clear()
-        state["reply"] = {"type": "choice", "choice": "claude/sonnet"}
+        state["reply"] = answer("claude/sonnet")
         bare = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(bare.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
         assert recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "recommended", "choice": "claude/sonnet"}]
         (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": .8, "padding": "x" * 70000}
+        state["reply"] = answer("strong", confidence=.22, probabilities={"strong": .61, "cheap": .39})
+        unrecognised = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(unrecognised.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
+        assert unrecognised.stderr == "" and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "no_lane_match"}]
+        (data / "task/dispatch.jsonl").unlink()
+        for malformed, reason in (
+                ({"status": "ok"}, "invalid_response"),
+                ({"answers": []}, "invalid_response"),
+                ({"answers": {}}, "answer_missing"),
+                ({"answers": {"other": {"type": "choice", "choice": "claude/sonnet"}}},
+                 "answer_missing"),
+                ({"answers": {QUESTION: "claude/sonnet"}}, "invalid_response"),
+                ({"answers": {QUESTION: {"type": "ranking", "choice": "claude/sonnet"}}},
+                 "invalid_response")):
+            state["reply"] = malformed
+            broken = subprocess.run(argv, text=True, capture_output=True, env=env)
+            assert broken.returncode == 0 and broken.stderr == ""
+            assert json.loads(broken.stdout) == {"status": "unavailable", "reason": reason}
+            assert recorded()[0]["reason"] == reason
+            (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = answer("claude/sonnet", confidence=.8, padding="x" * 70000)
         oversized = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(oversized.stdout) == {"status": "unavailable", "reason": "service_error"}
         assert recorded()[0]["reason"] == "service_error"
@@ -162,15 +198,7 @@ with tempfile.TemporaryDirectory() as td:
         slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
                               env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
         assert time.monotonic() - started < 10
-        assert json.loads(slow.stdout) == {"type": "choice",
-                                           "criteria": {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"},
-                                           "instructions":
-                                           "Recommend the best-fitting lane for this task. Task projection: "
-                                           + json.dumps({"task_type": "feature", "title": "title", "description":
-                                                         "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
-                                                         "https://[REDACTED]@example.invalid [REDACTED]",
-                                                         "file_count": None},
-                                                        ensure_ascii=True, separators=(",", ":"))}
+        assert json.loads(slow.stdout) == expected_body(description, None)
         captured.clear()
         unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True,
                                     env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
@@ -193,24 +221,25 @@ with tempfile.TemporaryDirectory() as td:
         brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
         brief_argv += ["--brief", str(brief), "--dry-run"]
         briefed = subprocess.run(brief_argv, text=True, capture_output=True, check=True)
-        assert json.loads(briefed.stdout) == {"type": "choice",
-                                              "criteria": {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"},
-                                              "instructions":
-                                              "Recommend the best-fitting lane for this task. Task projection: "
-                                              + json.dumps({"task_type": "feature", "title": "title", "description":
-                                                            "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task; use [REDACTED] with [REDACTED].",
-                                                            "file_count": 3},
-                                                           ensure_ascii=True, separators=(",", ":"))}
+        assert json.loads(briefed.stdout) == expected_body(
+            "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task; "
+            "use [REDACTED] with [REDACTED].", 3)
 
         result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         assert captured["path"] == "/v1/systemone" and captured["auth"] == "Bearer runtime-test-key"
         assert captured["body"] == payload
+        posted_question = captured["body"]["questions"][QUESTION]
+        assert posted_question["type"] == "choice" and posted_question["criteria"] == LANES
+        assert "Task projection" not in posted_question["instructions"]
+        assert json.loads(captured["body"]["state"]) == {"task_type": "feature", "title": "title",
+                                                         "description": description, "file_count": 3}
         rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
         assert rows == [{"timestamp": rows[0]["timestamp"], "id":"task", "event":"recommendation",
                          "label":"recommendation", "status":"recommended", "choice":"claude/sonnet", "confidence":.8,
                          "probabilities":{"claude/sonnet":.8,"pi/gpt":.2}}]
-        state["reply"] = {**OK_REPLY, "probabilities": {"claude/sonnet": .8, "pi/gpt": .1, "sq-send": .1}}
+        state["reply"] = answer("claude/sonnet", confidence=.8,
+                                 probabilities={"claude/sonnet": .8, "pi/gpt": .1, "sq-send": .1})
         leak_data = base / "leak"
         leak_argv = argv[:argv.index("--data") + 1] + [str(leak_data)] + argv[argv.index("--data") + 2:]
         leak = subprocess.run(leak_argv, text=True, capture_output=True, env=env, check=True)
@@ -252,6 +281,16 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("pipeline claude-sonnet-5 o3-mini") == "pipeline [REDACTED] [REDACTED]"
         assert module.redact("pi day with cursor and qwen2.5") == "[REDACTED] day with [REDACTED] and [REDACTED]"
         assert module.redact("kimi with Gemini 2.5 Pro and Claude 3.5 Sonnet") == "[REDACTED] with [REDACTED] and [REDACTED] [REDACTED]"
+        # The documented response shape, verbatim from the live service, maps onto configured lanes.
+        live = {"answers": {"lane": {"type": "choice", "choice": "strong", "confidence": .22,
+                                      "probabilities": {"strong": .61, "cheap": .39}}}}
+        assert module.classify(live, {"strong", "cheap"}) == {
+            "status": "recommended", "choice": "strong", "confidence": .22,
+            "probabilities": {"strong": .61, "cheap": .39}}
+        assert module.classify(live, {"claude/sonnet", "pi/gpt"}) == {
+            "status": "unavailable", "reason": "no_lane_match"}
+        assert module.classify(None, {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}
+        assert module.classify("text", {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}
     finally:
         server.shutdown()
         target.shutdown()
