@@ -226,6 +226,8 @@ def result_answer(payload, number):
 def saved_arguments(call, payload, number):
     try:
         entry = json.loads(call)
+    except RecursionError:
+        raise Invalid("--call for dialog %d has too many nested JSON levels" % number)
     except ValueError:
         raise Invalid("--call for dialog %d is not valid JSON" % number)
     call_id = entry.get("toolCallId") if isinstance(entry, dict) else None
@@ -319,6 +321,8 @@ def main():
                 raise Invalid("--dialog needs a positive dialog number")
             try:
                 payload = json.loads(args[offset + 1])
+            except RecursionError:
+                raise Unusable("--result has too many nested JSON levels")
             except ValueError:
                 raise Unusable("--result is not valid JSON")
             call = args[offset + 2] if mode == "resolve" else None

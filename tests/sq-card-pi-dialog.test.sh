@@ -525,6 +525,19 @@ assert mismatch.returncode == 2 and not mismatch.stdout and b"--call arguments d
 missing = run(dialog, *resolve_args, data=reformatted)
 assert missing.returncode == 2 and not missing.stdout and b"needs one --call" in missing.stderr, missing
 
+deep_json = "[" * 60000 + "0" + "]" * 60000
+for mode, extra in [("--answer", []), ("--resolve", call_args)]:
+    refused = run(dialog, mode, *resolve_args[1:-1], deep_json, *extra, data=reformatted)
+    assert refused.returncode == 4 and not refused.stdout, refused
+    assert any(reason in refused.stderr for reason in (
+        b"--result has too many nested JSON levels", b"--result must be the whole tool result object"
+    )), refused
+refused = run(dialog, *resolve_args, "--call", deep_json, data=reformatted)
+assert refused.returncode == 2 and not refused.stdout, refused
+assert any(reason in refused.stderr for reason in (
+    b"--call for dialog 1 has too many nested JSON levels", b"--call for dialog 1 needs a saved entry"
+)), refused
+
 for result_id, reason in [("other-call", b"toolCallId does not match"), (None, b"missing toolCallId")]:
     returned = json.loads(accept_result)
     if result_id is None:
