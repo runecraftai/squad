@@ -138,7 +138,7 @@ The picker degrades fzf, then whiptail, then dialog, then bash read, then the re
 | File | Purpose |
 |------|---------|
 | `bin/sq-ask.sh` | Renderer, prose parser, answer parser, validator, picker |
-| `bin/sq-card-pi-dialog.sh` | Card to Pi dialog payload and back; its header owns the mapping and refusal rules |
+| `bin/sq-card-pi-dialog.sh` | Card to Pi dialog payload and back; the [pi recipe](decision-card-pi-recipe.md) owns the mapping and refusal rules |
 | `bin/sq-card-lint.sh` | Warning-only grammar drift check for report and decision records; its header owns the codes |
 | `docs/decision-card-examples.md` | Three worked examples with golden prose |
 | `tests/sq-ask.test.sh` | Renderer, parser, validator, picker, and doc-drift tests |

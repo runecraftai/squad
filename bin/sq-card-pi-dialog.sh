@@ -42,11 +42,11 @@
 # range becomes exactly one ask_user_question question, and several cards in one reply
 # become one dialog per card, in card order.
 #
-# A3 supersedes the earlier split-and-merge approach for this payload path: the extension
-# answers one entry per question, so a card split across questions would come back as
-# several answers for one decision and could only be recorded by guessing a pick. A card
-# with more than four options is therefore refused, never split and never truncated, and
-# the prose block stays authoritative. Nothing is ever dropped or renumbered.
+# A split mapping is not used for this payload path: the extension answers one entry per
+# question, so a card split across questions would come back as several answers for one
+# decision and could only be recorded by guessing a pick. A card with more than four
+# options is therefore refused, never split and never truncated, and the prose block
+# stays authoritative. Nothing is ever dropped or renumbered.
 #
 # Answering several cards merges their dialogs into exactly one fragment per decision,
 # mechanically: no fold, no renumbering, no guessed pick. Two answers for the same

@@ -50,7 +50,7 @@ It validates the card through `bin/sq-ask.sh --validate` first, so the schema ke
 
 | Card | Dialog |
 |------|--------|
-| `question` | `questions[].question`, then one `F<n> - <id> <text>` line per finding and finally one `Context: <context>` line |
+| `question` | `questions[].question`, then one `F<n> - <id> <text>` line per finding and finally one `Context: <context>` line when the card has context |
 | `title` | `questions[].header`, cut to the 16-character limit at the last space of the retained text when it keeps one, otherwise at the limit |
 | `options[].label` | `options[].label`, unchanged |
 | `options[].description` | `options[].description`; the recommended option gains a trailing ` (recommended)` so the recommendation is visible on its own row |
@@ -63,8 +63,8 @@ One card is one dialog question, because a question holds 2-4 options:
 - several cards in one reply become one dialog per card, in card order, each rendered as its own `ask_user_question` call;
 - a card with more than four options keeps the prose block: the mapping exits 2 naming the reason, so no option is ever dropped, folded, or truncated.
 
-A3 supersedes the earlier split-and-merge approach for the payload path: the extension answers one entry per question, so a card spread over two or more questions came back as several answers for the same decision and could only be recorded by guessing a pick.
-Refusing the card keeps the prose block authoritative for exactly the cards the split rules existed to serve, instead of leaving them with a dialog whose answer cannot be merged.
+A split mapping is not used for the payload path: the extension answers one entry per question, so a card spread over two or more questions would come back as several answers for the same decision and could only be recorded by guessing a pick.
+Refusing the card keeps the prose block authoritative for exactly the cards that need more than one question, instead of leaving them with a dialog whose answer cannot be merged.
 
 A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, or a card with more than four options.
 
@@ -88,6 +88,7 @@ bin/sq-ask.sh --answer 'd1 o2' < card.json
 It takes the whole tool result and never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
 Answering several cards in one call merges their dialogs into exactly one fragment per decision, mechanically - no fold, no renumbering, no guessed pick.
 Two answers for the same decision exit 4 with a named error instead of choosing one, and a multi-select answer exits 4 because this mapping never authors a multi-select question.
+A malformed answer, such as a non-string chosen label or typed text, exits 4 with a named error and never a traceback.
 
 ## Fallback
 

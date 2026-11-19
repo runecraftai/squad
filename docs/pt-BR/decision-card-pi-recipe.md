@@ -52,7 +52,7 @@ Ele valida o cartão por `bin/sq-ask.sh --validate` primeiro, então o esquema m
 
 | Cartão | Diálogo |
 |--------|---------|
-| `question` | `questions[].question`, depois uma linha `F<n> - <id> <text>` por finding e por fim uma linha `Context: <context>` |
+| `question` | `questions[].question`, depois uma linha `F<n> - <id> <text>` por finding e, por fim, uma linha `Context: <context>` quando o cartão tem contexto |
 | `title` | `questions[].header`, cortado no limite de 16 caracteres no último espaço do texto retido quando sobrar um, senão no próprio limite |
 | `options[].label` | `options[].label`, inalterado |
 | `options[].description` | `options[].description`; a opção recomendada ganha um ` (recommended)` no final, para que a recomendação apareça em sua própria linha |
@@ -65,8 +65,8 @@ Um cartão é uma pergunta de diálogo, porque uma pergunta comporta 2-4 opçõe
 - vários cartões em uma resposta viram um diálogo por cartão, na ordem dos cartões, cada um renderizado como sua própria chamada `ask_user_question`;
 - um cartão com mais de quatro opções mantém o bloco de prosa: o mapeamento sai com 2 informando o motivo, então nenhuma opção é descartada, dobrada ou truncada.
 
-A3 substitui a abordagem anterior de dividir e mesclar para este caminho de payload: a extensão responde uma entrada por pergunta, então um cartão espalhado por duas ou mais perguntas voltava como várias respostas para a mesma decisão e só poderia ser registrado adivinhando uma escolha.
-Recusar o cartão mantém o bloco de prosa autoritativo exatamente para os cartões que as regras de divisão existiam para atender, em vez de deixá-los com um diálogo cuja resposta não pode ser mesclada.
+Um mapeamento dividido não é usado para este caminho de payload: a extensão responde uma entrada por pergunta, então um cartão espalhado por duas ou mais perguntas voltaria como várias respostas para a mesma decisão e só poderia ser registrado adivinhando uma escolha.
+Recusar o cartão mantém o bloco de prosa autoritativo exatamente para os cartões que precisam de mais de uma pergunta, em vez de deixá-los com um diálogo cuja resposta não pode ser mesclada.
 
 Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, ou um cartão com mais de quatro opções.
 
@@ -90,6 +90,7 @@ bin/sq-ask.sh --answer 'd1 o2' < card.json
 Ele recebe o resultado inteiro da ferramenta e nunca um array de respostas solto: só `details.cancelled` prova que o diálogo não foi cancelado, então `Esc` nunca vira uma decisão registrada.
 Responder vários cartões em uma chamada mescla seus diálogos em exatamente um fragmento por decisão, mecanicamente - sem dobra, sem renumeração, sem escolha adivinhada.
 Duas respostas para a mesma decisão saem com 4 e um erro nomeado em vez de escolher uma, e uma resposta multi-select sai com 4 porque este mapeamento nunca cria uma pergunta multi-select.
+Uma resposta malformada, como um rótulo escolhido ou texto digitado que não seja string, sai com 4 e um erro nomeado, nunca com um traceback.
 
 ## Fallback
 

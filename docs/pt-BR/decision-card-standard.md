@@ -140,7 +140,7 @@ O picker degrada de fzf para whiptail, dialog, leitura bash e por fim a opção 
 | Arquivo | Propósito |
 |---------|-----------|
 | `bin/sq-ask.sh` | Renderizador, parser de prosa, parser de resposta, validador, picker |
-| `bin/sq-card-pi-dialog.sh` | Cartão para payload de diálogo Pi e de volta; seu cabeçalho define o mapeamento e as regras de recusa |
+| `bin/sq-card-pi-dialog.sh` | Cartão para payload de diálogo Pi e de volta; a [receita pi](decision-card-pi-recipe.md) define o mapeamento e as regras de recusa |
 | `bin/sq-card-lint.sh` | Verificação somente de aviso para desvio de gramática em relatórios e registros de decisão; o cabeçalho define os códigos |
 | `docs/decision-card-examples.md` | Três exemplos com prosa de referência |
 | `tests/sq-ask.test.sh` | Testes de renderizador, parser, validador, picker e deriva de docs |
