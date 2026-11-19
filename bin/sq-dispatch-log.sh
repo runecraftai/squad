@@ -29,6 +29,12 @@
 # Only the bucket is stored, never the status text. Teardown and status-notify
 # write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
+# A recommended row carries the chosen lane's choice and confidence, the full
+# probabilities map, the per-question answers evidence (only type, choice,
+# answer, confidence and probabilities per question), the model version the
+# service reported, and low_confidence when the client flagged a flat answer.
+# Nothing outside that allowlist is written; an unavailable row carries only
+# one lower-case reason.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
 # unsafe paths, lock contention beyond that budget, missing dependencies and
 # write failures emit one generic warning, then exit 0.
@@ -82,6 +88,16 @@ command.add_argument("--failure-class", choices=FAILURE_CLASSES + ("none",))
 args = parser.parse_args(sys.argv[3:])
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
     raise ValueError("invalid id")
+
+
+def probabilities_field(value):
+    if not isinstance(value, dict) or any(
+            not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
+            for k, v in value.items()):
+        raise ValueError("invalid recommendation probabilities")
+    return value
+
+
 record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
           "id": args.id, "event": args.event}
 if args.event in ("decision", "spawn"):
@@ -127,13 +143,45 @@ if args.event == "recommendation":
             if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
                 raise ValueError("invalid recommendation confidence")
             record["confidence"] = confidence
-        probabilities = recommendation.get("probabilities")
-        if probabilities is not None:
-            if not isinstance(probabilities, dict) or any(
-                    not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
-                    for k, v in probabilities.items()):
-                raise ValueError("invalid recommendation probabilities")
-            record["probabilities"] = probabilities
+        if "probabilities" in recommendation and recommendation["probabilities"] is not None:
+            record["probabilities"] = probabilities_field(recommendation["probabilities"])
+        if recommendation.get("low_confidence") is not None:
+            if recommendation["low_confidence"] is not True:
+                raise ValueError("invalid recommendation low_confidence")
+            record["low_confidence"] = True
+        if "answers" in recommendation and recommendation["answers"] is not None:
+            answers = recommendation["answers"]
+            if not isinstance(answers, dict) or not answers:
+                raise ValueError("invalid recommendation answers")
+            evidence = {}
+            for question, answer in answers.items():
+                if not isinstance(question, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", question):
+                    raise ValueError("invalid recommendation answers")
+                if not isinstance(answer, dict) or not answer:
+                    raise ValueError("invalid recommendation answers")
+                entry = {}
+                for key, value in answer.items():
+                    if key == "type" and isinstance(value, str) and re.fullmatch(r"[a-z]{1,32}", value):
+                        entry[key] = value
+                    elif key == "choice" and isinstance(value, str) and re.fullmatch(r"[!-~]{1,128}", value):
+                        entry[key] = value
+                    elif key == "answer" and (isinstance(value, bool) or value is None):
+                        entry[key] = value
+                    elif key == "confidence" and type(value) in (int, float) \
+                            and math.isfinite(value) and 0 <= value <= 1:
+                        entry[key] = value
+                    elif key == "probabilities":
+                        entry[key] = probabilities_field(value)
+                    else:
+                        raise ValueError("invalid recommendation answers")
+                evidence[question] = entry
+            record["answers"] = evidence
+        if "model" in recommendation and recommendation["model"] is not None:
+            model = recommendation["model"]
+            if not isinstance(model, str) or not re.fullmatch(r"[!-~]{1,128}", model) \
+                    or SECRET_SHAPE.search(model):
+                raise ValueError("invalid recommendation model")
+            record["model"] = model
     else:
         raise ValueError("invalid recommendation status")
 if args.event == "outcome":

@@ -20,24 +20,37 @@ spec = importlib.util.spec_from_file_location("jev", root / "bin/sq-jev-call.py"
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 QUESTION = "lane"
-LANES = {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"}
+DESIGN = "needs_design_decision"
+LANES = {"claude/sonnet": "deep reasoning over large diffs",
+         "pi/gpt": "fast mechanical edits"}
+CRITERIA = {lane: {"fits": text, "not_for": "a task that another listed lane covers"}
+            for lane, text in LANES.items()}
+CRITERIA["other"] = {"fits": "none of these lanes fits the task",
+                     "not_for": "a task that one of the listed lanes covers"}
+LANE_INSTRUCTIONS = ("Choose the one lane whose harness, model and effort best match this task's "
+                     "difficulty, risk and need for design judgment.")
+DESIGN_INSTRUCTIONS = "Does this task need design decisions that a fixed plan cannot settle?"
+DESIGN_ANSWER = {"type": "noul", "answer": True, "confidence": .7}
 
 
 def answer(choice, **extra):
     return {"answers": {QUESTION: {"type": "choice", "choice": choice, **extra}}}
 
 
-def expected_body(description, file_count):
-    state = json.dumps({"task_type": "feature", "title": "title", "description": description,
-                        "file_count": file_count}, ensure_ascii=True, separators=(",", ":"))
-    return {"state": state, "model": "jev-latest",
-            "questions": {QUESTION: {"type": "choice",
-                                     "instructions": "Recommend the best-fitting lane for this task.",
-                                     "criteria": LANES}}}
+def expected_body(description, tracked_files):
+    return {"state": {"task": {"type": "feature", "title": "title", "description": description},
+                       "repository": {"tracked_files": tracked_files, "top_level": [],
+                                      "has_tests": None, "language": None}},
+            "model": "jev-latest",
+            "questions": {QUESTION: {"type": "choice", "instructions": LANE_INSTRUCTIONS,
+                                     "criteria": CRITERIA},
+                          DESIGN: {"type": "noul", "instructions": DESIGN_INSTRUCTIONS}}}
 
 
-OK_REPLY = answer("claude/sonnet", confidence=.8,
-                  probabilities={"claude/sonnet": .8, "pi/gpt": .2})
+OK_REPLY = {"answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet", "confidence": .8,
+                                   "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
+                         DESIGN: DESIGN_ANSWER},
+            "model": "jev-2026-05"}
 
 
 def serve(record, state):
@@ -88,7 +101,7 @@ with tempfile.TemporaryDirectory() as td:
             "--project", str(project), "--task-type", "feature", "--title", "title",
             "--description", "$HOME/private sk-abcd1234567890 ghp_abcdefgh AKIA1234567890ABCDEF "
             "eyJabc.def.ghi https://user:pass@example.invalid KEY=value", "--file-count", "3",
-            "--lanes-json", '{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"}',
+            "--lanes-json", json.dumps(LANES),
             "--config", str(config), "--data", str(data), "--url", url]
     env = {**os.environ, "TYPESAFE_API_KEY": "runtime-test-key"}
 
@@ -157,7 +170,34 @@ with tempfile.TemporaryDirectory() as td:
         assert json.loads(bare.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
         assert recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
-             "status": "recommended", "choice": "claude/sonnet"}]
+             "status": "recommended", "choice": "claude/sonnet",
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet"}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = answer("other")
+        unmatched = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(unmatched.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
+        assert unmatched.stderr == "" and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "no_lane_match"}]
+        (data / "task/dispatch.jsonl").unlink()
+        # The commander's live-probe answer shape: a flat two-way split and low confidence.
+        state["reply"] = {"answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                                  "confidence": .22,
+                                                  "probabilities": {"claude/sonnet": .61, "pi/gpt": .39}}}}
+        flat = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(flat.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/sonnet", "confidence": .22,
+             "low_confidence": True,
+             "probabilities": {"claude/sonnet": .61, "pi/gpt": .39},
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet", "confidence": .22,
+                                     "probabilities": {"claude/sonnet": .61, "pi/gpt": .39}}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = {"answers": {DESIGN: DESIGN_ANSWER}}
+        judgment_only = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(judgment_only.stdout) == {"status": "unavailable", "reason": "answer_missing"}
+        assert recorded()[0]["reason"] == "answer_missing"
         (data / "task/dispatch.jsonl").unlink()
         state["reply"] = answer("strong", confidence=.22, probabilities={"strong": .61, "cheap": .39})
         unrecognised = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
@@ -229,23 +269,32 @@ with tempfile.TemporaryDirectory() as td:
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         assert captured["path"] == "/v1/systemone" and captured["auth"] == "Bearer runtime-test-key"
         assert captured["body"] == payload
-        posted_question = captured["body"]["questions"][QUESTION]
-        assert posted_question["type"] == "choice" and posted_question["criteria"] == LANES
-        assert "Task projection" not in posted_question["instructions"]
-        assert json.loads(captured["body"]["state"]) == {"task_type": "feature", "title": "title",
-                                                         "description": description, "file_count": 3}
+        assert set(captured["body"]) == {"state", "model", "questions"}
+        posted = captured["body"]["questions"]
+        assert posted[QUESTION]["type"] == "choice" and posted[QUESTION]["criteria"] == CRITERIA
+        assert posted[DESIGN] == {"type": "noul", "instructions": DESIGN_INSTRUCTIONS}
+        assert "Task projection" not in posted[QUESTION]["instructions"]
+        assert captured["body"]["state"] == {"task": {"type": "feature", "title": "title",
+                                                          "description": description},
+                                             "repository": {"tracked_files": 3, "top_level": [],
+                                                            "has_tests": None, "language": None}}
         rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
         assert rows == [{"timestamp": rows[0]["timestamp"], "id":"task", "event":"recommendation",
                          "label":"recommendation", "status":"recommended", "choice":"claude/sonnet", "confidence":.8,
-                         "probabilities":{"claude/sonnet":.8,"pi/gpt":.2}}]
+                         "probabilities":{"claude/sonnet":.8,"pi/gpt":.2},
+                         "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet", "confidence": .8,
+                                                 "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
+                                     DESIGN: DESIGN_ANSWER},
+                         "model": "jev-2026-05"}]
         state["reply"] = answer("claude/sonnet", confidence=.8,
-                                 probabilities={"claude/sonnet": .8, "pi/gpt": .1, "sq-send": .1})
+                                probabilities={"claude/sonnet": .8, "pi/gpt": .1,
+                                               "other": .05, "bogus": "high"})
         leak_data = base / "leak"
         leak_argv = argv[:argv.index("--data") + 1] + [str(leak_data)] + argv[argv.index("--data") + 2:]
         leak = subprocess.run(leak_argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(leak.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         leak_rows = [json.loads(line) for line in (leak_data / "task/dispatch.jsonl").read_text().splitlines()]
-        assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1}
+        assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1, "other": .05}
         state["reply"] = OK_REPLY
         assert "runtime-test-key" not in result.stdout + result.stderr + (data / "task/dispatch.jsonl").read_text()
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
@@ -285,8 +334,10 @@ with tempfile.TemporaryDirectory() as td:
         live = {"answers": {"lane": {"type": "choice", "choice": "strong", "confidence": .22,
                                       "probabilities": {"strong": .61, "cheap": .39}}}}
         assert module.classify(live, {"strong", "cheap"}) == {
-            "status": "recommended", "choice": "strong", "confidence": .22,
-            "probabilities": {"strong": .61, "cheap": .39}}
+            "status": "recommended", "choice": "strong", "confidence": .22, "low_confidence": True,
+            "probabilities": {"strong": .61, "cheap": .39},
+            "answers": {"lane": {"type": "choice", "choice": "strong", "confidence": .22,
+                                   "probabilities": {"strong": .61, "cheap": .39}}}}
         assert module.classify(live, {"claude/sonnet", "pi/gpt"}) == {
             "status": "unavailable", "reason": "no_lane_match"}
         assert module.classify(None, {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}

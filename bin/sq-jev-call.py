@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
-"""Shadow-only Jev recommendation client; never used to resolve dispatch."""
+"""Shadow-only Jev recommendation client; never used to resolve dispatch.
+
+Posts the documented System One request shape - a `model`, a `state` object with
+named `task` and `repository` fields, and a map of keyed questions - and records the
+answer as evidence instead of a decision.
+
+One `choice` question keyed `lane` carries criteria that describe what each
+configured lane fits and what belongs to another lane, taken from the lane's own
+description when it has one and otherwise from its configured effort, plus a
+reserved `other` option so a mismatch is an answer instead of a forced choice.
+A second `noul` question records whether the task needs design decisions a fixed
+plan cannot settle; it never selects the lane.
+
+The recorded recommendation keeps the chosen lane, its confidence, the full
+probability map, the per-question answers and the model version the service
+reported, and adds `low_confidence: true` under LOW_CONFIDENCE_THRESHOLD (0.5).
+A low-confidence answer is still recorded and still has no authority.
+"""
 import argparse
 import json
 import math
@@ -15,7 +32,13 @@ from pathlib import Path
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
 QUESTION_KEY = "lane"
-INSTRUCTIONS = "Recommend the best-fitting lane for this task."
+DESIGN_KEY = "needs_design_decision"
+OTHER_OPTION = "other"
+LANE_INSTRUCTIONS = ("Choose the one lane whose harness, model and effort best match "
+                     "this task's difficulty, risk and need for design judgment.")
+DESIGN_INSTRUCTIONS = "Does this task need design decisions that a fixed plan cannot settle?"
+LOW_CONFIDENCE_THRESHOLD = 0.5
+MAX_TOP_LEVEL = 24
 MAX_TEXT = 240
 MAX_RESPONSE = 65536
 DEADLINE_SECONDS = 3
@@ -98,19 +121,60 @@ def unit_interval(value):
     return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
 
 
-def count_tracked_files(project):
+LANGUAGES = {".py": "Python", ".ts": "TypeScript", ".tsx": "TypeScript", ".js": "JavaScript",
+             ".jsx": "JavaScript", ".mjs": "JavaScript", ".go": "Go", ".rs": "Rust", ".rb": "Ruby",
+             ".java": "Java", ".kt": "Kotlin", ".swift": "Swift", ".c": "C", ".h": "C",
+             ".cc": "C++", ".cpp": "C++", ".hpp": "C++", ".cs": "C#", ".php": "PHP",
+             ".sh": "Shell", ".bash": "Shell", ".zsh": "Shell", ".ex": "Elixir", ".exs": "Elixir",
+             ".scala": "Scala", ".lua": "Lua", ".sql": "SQL", ".r": "R"}
+
+
+def names_tests(files):
+    for path in files:
+        if path.split("/")[0] in ("tests", "test", "__tests__"):
+            return True
+        name = path.rsplit("/", 1)[-1]
+        if name.startswith("test_") or ".test." in name or ".spec." in name:
+            return True
+    return False
+
+
+def project_facts(project):
+    """One tracked-file read for the repository fields the state carries."""
     try:
         tracked = subprocess.run(["git", "-C", project, "ls-files", "-z"],
                                  capture_output=True, check=True, timeout=3).stdout
     except (OSError, subprocess.SubprocessError):
         return None
-    return len([path for path in tracked.split(b"\0") if path])
+    files = [path.decode("utf-8", "replace") for path in tracked.split(b"\0") if path]
+    counts = {}
+    directories = set()
+    for path in files:
+        parts = path.split("/")
+        if len(parts) > 1 and not parts[0].startswith("."):
+            directories.add(parts[0])
+        language = LANGUAGES.get(os.path.splitext(path)[1].lower())
+        if language:
+            counts[language] = counts.get(language, 0) + 1
+    return {
+        "tracked_files": len(files),
+        "top_level": sorted(directories)[:MAX_TOP_LEVEL],
+        "has_tests": names_tests(files),
+        "language": min(counts, key=lambda name: (-counts[name], name)) if counts else None,
+    }
 
 
 def load_lanes(args):
+    """Allowed lanes mapped to their configured description and effort."""
+    lanes = {}
     try:
         if args.lanes_json:
-            lanes = json.loads(args.lanes_json)
+            configured = json.loads(args.lanes_json)
+            for lane, description in (configured.items() if isinstance(configured, dict) else ()):
+                if not isinstance(lane, str) or not lane:
+                    continue
+                text = description.strip() if isinstance(description, str) else ""
+                lanes[lane] = (text if text and text != lane else "", "")
         else:
             dispatch = json.loads(Path(args.project_config).read_text())
             profiles = []
@@ -119,11 +183,61 @@ def load_lanes(args):
                 profiles.extend(use if isinstance(use, list) else [use])
             default = dispatch.get("default", [])
             profiles.extend(default if isinstance(default, list) else [default])
-            lanes = {"/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
-                     for profile in profiles if isinstance(profile, dict) and profile.get("harness")}
+            for profile in profiles:
+                if not isinstance(profile, dict) or not profile.get("harness"):
+                    continue
+                lane = "/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
+                effort = profile.get("effort")
+                lanes[lane] = ("", effort.strip().lower() if isinstance(effort, str) else "")
     except (OSError, ValueError, AttributeError, RecursionError):
-        return set()
-    return set(lanes) if isinstance(lanes, (dict, set)) else set()
+        return {}
+    return lanes
+
+
+NEUTRAL_CRITERIA = {"fits": "a task whose difficulty, risk and reasoning depth match this configured lane",
+                    "not_for": "a task that another listed lane matches more closely"}
+EFFORT_CRITERIA = {
+    "low": {"fits": "a well-understood, mechanical change whose steps a short plan already settles",
+            "not_for": "a change that needs careful reasoning or spans unfamiliar code"},
+    "medium": {"fits": "a routine change with some ambiguity, where breadth matters more than depth",
+               "not_for": "a small mechanical change, or an unusually hard and risky one"},
+    "high": {"fits": "a demanding or ambiguous change that needs careful reasoning across several files",
+             "not_for": "a small mechanical change where speed matters more than depth"},
+    "xhigh": {"fits": "a hard, open-ended change that needs the deepest reasoning a lane can offer",
+              "not_for": "a small mechanical change where speed matters more than depth"},
+    "max": {"fits": "a hard, open-ended change that needs the deepest reasoning a lane can offer",
+            "not_for": "a small mechanical change where speed matters more than depth"},
+}
+
+
+def lane_criteria(description, effort):
+    if description:
+        return {"fits": description, "not_for": "a task that another listed lane covers"}
+    return dict(EFFORT_CRITERIA.get(effort, NEUTRAL_CRITERIA))
+
+
+def answer_evidence(answer):
+    """The bounded per-question fields worth recording, normalized to what the writer accepts."""
+    if not isinstance(answer, dict):
+        return None
+    evidence = {}
+    kind = answer.get("type")
+    if isinstance(kind, str) and re.fullmatch(r"[a-z]{1,32}", kind):
+        evidence["type"] = kind
+    choice = answer.get("choice")
+    if isinstance(choice, str) and re.fullmatch(r"[!-~]{1,128}", choice):
+        evidence["choice"] = choice
+    if isinstance(answer.get("answer"), bool) or ("answer" in answer and answer["answer"] is None):
+        evidence["answer"] = answer["answer"]
+    if "confidence" in answer and unit_interval(answer["confidence"]):
+        evidence["confidence"] = answer["confidence"]
+    probabilities = answer.get("probabilities")
+    if isinstance(probabilities, dict):
+        kept = {name: value for name, value in probabilities.items()
+                if isinstance(name, str) and unit_interval(value)}
+        if kept:
+            evidence["probabilities"] = kept
+    return evidence or None
 
 
 def classify(body, lanes):
@@ -139,12 +253,27 @@ def classify(body, lanes):
     if not isinstance(choice, str) or choice not in lanes:
         return {"status": "unavailable", "reason": "no_lane_match"}
     event = {"status": "recommended", "choice": choice}
-    if unit_interval(answer.get("confidence")):
-        event["confidence"] = answer["confidence"]
+    confidence = answer.get("confidence")
+    if unit_interval(confidence):
+        event["confidence"] = confidence
+        if confidence < LOW_CONFIDENCE_THRESHOLD:
+            event["low_confidence"] = True
     probabilities = answer.get("probabilities")
     if isinstance(probabilities, dict):
         event["probabilities"] = {name: value for name, value in probabilities.items()
-                                  if name in lanes and unit_interval(value)}
+                                  if isinstance(name, str) and unit_interval(value)}
+    recorded = {}
+    lane_evidence = answer_evidence(answer)
+    if lane_evidence is not None:
+        recorded[QUESTION_KEY] = lane_evidence
+    design = answer_evidence(answers.get(DESIGN_KEY))
+    if design is not None:
+        recorded[DESIGN_KEY] = design
+    if recorded:
+        event["answers"] = recorded
+    model = body.get("model")
+    if isinstance(model, str) and 0 < len(model) <= 128:
+        event["model"] = model
     return event
 
 
@@ -203,19 +332,31 @@ def main():
             pass
     lanes = load_lanes(args)
     names = {part for lane in lanes for part in lane.split("/")}
-    file_count = args.file_count if args.file_count is not None else count_tracked_files(args.project)
+    facts = project_facts(args.project) or {}
+    tracked_files = args.file_count if args.file_count is not None else facts.get("tracked_files")
     projection = {
-        "task_type": redact(args.task_type, names),
-        "title": redact(args.title, names),
-        "description": redact(args.description, names),
-        "file_count": file_count,
+        "task": {
+            "type": redact(args.task_type, names),
+            "title": redact(args.title, names),
+            "description": redact(args.description, names),
+        },
+        "repository": {
+            "tracked_files": tracked_files,
+            "top_level": [redact(name, names) for name in facts.get("top_level", [])],
+            "has_tests": facts.get("has_tests"),
+            "language": facts.get("language"),
+        },
     }
+    criteria = {lane: lane_criteria(*configured) for lane, configured in sorted(lanes.items())}
+    criteria[OTHER_OPTION] = {"fits": "none of these lanes fits the task",
+                              "not_for": "a task that one of the listed lanes covers"}
     payload = {
-        "state": json.dumps(projection, ensure_ascii=True, separators=(",", ":")),
+        "state": projection,
         "model": MODEL,
-        "questions": {QUESTION_KEY: {"type": "choice",
-                                     "instructions": INSTRUCTIONS,
-                                     "criteria": {lane: lane for lane in sorted(lanes)}}},
+        "questions": {
+            QUESTION_KEY: {"type": "choice", "instructions": LANE_INSTRUCTIONS, "criteria": criteria},
+            DESIGN_KEY: {"type": "noul", "instructions": DESIGN_INSTRUCTIONS},
+        },
     }
     body = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
     if args.dry_run:
@@ -223,7 +364,7 @@ def main():
         return 0
     if not lanes:
         return finish(args, {"status": "unavailable", "reason": "no_lanes"})
-    if file_count is None:
+    if tracked_files is None:
         return finish(args, {"status": "unavailable", "reason": "file_count_unmeasured"})
     parsed_url = urllib.parse.urlparse(args.url)
     if args.url != API_URL and parsed_url.hostname not in ("127.0.0.1", "localhost", "::1"):

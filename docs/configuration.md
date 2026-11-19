@@ -423,12 +423,16 @@ It is disabled by default and opt-in per project: `config/jev-dispatch.json` is 
 An absent, malformed, or unlisted project means no request is sent.
 A recommendation never changes the dispatch: `bin/sq-jev-call.py` appends it to `data/<id>/dispatch.jsonl` as a labelled `recommendation` event through `bin/sq-dispatch-log.sh`, `sq-spawn.sh` discards the client output, and no harness, model, effort, account, or script is selected from it.
 `config/crew-dispatch.json` routing is unchanged by Jev.
-The request body is the documented shape: a fixed `model` (`jev-latest`), a `state`, and a `questions` map holding one `choice` question keyed `lane` whose `criteria` map the configured lane candidates.
-The request contains only the task type, a title and description, the tracked file count, and those configured lane candidates.
-That redacted projection is serialized into `state` - the text the model reasons over - not into the question's `instructions`.
-The title and description come from the brief's first heading and body text unless supplied directly, and they are redacted before truncation to 240 characters.
-Redaction covers secret-shaped values, URL credentials, and harness and model identifiers, including the names of the lanes in `config/crew-dispatch.json`; the file count is the number of `git ls-files` entries.
-The recommendation is read back from `answers.lane`: a `choice` naming a configured lane is recorded with its `confidence` and its lane-scoped `probabilities`, while any other choice is `no_lane_match`.
+The request body is the documented shape: a fixed `model` (`jev-latest`), a `state` object, and a `questions` map keyed by question.
+`state` carries `task` (`type`, `title`, `description`) and `repository` (`tracked_files`, the top-level directories in `top_level`, `has_tests`, `language`), and it is the material the model reasons over rather than text glued into an instruction.
+The request contains only those task and repository facts and the configured lane candidates - nothing about the operator, the machine, or the host.
+The title and description come from the brief's first heading and body text unless supplied directly, and every task and top-level string is redacted before truncation to 240 characters.
+Redaction covers secret-shaped values, URL credentials, and harness and model identifiers, including the names of the lanes in `config/crew-dispatch.json`; the repository facts come from one bounded `git ls-files` read of the project.
+Every configured lane's criteria carry `fits` and `not_for` descriptions - the lane's own configured description when it has one, otherwise text derived from its configured effort - plus a reserved `other` option so a mismatch is an answer instead of a forced choice.
+A second `noul` question records whether the task needs design decisions that a fixed plan cannot settle; the client records that judgment and never lets it select the lane.
+The recommendation is read back from `answers.lane`: a `choice` naming a configured lane is recorded with its `confidence`, the full `probabilities` map, the per-question answers, and the `model` version the service reported, while `other` or any other choice is `no_lane_match`.
+A `confidence` below the client's documented threshold (0.5) also records `low_confidence: true`; a low-confidence answer is still recorded and still has no authority, and it is never presented as a confident recommendation.
+`bin/sq-dispatch-log.sh` accepts only that evidence allowlist for a recommendation row, so no other service output reaches `dispatch.jsonl`.
 `TYPESAFE_API_KEY` is read only from the environment and is sent only as the bearer credential; it is never passed in argv, written to a log or to `dispatch.jsonl`, or stored in a fixture.
 The client contacts only the fixed service URL (a loopback-only `SQUAD_JEV_URL_OVERRIDE` exists for tests), refuses redirects, and enforces a 3-second deadline.
 Every failure is recorded as `status: "unavailable"` with one non-sensitive `reason`: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `answer_missing`, `no_lane_match`, or `service_error`.

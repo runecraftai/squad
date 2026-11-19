@@ -357,12 +357,21 @@ Ele é desabilitado por padrão e habilitado por projeto: `config/jev-dispatch.j
 Um arquivo ausente, malformado ou um projeto não listado significa que nenhuma requisição é enviada.
 Uma recomendação nunca altera o dispatch: `bin/sq-jev-call.py` a acrescenta em `data/<id>/dispatch.jsonl` como um evento `recommendation` rotulado, por meio de `bin/sq-dispatch-log.sh`; `sq-spawn.sh` descarta a saída do cliente, e nenhum harness, modelo, esforço, conta ou script é selecionado a partir dela.
 O roteamento de `config/crew-dispatch.json` não é alterado pelo Jev.
-A requisição contém apenas o tipo da tarefa, um título e uma descrição, a contagem de arquivos rastreados e os candidatos de lane configurados.
-O título e a descrição vêm do primeiro cabeçalho e do texto do corpo do brief, a menos que sejam informados diretamente, e são redigidos antes de serem truncados em 240 caracteres.
-A redação cobre valores com formato de segredo, credenciais em URLs e identificadores de harness e modelo, incluindo os nomes das lanes em `config/crew-dispatch.json`; a contagem de arquivos é o número de entradas de `git ls-files`.
+A requisição contém apenas o tipo da tarefa, um título e uma descrição, os fatos do repositório e os candidatos de lane configurados.
+O corpo da requisição é a forma documentada: um `model` fixo (`jev-latest`), um objeto `state` e um mapa `questions` indexado por pergunta.
+O `state` carrega `task` (`type`, `title`, `description`) e `repository` (`tracked_files`, os diretórios de topo em `top_level`, `has_tests`, `language`), e é o material sobre o qual o modelo raciocina, em vez de texto colado numa instrução.
+A requisição não leva nada sobre o operador, a máquina ou o host.
+O título e a descrição vêm do primeiro cabeçalho e do texto do corpo do brief, a menos que sejam informados diretamente, e todo texto de tarefa e de topo é redigido antes de ser truncado em 240 caracteres.
+A redação cobre valores com formato de segredo, credenciais em URLs e identificadores de harness e modelo, incluindo os nomes das lanes em `config/crew-dispatch.json`; os fatos do repositório vêm de uma única leitura limitada de `git ls-files`.
+Os critérios de cada lane configurada trazem descrições `fits` e `not_for` - a descrição configurada da própria lane quando ela existe, caso contrário texto derivado do seu esforço configurado - mais uma opção reservada `other`, para que uma incompatibilidade seja uma resposta em vez de uma escolha forçada.
+Uma segunda pergunta `noul` registra se a tarefa precisa de decisões de projeto que um plano fixo não resolve; o cliente registra esse julgamento e nunca deixa que ele selecione a lane.
+A recomendação é lida de `answers.lane`: um `choice` que nomeia uma lane configurada é registrado com sua `confidence`, o mapa completo de `probabilities`, as respostas por pergunta e a versão de `model` informada pelo serviço, enquanto `other` ou qualquer outra escolha é `no_lane_match`.
+Uma `confidence` abaixo do limite documentado do cliente (0.5) também registra `low_confidence: true`; uma resposta de baixa confiança continua sendo registrada e continua sem autoridade, e nunca é apresentada como recomendação confiável.
+`bin/sq-dispatch-log.sh` aceita somente essa lista de evidências para uma linha de recomendação, de modo que nenhuma outra saída do serviço chega a `dispatch.jsonl`.
 `TYPESAFE_API_KEY` é lida somente do ambiente e enviada somente como credencial bearer; ela nunca é passada em argv, gravada em log ou em `dispatch.jsonl`, nem armazenada em fixture.
 O cliente contata apenas a URL fixa do serviço (um `SQUAD_JEV_URL_OVERRIDE` restrito a loopback existe para testes), recusa redirecionamentos e aplica um prazo de 3 segundos.
-Toda falha é registrada como `status: "unavailable"` com um `reason` não sensível: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `no_lane_match` ou `service_error`.
+Toda falha é registrada como `status: "unavailable"` com um `reason` não sensível: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `answer_missing`, `no_lane_match` ou `service_error`.
+`invalid_response` cobre um corpo sem mapa `answers` ou uma resposta que não é uma pergunta `choice`, e `answer_missing` cobre um mapa `answers` sem entrada `lane`, de modo que uma resposta inesperada nunca é um sucesso silencioso.
 `bin/sq-jev-call.py --dry-run --project <path> --task-type <type>` imprime o corpo exato da requisição sem o opt-in, a chave ou uma chamada de rede.
 `tests/sq-jev-call.test.sh` e `tests/sq-jev-shadow-dispatch.test.sh` verificam o cliente e a garantia de não influência offline; nenhum deles chama o serviço real.
 

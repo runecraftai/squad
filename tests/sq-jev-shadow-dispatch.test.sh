@@ -122,7 +122,7 @@ PY
 test_recommendation_never_changes_actual_dispatch() {
   local baseline shadow case_base case_shadow home_shadow proj_shadow proj_real
   local out_shadow jev_port status requests
-  local reply='{"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.9,"probabilities":{"grok/grok-4":0.9,"codex/gpt-5":0.1}}}}'
+  local reply='{"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.9,"probabilities":{"grok/grok-4":0.9,"codex/gpt-5":0.1}}},"model":"jev-2026-05"}'
   baseline=$(make_case shadow-off)
   shadow=$(make_case shadow-on)
   IFS='|' read -r case_base _ <<< "$baseline"
@@ -158,13 +158,26 @@ request = json.loads(open(sys.argv[1]).readline())
 assert request["auth"] == "Bearer runtime-test-key"
 assert set(request["body"]) == {"state", "model", "questions"}
 assert request["body"]["model"] == "jev-latest"
-question = request["body"]["questions"]["lane"]
-assert question["type"] == "choice"
-assert question["criteria"] == {"codex/gpt-5": "codex/gpt-5", "grok/grok-4": "grok/grok-4"}
-projection = json.loads(request["body"]["state"])
-assert set(projection) == {"task_type", "title", "description", "file_count"}
-assert "codex/gpt-5" not in json.dumps(projection) and "grok/grok-4" not in json.dumps(projection)
-assert "codex/gpt-5" not in question["instructions"] and "grok/grok-4" not in question["instructions"]
+state = request["body"]["state"]
+assert set(state) == {"task", "repository"}
+assert set(state["task"]) == {"type", "title", "description"}
+repository = state["repository"]
+assert set(repository) == {"tracked_files", "top_level", "has_tests", "language"}
+assert isinstance(repository["tracked_files"], int) and repository["tracked_files"] >= 1
+assert repository["top_level"] == [] and repository["has_tests"] is False and repository["language"] is None
+questions = request["body"]["questions"]
+assert set(questions) == {"lane", "needs_design_decision"}
+assert questions["lane"]["type"] == "choice"
+assert questions["needs_design_decision"]["type"] == "noul"
+criteria = questions["lane"]["criteria"]
+assert set(criteria) == {"codex/gpt-5", "grok/grok-4", "other"}
+for lane in ("codex/gpt-5", "grok/grok-4"):
+    assert set(criteria[lane]) == {"fits", "not_for"}
+    assert criteria[lane]["fits"] and criteria[lane]["fits"] != lane
+assert criteria["grok/grok-4"] != criteria["codex/gpt-5"]
+assert criteria["other"]["fits"] == "none of these lanes fits the task"
+assert "codex/gpt-5" not in questions["lane"]["instructions"]
+assert "grok/grok-4" not in questions["lane"]["instructions"]
 PY
 
   diff <(dispatch_rows "$case_base/home/data/$ID/dispatch.jsonl") \
@@ -179,6 +192,12 @@ recommendations = [row for row in rows if row.get("label") == "recommendation"]
 assert len(recommendations) == 1
 assert recommendations[0]["choice"] == "grok/grok-4"
 assert recommendations[0]["event"] == "recommendation"
+assert recommendations[0]["confidence"] == 0.9
+assert recommendations[0]["probabilities"] == {"grok/grok-4": 0.9, "codex/gpt-5": 0.1}
+assert recommendations[0]["model"] == "jev-2026-05"
+assert set(recommendations[0]["answers"]) == {"lane"}
+assert recommendations[0]["answers"]["lane"]["choice"] == "grok/grok-4"
+assert "low_confidence" not in recommendations[0]
 assert {row.get("event") for row in rows if row.get("label") != "recommendation"} == {"decision", "spawn"}
 PY
   pass "a Jev recommendation for another lane leaves the actual dispatch unchanged and is recorded separately"

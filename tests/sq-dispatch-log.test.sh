@@ -454,3 +454,32 @@ derived_case released-blocked-only 'blocked: quota exhausted\n' released quota
 derived_case released-paused-only 'paused: policy hold\n' released guard
 derived_case landed-clean 'done: PR ok\n' landed none
 pass 'derived failure classes take the last done or failed line, and blocked or paused lines only when none exists'
+
+# A recommendation row is the Jev client's only durable output, so the writer keeps
+# its evidence allowlist and refuses anything outside it instead of storing it.
+dir="$TMP_ROOT/recommendation"
+mkdir -p "$dir/data"
+recommend() { # <id> <json>
+  SQUAD_BASE="$dir" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_RECOMMENDATION_JSON="$2" \
+    "$ROOT/bin/sq-dispatch-log.sh" "$1" recommendation >/dev/null 2>&1
+}
+recommend rec-good '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61,"codex/gpt-5":0.39},"low_confidence":true,"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}'
+python3 - "$dir/data/rec-good/dispatch.jsonl" <<'PY' || fail 'recommendation evidence row was not written as declared'
+import json, sys
+row = json.loads(open(sys.argv[1]).readline())
+assert set(row) == {"timestamp", "id", "event", "label", "status", "choice", "confidence",
+                    "probabilities", "low_confidence", "answers", "model"}, row
+assert row["confidence"] == 0.22 and row["low_confidence"] is True and row["model"] == "jev-2026-05"
+assert row["probabilities"] == {"grok/grok-4": 0.61, "codex/gpt-5": 0.39}
+assert row["answers"]["lane"]["choice"] == "grok/grok-4"
+assert row["answers"]["needs_design_decision"]["answer"] is False
+PY
+recommend rec-freenotes '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","answers":{"lane":{"notes":"arbitrary service text"}}}'
+recommend rec-badflag '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","low_confidence":"yes"}'
+recommend rec-badmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"sk-abcd1234567890"}'
+recommend rec-reason '{"label":"recommendation","status":"unavailable","reason":"answer_missing"}'
+for refused in rec-freenotes rec-badflag rec-badmodel; do
+  [ ! -e "$dir/data/$refused/dispatch.jsonl" ] || fail "stored out-of-allowlist recommendation: $refused"
+done
+assert_grep '"reason":"answer_missing"' "$dir/data/rec-reason/dispatch.jsonl" 'unavailable recommendation reason lost'
+pass 'recommendation rows carry only the evidence allowlist, and refused evidence writes nothing'
