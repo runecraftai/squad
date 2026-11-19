@@ -55,6 +55,14 @@
 #          "fob get --lease" support.
 #          workmux-sidebar is MISSING on tmux backends while the vendored
 #          sidebar binary (packages/operation-board/sidebar) is not built.
+#          The optional Pi ask-user dialog extension is offered only to a Pi
+#          primary (pi, pi-signed): installed reports one BOOTSTRAP_INFO fact,
+#          absent reports one MISSING line naming the exact
+#          "pi install npm:@juicesharp/rpiv-ask-user-question" command and the
+#          fresh Pi session it needs. It never installs anything itself, is
+#          skipped when pi is not on PATH, and every other harness stays silent
+#          (docs/decision-card-pi-recipe.md owns the mapping it enables).
+#          Set SQUAD_PI_ASK_USER_OFFER=0 to silence it.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
 #          SQ_REPORT_MIN below; the per-tool owners point there. An installed
 #          build below its floor reports MISSING, so the operator
@@ -812,6 +820,12 @@ TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 GH_AXI_MIN=0.1.0
 SQ_REPORT_MIN=0.1.0
 
+# The optional Pi ask-user dialog extension offered to a Pi primary. Squad's prose
+# block stays the only canonical decision shape; this extension only presents a card
+# as a native dialog (docs/decision-card-pi-recipe.md), so it is offered, never
+# required, and never installed by this script.
+PI_ASK_USER_EXTENSION="@juicesharp/rpiv-ask-user-question"
+
 fob_supports_lease() {
   fob get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
 }
@@ -1053,6 +1067,27 @@ fi
 
 # Local detection: presence, version floors, and configuration. Nothing here
 # leaves this machine, so it stays on the session-start critical path.
+# Offer the optional Pi ask-user dialog extension to a Pi primary only. This is a
+# detect-only read (pi's own installed-package listing): it never installs anything,
+# never blocks bootstrap when pi is absent, and says nothing on any other harness.
+pi_ask_user_offer() {
+  local harness listing
+  [ "${SQUAD_PI_ASK_USER_OFFER:-1}" != 0 ] || return 0
+  harness=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || true)
+  case "$harness" in
+    pi|pi-signed) ;;
+    *) return 0 ;;
+  esac
+  command -v pi >/dev/null 2>&1 || return 0
+  listing=$(pi list 2>/dev/null || true)
+  case "$listing" in
+    *"npm:$PI_ASK_USER_EXTENSION"*)
+      echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed" ;;
+    *)
+      echo "MISSING: pi extension $PI_ASK_USER_EXTENSION (install: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)" ;;
+  esac
+}
+
 detect_local_tools() {
   if [ "$BACKEND_VALID" -eq 0 ]; then
     echo "BACKEND_INVALID: $BACKEND (known: $SQUAD_BACKEND_KNOWN)"
@@ -1099,6 +1134,7 @@ detect_local_tools() {
   if command -v sq-tasks >/dev/null 2>&1 && ! fm_tasks_axi_compatible; then
     echo "MISSING: sq-tasks (install: $(install_cmd sq-tasks))"
   fi
+  pi_ask_user_offer
 }
 
 detect_local_config() {

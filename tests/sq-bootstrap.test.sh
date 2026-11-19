@@ -50,7 +50,12 @@ export SQUAD_BACKEND_CMUX_BUNDLE_BIN="$TMP_ROOT/no-bundled-cmux"
 # /usr/bin), so the probed tools are hidden from the base and each case supplies
 # the ones it means to be present through its own fakebin.
 BASE_PATH=$(path_farm_without "$TMP_ROOT/base-path" "${SQUAD_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" \
-  node gh jq tmux herdr zellij cmux tuios orca fob drill sq-gh sq-browser sq-report sq-quota sq-tasks)
+  node gh jq tmux herdr zellij cmux tuios orca fob drill sq-gh sq-browser sq-report sq-quota sq-tasks pi)
+
+# The optional Pi ask-user dialog offer is pinned by its own case below; every other
+# case here compares exact bootstrap output, so the offer stays silenced by default
+# instead of being neutralized in each case's environment.
+export SQUAD_PI_ASK_USER_OFFER=0
 
 # Hermetic runtime-backend detection. These cases pin the backend per-home via
 # config/backend; the dev shell's ambient runtime markers ($TMUX inside tmux,
@@ -1521,3 +1526,74 @@ test_sandbox_gc_skipped_without_lock() {
 }
 
 test_sandbox_gc_skipped_without_lock
+
+# --- the optional Pi ask-user dialog extension offer -------------------------
+# Bootstrap offers the optional Pi dialog extension to a Pi primary only: absent
+# reports one actionable line naming the exact `pi install` command and the fresh
+# Pi session it needs, installed reports one no-action fact, and no other harness
+# and no missing pi binary ever produces a line. Nothing here installs anything, so
+# the fake pi fails the case if bootstrap calls it with anything but `list`.
+install_offer_fake_pi() {  # <fakebin> <installed 1/0> <log>
+  local fakebin=$1 installed=$2 log=$3
+  cat > "$fakebin/pi" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> '$log'
+case "\${1:-}" in
+  list)
+    if [ '$installed' = 1 ]; then
+      printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question'
+    fi
+    exit 0 ;;
+  install|remove|uninstall|update)
+    echo "error: bootstrap must never run pi \$1" >&2
+    exit 9 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/pi"
+}
+
+test_pi_ask_user_offer() {
+  local label harness installed mode expect case_dir fakebin log out n
+  local -a marker=()
+  n=0
+  while IFS='^' read -r label harness installed mode expect; do
+    [ -n "$label" ] || continue
+    n=$((n + 1))
+    case_dir="$TMP_ROOT/offer-$n"
+    mkdir -p "$case_dir/home/config"
+    printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+    fakebin=$(make_fake_toolchain "$case_dir")
+    log="$case_dir/pi.log"
+    : > "$log"
+    install_offer_fake_pi "$fakebin" "$installed" "$log"
+    case "$harness" in
+      pi) marker=(PI_CODING_AGENT=true) ;;
+      pi-signed) marker=(PI_CODING_AGENT=true SQUAD_PI_HARNESS=pi-signed) ;;
+      claude) marker=(CLAUDECODE=1) ;;
+      no-pi) marker=(PI_CODING_AGENT=true); rm -f "$fakebin/pi" ;;
+    esac
+    out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
+      "${marker[@]}" SQUAD_PI_ASK_USER_OFFER=1 SQUAD_FAKE_FOB_LEASE_HELP=1 \
+      PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+      "$ROOT/bin/sq-bootstrap.sh")
+    case "$mode" in
+      empty)
+        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
+      exact)
+        [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
+    esac
+    if [ -f "$fakebin/pi" ] && grep -qv '^list$' "$log"; then
+      fail "$label: bootstrap ran pi with more than its listing: $(cat "$log")"
+    fi
+  done <<'ROWS'
+pi primary is offered the exact install command^pi^0^exact^MISSING: pi extension @juicesharp/rpiv-ask-user-question (install: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)
+an installed extension is one no-action fact^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed
+pi-signed is offered too^pi-signed^0^exact^MISSING: pi extension @juicesharp/rpiv-ask-user-question (install: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)
+another harness is never offered it^claude^0^empty^
+a pi primary without a pi binary stays silent^no-pi^0^empty^
+ROWS
+  pass "bootstrap offers the optional Pi ask-user dialog extension to a Pi primary only"
+}
+
+test_pi_ask_user_offer

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "reserved-label",
+  "title": "Reserved Label",
+  "question": "Which row should be taken?",
+  "options": [
+    {
+      "id": "next",
+      "label": "Next",
+      "description": "The dialog reserves this label"
+    },
+    {
+      "id": "skip",
+      "label": "Skip Ahead",
+      "description": "Move past this step"
+    }
+  ],
+  "default_option_id": "skip"
+}
