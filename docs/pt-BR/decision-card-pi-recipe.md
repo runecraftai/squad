@@ -54,7 +54,7 @@ Ele valida o cartão por `bin/sq-ask.sh --validate` primeiro, então o esquema m
 | Cartão | Diálogo |
 |--------|---------|
 | `question` | `questions[].question`, depois uma linha `F<n> - <id> <text>` por finding e, por fim, uma linha `Context: <context>` quando o cartão tem contexto |
-| `title` | `questions[].header`, cortado no limite de 16 caracteres no último espaço do texto retido quando sobrar um, senão no próprio limite |
+| `title` | `questions[].header`, sem os espaços em branco iniciais e cortado no limite de 16 caracteres, sem cortar uma palavra quando possível |
 | `options[].label` | `options[].label`, inalterado |
 | `options[].description` | `options[].description`; a opção recomendada ganha um ` (recommended)` no final, para que a recomendação apareça em sua própria linha |
 | `allow_free_text` | não é criado: a linha de texto livre do próprio diálogo é a saída `O0` |
@@ -69,23 +69,25 @@ Um cartão é uma pergunta de diálogo, porque uma pergunta comporta 2-4 opçõe
 Um mapeamento dividido não é usado para este caminho de payload: a extensão responde uma entrada por pergunta, então um cartão espalhado por duas ou mais perguntas voltaria como várias respostas para a mesma decisão e só poderia ser registrado adivinhando uma escolha.
 Recusar o cartão mantém o bloco de prosa autoritativo exatamente para os cartões que precisam de mais de uma pergunta, em vez de deixá-los com um diálogo cuja resposta não pode ser mesclada.
 
-Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, um cartão com mais de quatro opções qualquer descrição de opção ausente, nula ou em branco, ou qualquer rótulo ou descrição de opção que termine em `(recommended)` depois de remover os espaços em branco finais, inclusive na própria opção recomendada.
+Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, um cartão com mais de quatro opções, qualquer descrição de opção ausente, nula ou em branco, ou qualquer rótulo ou descrição de opção que termine em `(recommended)` depois de remover os espaços em branco finais, inclusive na própria opção recomendada. A verificação considera apenas o marcador em minúsculas; uma variante como `(Recommended)` continua sendo exibida e não é recusada.
 
 ## Respostas
 
 O resultado do diálogo é a forma publicada da versão 2.15.0, cujos nomes de campo são definidos pela seção "Result" de `docs/tool-schema.md` do pacote: as entradas de `details.answers[]` carregam `questionIndex`, `question`, `kind` e `answer`, com os opcionais `notes`, `selected` e `preview`, e o resultado carrega `details.cancelled`.
 O mapeamento confere `questionIndex` e o `question` devolvido com o diálogo indicado por `--dialog` antes de resolver `kind` e `answer`. Toda pergunta termina com o ID do cartão e uma impressão digital determinística de todo o cartão validado. Se a pergunta devolvida não corresponder a essa versão do cartão, o comando sai com código 4, mesmo que o ID e o rótulo escolhido permaneçam iguais.
 
-Para recuperar o resultado, use o comando `/session` do Pi para localizar o arquivo JSONL da sessão atual. No ramo atual da conversa, obtenha o `id` da entrada `toolCall` no conteúdo da mensagem do assistente que chamou `ask_user_question`. Localize a entrada da sessão com `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"` e `message.toolCallId` igual a esse ID. Passe o objeto `message` inteiro, incluindo `details`, como `--result`, sem a entrada externa da sessão. O `content` apresentado ao modelo não basta e não deve ser usado para reconstruir `details`. Se o resultado estruturado correspondente não estiver disponível (por exemplo, se a sessão não foi salva), siga o caminho de prosa canônico abaixo.
+Para recuperar o resultado, use o comando `/session` do Pi para localizar o arquivo JSONL da sessão atual. No ramo atual da conversa, obtenha o `id` e o objeto `arguments` da entrada `toolCall` no conteúdo da mensagem do assistente que chamou `ask_user_question`. Passe os argumentos salvos como `--call`; não os substitua por argumentos recém-gerados. Localize a entrada da sessão com `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"` e `message.toolCallId` igual a esse ID. Passe o objeto `message` inteiro, incluindo `details`, como `--result`, sem a entrada externa da sessão. O `content` apresentado ao modelo não basta e não deve ser usado para reconstruir `details`. Se os argumentos salvos ou o resultado estruturado correspondente não estiverem disponíveis (por exemplo, se a sessão não foi salva), siga o caminho de prosa canônico abaixo.
 
-Use `--resolve` para registrar a decisão em um único comando. Ele converte o resultado para a gramática de resposta em prosa e executa `bin/sq-ask.sh --answer` com os mesmos bytes do cartão que passaram pela verificação, devolvendo a saída e o código de saída do parser sem alterações:
+Use `--resolve` para registrar a decisão em um único comando. Depois de conferir a pergunta devolvida com a versão do cartão, ele gera novamente o payload do diálogo e o compara com os argumentos salvos como JSON: a ordem das chaves e a formatação não importam, mas todos os campos e itens dos arrays devem corresponder. Se houver divergência, o comando sai com código 2 e o erro `--call arguments do not match`; siga o caminho de prosa canônico. Se houver correspondência, ele executa `bin/sq-ask.sh --answer` com os mesmos bytes do cartão que passaram pelas verificações e devolve a saída e o código de saída do parser sem alterações:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
 # uma chamada ask_user_question por elemento do array impresso
-bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<tool result json>' < card.json
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<argumentos salvos>' --result '<resultado da ferramenta>' < card.json
 # vários cartões respondidos em uma chamada:
-bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
+bin/sq-card-pi-dialog.sh --resolve \
+  --dialog 1 --call '<primeiros argumentos>' --result '<primeiro resultado>' \
+  --dialog 2 --call '<segundos argumentos>' --result '<segundo resultado>' < card.json
 ```
 
 No script de mapeamento, `--answer` imprime apenas o fragmento com os códigos (como `d1 o2`); não resolva esse fragmento com um arquivo de cartão lido separadamente.

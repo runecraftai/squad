@@ -10,8 +10,8 @@
 #
 # Usage: echo '<card json>' | bin/sq-card-pi-dialog.sh [--payload]
 #        bin/sq-card-pi-dialog.sh '<card json>' [--payload]
-#        echo '<card json>' | bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<tool result json>' \
-#          [--dialog 2 --result '<tool result json>' ...]
+#        echo '<card json>' | bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<tool arguments json>' --result '<tool result json>' \
+#          [--dialog 2 --call '<tool arguments json>' --result '<tool result json>' ...]
 #
 # Input is one card object or a JSON array of cards, validated first by
 # bin/sq-ask.sh --validate so the schema keeps exactly one owner.
@@ -20,12 +20,13 @@
 #   --payload      Print the ask_user_question payload(s) as a JSON array, one entry
 #                  per dialog, in card order; each entry is one tool call. The default.
 #   --resolve      Use this mode to record a dialog decision. It checks the echoed
-#                  question against the card snapshot, passes the derived answer and
-#                  the same card bytes to bin/sq-ask.sh --answer, and returns that
-#                  parser's output and exit code unchanged.
+#                  question against the card snapshot and requires each --call to be
+#                  the exact ask_user_question arguments for its --dialog (exit 2
+#                  on mismatch). It passes the derived answer and the same card bytes
+#                  to bin/sq-ask.sh --answer and returns its output and exit code unchanged.
 #   --answer       Print only the answer fragment, such as "d1 o2" or 'd1 o0 "ship it"'.
-#                  Like --resolve, this accepts repeated --dialog/--result pairs to
-#                  answer several cards in one call; the pairs are merged.
+#                  Both modes accept repeated --dialog/--result pairs to answer several
+#                  cards in one call; --resolve also needs one --call per pair, in order.
 #                  Both modes take the whole tool result, never a bare answers array:
 #                  only details.cancelled proves the dialog was not cancelled.
 #   --help         Show this help.
@@ -35,7 +36,7 @@
 #                    and finally one "Context: <context>" line when the card has context.
 #                    The published payload has no notes field, so context and findings
 #                    ride in the question text rather than being dropped.
-#   title         -> questions[].header, cut to the 16-character payload limit
+#   title         -> questions[].header, leading whitespace removed before truncation to 16 characters
 #   label         -> options[].label, unchanged
 #   description   -> options[].description; the recommended option gains a trailing
 #                    " (recommended)", so the recommendation is visible on its own row
@@ -62,6 +63,7 @@
 # a card with allow_free_text disabled (the built-in free-text row cannot be hidden),
 # a card with any missing, null, or blank option description, or any option label
 # or description ending in "(recommended)" after trimming trailing whitespace.
+# The marker check is lowercase-only: a lookalike such as "(Recommended)" still renders.
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
 # the canonical shape. A result without details.cancelled, or a cancelled one (Esc), is
 # never converted into an answer: it exits 4, so nothing is recorded.
@@ -100,6 +102,7 @@ def printable(s):
 
 
 def header_for(title):
+    title = title.lstrip()
     head = title[:HEADER_MAX].rstrip()
     if len(title) > HEADER_MAX and " " in head:
         head = head[:head.rfind(" ")].rstrip() or title[:HEADER_MAX]
@@ -140,26 +143,44 @@ def option_rows(chunk, default_id):
     return rows
 
 
-def build(cards):
-    """Return (dialogs, origin); origin[d] = the card index behind dialog d."""
-    dialogs, origin = [], []
+def snapshot_questions(cards):
     finding_code = 0
-    for index, card in enumerate(cards):
-        where = "card %d:" % (index + 1) if len(cards) > 1 else "card:"
+    for card in cards:
         findings = [(finding_code + n, f) for n, f in enumerate(card.get("findings") or [], 1)]
         finding_code += len(findings)
+        yield question_for(card, findings)
+
+
+def build(cards, questions):
+    dialogs = []
+    for index, (card, question) in enumerate(zip(cards, questions)):
+        where = "card %d:" % (index + 1) if len(cards) > 1 else "card:"
+        count = len(card["options"])
+        if count < 2:
+            raise Invalid("a card needs at least 2 options for a dialog question; card '%s' has %d" % (card["id"], count))
+        if not card.get("allow_free_text", True):
+            raise Invalid("card '%s' has allow_free_text=false; the dialog always shows a free-text row"
+                          % card["id"])
+        for option in card["options"]:
+            description = (option.get("description") or "").rstrip()
+            if not description:
+                raise Invalid("card '%s' option '%s' requires a non-blank description for the dialog"
+                              % (card["id"], option["id"]))
+            for field, text in (("label", option["label"].rstrip()), ("description", description)):
+                if text.endswith(MARK):
+                    raise Invalid("card '%s' option '%s' %s may not end with %s after trimming trailing whitespace"
+                                  % (card["id"], option["id"], field, MARK))
         check_labels(card, where)
-        if len(card["options"]) > MAX_OPTIONS:
+        if count > MAX_OPTIONS:
             raise Invalid("%s card '%s' has %d options and needs more than one dialog question; "
                           "this mapping never splits a card, so the prose block stays authoritative"
-                          % (where, card["id"], len(card["options"])))
+                          % (where, card["id"], count))
         dialogs.append({"questions": [{
-            "question": question_for(card, findings),
+            "question": question,
             "header": header_for(card["title"]),
             "options": option_rows(card["options"], card["default_option_id"]),
         }]})
-        origin.append(index)
-    return dialogs, origin
+    return dialogs
 
 
 def result_answer(payload, number):
@@ -184,26 +205,38 @@ def result_answer(payload, number):
     return answers[0]
 
 
-def answer_text(cards, pairs):
+def answer_text(cards, submissions):
     """Merge the dialogs of one or more cards into exactly one fragment per decision."""
-    dialogs, origin = build(cards)
-    pieces, answered = [], set()
-    for dialog_index, payload in pairs:
-        if dialog_index < 1 or dialog_index > len(dialogs):
-            raise Invalid("--dialog %d is out of range: the card renders %d dialog(s)" % (dialog_index, len(dialogs)))
-        card_index = origin[dialog_index - 1]
-        card, number = cards[card_index], card_index + 1
+    questions = list(snapshot_questions(cards))
+    answers = {}
+    for number, payload, call in submissions:
+        if not 1 <= number <= len(questions):
+            raise Invalid("--dialog %d is out of range: the card renders %d dialog(s)" % (number, len(questions)))
         answer = result_answer(payload, number)
         if not isinstance(answer, dict):
             raise Unusable("each answer must be an object")
         position = answer.get("questionIndex")
         if not isinstance(position, int) or isinstance(position, bool) or position != 0:
-            raise Unusable("questionIndex %r is not a question of dialog %d" % (position, dialog_index))
-        if card_index in answered:
+            raise Unusable("questionIndex %r is not a question of dialog %d" % (position, number))
+        if number in answers:
             raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
-        if answer.get("question") != dialogs[dialog_index - 1]["questions"][position]["question"]:
-            raise Unusable("the returned question does not match dialog %d's card snapshot" % dialog_index)
-        answered.add(card_index)
+        if answer.get("question") != questions[number - 1]:
+            raise Unusable("the returned question does not match dialog %d's card snapshot" % number)
+        answers[number] = answer
+
+    dialogs = build(cards, questions)
+    for number, _, call in submissions:
+        if call is not None:
+            try:
+                arguments = json.loads(call)
+            except ValueError:
+                raise Invalid("--call for dialog %d is not valid JSON" % number)
+            if arguments != dialogs[number - 1]:
+                raise Invalid("--call arguments do not match the generated payload for dialog %d" % number)
+
+    pieces = []
+    for number, answer in answers.items():
+        card = cards[number - 1]
         kind = answer.get("kind")
         if kind == "option":
             label = answer.get("answer")
@@ -211,7 +244,7 @@ def answer_text(cards, pairs):
                 raise Unusable("an option answer must name the chosen label as a string")
             match = [n for n, option in enumerate(card["options"]) if option["label"] == label]
             if len(match) != 1:
-                raise Unusable("option answer %r does not name exactly one option of dialog %d" % (label, dialog_index))
+                raise Unusable("option answer %r does not name exactly one option of dialog %d" % (label, number))
             pieces.append("d%d o%d" % (number, match[0] + 1))
         elif kind == "custom":
             text = answer.get("answer")
@@ -240,30 +273,13 @@ def main():
         sys.exit(2)
     data = json.loads(raw.decode("utf-8"))
     cards = data if isinstance(data, list) else [data]
-    for card in cards:
-        if len(card["options"]) < 2:
-            raise Invalid("a card needs at least 2 options for a dialog question; card '%s' has %d" % (card["id"], len(card["options"])))
     if mode == "payload":
-        for card in cards:
-            if not card.get("allow_free_text", True):
-                raise Invalid("card '%s' has allow_free_text=false; the dialog always shows a free-text row"
-                              % card["id"])
-            for option in card["options"]:
-                description = (option.get("description") or "").rstrip()
-                if not description:
-                    raise Invalid("card '%s' option '%s' requires a non-blank description for the dialog"
-                                  % (card["id"], option["id"]))
-                for field, text in (("label", option["label"].rstrip()), ("description", description)):
-                    if text.endswith(MARK):
-                        raise Invalid("card '%s' option '%s' %s may not end with %s after trimming trailing whitespace"
-                                      % (card["id"], option["id"], field, MARK))
-        print(json.dumps(build(cards)[0]))
+        print(json.dumps(build(cards, snapshot_questions(cards))))
     elif mode in ("answer", "resolve"):
         args = sys.argv[3:]
-        if not args or len(args) % 2:
-            raise Invalid("--%s needs one --dialog <n> and one --result <json> per answered dialog" % mode)
-        pairs = []
-        for offset in range(0, len(args), 2):
+        stride = 3 if mode == "resolve" else 2
+        submissions = []
+        for offset in range(0, len(args), stride):
             index = args[offset]
             try:
                 number = int(index) if index.isascii() and index.isdigit() else 0
@@ -275,14 +291,15 @@ def main():
                 payload = json.loads(args[offset + 1])
             except ValueError:
                 raise Unusable("--result is not valid JSON")
-            pairs.append((number, payload))
-        fragment = answer_text(cards, pairs)
+            call = args[offset + 2] if mode == "resolve" else None
+            submissions.append((number, payload, call))
+        fragment = answer_text(cards, submissions)
         if mode == "resolve":
             sys.exit(subprocess.run([ask, "--answer", fragment], input=raw).returncode)
         validation = canonical_check(ask, raw, "--answer", fragment)
         if validation.returncode:
             message = validation.stderr.decode("utf-8", errors="replace").strip()
-            if len(pairs) > 1:
+            if len(submissions) > 1:
                 message += "\nFor oversized batches, retry with fewer dialogs per call using the same cards."
             raise Unusable(message or "the canonical parser rejected the answer")
         print(fragment)
@@ -312,6 +329,7 @@ die() {
 MODE="payload"
 DIALOGS=()
 RESULTS=()
+CALLS=()
 POSITIONAL=()
 
 # --- parse args ---
@@ -324,6 +342,8 @@ while [[ $# -gt 0 ]]; do
     --dialog=*) DIALOGS+=("${1#--dialog=}"); shift ;;
     --result) [[ $# -ge 2 ]] || die 2 "--result needs a value"; RESULTS+=("$2"); shift 2 ;;
     --result=*) RESULTS+=("${1#--result=}"); shift ;;
+    --call) [[ $# -ge 2 ]] || die 2 "--call needs a value"; CALLS+=("$2"); shift 2 ;;
+    --call=*) CALLS+=("${1#--call=}"); shift ;;
     --help)
       sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# //' | sed 's/^#//'
       exit 0
@@ -338,19 +358,28 @@ if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
   die 2 "unexpected argument: ${POSITIONAL[1]} (the card is the only positional argument)"
 fi
 
-PAIRS=()
+if [[ "$MODE" == resolve ]]; then
+  [[ ${#DIALOGS[@]} -eq ${#CALLS[@]} ]] || die 2 "--resolve needs one --call <json> for every --dialog <n>"
+elif [[ ${#CALLS[@]} -ne 0 ]]; then
+  die 2 "--call is only used with --resolve"
+fi
+
+SUBMISSIONS=()
 if [[ "$MODE" == answer || "$MODE" == resolve ]]; then
   [[ ${#DIALOGS[@]} -gt 0 ]] || die 2 "--$MODE needs --dialog <n> and --result <json>"
   [[ ${#DIALOGS[@]} -eq ${#RESULTS[@]} ]] || die 2 "--$MODE needs one --result <json> for every --dialog <n>"
   for i in "${!DIALOGS[@]}"; do
-    PAIRS+=("${DIALOGS[$i]}" "${RESULTS[$i]}")
+    SUBMISSIONS+=("${DIALOGS[$i]}" "${RESULTS[$i]}")
+    if [[ "$MODE" == resolve ]]; then
+      SUBMISSIONS+=("${CALLS[$i]}")
+    fi
   done
 fi
 
 if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
-  printf '%s' "${POSITIONAL[0]}" | run_py "$MODE" ${PAIRS[@]+"${PAIRS[@]}"}
+  printf '%s' "${POSITIONAL[0]}" | run_py "$MODE" ${SUBMISSIONS[@]+"${SUBMISSIONS[@]}"}
 elif [[ -t 0 ]]; then
   die 2 "no decision card JSON on stdin or as argument"
 else
-  run_py "$MODE" ${PAIRS[@]+"${PAIRS[@]}"}
+  run_py "$MODE" ${SUBMISSIONS[@]+"${SUBMISSIONS[@]}"}
 fi

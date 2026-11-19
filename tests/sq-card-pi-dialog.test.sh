@@ -423,6 +423,15 @@ for default in ("wait", "now"):
         reason = f"{field} may not end with (recommended)".encode()
         assert refused.returncode == 2 and not refused.stdout and reason in refused.stderr, refused
 
+padded = copy.deepcopy(card)
+padded["title"] = " " * 16 + "Deploy Window"
+padded["options"][0]["description"] += " (Recommended)"
+presented = run(dialog, "--payload", data=json.dumps(padded).encode())
+assert presented.returncode == 0, presented
+question = json.loads(presented.stdout)[0]["questions"][0]
+assert question["header"] == "Deploy Window", question
+assert question["options"][0]["description"].endswith(" (Recommended)"), question
+
 cards = []
 for n in range(10):
     clone = copy.deepcopy(card)
@@ -455,7 +464,8 @@ assert correct.returncode == 0 and correct.stdout.strip() == b"d1 o1", correct
 
 with open(gate_fixture, "rb") as f:
     gate = json.load(f)
-gate_question = json.loads(run(dialog, data=json.dumps(gate).encode()).stdout)[0]["questions"][0]["question"]
+gate_call = json.loads(run(dialog, data=json.dumps(gate).encode()).stdout)[0]
+gate_question = gate_call["questions"][0]["question"]
 accept_result = result(gate_question, "option", gate["options"][1]["label"])
 reformatted = json.dumps(gate, sort_keys=True, indent=2).encode()
 correct = run(dialog, "--answer", "--dialog", "1", "--result", accept_result, data=reformatted)
@@ -465,11 +475,31 @@ stale = run(dialog, "--answer", "--dialog", "1", "--result", accept_result, data
 assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.stderr, stale
 
 canonical = run(ask, "--answer", "d1 o2", data=reformatted)
-resolved = run(dialog, "--resolve", "--dialog", "1", "--result", accept_result, data=reformatted)
+resolve_args = ["--resolve", "--dialog", "1", "--result", accept_result]
+call_args = ["--call", json.dumps(gate_call, sort_keys=True, indent=2)]
+resolved = run(dialog, *resolve_args, *call_args, data=reformatted)
 assert resolved.returncode == canonical.returncode == 0 and resolved.stdout == canonical.stdout, resolved
 assert json.loads(resolved.stdout)["selected_payload"]["action"] == "approve", resolved
-stale = run(dialog, "--resolve", "--dialog", "1", "--result", accept_result, data=json.dumps(gate).encode())
+stale = run(dialog, *resolve_args, *call_args, data=json.dumps(gate).encode())
 assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.stderr, stale
+
+swapped_call = copy.deepcopy(gate_call)
+first, second = swapped_call["questions"][0]["options"][:2]
+first["description"], second["description"] = second["description"], first["description"]
+mismatch = run(dialog, *resolve_args, "--call", json.dumps(swapped_call), data=reformatted)
+assert mismatch.returncode == 2 and not mismatch.stdout and b"--call arguments do not match" in mismatch.stderr, mismatch
+missing = run(dialog, *resolve_args, data=reformatted)
+assert missing.returncode == 2 and not missing.stdout and b"needs one --call" in missing.stderr, missing
+
+ineligible = json.loads(reformatted)
+ineligible["options"][0]["label"] = "Next"
+changed = json.dumps(ineligible).encode()
+assert run(ask, "--validate", data=changed).returncode == 0
+refused = run(dialog, "--payload", data=changed)
+assert refused.returncode == 2 and b"reserved dialog label" in refused.stderr, refused
+for mode, extra in [("--answer", []), ("--resolve", call_args)]:
+    stale = run(dialog, mode, *resolve_args[1:], *extra, data=changed)
+    assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.stderr, stale
 
 data = json.dumps(cards[:2]).encode()
 question = json.loads(run(dialog, data=data).stdout)[1]["questions"][0]["question"]
@@ -486,9 +516,14 @@ for n, entry in enumerate(payload, 1):
 merged = run(dialog, "--answer", *args, data=data)
 assert merged.returncode == 4 and not merged.stdout and b"fewer dialogs" in merged.stderr, merged
 canonical = run(ask, "--answer", " ".join('d%d o0 "%s"' % (n, "a" * 200) for n in range(1, 11)), data=data)
-resolved = run(dialog, "--resolve", *args, data=data)
+calls = [json.dumps(entry) for entry in payload]
+call_flags = [part for call in calls for part in ("--call", call)]
+resolved = run(dialog, "--resolve", *args, *call_flags, data=data)
 assert resolved.returncode == canonical.returncode == 4 and not resolved.stdout, resolved
 assert resolved.stderr == canonical.stderr, resolved
+resolved = run(dialog, "--resolve", *args[:8], *call_flags[:4], data=data)
+canonical = run(ask, "--answer", 'd1 o0 "' + "a" * 200 + '" d2 o0 "' + "a" * 200 + '"', data=data)
+assert resolved.returncode == canonical.returncode == 0 and resolved.stdout == canonical.stdout, resolved
 for batch in [args[:36], args[36:]]:
     fragment = run(dialog, "--answer", *batch, data=data)
     assert fragment.returncode == 0, fragment

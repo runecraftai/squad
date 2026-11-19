@@ -52,7 +52,7 @@ It validates the card through `bin/sq-ask.sh --validate` first, so the schema ke
 | Card | Dialog |
 |------|--------|
 | `question` | `questions[].question`, then one `F<n> - <id> <text>` line per finding and finally one `Context: <context>` line when the card has context |
-| `title` | `questions[].header`, cut to the 16-character limit at the last space of the retained text when it keeps one, otherwise at the limit |
+| `title` | `questions[].header`, with leading whitespace removed before cutting to the 16-character limit at a word boundary when possible |
 | `options[].label` | `options[].label`, unchanged |
 | `options[].description` | `options[].description`; the recommended option gains a trailing ` (recommended)` so the recommendation is visible on its own row |
 | `allow_free_text` | not authored: the dialog's own free-text row is the `O0` escape |
@@ -67,23 +67,25 @@ One card is one dialog question, because a question holds 2-4 options:
 A split mapping is not used for the payload path: the extension answers one entry per question, so a card spread over two or more questions would come back as several answers for the same decision and could only be recorded by guessing a pick.
 Refusing the card keeps the prose block authoritative for exactly the cards that need more than one question, instead of leaving them with a dialog whose answer cannot be merged.
 
-A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, a card with more than four options, any missing, null, or blank option description, or any option label or description ending in `(recommended)` after trimming trailing whitespace, including on the recommended option itself.
+A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, a card with more than four options, any missing, null, or blank option description, or any option label or description ending in `(recommended)` after trimming trailing whitespace, including on the recommended option itself. The marker check is lowercase-only; a lookalike such as `(Recommended)` still renders and is not rejected.
 
 ## Answers
 
 The dialog result is the published version 2.15.0 shape, whose field names are owned by the package's `docs/tool-schema.md` "Result" section: `details.answers[]` entries carry `questionIndex`, `question`, `kind`, and `answer`, with the optional `notes`, `selected`, and `preview`, and the result carries `details.cancelled`.
 The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. Every question ends with the card ID and a deterministic fingerprint of the full validated card. A returned question that does not match that snapshot exits 4, even if the card ID and chosen label are unchanged.
 
-To recover a result, use Pi's `/session` command to find the current session's JSONL file. In the current conversation branch, take the `id` from the assistant's `toolCall` content entry for the corresponding `ask_user_question` call. Find the session entry with `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"`, and `message.toolCallId` equal to that ID. Pass the entire `message` object, including `details`, as `--result`; do not pass the enclosing session entry. The model-facing `content` alone is not sufficient and must not be used to reconstruct `details`. If the matching structured result is unavailable (for example, the session was not saved), use the canonical prose path below.
+To recover a result, use Pi's `/session` command to find the current session's JSONL file. In the current conversation branch, take the `id` and the `arguments` object from the assistant's `toolCall` content entry for the corresponding `ask_user_question` call. Pass those saved arguments as `--call`; do not substitute newly generated arguments. Find the session entry with `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"`, and `message.toolCallId` equal to that ID. Pass the entire `message` object, including `details`, as `--result`; do not pass the enclosing session entry. The model-facing `content` alone is not sufficient and must not be used to reconstruct `details`. If the saved arguments or matching structured result are unavailable (for example, the session was not saved), use the canonical prose path below.
 
-Use `--resolve` to record the decision in one command. It converts the result to the prose answer grammar and runs `bin/sq-ask.sh --answer` with the exact card bytes that passed the snapshot check, returning the parser's output and exit code unchanged:
+Use `--resolve` to record the decision in one command. After checking the echoed question against the card snapshot, it regenerates the dialog payload and compares it to the saved arguments as JSON: key order and formatting do not matter, but all fields and array entries must match. A mismatch exits 2 with `--call arguments do not match`; use the canonical prose path instead. On a match, it runs `bin/sq-ask.sh --answer` with the exact card bytes that passed the checks, returning the parser's output and exit code unchanged:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
 # one ask_user_question call per element of the printed array
-bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<tool result json>' < card.json
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<saved arguments>' --result '<tool result>' < card.json
 # several cards answered in one call:
-bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
+bin/sq-card-pi-dialog.sh --resolve \
+  --dialog 1 --call '<first arguments>' --result '<first result>' \
+  --dialog 2 --call '<second arguments>' --result '<second result>' < card.json
 ```
 
 `--answer` on the mapping script only prints the code fragment (such as `d1 o2`); do not resolve that fragment against a separately read card file.
