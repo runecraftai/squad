@@ -64,7 +64,8 @@
 #          it never routes through the install consent path
 #          (.agents/skills/bootstrap-diagnostics owns that response), it never
 #          installs anything itself, and it is skipped when pi is not on PATH.
-#          Detection parses only the "User packages:" section of `pi list` and
+#          Detection runs `pi list --no-approve` so Pi cannot resolve or install
+#          packages during the probe. It parses only the "User packages:" section and
 #          stops at "Project packages:", so a project-scope install reads as
 #          absent rather than installed, a failed listing makes no claim at all,
 #          and every other harness stays silent
@@ -1090,7 +1091,7 @@ pi_ask_user_offer() {
     *) return 0 ;;
   esac
   command -v pi >/dev/null 2>&1 || return 0
-  listing=$(NO_COLOR=1 FORCE_COLOR=0 fm_run_timed 2 pi list </dev/null 2>/dev/null) || return 0
+  listing=$(NO_COLOR=1 FORCE_COLOR=0 fm_run_timed 2 pi list --no-approve </dev/null 2>/dev/null) || return 0
   if printf '%s\n' "$listing" | awk -v record="  npm:$PI_ASK_USER_EXTENSION" '
     $0 == "User packages:" { user=1; pending=0; next }
     /^[^[:space:]]/ { user=0 }

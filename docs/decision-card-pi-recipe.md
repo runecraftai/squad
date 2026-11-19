@@ -39,9 +39,9 @@ Two facts drive the mapping:
 `OPTIONAL` is an offer, not a missing required tool: it never routes through the required-tool install consent path, and it never blocks dispatch.
 `.agents/skills/bootstrap-diagnostics` owns how that line is handled.
 Installing is the commander's explicit action.
-Bootstrap reads `pi list` and nothing else: it never installs, never updates, stays silent on every other harness, and stays silent when `pi` is not on `PATH`.
-Detection accepts only the exact npm package record (with or without an `@version` suffix) followed by its installed-path line in the `User packages:` section of `pi list`. A project-scope install (`.pi/settings.json`, trust-gated) reads as absent, and bootstrap stays silent when the probe reports failure.
-The shared timeout helper's Perl fallback drops the child's signal bits, so a signal-terminated `pi list` can look successful and produce a false `OPTIONAL` offer. This is accepted because the offer requires consent and installs nothing.
+Bootstrap only runs `pi list --no-approve`: this bypasses project trust discovery so the probe cannot resolve or install packages. Bootstrap stays silent on every other harness and when `pi` is not on `PATH`.
+Detection accepts only the exact npm package record (with or without an `@version` suffix) followed by its installed-path line in the `User packages:` section. A project-scope install (`.pi/settings.json`, trust-gated) reads as absent, and bootstrap stays silent when the probe reports failure.
+The shared timeout helper's Perl fallback drops the child's signal bits, so a signal-terminated probe can look successful and produce a false `OPTIONAL` offer. This is accepted because the offer requires consent and installs nothing.
 `SQUAD_PI_ASK_USER_OFFER=0` silences the offer for a base that does not want it.
 
 ## The mapping
@@ -67,7 +67,7 @@ One card is one dialog question, because a question holds 2-4 options:
 A split mapping is not used for the payload path: the extension answers one entry per question, so a card spread over two or more questions would come back as several answers for the same decision and could only be recorded by guessing a pick.
 Refusing the card keeps the prose block authoritative for exactly the cards that need more than one question, instead of leaving them with a dialog whose answer cannot be merged.
 
-A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, a card with more than four options, or any missing, null, or blank option description.
+A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, a card with more than four options, any missing, null, or blank option description, or any option label or description ending in `(recommended)` after trimming trailing whitespace, including on the recommended option itself.
 
 ## Answers
 

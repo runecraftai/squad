@@ -378,10 +378,11 @@ PY
 }
 
 test_protocol_validation() {
-  python3 - "$DIALOG" "$ASK" "$PAIR" "$GATE" "$FIX/blank-description.json" <<'PY' || fail "dialog protocol validation failed"
+  python3 - "$DIALOG" "$ASK" "$PAIR" "$GATE" "$FIX/blank-description.json" \
+    "$FIX/recommended-marker.json" <<'PY' || fail "dialog protocol validation failed"
 import json, copy, subprocess, sys
 
-dialog, ask, fixture, gate_fixture, blank_fixture = sys.argv[1:]
+dialog, ask, fixture, gate_fixture, blank_fixture, marker_fixture = sys.argv[1:]
 with open(fixture, "rb") as f:
     raw = f.read()
 card = json.loads(raw)
@@ -405,6 +406,22 @@ for description in (blank["options"][1]["description"], "", None):
 del blank["options"][1]["description"]
 refused = run(dialog, "--payload", data=json.dumps(blank).encode())
 assert refused.returncode == 2 and not refused.stdout and b"non-blank description" in refused.stderr, refused
+
+with open(marker_fixture, "rb") as f:
+    marker = json.load(f)
+for default in ("wait", "now"):
+    marker["default_option_id"] = default
+    for field in ("description", "label"):
+        candidate = copy.deepcopy(marker)
+        if field == "label":
+            option = candidate["options"][1]
+            option["label"] = option["description"]
+            option["description"] = "Wait for legal"
+        data = json.dumps(candidate).encode()
+        assert run(ask, "--validate", data=data).returncode == 0
+        refused = run(dialog, "--payload", data=data)
+        reason = f"{field} may not end with (recommended)".encode()
+        assert refused.returncode == 2 and not refused.stdout and reason in refused.stderr, refused
 
 cards = []
 for n in range(10):

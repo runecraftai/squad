@@ -1535,30 +1535,27 @@ test_sandbox_gc_skipped_without_lock
 # scope `pi list` reports is detected, so a project-scope-only entry reads as
 # absent. The OPTIONAL shape keeps the offer out of the required-tool install path.
 # Nothing here installs anything, so the fake pi fails the case if bootstrap calls
-# it with anything but `list`.
+# it with anything but `list --no-approve`.
 install_offer_fake_pi() {  # <fakebin> <installed 1/0> <log> [exit-code-for-list] [scope]
   local fakebin=$1 installed=$2 log=$3 list_rc=${4:-0} scope=${5:-user}
   cat > "$fakebin/pi" <<SH
 #!/usr/bin/env bash
+if [ "\$#" -ne 2 ] || [ "\$1" != list ] || [ "\$2" != --no-approve ]; then
+  printf 'unexpected pi argv: %s\n' "\$*" >> '$log'
+  exit 9
+fi
 printf '%s\n' "\$*" >> '$log'
-case "\${1:-}" in
-  list)
-    if [ '$installed' = 1 ]; then
-      case '$scope' in
-        user) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' ;;
-        project) printf '%s\n' 'User packages:' '  npm:other' '    /fixture/user/node_modules/other' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
-        both) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question@2.15.0' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
-        lookalike) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question-extra' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question-extra' ;;
-        pathless) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '  npm:other' '    /fixture/user/node_modules/other' ;;
-        stalled) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question'; sleep 5 ;;
-      esac
-    fi
-    exit '$list_rc' ;;
-  install|remove|uninstall|update)
-    echo "error: bootstrap must never run pi \$1" >&2
-    exit 9 ;;
-esac
-exit 0
+if [ '$installed' = 1 ]; then
+  case '$scope' in
+    user) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' ;;
+    project) printf '%s\n' 'User packages:' '  npm:other' '    /fixture/user/node_modules/other' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
+    both) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question@2.15.0' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
+    lookalike) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question-extra' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question-extra' ;;
+    pathless) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '  npm:other' '    /fixture/user/node_modules/other' ;;
+    stalled) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question'; sleep 5 ;;
+  esac
+fi
+exit '$list_rc'
 SH
   chmod +x "$fakebin/pi"
 }
@@ -1587,18 +1584,18 @@ test_pi_ask_user_offer() {
       "${marker[@]}" SQUAD_PI_ASK_USER_OFFER=1 SQUAD_FAKE_FOB_LEASE_HELP=1 \
       PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
       "$ROOT/bin/sq-bootstrap.sh") || fail "$label: bootstrap failed"
-    if [ "$scope" = stalled ] && [ "$(< "$log")" != list ]; then
-      fail "$label: bootstrap did not run the probe exactly once"
-    fi
+    case "$harness" in
+      pi|pi-signed)
+        [ "$(< "$log")" = 'list --no-approve' ] || fail "$label: expected exactly one safe probe, got: $(< "$log")" ;;
+      *)
+        [ ! -s "$log" ] || fail "$label: unexpected Pi invocation: $(< "$log")" ;;
+    esac
     case "$mode" in
       empty)
         [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
       exact)
         [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
     esac
-    if [ -f "$fakebin/pi" ] && grep -qv '^list$' "$log"; then
-      fail "$label: bootstrap ran pi with more than its listing: $(cat "$log")"
-    fi
   done <<'ROWS'
 pi primary is offered the exact install command^pi^0^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^
 an installed extension is one no-action fact^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^

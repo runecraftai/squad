@@ -60,7 +60,8 @@
 # "Next"), a label shared by two options of the card, a card with a single option, and a
 # card with more than four options (it would need more than one dialog question),
 # a card with allow_free_text disabled (the built-in free-text row cannot be hidden),
-# or a card with any missing, null, or blank option description.
+# a card with any missing, null, or blank option description, or any option label
+# or description ending in "(recommended)" after trimming trailing whitespace.
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
 # the canonical shape. A result without details.cancelled, or a cancelled one (Esc), is
 # never converted into an answer: it exits 4, so nothing is recorded.
@@ -80,7 +81,7 @@ import hashlib, json, os, subprocess, sys
 
 MAX_OPTIONS = 4
 HEADER_MAX = 16
-MARK = " (recommended)"
+MARK = "(recommended)"
 CTX = "Context: "
 FREE_MAX = 200
 RESERVED = ("Other", "Type something.", "Next")
@@ -134,7 +135,7 @@ def option_rows(chunk, default_id):
         label = option["label"]
         description = option.get("description") or ""
         if option["id"] == default_id:
-            description = description + MARK if description else MARK.strip()
+            description = description + " " + MARK if description else MARK
         rows.append({"label": label, "description": description})
     return rows
 
@@ -248,9 +249,14 @@ def main():
                 raise Invalid("card '%s' has allow_free_text=false; the dialog always shows a free-text row"
                               % card["id"])
             for option in card["options"]:
-                if not (option.get("description") or "").strip():
+                description = (option.get("description") or "").rstrip()
+                if not description:
                     raise Invalid("card '%s' option '%s' requires a non-blank description for the dialog"
                                   % (card["id"], option["id"]))
+                for field, text in (("label", option["label"].rstrip()), ("description", description)):
+                    if text.endswith(MARK):
+                        raise Invalid("card '%s' option '%s' %s may not end with %s after trimming trailing whitespace"
+                                      % (card["id"], option["id"], field, MARK))
         print(json.dumps(build(cards)[0]))
     elif mode in ("answer", "resolve"):
         args = sys.argv[3:]

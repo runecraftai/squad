@@ -41,9 +41,9 @@ Dois fatos guiam o mapeamento:
 `OPTIONAL` é uma oferta, não uma ferramenta obrigatória ausente: ela nunca passa pelo caminho de consentimento de instalação de ferramentas obrigatórias e nunca bloqueia despacho.
 `.agents/skills/bootstrap-diagnostics` é o dono do tratamento dessa linha.
 Instalar é a ação explícita do comandante.
-O bootstrap lê `pi list` e nada mais: nunca instala, nunca atualiza, fica silencioso em qualquer outro harness e fica silencioso quando `pi` não está no `PATH`.
-A detecção aceita apenas o registro exato do pacote npm (com ou sem sufixo `@versão`), seguido pela linha do caminho de instalação na seção `User packages:` de `pi list`. Uma instalação no escopo de projeto (`.pi/settings.json`, protegida por confiança) é lida como ausente, e o bootstrap não emite nada quando a consulta indica falha.
-A alternativa em Perl do utilitário compartilhado de timeout descarta os bits de sinal do processo filho, então um `pi list` encerrado por sinal pode parecer bem-sucedido e gerar uma oferta `OPTIONAL` indevida. Essa limitação é aceita porque a oferta exige consentimento e não instala nada.
+O bootstrap só executa `pi list --no-approve`: isso evita a verificação de confiança do projeto para que a consulta não possa resolver nem instalar pacotes. O bootstrap fica silencioso em qualquer outro harness e quando `pi` não está no `PATH`.
+A detecção aceita apenas o registro exato do pacote npm (com ou sem sufixo `@versão`), seguido pela linha do caminho de instalação na seção `User packages:`. Uma instalação no escopo de projeto (`.pi/settings.json`, protegida por confiança) é lida como ausente, e o bootstrap não emite nada quando a consulta indica falha.
+A alternativa em Perl do utilitário compartilhado de timeout descarta os bits de sinal do processo filho, então uma consulta encerrada por sinal pode parecer bem-sucedida e gerar uma oferta `OPTIONAL` indevida. Essa limitação é aceita porque a oferta exige consentimento e não instala nada.
 `SQUAD_PI_ASK_USER_OFFER=0` silencia a oferta para uma base que não a queira.
 
 ## O mapeamento
@@ -69,7 +69,7 @@ Um cartão é uma pergunta de diálogo, porque uma pergunta comporta 2-4 opçõe
 Um mapeamento dividido não é usado para este caminho de payload: a extensão responde uma entrada por pergunta, então um cartão espalhado por duas ou mais perguntas voltaria como várias respostas para a mesma decisão e só poderia ser registrado adivinhando uma escolha.
 Recusar o cartão mantém o bloco de prosa autoritativo exatamente para os cartões que precisam de mais de uma pergunta, em vez de deixá-los com um diálogo cuja resposta não pode ser mesclada.
 
-Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, um cartão com mais de quatro opções ou qualquer descrição de opção ausente, nula ou em branco.
+Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, um cartão com mais de quatro opções qualquer descrição de opção ausente, nula ou em branco, ou qualquer rótulo ou descrição de opção que termine em `(recommended)` depois de remover os espaços em branco finais, inclusive na própria opção recomendada.
 
 ## Respostas
 
