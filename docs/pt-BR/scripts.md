@@ -116,6 +116,7 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-tasks-lib.sh`    | Seletor compartilhado de backlog-backend e sonda de compatibilidade do `sq-tasks`                  |
 | `sq-quota-lib.sh`    | Piso compartilhado de compatibilidade do `sq-quota` para o diagnóstico de bootstrap                  |
 | `sq-vendor-auth-probe.sh`| Rodar uma sonda de autenticação limitada e não destrutiva de uma CLI vendor nomeada e reportar o fato |
+| `sq-secret.sh`           | Resolver um segredo por nome lógico do Bitwarden e entregá-lo ao ambiente do consumidor ou a stdout não-terminal, nunca a um argv ou a uma cópia em disco |
 | `sq-stand-to-drain.sh`       | Drenar atomicamente acordos de sentinela na fila, emitir anotações best-effort limitadas de evento de status, seções OPEN DECISIONS e TEARDOWN PENDING unitárias, então afirmar saúde da supervisão |
 | `sq-stand-to-lib.sh`         | Fila durável stand-to compartilhada, locks portáteis e helpers de identidade/saúde da sentinela       |
 | `sq-handoff-request.sh`      | Registrar, resolver e listar requests duráveis de handoff de nova sessão em fechamentos de marco (docs/handoff-request.md) |
