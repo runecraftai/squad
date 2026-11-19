@@ -57,7 +57,14 @@ lockfile=$vault/locked-during-get
 [ -e "$lockfile" ] && status=locked
 
 # A stalled backend: the fake never answers, so the broker's bound must fire.
-if [ "${FAKE_BW_HANG:-0}" = 1 ]; then
+# FAKE_BW_HANG=1 stalls every call; FAKE_BW_HANG_CMDS narrows the stall to the
+# named subcommands (status, config, get, list) so one call can fail fast while
+# the next one stalls.
+hang=${FAKE_BW_HANG:-0}
+case " ${FAKE_BW_HANG_CMDS:-} " in
+  *" ${1:-} "*) hang=1 ;;
+esac
+if [ "$hang" = 1 ]; then
   sleep 30
 fi
 
@@ -105,6 +112,10 @@ case "${1:-}" in
   get)
     [ "${2:-}" = item ] || exit 1
     require_session_key
+    if [ "${FAKE_BW_GET_FAIL:-0}" = 1 ]; then
+      printf 'Network error.\n' >&2
+      exit 1
+    fi
     if [ -n "${FAKE_BW_ENV_PROBE:-}" ]; then
       if [ -n "${!FAKE_BW_ENV_PROBE:-}" ]; then
         printf 'inherited\n' >> "$vault/env-probe.log"
@@ -198,6 +209,8 @@ sq_secret() {
     FAKE_BW_STATUS="${FAKE_BW_STATUS:-unlocked}" \
     FAKE_BW_LOCK_GET="${FAKE_BW_LOCK_GET:-0}" \
     FAKE_BW_HANG="${FAKE_BW_HANG:-0}" \
+    FAKE_BW_HANG_CMDS="${FAKE_BW_HANG_CMDS:-}" \
+    FAKE_BW_GET_FAIL="${FAKE_BW_GET_FAIL:-0}" \
     SQUAD_SECRET_BW_TIMEOUT="${SECRET_BW_TIMEOUT:-}" \
     BW_SESSION="${BW_SESSION_TEST-fake-session}" \
     SQUAD_BASE="$BASE" \
@@ -821,7 +834,34 @@ test_stalled_backend() {
   [ "$rc" -ne 0 ] || fail "list must fail instead of hanging on a stalled backend"
   assert_contains "$out" "bw-timeout" "list names the stalled backend"
   [ "$elapsed" -lt 20 ] || fail "a stalled list must be bounded, took ${elapsed}s"
-  pass "a stalled backend fails closed under the time bound"
+
+  # A bound that is empty, non-numeric, or non-positive is not a bound, so the
+  # default has to hold instead of letting a stalled get run unbounded.
+  started=$(date +%s)
+  out=$(FAKE_BW_HANG=1 SECRET_BW_TIMEOUT=0 sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
+  rc=$?
+  elapsed=$(($(date +%s) - started))
+  [ "$rc" -ne 0 ] || fail "a zero bound must not disable the deadline"
+  assert_contains "$out" "bw-timeout" "a zero bound falls back to the default bound"
+  [ "$elapsed" -lt 25 ] || fail "the default bound must apply, took ${elapsed}s"
+
+  # A stalled backend is never blamed on the session or on an absent server.
+  out=$(FAKE_BW_HANG_CMDS="config list" SECRET_BW_TIMEOUT=1 \
+    sq_secret "$FAKEBIN:$PATH" check 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "check must fail when the backend stalls"
+  assert_contains "$out" "bw-timeout" "check names the stalled backend"
+  assert_not_contains "$out" "run bw unlock" "check does not blame the session for a stall"
+  assert_not_contains "$out" "printed no server URL" "check does not report a stalled server as absent"
+
+  # The resolve fallback listing can stall too; that is still the bound firing.
+  out=$(FAKE_BW_GET_FAIL=1 FAKE_BW_HANG_CMDS=list SECRET_BW_TIMEOUT=1 \
+    sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a stalled fallback listing must fail the resolution"
+  assert_contains "$out" "bw-timeout" "a stalled fallback listing names the bound"
+  assert_not_contains "$out" "session-unreadable" "a stalled fallback listing is not blamed on the session"
+  pass "a stalled backend fails closed under the time bound and stays named"
 }
 
 # ── (j) shellcheck-clean ───────────────────────────────────────────────────

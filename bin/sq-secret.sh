@@ -30,6 +30,9 @@
 #   Every `bw` call runs with --nointeraction, stdin from /dev/null, and under a
 #   hard time bound, so a missing session can never turn into an interactive
 #   prompt and a stalled server fails closed instead of hanging the caller.
+#   The bound is SQUAD_SECRET_BW_TIMEOUT in whole seconds greater than zero
+#   (default 20); an empty, non-numeric, or non-positive value keeps the default
+#   so the bound can never be disabled.
 #
 # Security invariants
 #   1. A value is written only to `get` stdout, and only when stdout is not a
@@ -102,13 +105,24 @@ POLICY_MESSAGE=
 
 # Every bw call is network-backed, so each one runs under a hard bound: a
 # stalled or unreachable server fails closed instead of hanging the caller.
-# bin/sq-timeout-lib.sh is the single owner of that bound.
+# bin/sq-timeout-lib.sh is the single owner of that bound, and it rejects a
+# non-positive bound because that disables the deadline entirely, so an empty,
+# non-numeric, or non-positive SQUAD_SECRET_BW_TIMEOUT keeps the default.
 BW_TIMEOUT="${SQUAD_SECRET_BW_TIMEOUT:-20}"
+case "$BW_TIMEOUT" in
+  '' | *[!0-9]* | 0*) BW_TIMEOUT=20 ;;
+esac
 
 # bw_timed <args...>: run one bw invocation under the bound. The exit status is
 # bw's own, except 124, which means the bound was hit.
 bw_timed() {
   fm_run_timed "$BW_TIMEOUT" bw "$@"
+}
+
+# fail_bw_timeout: fail closed naming the stalled backend, so a bound that fires
+# is never reported as a session, server, or item problem.
+fail_bw_timeout() {
+  fail bw-timeout "bw did not answer within ${BW_TIMEOUT}s; the Bitwarden backend is stalled or unreachable"
 }
 
 usage() {  # [<subcommand>]
@@ -239,20 +253,30 @@ json_string_field() {
 }
 
 # bw_status_word: print bw's own status word (unlocked, locked, unauthenticated).
+# Returns 124 when the bound was hit, so a stalled backend stays named.
 bw_status_word() {
-  local json word
-  json=$(bw_status_json) || return 1
+  local json word rc=0
+  json=$(bw_status_json) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 1
+  fi
   word=$(json_string_field "$json" status)
   [ -n "$word" ] || return 1
   printf '%s' "$word"
 }
 
 # bw_server_url: print the server bw is effectively configured with, including
-# the built-in cloud default, or return 1 when bw reports no server. This only
-# reads bw's configuration; it never changes it.
+# the built-in cloud default, or return 1 when bw reports no server. Returns 124
+# when the bound was hit, so a stalled backend is not reported as no server.
+# This only reads bw's configuration; it never changes it.
 bw_server_url() {
-  local url
-  url=$(bw_timed config server --nointeraction </dev/null 2>/dev/null) || return 1
+  local url rc=0
+  url=$(bw_timed config server --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 1
+  fi
   url=${url#"${url%%[![:space:]]*}"}
   url=${url%"${url##*[![:space:]]}"}
   [ -n "$url" ] || return 1
@@ -261,19 +285,29 @@ bw_server_url() {
 
 # bw_vault_readable: return 0 only when a real vault read succeeds, so a
 # session that merely reports "unlocked" cannot pass as usable. A failed, empty
-# or unparsable listing proves nothing and is treated as unreadable.
+# or unparsable listing proves nothing and is treated as unreadable. Returns 124
+# when the bound was hit, so a stalled backend is not blamed on the session.
 bw_vault_readable() {
-  local items
-  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || return 1
+  local items rc=0
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 1
+  fi
   [ -n "$items" ] || return 1
   printf '%s' "$items" | jq -e 'type == "array"' >/dev/null 2>&1
 }
 
 # bw_item_exists <item>: return 0 when the vault holds an item with that id or
-# name, 1 when it holds none, 2 when the vault could not be listed.
+# name, 1 when it holds none, 2 when the vault could not be listed, and 124 when
+# the bound was hit.
 bw_item_exists() {
-  local items count
-  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || return 2
+  local items count rc=0
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 2
+  fi
   count=$(printf '%s' "$items" | jq --arg t "$1" \
     '[.[] | select(.id == $t or .name == $t)] | length' 2>/dev/null) || return 2
   case "$count" in
@@ -360,13 +394,13 @@ item_password() {
 # Every outcome is audited, and a failure to audit a successful resolution is
 # itself fatal, so no value is ever emitted unaudited.
 resolve_value() {
-  local name=$1 item=$2 task=$3 command=$4 json value word exists rc=0 resolved
+  local name=$1 item=$2 task=$3 command=$4 json value word exists rc=0 status_rc=0 resolved
   json=$(bw_timed get item "$item" --nointeraction </dev/null 2>/dev/null) || rc=$?
   if [ "$rc" -ne 0 ]; then
     audit failed "$name" "$item" "$task" "$command" || true
-    [ "$rc" -ne 124 ] \
-      || fail bw-timeout "bw did not answer within ${BW_TIMEOUT}s; the Bitwarden backend is stalled or unreachable"
-    word=$(bw_status_word) || word=
+    [ "$rc" -ne 124 ] || fail_bw_timeout
+    word=$(bw_status_word) || status_rc=$?
+    [ "$status_rc" -ne 124 ] || fail_bw_timeout
     case "$word" in
       locked | unauthenticated)
         fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
@@ -380,6 +414,9 @@ resolve_value() {
         ;;
       1)
         fail item-missing "no Bitwarden item matches '$item'"
+        ;;
+      124)
+        fail_bw_timeout
         ;;
       *)
         fail session-unreadable "the vault could not be read while resolving '$item'; run 'bw unlock' and export the session it prints"
@@ -415,7 +452,7 @@ resolve_value() {
 }
 
 cmd_check() {
-  local rc=0 server word has_bw=0 has_jq=0
+  local rc=0 server word has_bw=0 has_jq=0 probe_rc=0 status_rc=0
   if command -v bw >/dev/null 2>&1; then
     has_bw=1
     printf 'bw: present %s\n' "$(command -v bw)"
@@ -433,11 +470,15 @@ cmd_check() {
   if [ "$has_bw" -eq 0 ]; then
     printf 'server: unknown (bw is not installed)\n'
     rc=1
-  elif server=$(bw_server_url); then
-    printf 'server: %s\n' "$server"
   else
-    printf 'server: unknown (bw config server printed no server URL)\n'
-    rc=1
+    probe_rc=0
+    server=$(bw_server_url) || probe_rc=$?
+    case "$probe_rc" in
+      0) printf 'server: %s\n' "$server" ;;
+      124) printf 'server: unknown (bw-timeout: bw did not answer within %ss; the Bitwarden backend is stalled or unreachable)\n' "$BW_TIMEOUT" ;;
+      *) printf 'server: unknown (bw config server printed no server URL)\n' ;;
+    esac
+    [ "$probe_rc" -eq 0 ] || rc=1
   fi
   if [ -z "${BW_SESSION:-}" ]; then
     printf 'session: missing BW_SESSION (run bw unlock and export the session it prints)\n'
@@ -448,31 +489,42 @@ cmd_check() {
   elif [ "$has_jq" -eq 0 ]; then
     printf 'session: unknown (jq is required to prove the session with a vault read)\n'
     rc=1
-  elif bw_vault_readable; then
-    printf 'session: unlocked\n'
   else
-    word=$(bw_status_word) || word=
-    case "$word" in
-      locked | unauthenticated)
-        printf 'session: %s (run bw unlock and export the session it prints)\n' "$word"
-        ;;
-      *)
-        printf 'session: unreadable (the vault could not be read; run bw unlock and export the session it prints)\n'
-        ;;
-    esac
-    rc=1
+    probe_rc=0
+    bw_vault_readable || probe_rc=$?
+    if [ "$probe_rc" -eq 0 ]; then
+      printf 'session: unlocked\n'
+    elif [ "$probe_rc" -eq 124 ]; then
+      printf 'session: unknown (bw-timeout: bw did not answer within %ss; the Bitwarden backend is stalled or unreachable)\n' "$BW_TIMEOUT"
+      rc=1
+    else
+      word=$(bw_status_word) || status_rc=$?
+      if [ "$status_rc" -eq 124 ]; then
+        printf 'session: unknown (bw-timeout: bw did not answer within %ss; the Bitwarden backend is stalled or unreachable)\n' "$BW_TIMEOUT"
+      else
+        case "$word" in
+          locked | unauthenticated)
+            printf 'session: %s (run bw unlock and export the session it prints)\n' "$word"
+            ;;
+          *)
+            printf 'session: unreadable (the vault could not be read; run bw unlock and export the session it prints)\n'
+            ;;
+        esac
+      fi
+      rc=1
+    fi
   fi
   return "$rc"
 }
 
 cmd_list() {
-  local items listing word rc=0
+  local items listing word rc=0 status_rc=0
   require_session_present
   items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || rc=$?
   if [ "$rc" -ne 0 ]; then
-    [ "$rc" -ne 124 ] \
-      || fail bw-timeout "bw did not answer within ${BW_TIMEOUT}s; the Bitwarden backend is stalled or unreachable"
-    word=$(bw_status_word) || word=
+    [ "$rc" -ne 124 ] || fail_bw_timeout
+    word=$(bw_status_word) || status_rc=$?
+    [ "$status_rc" -ne 124 ] || fail_bw_timeout
     case "$word" in
       locked | unauthenticated)
         fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
