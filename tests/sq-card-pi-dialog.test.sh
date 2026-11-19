@@ -232,6 +232,18 @@ test_free_text_and_refusals() {
   out=$(fragment "$SIX" 1 '[{"questionIndex":0,"kind":"option","answer":"Billing"},{"questionIndex":1,"kind":"option","answer":"Webhooks"}]' 2>&1) || rc=$?
   [ "$rc" = 4 ] || fail "T7: two answers for one split card must exit 4, got $rc"
   printf '%s' "$out" | grep -q 'answered twice' || fail "T7: duplicate-answer refusal is not explanatory: $out"
+
+  # Esc is not a decision: the extension keeps answers already committed on cancel,
+  # so a cancelled result must never become a recorded answer.
+  rc=0
+  out=$(fragment "$PAIR" 1 '{"content":[{"type":"text","text":"cancelled"}],"details":{"answers":[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}],"cancelled":true}}' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a cancelled details result must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'cancelled' || fail "T7: cancelled refusal is not explanatory: $out"
+
+  rc=0
+  out=$(fragment "$PAIR" 1 '{"answers":[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}],"cancelled":true}' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a cancelled top-level result must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'cancelled' || fail "T7: cancelled refusal is not explanatory: $out"
   pass "T7: free text resolves through O0 and every refusal fails closed with a reason"
 }
 

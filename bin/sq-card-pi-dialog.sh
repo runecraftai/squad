@@ -45,7 +45,8 @@
 # an option: an option label that is a reserved dialog label ("Other", "Type something.",
 # "Next"), a label shared by two options of the card, and a card with a single option.
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
-# the canonical shape.
+# the canonical shape. A cancelled result (Esc) is never converted into an answer, even
+# when the extension keeps answers already committed: it exits 4, so nothing is recorded.
 #
 # Exit codes: 0=ok, 2=invalid card or the dialog cannot represent it, 4=unusable result
 set -euo pipefail
@@ -164,6 +165,8 @@ def pick_answers(payload):
         return payload
     if isinstance(payload, dict):
         details = payload.get("details")
+        if payload.get("cancelled") is True or (isinstance(details, dict) and details.get("cancelled") is True):
+            raise Unusable("the dialog was cancelled; Esc never records a decision")
         if isinstance(details, dict) and isinstance(details.get("answers"), list):
             return details["answers"]
         if isinstance(payload.get("answers"), list):
