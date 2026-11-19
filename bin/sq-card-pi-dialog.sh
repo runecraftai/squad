@@ -325,7 +325,7 @@ fi
 
 # The card schema has one owner: validate through its renderer/parser first.
 if ! VALIDATION=$(printf '%s' "$CARD" | "$SCRIPT_DIR/sq-ask.sh" --validate 2>&1 >/dev/null); then
-  printf '%s\n' "${VALIDATION:-error: invalid card}"
+  printf '%s\n' "${VALIDATION:-error: invalid card}" >&2
   exit 2
 fi
 

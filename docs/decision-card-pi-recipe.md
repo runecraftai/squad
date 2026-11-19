@@ -40,7 +40,7 @@ Two facts drive the mapping:
 `.agents/skills/bootstrap-diagnostics` owns how that line is handled.
 Installing is the commander's explicit action.
 Bootstrap reads `pi list` and nothing else: it never installs, never updates, stays silent on every other harness, and stays silent when `pi` is not on `PATH`.
-Detection covers the user-scope install `pi install` writes; a project-scope install (`.pi/settings.json`) is trust-gated and deliberately out of scope, and a failed or unreadable listing is reported as nothing rather than as absence.
+Detection parses only the `User packages:` section of `pi list` and stops at `Project packages:`, so it covers exactly the user-scope install `pi install` writes; a project-scope install (`.pi/settings.json`, trust-gated) is out of scope and therefore reads as absent, never as installed, and a failed or unreadable listing is reported as nothing rather than as absence.
 `SQUAD_PI_ASK_USER_OFFER=0` silences the offer for a base that does not want it.
 
 ## The mapping
@@ -67,8 +67,9 @@ A card the dialog cannot represent without dropping or misrepresenting an option
 
 ## Answers
 
-The dialog's answers come back as `details.answers`, one entry per question with a `kind` and the chosen label or typed text, plus the result's own `details.cancelled`.
-The mapping turns that back into the prose answer grammar, so the existing parser stays the only resolver:
+The dialog result is the published version 2.15.0 shape, whose field names are owned by the package's `docs/tool-schema.md` "Result" section: `details.answers[]` entries carry `questionIndex`, `question`, `kind`, and `answer`, with the optional `notes`, `selected`, and `preview`, and the result carries `details.cancelled`.
+The mapping reads `questionIndex`, `kind`, and `answer` from each entry plus `details.cancelled` from the result, one entry per question with a `kind` and the chosen label or typed text.
+It turns that back into the prose answer grammar, so the existing parser stays the only resolver:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json

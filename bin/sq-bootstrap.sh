@@ -63,8 +63,10 @@
 #          it never routes through the install consent path
 #          (.agents/skills/bootstrap-diagnostics owns that response), it never
 #          installs anything itself, and it is skipped when pi is not on PATH.
-#          Detection reads pi's USER-scope package listing only; a failed listing,
-#          a project-scope install, and every other harness stay silent
+#          Detection parses only the "User packages:" section of `pi list` and
+#          stops at "Project packages:", so a project-scope install reads as
+#          absent rather than installed, a failed listing makes no claim at all,
+#          and every other harness stays silent
 #          (docs/decision-card-pi-recipe.md owns the mapping it enables).
 #          Set SQUAD_PI_ASK_USER_OFFER=0 to silence it.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
@@ -1088,6 +1090,7 @@ pi_ask_user_offer() {
   esac
   command -v pi >/dev/null 2>&1 || return 0
   listing=$(pi list 2>/dev/null) || return 0
+  listing=$(printf '%s\n' "$listing" | awk '/User packages:/{user=1; next} /Project packages:/{user=0} user')
   case "$listing" in
     *"npm:$PI_ASK_USER_EXTENSION"*)
       echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed" ;;

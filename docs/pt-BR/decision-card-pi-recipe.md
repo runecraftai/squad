@@ -42,7 +42,7 @@ Dois fatos guiam o mapeamento:
 `.agents/skills/bootstrap-diagnostics` é o dono do tratamento dessa linha.
 Instalar é a ação explícita do comandante.
 O bootstrap lê `pi list` e nada mais: nunca instala, nunca atualiza, fica silencioso em qualquer outro harness e fica silencioso quando `pi` não está no `PATH`.
-A detecção cobre a instalação de escopo de usuário que `pi install` grava; uma instalação de escopo de projeto (`.pi/settings.json`) é protegida por confiança e fica deliberadamente fora de escopo, e uma listagem falha ou ilegível é reportada como nada, nunca como ausência.
+A detecção lê apenas a seção `User packages:` de `pi list` e para em `Project packages:`, então cobre exatamente a instalação de escopo de usuário que `pi install` grava; uma instalação de escopo de projeto (`.pi/settings.json`, protegida por confiança) fica fora de escopo e, portanto, é lida como ausente, nunca como instalada, e uma listagem falha ou ilegível é reportada como nada, nunca como ausência.
 `SQUAD_PI_ASK_USER_OFFER=0` silencia a oferta para uma base que não a queira.
 
 ## O mapeamento
@@ -69,8 +69,9 @@ Um cartão que o diálogo não consegue representar sem descartar ou deturpar um
 
 ## Respostas
 
-As respostas do diálogo voltam como `details.answers`, uma entrada por pergunta com um `kind` e o rótulo escolhido ou o texto digitado, junto com o `details.cancelled` do próprio resultado.
-O mapeamento converte isso de volta para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
+O resultado do diálogo é a forma publicada da versão 2.15.0, cujos nomes de campo são definidos pela seção "Result" de `docs/tool-schema.md` do pacote: as entradas de `details.answers[]` carregam `questionIndex`, `question`, `kind` e `answer`, com os opcionais `notes`, `selected` e `preview`, e o resultado carrega `details.cancelled`.
+O mapeamento lê `questionIndex`, `kind` e `answer` de cada entrada e `details.cancelled` do resultado, uma entrada por pergunta com um `kind` e o rótulo escolhido ou o texto digitado.
+Ele converte isso de volta para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json

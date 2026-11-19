@@ -1531,19 +1531,24 @@ test_sandbox_gc_skipped_without_lock
 # Bootstrap offers the optional Pi dialog extension to a Pi primary only: absent
 # reports one OPTIONAL offer naming the exact `pi install` command and the fresh
 # Pi session it needs, installed reports one no-action fact, and no other harness,
-# no missing pi binary, and no failed listing ever produces a line. The OPTIONAL
-# shape keeps the offer out of the required-tool install path. Nothing here installs
-# anything, so the fake pi fails the case if bootstrap calls it with anything but
-# `list`.
-install_offer_fake_pi() {  # <fakebin> <installed 1/0> <log> [exit-code-for-list]
-  local fakebin=$1 installed=$2 log=$3 list_rc=${4:-0}
+# no missing pi binary, and no failed listing ever produces a line. Only the user
+# scope `pi list` reports is detected, so a project-scope-only entry reads as
+# absent. The OPTIONAL shape keeps the offer out of the required-tool install path.
+# Nothing here installs anything, so the fake pi fails the case if bootstrap calls
+# it with anything but `list`.
+install_offer_fake_pi() {  # <fakebin> <installed 1/0> <log> [exit-code-for-list] [scope]
+  local fakebin=$1 installed=$2 log=$3 list_rc=${4:-0} scope=${5:-user}
   cat > "$fakebin/pi" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> '$log'
 case "\${1:-}" in
   list)
     if [ '$installed' = 1 ]; then
-      printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question'
+      case '$scope' in
+        user) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
+        project) printf '%s\n' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
+        both) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
+      esac
     fi
     exit '$list_rc' ;;
   install|remove|uninstall|update)
@@ -1556,10 +1561,10 @@ SH
 }
 
 test_pi_ask_user_offer() {
-  local label harness installed mode expect case_dir fakebin log out n list_rc
+  local label harness installed mode expect case_dir fakebin log out n list_rc scope
   local -a marker=()
   n=0
-  while IFS='^' read -r label harness installed mode expect list_rc; do
+  while IFS='^' read -r label harness installed mode expect list_rc scope; do
     [ -n "$label" ] || continue
     n=$((n + 1))
     case_dir="$TMP_ROOT/offer-$n"
@@ -1568,7 +1573,7 @@ test_pi_ask_user_offer() {
     fakebin=$(make_fake_toolchain "$case_dir")
     log="$case_dir/pi.log"
     : > "$log"
-    install_offer_fake_pi "$fakebin" "$installed" "$log" "${list_rc:-0}"
+    install_offer_fake_pi "$fakebin" "$installed" "$log" "${list_rc:-0}" "${scope:-user}"
     case "$harness" in
       pi) marker=(PI_CODING_AGENT=true) ;;
       pi-signed) marker=(PI_CODING_AGENT=true SQUAD_PI_HARNESS=pi-signed) ;;
@@ -1591,10 +1596,12 @@ test_pi_ask_user_offer() {
   done <<'ROWS'
 pi primary is offered the exact install command^pi^0^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^
 an installed extension is one no-action fact^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^
+an installed extension is still found beside project entries^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^0^both
 pi-signed is offered too^pi-signed^0^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^
 another harness is never offered it^claude^0^empty^^
 a pi primary without a pi binary stays silent^no-pi^0^empty^^
 a failed user-scope listing is uncertainty, never absence^pi^0^empty^^1
+an extension only in the project scope reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^project
 ROWS
   pass "bootstrap offers the optional Pi ask-user dialog extension to a Pi primary only"
 }
