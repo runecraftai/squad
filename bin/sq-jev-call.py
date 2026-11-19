@@ -30,7 +30,8 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sq_dispatch_evidence import recordable_probabilities, unit_interval  # noqa: E402
+from sq_dispatch_evidence import (recordable_answer, recordable_probabilities,  # noqa: E402
+                                  unit_interval)
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
@@ -237,25 +238,7 @@ def lane_criteria(lane, configured):
 
 def answer_evidence(answer):
     """The bounded per-question fields worth recording, normalized to what the writer accepts."""
-    if not isinstance(answer, dict):
-        return None
-    evidence = {}
-    kind = answer.get("type")
-    if isinstance(kind, str) and re.fullmatch(r"[a-z]{1,32}", kind):
-        evidence["type"] = kind
-    choice = answer.get("choice")
-    if isinstance(choice, str) and re.fullmatch(r"[!-~]{1,128}", choice):
-        evidence["choice"] = choice
-    if isinstance(answer.get("answer"), bool) or ("answer" in answer and answer["answer"] is None):
-        evidence["answer"] = answer["answer"]
-    if "confidence" in answer and unit_interval(answer["confidence"]):
-        evidence["confidence"] = answer["confidence"]
-    probabilities = answer.get("probabilities")
-    if isinstance(probabilities, dict):
-        kept = recordable_probabilities(probabilities)
-        if kept:
-            evidence["probabilities"] = kept
-    return evidence or None
+    return recordable_answer(answer) or None
 
 
 def classify(body, lanes):

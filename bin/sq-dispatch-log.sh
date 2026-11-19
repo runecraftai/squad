@@ -59,7 +59,7 @@ import sys
 import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
-from sq_dispatch_evidence import SECRET_SHAPE, recordable_probability, recordable_text
+from sq_dispatch_evidence import SECRET_SHAPE, recordable_answer, recordable_probability, recordable_text
 from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
 
 
@@ -151,23 +151,9 @@ if args.event == "recommendation":
             for question, answer in answers.items():
                 if not isinstance(question, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", question):
                     raise ValueError("invalid recommendation answers")
-                if not isinstance(answer, dict) or not answer:
+                entry = recordable_answer(answer)
+                if not entry or entry != answer:
                     raise ValueError("invalid recommendation answers")
-                entry = {}
-                for key, value in answer.items():
-                    if key == "type" and isinstance(value, str) and re.fullmatch(r"[a-z]{1,32}", value):
-                        entry[key] = value
-                    elif key == "choice" and recordable_text(value):
-                        entry[key] = value
-                    elif key == "answer" and (isinstance(value, bool) or value is None):
-                        entry[key] = value
-                    elif key == "confidence" and type(value) in (int, float) \
-                            and math.isfinite(value) and 0 <= value <= 1:
-                        entry[key] = value
-                    elif key == "probabilities":
-                        entry[key] = probabilities_field(value)
-                    else:
-                        raise ValueError("invalid recommendation answers")
                 evidence[question] = entry
             record["answers"] = evidence
         if "model" in recommendation and recommendation["model"] is not None:

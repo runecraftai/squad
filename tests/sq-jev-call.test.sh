@@ -160,6 +160,15 @@ with tempfile.TemporaryDirectory() as td:
         (data / "task/dispatch.jsonl").unlink()
         state["location"] = None
 
+        external = [arg if arg != url else "https://api.typesafe.example/v1/systemone" for arg in argv]
+        captured.clear()
+        refused = subprocess.run(external, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(refused.stdout) == {"status": "unavailable", "reason": "endpoint_refused"}
+        assert refused.stderr == "" and not captured and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "endpoint_refused"}]
+        (data / "task/dispatch.jsonl").unlink()
+
         captured.clear()
         state["reply"] = answer(["claude/sonnet"], confidence=.8)
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
@@ -314,6 +323,18 @@ with tempfile.TemporaryDirectory() as td:
              "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
                                      "confidence": .8}}}]
         final_row = (data / "task/dispatch.jsonl").read_text()
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = {"answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                                  "confidence": .8},
+                                      DESIGN: {"type": "noul", "choice": "sk-abcd1234567890"}}}
+        unreportable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(unreportable.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert unreportable.stderr == "" and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/sonnet", "confidence": .8,
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                     "confidence": .8},
+                         DESIGN: {"type": "noul"}}}]
         (data / "task/dispatch.jsonl").unlink()
         state["reply"] = answer("claude/sonnet", confidence=.8,
                                 probabilities={"claude/sonnet": .8, "pi/gpt": .1, "other": .05,

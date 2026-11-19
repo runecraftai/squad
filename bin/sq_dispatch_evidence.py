@@ -28,3 +28,24 @@ def recordable_probabilities(value):
     if not isinstance(value, dict):
         return {}
     return {name: score for name, score in value.items() if recordable_probability(name, score)}
+
+
+def recordable_answer(answer):
+    """The bounded per-question fields a recommendation answer may record, or None."""
+    if not isinstance(answer, dict):
+        return None
+    entry = {}
+    kind = answer.get("type")
+    if isinstance(kind, str) and re.fullmatch(r"[a-z]{1,32}", kind):
+        entry["type"] = kind
+    if "choice" in answer and recordable_text(answer["choice"]):
+        entry["choice"] = answer["choice"]
+    if "answer" in answer and (isinstance(answer["answer"], bool) or answer["answer"] is None):
+        entry["answer"] = answer["answer"]
+    if "confidence" in answer and unit_interval(answer["confidence"]):
+        entry["confidence"] = answer["confidence"]
+    if "probabilities" in answer:
+        kept = recordable_probabilities(answer["probabilities"])
+        if kept:
+            entry["probabilities"] = kept
+    return entry
