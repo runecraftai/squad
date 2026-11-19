@@ -490,7 +490,12 @@ for path in sys.argv[1:]:
     row = json.loads(open(path).readline())
     assert row["status"] == "recommended" and row["choice"] == "grok/grok-4", row
     assert "model" not in row, row
+    if path.endswith("rec-badmodel/dispatch.jsonl"):
+        assert row["confidence"] == 0.7, row
 PY
-assert_grep '"confidence":0.7' "$dir/data/rec-badmodel/dispatch.jsonl" 'recommendation evidence lost with an out-of-allowlist model'
-assert_grep '"reason":"answer_missing"' "$dir/data/rec-reason/dispatch.jsonl" 'unavailable recommendation reason lost'
+python3 - "$dir/data/rec-reason/dispatch.jsonl" <<'PY' || fail 'unavailable recommendation reason lost'
+import json, sys
+row = json.loads(open(sys.argv[1]).readline())
+assert row["status"] == "unavailable" and row["reason"] == "answer_missing", row
+PY
 pass 'recommendation rows carry only the evidence allowlist, leave out an invalid model, and refuse other evidence entirely'
