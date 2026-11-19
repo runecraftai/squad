@@ -29,14 +29,8 @@
 # Only the bucket is stored, never the status text. Teardown and status-notify
 # write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
-# A recommended row carries the chosen lane's choice and confidence, the full
-# probabilities map, the per-question answers evidence (only type, choice,
-# answer, confidence and probabilities per question), the model version the
-# service reported when it fits the model allowlist, and low_confidence when the
-# client flagged a flat answer. A model outside that allowlist is left out
-# instead of refusing the row, so the lane evidence still lands.
-# Nothing outside that allowlist is written; an unavailable row carries only
-# one lower-case reason.
+# See "Jev shadow recommendations" in docs/configuration.md for recommendation
+# fields and sq_dispatch_evidence.py for the shared validation rules.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
 # unsafe paths, lock contention beyond that budget, missing dependencies and
 # write failures emit one generic warning, then exit 0.

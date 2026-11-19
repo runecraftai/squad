@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Shadow-only Jev recommendation client; never used to resolve dispatch.
-
-Posts the documented System One request shape - a `model`, a `state` object with
-named `task` and `repository` fields, and a map of keyed questions - and records the
-answer as evidence instead of a decision.
-
-One `choice` question keyed `lane` carries criteria that describe what each
-configured lane fits and what belongs to another lane, using only approved
-criteria selected by effort, opaque option IDs, and a reserved `other` option.
-A second `noul` question records whether the task needs design decisions a fixed
-plan cannot settle; it never selects the lane.
-
-The recorded recommendation keeps the chosen lane, its confidence, the full
-probability map, the per-question answers and the model version the service
-reported, and adds `low_confidence: true` under LOW_CONFIDENCE_THRESHOLD (0.5).
-A low-confidence answer is still recorded and still has no authority.
-"""
+"""Shadow-only Jev client; see "Jev shadow recommendations" in docs/configuration.md."""
 import argparse
 import json
 import os

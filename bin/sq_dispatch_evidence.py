@@ -12,6 +12,8 @@ MAX_RESPONSE = 65536
 MAX_EVIDENCE_TEXT = 128
 MIN_WIRE_PROBABILITY_BYTES = len('"o1":0')
 MAX_LOG_PROBABILITY_BYTES = 2 * MAX_EVIDENCE_TEXT + len('"":,') + 24
+# Allow for escaped local lane IDs replacing short wire IDs and for the map
+# appearing both at the top level and under answers.lane.
 MAX_RECOMMENDATION_BYTES = 4096 + 2 * (MAX_RESPONSE // MIN_WIRE_PROBABILITY_BYTES) * MAX_LOG_PROBABILITY_BYTES
 
 SECRET_SHAPE = re.compile(
