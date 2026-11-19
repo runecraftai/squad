@@ -50,20 +50,23 @@ It validates the card through `bin/sq-ask.sh --validate` first, so the schema ke
 
 | Card | Dialog |
 |------|--------|
-| `question` | `questions[].question`, then one `F<n> - <id> <text>` line per finding and finally one `Context: <context>` line, on the first question of the card |
-| `title` | `questions[].header`, cut to the 16-character limit at the last space of the retained text when it keeps one, otherwise at the limit; a split question's `k/n` marker counts inside the 16 |
+| `question` | `questions[].question`, then one `F<n> - <id> <text>` line per finding and finally one `Context: <context>` line |
+| `title` | `questions[].header`, cut to the 16-character limit at the last space of the retained text when it keeps one, otherwise at the limit |
 | `options[].label` | `options[].label`, unchanged |
 | `options[].description` | `options[].description`; the recommended option gains a trailing ` (recommended)` so the recommendation is visible on its own row |
 | `allow_free_text` | not authored: the dialog's own free-text row is the `O0` escape |
 | `payload`, option ids, metadata | not shown |
 
-Splits replace truncation, because a dialog holds 1-4 questions and a question 2-4 options:
+One card is one dialog question, because a question holds 2-4 options:
 
-- more than four options on a card become several questions, balanced and in card order (5 -> 3+2, 6 -> 3+3, 9 -> 3+3+3), each numbered `(part k of n)` and `k/n` inside the header;
-- more than four questions on a card become several dialogs, each one `ask_user_question` call;
-- several cards in one reply become one dialog per card, in card order.
+- a card with 2-4 options becomes exactly one `ask_user_question` question, with every option on its own row and the recommended one marked;
+- several cards in one reply become one dialog per card, in card order, each rendered as its own `ask_user_question` call;
+- a card with more than four options keeps the prose block: the mapping exits 2 naming the reason, so no option is ever dropped, folded, or truncated.
 
-A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, or a card with a single option.
+A3 supersedes the earlier split-and-merge approach for the payload path: the extension answers one entry per question, so a card spread over two or more questions came back as several answers for the same decision and could only be recorded by guessing a pick.
+Refusing the card keeps the prose block authoritative for exactly the cards the split rules existed to serve, instead of leaving them with a dialog whose answer cannot be merged.
+
+A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, or a card with more than four options.
 
 ## Answers
 
@@ -75,7 +78,7 @@ It turns that back into the prose answer grammar, so the existing parser stays t
 bin/sq-card-pi-dialog.sh --payload < card.json
 # one ask_user_question call per element of the printed array
 bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' < card.json
-# a card that needed two dialogs merges in one call, one fragment per decision:
+# several cards answered in one call merge into one fragment per decision:
 bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
 # -> "d1 o2", then:
 bin/sq-ask.sh --answer 'd1 o2' < card.json
@@ -83,9 +86,8 @@ bin/sq-ask.sh --answer 'd1 o2' < card.json
 
 `--answer` needs the card the dialog came from, because an answer is always resolved against the JSON card and never against the text the commander saw.
 It takes the whole tool result and never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
-A split card keeps the card's own global option numbering across dialogs, so an option picked in the last dialog is still the card's real code and `d1 o15` stays valid.
-The merge is mechanical - no fold, no renumbering, no guessed pick - and yields exactly one fragment per decision.
-Two answers for the same decision, whether across the questions of one dialog or across two dialogs, exit 4 with a named error instead of choosing one, and a multi-select answer exits 4 because this mapping never authors a multi-select question.
+Answering several cards in one call merges their dialogs into exactly one fragment per decision, mechanically - no fold, no renumbering, no guessed pick.
+Two answers for the same decision exit 4 with a named error instead of choosing one, and a multi-select answer exits 4 because this mapping never authors a multi-select question.
 
 ## Fallback
 
@@ -101,5 +103,5 @@ With the extension absent, nothing changes:
 |------|---------|
 | `bin/sq-card-pi-dialog.sh` | Card to dialog payload, and dialog answers back to the prose answer text |
 | `bin/sq-bootstrap.sh` | The Pi-only offer, including the exact install command |
-| `tests/sq-card-pi-dialog.test.sh` | Mapping, split, refusal, round-trip, and fallback cases |
+| `tests/sq-card-pi-dialog.test.sh` | Mapping, refusal, round-trip, and fallback cases |
 | `tests/sq-bootstrap.test.sh` | The offer: Pi only, exact command, never installs, silent elsewhere |

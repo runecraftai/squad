@@ -22,7 +22,7 @@
 #   --answer       Read the extension's result for the dialog named by --dialog and
 #                  print the answer text for bin/sq-ask.sh --answer, such as
 #                  "d1 o2" or 'd1 o0 "ship it"'. Repeat --dialog/--result to answer
-#                  several dialogs of the same card in one call; the pairs are merged.
+#                  several cards in one call; the pairs are merged.
 #                  --result takes the whole tool result, never a bare answers array:
 #                  only details.cancelled proves the dialog was not cancelled.
 #   --help         Show this help.
@@ -32,27 +32,30 @@
 #                    and finally one "Context: <context>" line when the card has context.
 #                    The published payload has no notes field, so context and findings
 #                    ride in the question text rather than being dropped.
-#   title         -> questions[].header, cut to the 16-character payload limit; a split
-#                    question carries "<k>/<n>" inside the same 16 characters
+#   title         -> questions[].header, cut to the 16-character payload limit
 #   label         -> options[].label, unchanged
 #   description   -> options[].description; the recommended option gains a trailing
 #                    " (recommended)", so the recommendation is visible on its own row
 #   free text     -> the dialog's own free-text row; the mapping authors no option for it
 #
-# Splits, never truncation: a dialog carries 1-4 questions and a question 2-4 options.
-# More than four options on one card become several questions, balanced and in card
-# order (5 -> 3+2, 6 -> 3+3, 9 -> 3+3+3), and more than four questions on one card
-# become several dialogs. Every card option is carried, in order, exactly once.
+# One card is one dialog question: a question holds 2-4 options, so a card inside that
+# range becomes exactly one ask_user_question question, and several cards in one reply
+# become one dialog per card, in card order.
 #
-# Answers of a split card keep the card's own global option numbering, so a value the
-# commander picks in the last dialog is still the card's real option code (d1 o15 stays
-# d1 o15). Answering one dialog and answering another are therefore merged into exactly
-# one fragment per decision, mechanically: no fold, no renumbering, no guessed pick.
-# Two answers for the same decision across dialogs exit 4 instead of choosing one.
+# A3 supersedes the earlier split-and-merge approach for this payload path: the extension
+# answers one entry per question, so a card split across questions would come back as
+# several answers for one decision and could only be recorded by guessing a pick. A card
+# with more than four options is therefore refused, never split and never truncated, and
+# the prose block stays authoritative. Nothing is ever dropped or renumbered.
+#
+# Answering several cards merges their dialogs into exactly one fragment per decision,
+# mechanically: no fold, no renumbering, no guessed pick. Two answers for the same
+# decision exit 4 instead of choosing one.
 #
 # Refused, because the dialog cannot show that card without dropping or misrepresenting
 # an option: an option label that is a reserved dialog label ("Other", "Type something.",
-# "Next"), a label shared by two options of the card, and a card with a single option.
+# "Next"), a label shared by two options of the card, a card with a single option, and a
+# card with more than four options (it would need more than one dialog question).
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
 # the canonical shape. A result without details.cancelled, or a cancelled one (Esc), is
 # never converted into an answer: it exits 4, so nothing is recorded.
@@ -72,7 +75,6 @@ fi
 IFS= read -r -d '' PY_PROG <<'PY' || true
 import sys, json
 
-MAX_QUESTIONS = 4
 MAX_OPTIONS = 4
 HEADER_MAX = 16
 MARK = " (recommended)"
@@ -93,27 +95,15 @@ def printable(s):
     return all(0x20 <= ord(c) <= 0x7e for c in s)
 
 
-def chunk_sizes(total):
-    """Split <total> options into the fewest questions, balanced, 2-4 each."""
-    groups = (total + MAX_OPTIONS - 1) // MAX_OPTIONS
-    base, extra = divmod(total, groups)
-    return [base + (1 if i < extra else 0) for i in range(groups)]
+def header_for(title):
+    head = title[:HEADER_MAX].rstrip()
+    if len(title) > HEADER_MAX and " " in head:
+        head = head[:head.rfind(" ")].rstrip() or title[:HEADER_MAX]
+    return head or title[:1]
 
 
-def header_for(title, part, parts):
-    suffix = " %d/%d" % (part, parts) if parts > 1 else ""
-    keep = HEADER_MAX - len(suffix)
-    head = title[:keep].rstrip()
-    if len(title) > keep and " " in head:
-        head = head[:head.rfind(" ")].rstrip() or title[:keep]
-    return (head or title[:1]) + suffix
-
-
-def question_for(card, part, parts, findings):
-    text = card["question"]
-    if parts > 1:
-        text = "%s (part %d of %d)" % (text, part, parts)
-    lines = [text]
+def question_for(card, findings):
+    lines = [card["question"]]
     for code, finding in findings:
         lines.append("F%d - %s %s" % (code, finding["id"], finding["text"]))
     if card.get("context"):
@@ -144,7 +134,7 @@ def option_rows(chunk, default_id):
 
 
 def build(cards):
-    """Return (dialogs, origin); origin[d][q] = (card index, first option index, size)."""
+    """Return (dialogs, origin); origin[d] = the card index behind dialog d."""
     dialogs, origin = [], []
     finding_code = 0
     for index, card in enumerate(cards):
@@ -152,20 +142,16 @@ def build(cards):
         findings = [(finding_code + n, f) for n, f in enumerate(card.get("findings") or [], 1)]
         finding_code += len(findings)
         check_labels(card, where)
-        sizes = chunk_sizes(len(card["options"]))
-        questions, slots, start = [], [], 0
-        for part, size in enumerate(sizes, 1):
-            questions.append({
-                "question": question_for(card, part, len(sizes), findings if part == 1 else []),
-                "header": header_for(card["title"], part, len(sizes)),
-                "options": option_rows(card["options"][start:start + size], card["default_option_id"]),
-            })
-            slots.append((index, start, size))
-            start += size
-        for offset in range(0, len(questions), MAX_QUESTIONS):
-            end = min(offset + MAX_QUESTIONS, len(questions))
-            dialogs.append({"questions": questions[offset:end]})
-            origin.append(slots[offset:end])
+        if len(card["options"]) > MAX_OPTIONS:
+            raise Invalid("%s card '%s' has %d options and needs more than one dialog question; "
+                          "this mapping never splits a card, so the prose block stays authoritative"
+                          % (where, card["id"], len(card["options"])))
+        dialogs.append({"questions": [{
+            "question": question_for(card, findings),
+            "header": header_for(card["title"]),
+            "options": option_rows(card["options"], card["default_option_id"]),
+        }]})
+        origin.append(index)
     return dialogs, origin
 
 
@@ -188,21 +174,20 @@ def result_answers(payload):
 
 
 def answer_text(cards, pairs):
-    """Merge one or more dialogs of the same card into exactly one fragment per decision."""
+    """Merge the dialogs of one or more cards into exactly one fragment per decision."""
     dialogs, origin = build(cards)
     pieces, answered = [], set()
     for dialog_index, payload in pairs:
         if dialog_index < 1 or dialog_index > len(dialogs):
             raise Invalid("--dialog %d is out of range: the card renders %d dialog(s)" % (dialog_index, len(dialogs)))
-        slots = origin[dialog_index - 1]
+        card_index = origin[dialog_index - 1]
+        card, number = cards[card_index], card_index + 1
         for answer in result_answers(payload):
             if not isinstance(answer, dict):
                 raise Unusable("each answer must be an object")
             position = answer.get("questionIndex")
-            if not isinstance(position, int) or isinstance(position, bool) or not 0 <= position < len(slots):
+            if not isinstance(position, int) or isinstance(position, bool) or position != 0:
                 raise Unusable("questionIndex %r is not a question of dialog %d" % (position, dialog_index))
-            card_index, start, size = slots[position]
-            card, number = cards[card_index], card_index + 1
             if card_index in answered:
                 raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
             answered.add(card_index)
@@ -212,8 +197,8 @@ def answer_text(cards, pairs):
                 if not isinstance(label, str):
                     raise Unusable("an option answer must name the chosen label as a string")
                 match = [n for n, option in enumerate(card["options"]) if option["label"] == label]
-                if len(match) != 1 or not start <= match[0] < start + size:
-                    raise Unusable("option answer %r does not name exactly one option of dialog question %d" % (label, position + 1))
+                if len(match) != 1:
+                    raise Unusable("option answer %r does not name exactly one option of dialog %d" % (label, dialog_index))
                 pieces.append("d%d o%d" % (number, match[0] + 1))
             elif kind == "custom":
                 text = answer.get("answer")

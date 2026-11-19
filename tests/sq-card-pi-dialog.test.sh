@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Tests for bin/sq-card-pi-dialog.sh - the decision card to Pi ask_user_question
-# dialog mapping, its split rules, its refusal paths, and the answer it hands back
-# to bin/sq-ask.sh.
+# dialog mapping, its refusal paths, and the answer it hands back to bin/sq-ask.sh.
 #
 # A native dialog is a presentation surface only: docs/decision-card-standard.md
 # owns the card schema and bin/sq-ask.sh owns the prose block and the answer
@@ -19,6 +18,8 @@ TMP_ROOT=$(fm_test_tmproot sq-card-pi-dialog)
 
 PAIR="$FIX/pair.json"
 FOUR="$FIX/four.json"
+GATE="$FIX/gate.json"
+FIVE="$FIX/five.json"
 SIX="$FIX/six.json"
 NINE="$FIX/nine.json"
 SEVENTEEN="$FIX/seventeen.json"
@@ -46,7 +47,7 @@ fragment() {
 }
 
 # fragments <card file> <dialog> <answers> [<dialog> <answers> ...]: one merge call
-# across several dialogs of the same card.
+# across several dialogs, one per card.
 fragments() {
   local card=$1
   shift
@@ -80,12 +81,15 @@ test_two_option_card() {
   check "$PAIR" '[o["label"] for o in p[0]["questions"][0]["options"]] == [o["label"] for o in c[0]["options"]]'
   check "$PAIR" 'len(p[0]["questions"][0]["header"]) <= 16'
   check "$PAIR" 'p[0]["questions"][0]["question"].startswith(c[0]["question"])'
-  check "$PAIR" '"Context: " + c[0]["context"] in p[0]["questions"][0]["question"]'
+  check "$PAIR" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"], "Context: " + c[0]["context"]]'
   check "$PAIR" 'p[0]["questions"][0]["options"][1]["description"] == c[0]["options"][1]["description"] + " (recommended)"'
   check "$PAIR" 'not p[0]["questions"][0]["options"][0]["description"].endswith("(recommended)")'
   # The free-text row belongs to the dialog, so the mapping never authors an option for it.
   check "$PAIR" 'all(o["label"] not in ("Other", "Type something.", "Next") for q in p[0]["questions"] for o in q["options"])'
-  pass "T1: a 2-option card becomes one dialog question with the recommended row marked"
+
+  # Findings ride in the question text of that card's own question, once, in card order.
+  check "$GATE" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"]] + ["F%d - %s %s" % (n, f["id"], f["text"]) for n, f in enumerate(c[0]["findings"], 1)]'
+  pass "T1: a 2-option card becomes one dialog question with the recommended row marked and its findings carried"
 }
 
 # --- T2: a 4-option card fills one question exactly ---
@@ -113,50 +117,58 @@ test_round_trip() {
   pass "T3: the marked recommended option round-trips back to the same card option"
 }
 
-# --- T4: more options than one question allows are split, in order, none dropped ---
-test_split_keeps_every_option() {
-  check "$SIX" 'len(p) == 1 and len(p[0]["questions"]) == 2'
-  check "$SIX" 'all(2 <= len(q["options"]) <= 4 for q in p[0]["questions"])'
-  check "$SIX" '[o["label"] for q in p[0]["questions"] for o in q["options"]] == [o["label"] for o in c[0]["options"]]'
-  check "$SIX" 'len({q["question"] for q in p[0]["questions"]}) == 2'
-  check "$SIX" 'all(len(q["header"]) <= 16 for q in p[0]["questions"])'
-  # Option 5 lives in the second question and still maps to its card position.
-  local answer
-  answer=$(fragment "$SIX" 1 '[{"questionIndex":1,"kind":"option","answer":"Webhooks"}]')
-  [ "$answer" = "d1 o5" ] || fail "T4: expected 'd1 o5', got '$answer'"
-  resolve "$SIX" "$answer" 'r["selected_option_id"] == "webhooks"'
+# --- T4: a card that would need more than one dialog question keeps the prose block ---
+test_more_than_four_options_keep_prose() {
+  local fixture rc rendered
+  for fixture in "$FIVE" "$SIX" "$NINE" "$SEVENTEEN"; do
+    rc=0
+    "$DIALOG" --payload < "$fixture" > "$TMP_ROOT/refused.out" 2> "$TMP_ROOT/refused.err" || rc=$?
+    [ "$rc" = 2 ] || fail "T4: $(basename "$fixture") must exit 2, got $rc"
+    grep -q 'needs more than one dialog question' "$TMP_ROOT/refused.err" \
+      || fail "T4: $(basename "$fixture") refusal is not explanatory: $(cat "$TMP_ROOT/refused.err")"
+    if [ -s "$TMP_ROOT/refused.out" ]; then
+      fail "T4: $(basename "$fixture") emitted a payload for a card it refuses: $(cat "$TMP_ROOT/refused.out")"
+    fi
+  done
 
-  # Nine options balance across three questions instead of 4+4+1.
-  check "$NINE" 'len(p) == 1 and len(p[0]["questions"]) == 3'
-  check "$NINE" '[len(q["options"]) for q in p[0]["questions"]] == [3, 3, 3]'
-  check "$NINE" '[o["label"] for q in p[0]["questions"] for o in q["options"]] == [o["label"] for o in c[0]["options"]]'
-  answer=$(fragment "$NINE" 1 '[{"questionIndex":2,"kind":"option","answer":"India"}]')
-  [ "$answer" = "d1 o9" ] || fail "T4: expected 'd1 o9', got '$answer'"
-  resolve "$NINE" "$answer" 'r["selected_option_id"] == "india"'
-  pass "T4: extra options split in card order, balanced, and every one still round-trips"
+  # Nothing is dropped: the prose block the caller falls back to still lists every
+  # option of the refused card, in card order.
+  rendered=$("$ASK" --render < "$SEVENTEEN") || fail "T4: sq-ask --render failed on the refused card"
+  printf '%s\n' "$rendered" > "$TMP_ROOT/seventeen.prose"
+  python3 - "$SEVENTEEN" "$TMP_ROOT/seventeen.prose" <<'PY' || fail "T4: the prose fallback dropped or reordered an option"
+import json, sys
+card = json.load(open(sys.argv[1], encoding="utf-8"))
+rows = [line for line in open(sys.argv[2], encoding="utf-8").read().splitlines()
+        if line.startswith("  O") and "Your own words" not in line]
+sys.exit(0 if len(rows) == len(card["options"])
+         and all(o["label"] in row for o, row in zip(card["options"], rows)) else 1)
+PY
+  pass "T4: more than four options refuses into the complete prose block instead of splitting"
 }
 
 # --- T5: several cards in one reply become one dialog per card, in order ---
 test_one_dialog_per_card() {
   local both answer
   both="$TMP_ROOT/three-cards.json"
-  python3 - "$PAIR" "$FOUR" "$SIX" > "$both" <<'PY'
+  python3 - "$PAIR" "$FOUR" "$GATE" > "$both" <<'PY'
 import json, sys
 print(json.dumps([json.load(open(p, encoding="utf-8")) for p in sys.argv[1:]]))
 PY
   check "$both" 'len(p) == 3 and len(c) == 3'
-  check "$both" '[len(d["questions"]) for d in p] == [1, 1, 2]'
-  check "$both" '[d["questions"][0]["header"] for d in p][:2] == ["Deploy Window", "Storage Choice"]'
-  check "$both" '[d["questions"][0]["header"] for d in p][2].startswith("Migration")'
+  check "$both" '[len(d["questions"]) for d in p] == [1, 1, 1]'
+  check "$both" '[d["questions"][0]["header"] for d in p] == ["Deploy Window", "Storage Choice", "Review gate: 2"]'
+  check "$both" 'all(len(d["questions"][0]["header"]) <= 16 for d in p)'
   check "$both" 'all(d["questions"][0]["question"].startswith(x["question"]) for d, x in zip(p, c))'
+  # Findings stay on the card that owns them, never repeated across the other dialogs.
+  check "$both" '[q["question"].count("F1 - review-1") for d in p for q in d["questions"]] == [0, 0, 1]'
   # The second card is dialog 2, so its rows resolve as D2.
   answer=$(fragment "$both" 2 '[{"questionIndex":0,"kind":"option","answer":"Object Store"}]')
   [ "$answer" = "d2 o3" ] || fail "T5: expected 'd2 o3', got '$answer'"
   resolve "$both" "$answer" 'r["decision_id"] == "storage-choice" and r["selected_option_id"] == "object"'
-  # Both dialogs answered together still resolve through the same parser, in one call.
-  answer=$(fragments "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 3 '[{"questionIndex":1,"kind":"option","answer":"Admin Tools"}]')
-  [ "$answer" = "d1 o1 d3 o6" ] || fail "T5: expected 'd1 o1 d3 o6', got '$answer'"
-  resolve "$both" "$answer" 'len(ro) == 2 and ro[0]["selected_option_id"] == "tonight" and ro[1]["selected_option_id"] == "admin"'
+  # Two cards answered together still resolve through the same parser, in one call.
+  answer=$(fragments "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 3 '[{"questionIndex":0,"kind":"option","answer":"Accept as is"}]')
+  [ "$answer" = "d1 o1 d3 o2" ] || fail "T5: expected 'd1 o1 d3 o2', got '$answer'"
+  resolve "$both" "$answer" 'len(ro) == 2 and ro[0]["selected_option_id"] == "tonight" and ro[1]["selected_option_id"] == "accept"'
   pass "T5: several cards produce one dialog each, in card order, answered independently"
 }
 
@@ -226,27 +238,33 @@ test_free_text_and_refusals() {
   [ "$rc" = 2 ] || fail "T7: a single-option card must exit 2, got $rc"
   printf '%s' "$out" | grep -q 'at least 2 options' || fail "T7: single-option refusal is not explanatory: $out"
 
-  # A label shared by two options that land in different split questions is never
-  # resolvable, so the card keeps the prose block before the dialog is shown.
+  # A label shared by two options is never resolvable, so the card keeps the prose block.
   rc=0
   out=$("$DIALOG" --payload < "$FIX/duplicate-label.json" 2>&1) || rc=$?
-  [ "$rc" = 2 ] || fail "T7: a label shared across split questions must exit 2, got $rc"
+  [ "$rc" = 2 ] || fail "T7: a card with a shared option label must exit 2, got $rc"
   printf '%s' "$out" | grep -q "share the label 'Same'" || fail "T7: duplicate-label refusal is not explanatory: $out"
 
+  # A refusal keeps stdout clean: stdout is the protocol channel, so a failed
+  # conversion prints nothing a caller could mistake for a payload.
   rc=0
-  out=$(printf '%s' '{"version":1,"id":"broken","title":"Broken","question":"Broken?","options":[{"id":"a","label":"A"}],"default_option_id":"missing"}' \
-    | "$DIALOG" --payload 2>&1) || rc=$?
+  printf '%s' '{"version":1,"id":"broken","title":"Broken","question":"Broken?","options":[{"id":"a","label":"A"}],"default_option_id":"missing"}' \
+    | "$DIALOG" --payload > "$TMP_ROOT/refusal.out" 2> "$TMP_ROOT/refusal.err" || rc=$?
   [ "$rc" = 2 ] || fail "T7: an invalid card must exit 2, got $rc"
-  printf '%s' "$out" | grep -q 'default_option_id' || fail "T7: the card schema owner did not explain the invalid card: $out"
+  if [ -s "$TMP_ROOT/refusal.out" ]; then
+    fail "T7: the invalid-card refusal wrote to stdout: $(cat "$TMP_ROOT/refusal.out")"
+  fi
+  grep -q 'default_option_id' "$TMP_ROOT/refusal.err" \
+    || fail "T7: the card schema owner did not explain the invalid card: $(cat "$TMP_ROOT/refusal.err")"
 
   rc=0
-  out=$(fragment "$SIX" 1 '[{"questionIndex":0,"kind":"multi","answer":"x","selected":["Billing"]}]' 2>&1) || rc=$?
+  out=$(fragment "$PAIR" 1 '[{"questionIndex":0,"kind":"multi","answer":"x","selected":["Deploy Tonight"]}]' 2>&1) || rc=$?
   [ "$rc" = 4 ] || fail "T7: a multi-select answer must exit 4, got $rc"
   printf '%s' "$out" | grep -q 'multi-select' || fail "T7: multi-select refusal is not explanatory: $out"
 
+  # One dialog carries one question, so a second answer for it is a named error.
   rc=0
-  out=$(fragment "$SIX" 1 '[{"questionIndex":0,"kind":"option","answer":"Billing"},{"questionIndex":1,"kind":"option","answer":"Webhooks"}]' 2>&1) || rc=$?
-  [ "$rc" = 4 ] || fail "T7: two answers for one split card must exit 4, got $rc"
+  out=$(fragment "$PAIR" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"},{"questionIndex":0,"kind":"option","answer":"Hold Until Monday"}]' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: two answers for one decision must exit 4, got $rc"
   printf '%s' "$out" | grep -q 'answered more than once' || fail "T7: duplicate-answer refusal is not explanatory: $out"
 
   # Esc is not a decision: only the whole tool result can prove a dialog was not
@@ -291,68 +309,47 @@ test_free_text_and_refusals() {
 # --- T8: the fixtures the suite added are clean under the grammar linter ---------
 test_fixtures_are_lint_clean() {
   local out
-  out=$("$LINT" "$PAIR" "$FOUR" "$SIX" "$NINE" "$SEVENTEEN" "$FIX/reserved.json" "$FIX/single.json" "$FIX/duplicate-label.json" 2>&1)
+  out=$("$LINT" "$PAIR" "$FOUR" "$GATE" "$FIVE" "$SIX" "$NINE" "$SEVENTEEN" "$FIX/reserved.json" "$FIX/single.json" "$FIX/duplicate-label.json" 2>&1)
   [ -z "$out" ] || fail "T8: sq-card-lint warned on the fixtures: $out"
   pass "T8: sq-card-lint reports no warnings on the fixture cards"
 }
 
-# --- T9: more questions than one dialog allows split across dialogs, in order ---
-test_many_options_across_dialogs() {
-  check "$SEVENTEEN" 'len(p) == 2'
-  check "$SEVENTEEN" '[len(d["questions"]) for d in p] == [4, 1]'
-  check "$SEVENTEEN" 'all(1 <= len(d["questions"]) <= 4 for d in p)'
-  check "$SEVENTEEN" 'all(2 <= len(q["options"]) <= 4 for d in p for q in d["questions"])'
-  # Every card option appears exactly once, in card order, across the dialogs.
-  check "$SEVENTEEN" '[o["label"] for d in p for q in d["questions"] for o in q["options"]] == [o["label"] for o in c[0]["options"]]'
-  # The question split continues across the dialog boundary instead of restarting.
-  check "$SEVENTEEN" 'p[0]["questions"][-1]["question"].splitlines()[0].endswith("(part 4 of 5)")'
-  check "$SEVENTEEN" 'p[1]["questions"][0]["question"].splitlines()[0].endswith("(part 5 of 5)")'
-  # The last card option, the recommended one, lands in the second dialog still marked.
-  check "$SEVENTEEN" 'p[1]["questions"][0]["options"][-1]["label"] == c[0]["options"][-1]["label"]'
-  check "$SEVENTEEN" 'p[1]["questions"][0]["options"][-1]["description"].endswith("(recommended)")'
-  pass "T9: a card needing more than one dialog splits in card order with no option dropped"
-}
-
-# --- T10: a split card merges its dialogs into exactly one fragment per decision ---
-test_multi_dialog_merge() {
-  local answer rc out
-  # The card keeps its own global option numbering, so an option picked in either
-  # dialog is the card's real option code.
-  answer=$(fragments "$SEVENTEEN" 1 '[{"questionIndex":0,"kind":"option","answer":"US East"}]')
-  [ "$answer" = "d1 o1" ] || fail "T10: dialog 1 must map to 'd1 o1', got '$answer'"
-  resolve "$SEVENTEEN" "$answer" 'r["selected_option_id"] == "us-east"'
-
-  answer=$(fragments "$SEVENTEEN" 2 '[{"questionIndex":0,"kind":"option","answer":"Global Edge"}]')
-  [ "$answer" = "d1 o17" ] || fail "T10: dialog 2 must map to 'd1 o17', got '$answer'"
-  resolve "$SEVENTEEN" "$answer" 'r["selected_option_id"] == "global-edge"'
-
-  # Two answers for the same decision across dialogs is a named error, never a pick.
-  rc=0
-  out=$(fragments "$SEVENTEEN" 1 '[{"questionIndex":0,"kind":"option","answer":"US East"}]' 2 '[{"questionIndex":0,"kind":"option","answer":"Global Edge"}]' 2>&1) || rc=$?
-  [ "$rc" = 4 ] || fail "T10: two answers across dialogs must exit 4, got $rc"
-  printf '%s' "$out" | grep -q 'answered more than once across the dialogs' \
-    || fail "T10: the cross-dialog duplicate refusal is not explanatory: $out"
-
-  # Different cards answered from different dialogs still merge into one fragment each.
-  local both
-  both="$TMP_ROOT/merge-cards.json"
-  python3 - "$PAIR" "$SEVENTEEN" > "$both" <<'PY'
+# --- T9: answering several cards in one call merges one fragment per decision ----
+test_merge_across_dialogs() {
+  local both answer rc out
+  both="$TMP_ROOT/two-cards.json"
+  python3 - "$PAIR" "$FOUR" > "$both" <<'PY'
 import json, sys
 print(json.dumps([json.load(open(p, encoding="utf-8")) for p in sys.argv[1:]]))
 PY
-  answer=$(fragments "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 3 '[{"questionIndex":0,"kind":"option","answer":"Global Edge"}]')
-  [ "$answer" = "d1 o1 d2 o17" ] || fail "T10: expected 'd1 o1 d2 o17', got '$answer'"
-  resolve "$both" "$answer" 'len(ro) == 2 and ro[0]["selected_option_id"] == "tonight" and ro[1]["selected_option_id"] == "global-edge"'
-  pass "T10: split-card dialogs merge into one fragment per decision, with a named duplicate error"
+  check "$both" 'len(p) == 2 and [len(d["questions"]) for d in p] == [1, 1]'
+
+  # Each card keeps its own number, so the second dialog's pick is still D2's option.
+  answer=$(fragments "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 2 '[{"questionIndex":0,"kind":"option","answer":"Object Store"}]')
+  [ "$answer" = "d1 o1 d2 o3" ] || fail "T9: expected 'd1 o1 d2 o3', got '$answer'"
+  resolve "$both" "$answer" 'len(ro) == 2 and ro[0]["selected_option_id"] == "tonight" and ro[1]["selected_option_id"] == "object"'
+
+  # A repeated decision across the pairs is a named error, never a guessed pick.
+  rc=0
+  out=$(fragments "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 1 '[{"questionIndex":0,"kind":"option","answer":"Hold Until Monday"}]' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T9: two answers for one decision across dialogs must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'answered more than once across the dialogs' \
+    || fail "T9: the cross-dialog duplicate refusal is not explanatory: $out"
+
+  # Each card renders exactly one dialog, so a third dialog is out of range.
+  rc=0
+  out=$(fragments "$both" 3 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 2>&1) || rc=$?
+  [ "$rc" = 2 ] || fail "T9: a dialog past the rendered count must exit 2, got $rc"
+  printf '%s' "$out" | grep -q 'out of range' || fail "T9: the out-of-range refusal is not explanatory: $out"
+  pass "T9: several cards merge into one fragment per decision, with a named duplicate error"
 }
 
 test_two_option_card
 test_four_option_card
 test_round_trip
-test_split_keeps_every_option
+test_more_than_four_options_keep_prose
 test_one_dialog_per_card
 test_prose_fallback_unchanged
 test_free_text_and_refusals
 test_fixtures_are_lint_clean
-test_many_options_across_dialogs
-test_multi_dialog_merge
+test_merge_across_dialogs

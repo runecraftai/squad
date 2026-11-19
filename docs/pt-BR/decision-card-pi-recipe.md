@@ -52,20 +52,23 @@ Ele valida o cartão por `bin/sq-ask.sh --validate` primeiro, então o esquema m
 
 | Cartão | Diálogo |
 |--------|---------|
-| `question` | `questions[].question`, depois uma linha `F<n> - <id> <text>` por finding e por fim uma linha `Context: <context>`, na primeira pergunta do cartão |
-| `title` | `questions[].header`, cortado no limite de 16 caracteres no último espaço do texto retido quando sobrar um, senão no próprio limite; o marcador `k/n` de uma pergunta dividida conta dentro dos 16 |
+| `question` | `questions[].question`, depois uma linha `F<n> - <id> <text>` por finding e por fim uma linha `Context: <context>` |
+| `title` | `questions[].header`, cortado no limite de 16 caracteres no último espaço do texto retido quando sobrar um, senão no próprio limite |
 | `options[].label` | `options[].label`, inalterado |
 | `options[].description` | `options[].description`; a opção recomendada ganha um ` (recommended)` no final, para que a recomendação apareça em sua própria linha |
 | `allow_free_text` | não é criado: a linha de texto livre do próprio diálogo é a saída `O0` |
 | `payload`, ids de opção, metadata | não são exibidos |
 
-Divisões substituem o truncamento, porque um diálogo comporta 1-4 perguntas e uma pergunta 2-4 opções:
+Um cartão é uma pergunta de diálogo, porque uma pergunta comporta 2-4 opções:
 
-- mais de quatro opções em um cartão viram várias perguntas, balanceadas e na ordem do cartão (5 -> 3+2, 6 -> 3+3, 9 -> 3+3+3), cada uma numerada `(part k of n)` e `k/n` dentro do cabeçalho;
-- mais de quatro perguntas em um cartão viram vários diálogos, cada um uma chamada `ask_user_question`;
-- vários cartões em uma resposta viram um diálogo por cartão, na ordem dos cartões.
+- um cartão com 2-4 opções vira exatamente uma pergunta `ask_user_question`, com cada opção em sua própria linha e a recomendada marcada;
+- vários cartões em uma resposta viram um diálogo por cartão, na ordem dos cartões, cada um renderizado como sua própria chamada `ask_user_question`;
+- um cartão com mais de quatro opções mantém o bloco de prosa: o mapeamento sai com 2 informando o motivo, então nenhuma opção é descartada, dobrada ou truncada.
 
-Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, ou um cartão com uma única opção.
+A3 substitui a abordagem anterior de dividir e mesclar para este caminho de payload: a extensão responde uma entrada por pergunta, então um cartão espalhado por duas ou mais perguntas voltava como várias respostas para a mesma decisão e só poderia ser registrado adivinhando uma escolha.
+Recusar o cartão mantém o bloco de prosa autoritativo exatamente para os cartões que as regras de divisão existiam para atender, em vez de deixá-los com um diálogo cuja resposta não pode ser mesclada.
+
+Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, ou um cartão com mais de quatro opções.
 
 ## Respostas
 
@@ -77,7 +80,7 @@ Ele converte isso de volta para a gramática de resposta em prosa, então o pars
 bin/sq-card-pi-dialog.sh --payload < card.json
 # uma chamada ask_user_question por elemento do array impresso
 bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' < card.json
-# um cartão que precisou de dois diálogos é mesclado em uma chamada, um fragmento por decisão:
+# vários cartões respondidos em uma chamada são mesclados em um fragmento por decisão:
 bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
 # -> "d1 o2", depois:
 bin/sq-ask.sh --answer 'd1 o2' < card.json
@@ -85,9 +88,8 @@ bin/sq-ask.sh --answer 'd1 o2' < card.json
 
 `--answer` precisa do cartão de onde veio o diálogo, porque uma resposta é sempre resolvida contra o cartão JSON e nunca contra o texto que o comandante viu.
 Ele recebe o resultado inteiro da ferramenta e nunca um array de respostas solto: só `details.cancelled` prova que o diálogo não foi cancelado, então `Esc` nunca vira uma decisão registrada.
-Um cartão dividido mantém a numeração global de opções do próprio cartão entre diálogos, então uma opção escolhida no último diálogo continua sendo o código real do cartão e `d1 o15` continua válido.
-A mesclagem é mecânica - sem dobra, sem renumeração, sem escolha adivinhada - e produz exatamente um fragmento por decisão.
-Duas respostas para a mesma decisão, seja entre as perguntas de um diálogo ou entre dois diálogos, saem com 4 e um erro nomeado em vez de escolher uma, e uma resposta multi-select sai com 4 porque este mapeamento nunca cria uma pergunta multi-select.
+Responder vários cartões em uma chamada mescla seus diálogos em exatamente um fragmento por decisão, mecanicamente - sem dobra, sem renumeração, sem escolha adivinhada.
+Duas respostas para a mesma decisão saem com 4 e um erro nomeado em vez de escolher uma, e uma resposta multi-select sai com 4 porque este mapeamento nunca cria uma pergunta multi-select.
 
 ## Fallback
 
@@ -103,5 +105,5 @@ Com a extensão ausente, nada muda:
 |---------|-----------|
 | `bin/sq-card-pi-dialog.sh` | Cartão para payload de diálogo, e respostas do diálogo de volta para o texto de resposta em prosa |
 | `bin/sq-bootstrap.sh` | A oferta somente para Pi, incluindo o comando de instalação exato |
-| `tests/sq-card-pi-dialog.test.sh` | Casos de mapeamento, divisão, recusa, ida e volta e fallback |
+| `tests/sq-card-pi-dialog.test.sh` | Casos de mapeamento, recusa, ida e volta e fallback |
 | `tests/sq-bootstrap.test.sh` | A oferta: somente Pi, comando exato, nunca instala, silenciosa em outros harnesses |

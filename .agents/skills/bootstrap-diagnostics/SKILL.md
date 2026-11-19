@@ -2,7 +2,7 @@
 name: bootstrap-diagnostics
 description: >-
   Agent-only handling playbook for session-start bootstrap diagnostics.
-  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH: invalid, CREW_DISPATCH: model existence:, UNIT_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, XO_SYNC, XO_LIVENESS, XO_HANDOFF, or NUDGE_XOS - or when a standalone bin/sq-bootstrap.sh or bin/sq-startup-network.sh run prints one of those lines.
+  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH: invalid, CREW_DISPATCH: model existence:, UNIT_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, XO_SYNC, XO_LIVENESS, XO_HANDOFF, NUDGE_XOS, or OPTIONAL - or when a standalone bin/sq-bootstrap.sh or bin/sq-startup-network.sh run prints one of those lines.
   A silent bootstrap section, or a BOOTSTRAP_INFO fact, means no skill load.
 user-invocable: false
 metadata:
@@ -23,7 +23,7 @@ When any diagnostic needs commander attention, report the plain consequence and 
   For `sq-quota`, bootstrap requires it because Squad reads its current output directly before resolving every crew-dispatch profile array; without it, report the missing requirement and do not choose around an unexamined candidate.
 - `MISSING_MANUAL: <tool> (instructions: <url>)` - tell the commander why the tool is required and give them the printed instructions URL, but do not pass the tool to `bin/sq-bootstrap.sh install`; wait for the commander to complete the manual installation, then rerun session start to confirm the dependency is present.
 - `OPTIONAL: <what> (offer: <command>)` - a no-action offer of an optional capability, never a requirement and never a missing tool; it does not block dispatch, and it must never be passed to `bin/sq-bootstrap.sh install` because that path only knows required tools.
-  On its own it never needs loading this playbook; when one is already loaded for another line, relay it to the commander in one short sentence only when the capability serves the current work and let them run the printed command if they want it.
+  Relay it to the commander once, in one short sentence with the printed command, so the offer reaches them even when no other diagnostic loaded this playbook, and never install it automatically or let it hold up dispatch.
   An offer left untaken changes nothing else.
   The Pi ask-user dialog extension (`docs/decision-card-pi-recipe.md`) is the current producer of this line.
 - `BACKEND_INVALID: <name> (known: <names>)` - the resolved runtime backend has no verified dependency or lifecycle contract, so do not dispatch work until the invalid `SQUAD_BACKEND` or `config/backend` value is corrected to one of the listed backends.
