@@ -1,0 +1,701 @@
+#!/usr/bin/env bash
+# sq-secret.sh - the unit's secret broker: resolve a secret by name and hand it
+# straight to its consumer.
+#
+# The Bitwarden CLI (`bw`) is the only store, and it speaks to whatever server
+# it is already configured with, so there is no second vault, no encryption of
+# our own, and no value cached on disk.
+#
+# Usage:
+#   sq-secret.sh check
+#   sq-secret.sh list
+#   sq-secret.sh get <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
+#   sq-secret.sh run [--for <task-id>] --with <ENVVAR>=<name> [--with ...] \
+#     -- <command> [args...]
+#   sq-secret.sh <command> --help
+#
+# Names and items
+#   Logical name `foo` resolves to the Bitwarden item named `sq/foo` by
+#   convention, and `--item` overrides that lookup for one `get` call.
+#   A name and a task id are both [A-Za-z0-9._-]+.
+#
+# Session and server
+#   The session is read from BW_SESSION only.
+#   When it is absent, expired, or the vault is locked, the call fails closed
+#   and names `bw unlock` as the remedy.
+#   This script never prompts for a master password and never passes a session
+#   key on a command line.
+#   The server is whatever `bw` is already configured with and is reported by
+#   `check`; this script never reconfigures `bw`.
+#   Every `bw` call runs with --nointeraction, stdin from /dev/null, and under a
+#   hard time bound, so a missing session can never turn into an interactive
+#   prompt and a stalled server fails closed instead of hanging the caller.
+#   The bound is SQUAD_SECRET_BW_TIMEOUT in whole seconds greater than zero
+#   (default 20); an empty, non-numeric, or non-positive value keeps the default
+#   so the bound can never be disabled.
+#
+# Security invariants
+#   1. A value is written only to `get` stdout, and only when stdout is not a
+#      terminal or --to-tty was passed explicitly.
+#   2. A value never enters an argv: `--with` carries the name, and the value
+#      travels in the child's environment.
+#   3. Every resolution appends one line to state/secrets-audit.log carrying its
+#      ISO timestamp, logical name, backing item, task id when given, caller
+#      (script name and pid), child command when run, and outcome.
+#      The log never contains a value, and an unauditable resolution is refused.
+#   4. Nothing is cached on disk: no temp file, no state copy, no data/ copy.
+#   5. Optional scope policy lives in config/secrets-policy.json as
+#      {"<task-id>": ["name", ...]}. A --for call requires that file: only names
+#      listed for that task resolve, a task with no entry is denied, and a
+#      missing or malformed policy is a failure rather than a bypass.
+#      A scoped resolution fetches the item and then requires it to be the
+#      name's own sq/<name> item, so an --item that points at a bare name, a
+#      foreign item, or an id belonging to another entry is denied.
+#      Without --for, resolution is allowed and audited.
+#   6. Missing `bw` or `jq`, a locked or unreadable session, an unknown name,
+#      and an unreadable item each fail closed with their own named reason and a
+#      non-zero exit.
+#
+# Scope and session
+#   The scope policy constrains what this broker resolves, not what an inherited
+#   session lets a child read: `run` hands BW_SESSION to the child because the
+#   session belongs to the same user account and a child that calls `bw` itself
+#   needs it, so isolating it would add a mechanism with no real security gain.
+#
+# Facts
+#   `check` prints one line per fact - bw, jq, server, session - and exits
+#   non-zero when the backend is unusable.
+#   It proves the session with a real vault read rather than trusting `bw
+#   status`, and reports that fact as unknown when `bw` or `jq` cannot make
+#   the proof.
+#   `list` prints "<name>\t<item-id>" for every vault item named sq/*, never a
+#   value.
+#   `get` prints the value and nothing else.
+#   `run` execs the command with each resolved value in its environment.
+#
+# Exit codes
+#   0 success; 1 refused or failed resolution; 2 usage error.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SQUAD_ROOT="${SQUAD_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
+STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
+CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
+POLICY="$CONFIG/secrets-policy.json"
+AUDIT_LOG="$STATE/secrets-audit.log"
+SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
+PARENT_PID=$PPID
+
+# parent_name: the name of the process that asked for the secret, so an audit
+# line can be attributed after that process has exited. `ps -o comm=` answers on
+# both Linux and macOS; a host that cannot answer records "unknown" instead.
+parent_name() {
+  local name
+  name=$(ps -o comm= -p "$PARENT_PID" 2>/dev/null \
+    | sed -n '1s/^[[:space:]]*//;1s/[[:space:]]*$//p') || name=
+  name=${name##*/}
+  printf '%s' "${name:-unknown}"
+}
+
+CALLER="$SCRIPT_NAME:$$ parent=$(parent_name):$PARENT_PID"
+# Set by policy_allows when it denies, so the caller can name the reason.
+POLICY_REASON=
+POLICY_MESSAGE=
+
+# shellcheck source=bin/sq-timeout-lib.sh
+. "$SCRIPT_DIR/sq-timeout-lib.sh"
+
+# Every bw call is network-backed, so each one runs under a hard bound: a
+# stalled or unreachable server fails closed instead of hanging the caller.
+# bin/sq-timeout-lib.sh is the single owner of that bound, and it rejects a
+# non-positive bound because that disables the deadline entirely, so an empty,
+# non-numeric, or non-positive SQUAD_SECRET_BW_TIMEOUT keeps the default.
+BW_TIMEOUT="${SQUAD_SECRET_BW_TIMEOUT:-20}"
+case "$BW_TIMEOUT" in
+  '' | *[!0-9]* | 0*) BW_TIMEOUT=20 ;;
+esac
+
+# bw_timed <args...>: run one bw invocation under the bound. The exit status is
+# bw's own, except 124, which means the bound was hit.
+bw_timed() {
+  fm_run_timed "$BW_TIMEOUT" bw "$@"
+}
+
+# fail_bw_timeout: fail closed naming the stalled backend, so a bound that fires
+# is never reported as a session, server, or item problem.
+fail_bw_timeout() {
+  fail bw-timeout "bw did not answer within ${BW_TIMEOUT}s; the Bitwarden backend is stalled or unreachable"
+}
+
+usage() {  # [<subcommand>]
+  case "${1:-}" in
+    check)
+      cat <<'EOF'
+Usage: sq-secret.sh check
+
+Report whether the backend is usable, one line per fact: bw, jq, server, and
+session. Never prompts and never reconfigures bw. Exits non-zero when the
+backend is unusable, naming `bw unlock` when the session is the problem.
+EOF
+      ;;
+    list)
+      cat <<'EOF'
+Usage: sq-secret.sh list
+
+Print "<name>\t<item-id>" for every Bitwarden item named sq/<name>, so a caller
+can see the logical names this unit knows and the item backing each one.
+Names and metadata only: this never prints a value.
+EOF
+      ;;
+    get)
+      cat <<'EOF'
+Usage: sq-secret.sh get <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
+
+Resolve one logical name and write the value to stdout, and nothing else.
+Refuses when stdout is a terminal unless --to-tty is passed explicitly.
+--item overrides the sq/<name> lookup for this call, and --for applies the
+scope policy in config/secrets-policy.json.
+EOF
+      ;;
+    run)
+      cat <<'EOF'
+Usage: sq-secret.sh run [--for <task-id>] --with <ENVVAR>=<name> [--with ...]
+                        -- <command> [args...]
+
+Resolve every name, put each value in the child's environment under the
+requested variable name, and exec the command.
+--with carries the name only, so the child's argv contains no value.
+EOF
+      ;;
+    *)
+      awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
+      ;;
+  esac
+}
+
+fail() {  # <reason> <message>
+  printf 'sq-secret: %s: %s\n' "$1" "$2" >&2
+  exit 1
+}
+
+usage_fail() {  # <message>
+  printf 'sq-secret: usage: %s\n' "$1" >&2
+  exit 2
+}
+
+validate_name() {  # <name>
+  case "$1" in
+    '' | *[!A-Za-z0-9._-]*) usage_fail "invalid secret name '$1' (expected [A-Za-z0-9._-]+)" ;;
+  esac
+}
+
+validate_task() {  # <task-id>
+  case "$1" in
+    '' | *[!A-Za-z0-9._-]*) usage_fail "invalid task id '$1' (expected [A-Za-z0-9._-]+)" ;;
+  esac
+}
+
+validate_env_var() {  # <ENVVAR>
+  case "$1" in
+    '' | [0-9]* | *[!A-Za-z0-9_]*) usage_fail "invalid environment variable name '$1'" ;;
+  esac
+}
+
+# audit_field <value>: render one bounded, single-line, quoted log field so a
+# name or item containing spaces or quotes can never break the line shape.
+audit_field() {
+  local value=$1
+  value=${value//[$'\n\r\t']/ }
+  value=${value//\"/\'}
+  if [ "${#value}" -gt 200 ]; then
+    value="${value:0:197}..."
+  fi
+  printf '"%s"' "$value"
+}
+
+# audit <outcome> <name> <item> [task] [command]: append one resolution record.
+# The log is created on demand with user-only permissions and is never a
+# symlink; no field ever carries a value.
+audit() {
+  local outcome=$1 name=$2 item=$3 task=${4:-} command=${5:-} dir line
+  dir=$(dirname -- "$AUDIT_LOG")
+  [ -d "$dir" ] || mkdir -p -- "$dir" 2>/dev/null || return 1
+  [ ! -L "$AUDIT_LOG" ] || return 1
+  if [ ! -e "$AUDIT_LOG" ]; then
+    (umask 077 && : >>"$AUDIT_LOG") 2>/dev/null || return 1
+  fi
+  line="$(date -u +%Y-%m-%dT%H:%M:%SZ) name=$(audit_field "$name") item=$(audit_field "$item")"
+  [ -z "$task" ] || line="$line task=$(audit_field "$task")"
+  line="$line caller=$(audit_field "$CALLER")"
+  [ -z "$command" ] || line="$line command=$(audit_field "$command")"
+  printf '%s outcome=%s\n' "$line" "$outcome" >>"$AUDIT_LOG"
+}
+
+require_bw() {
+  command -v bw >/dev/null 2>&1 \
+    || fail bw-missing "the Bitwarden CLI (bw) is not on PATH; install it with 'npm install -g @bitwarden/cli'"
+}
+
+require_jq() {
+  command -v jq >/dev/null 2>&1 \
+    || fail jq-missing "jq is required to read a Bitwarden item and the scope policy"
+}
+
+# bw_status_json: print bw's own status document.
+bw_status_json() {
+  bw_timed status --nointeraction </dev/null 2>/dev/null
+}
+
+# json_string_field <json> <key>: print a string field, or nothing when it is
+# null or absent. sed keeps this usable on a host without jq.
+json_string_field() {
+  printf '%s' "$1" \
+    | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+    | head -n 1
+}
+
+# bw_status_word: print bw's own status word (unlocked, locked, unauthenticated).
+# Returns 124 when the bound was hit, so a stalled backend stays named.
+bw_status_word() {
+  local json word rc=0
+  json=$(bw_status_json) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 1
+  fi
+  word=$(json_string_field "$json" status)
+  [ -n "$word" ] || return 1
+  printf '%s' "$word"
+}
+
+# bw_server_url: print the server bw is effectively configured with, including
+# the built-in cloud default, or return 1 when bw reports no server. Returns 124
+# when the bound was hit, so a stalled backend is not reported as no server.
+# This only reads bw's configuration; it never changes it.
+bw_server_url() {
+  local url rc=0
+  url=$(bw_timed config server --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 1
+  fi
+  url=${url#"${url%%[![:space:]]*}"}
+  url=${url%"${url##*[![:space:]]}"}
+  [ -n "$url" ] || return 1
+  printf '%s' "$url"
+}
+
+# bw_vault_readable: return 0 only when a real vault read succeeds, so a
+# session that merely reports "unlocked" cannot pass as usable. A failed, empty
+# or unparsable listing proves nothing and is treated as unreadable. Returns 124
+# when the bound was hit, so a stalled backend is not blamed on the session.
+bw_vault_readable() {
+  local items rc=0
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 1
+  fi
+  [ -n "$items" ] || return 1
+  printf '%s' "$items" | jq -e 'type == "array"' >/dev/null 2>&1
+}
+
+# bw_item_exists <item>: return 0 when the vault holds an item with that id or
+# name, 1 when it holds none, 2 when the vault could not be listed, and 124 when
+# the bound was hit.
+bw_item_exists() {
+  local items count rc=0
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || return 124
+    return 2
+  fi
+  count=$(printf '%s' "$items" | jq --arg t "$1" \
+    '[.[] | select(.id == $t or .name == $t)] | length' 2>/dev/null) || return 2
+  case "$count" in
+    '' | *[!0-9]*) return 2 ;;
+  esac
+  [ "$count" -gt 0 ]
+}
+
+# require_session_present: fail closed unless bw and jq are present and
+# BW_SESSION is set. It never prompts and never guesses a session key.
+require_session_present() {
+  require_bw
+  require_jq
+  [ -n "${BW_SESSION:-}" ] \
+    || fail session-missing "BW_SESSION is not set; run 'bw unlock' and export the session it prints"
+}
+
+# policy_allows <task-id> <name>: return 0 when the task is scoped for the name.
+# On denial it sets POLICY_REASON and POLICY_MESSAGE; a missing or malformed
+# policy is a denial, never a bypass.
+policy_allows() {
+  local task=$1 name=$2
+  POLICY_REASON=policy-missing
+  POLICY_MESSAGE="no config/secrets-policy.json; refusing a --for scope for task '$task'"
+  [ -e "$POLICY" ] || return 1
+  POLICY_REASON=policy-invalid
+  POLICY_MESSAGE="config/secrets-policy.json is not a readable regular file"
+  { [ -f "$POLICY" ] && [ ! -L "$POLICY" ]; } || return 1
+  command -v jq >/dev/null 2>&1 \
+    || { POLICY_MESSAGE="jq is required to read config/secrets-policy.json"; return 1; }
+  jq -e 'type == "object" and all(.[]; type == "array" and all(.[]; type == "string"))' \
+    "$POLICY" >/dev/null 2>&1 \
+    || { POLICY_MESSAGE="config/secrets-policy.json is not an object of name arrays"; return 1; }
+  jq -e --arg task "$task" 'has($task)' "$POLICY" >/dev/null 2>&1 \
+    || {
+      POLICY_REASON=policy-unknown-task
+      POLICY_MESSAGE="task '$task' has no entry in config/secrets-policy.json"
+      return 1
+    }
+  jq -e --arg task "$task" --arg name "$name" '.[$task] | index($name) != null' \
+    "$POLICY" >/dev/null 2>&1 \
+    || {
+      POLICY_REASON=policy-denied
+      POLICY_MESSAGE="task '$task' is not scoped for secret '$name'"
+      return 1
+    }
+  POLICY_REASON=
+  POLICY_MESSAGE=
+}
+
+# capture_bytes <command...>: run a command and store its stdout in CAPTURED
+# byte for byte, keeping trailing newlines that a bare command substitution
+# would strip. Returns the command's own status.
+capture_bytes() {
+  CAPTURED=$(
+    "$@"
+    rc=$?
+    printf x
+    exit "$rc"
+  ) || return 1
+  CAPTURED=${CAPTURED%x}
+}
+
+# item_usable <json>: succeed only when the item carries a non-empty string
+# password, so an empty or newline-only field is judged on the field itself
+# rather than on a shell-stripped copy of it.
+item_usable() {
+  printf '%s' "$1" | jq -e '
+    (.login? // {})
+    | type == "object"
+      and ((.password? | type) == "string")
+      and ((.password | length) > 0)
+  ' >/dev/null 2>&1
+}
+
+# item_password <json>: print the item's password bytes exactly.
+item_password() {
+  printf '%s' "$1" | jq -j '.login.password' 2>/dev/null
+}
+
+# resolve_value <name> <item> <task> <command>: print the item's password.
+# The caller has already established the session with require_session_present;
+# the item read itself proves the session and classifies its own failure.
+# Every outcome is audited, and a failure to audit a successful resolution is
+# itself fatal, so no value is ever emitted unaudited.
+resolve_value() {
+  local name=$1 item=$2 task=$3 command=$4 json value word exists rc=0 status_rc=0 resolved
+  json=$(bw_timed get item "$item" --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    audit failed "$name" "$item" "$task" "$command" || true
+    [ "$rc" -ne 124 ] || fail_bw_timeout
+    word=$(bw_status_word) || status_rc=$?
+    [ "$status_rc" -ne 124 ] || fail_bw_timeout
+    case "$word" in
+      locked | unauthenticated)
+        fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
+        ;;
+    esac
+    exists=0
+    bw_item_exists "$item" || exists=$?
+    case "$exists" in
+      0)
+        fail item-unreadable "the Bitwarden item '$item' could not be read; 'bw get item' failed for it"
+        ;;
+      1)
+        fail item-missing "no Bitwarden item matches '$item'"
+        ;;
+      124)
+        fail_bw_timeout
+        ;;
+      *)
+        fail session-unreadable "the vault could not be read while resolving '$item'; run 'bw unlock' and export the session it prints"
+        ;;
+    esac
+  fi
+  if ! printf '%s' "$json" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    audit failed "$name" "$item" "$task" "$command" || true
+    fail item-unreadable "the Bitwarden item '$item' could not be read"
+  fi
+  # A scoped call resolves only the item the policy authorizes: the fetched
+  # item must be this name's own sq/<name> item, so an --item that names a
+  # foreign item, a bare name, or an id belonging to another entry is denied.
+  if [ -n "$task" ]; then
+    resolved=$(printf '%s' "$json" | jq -r '.name // empty' 2>/dev/null) || resolved=
+    if [ "$resolved" != "sq/$name" ]; then
+      audit denied "$name" "$item" "$task" "$command" || true
+      fail policy-item-mismatch "the item '$item' is not the item the scope policy authorizes for '$name' (expected 'sq/$name', found '${resolved:-unknown}')"
+    fi
+  fi
+  if ! item_usable "$json"; then
+    audit failed "$name" "$item" "$task" "$command" || true
+    fail item-no-password "the Bitwarden item '$item' carries no usable password field"
+  fi
+  if ! capture_bytes item_password "$json"; then
+    audit failed "$name" "$item" "$task" "$command" || true
+    fail item-unreadable "the Bitwarden item '$item' could not be read"
+  fi
+  value=$CAPTURED
+  audit ok "$name" "$item" "$task" "$command" \
+    || fail audit-unwritable "state/secrets-audit.log could not be written; refusing an unaudited resolution"
+  printf '%s' "$value"
+}
+
+cmd_check() {
+  local rc=0 server word has_bw=0 has_jq=0 probe_rc=0 status_rc=0
+  if command -v bw >/dev/null 2>&1; then
+    has_bw=1
+    printf 'bw: present %s\n' "$(command -v bw)"
+  else
+    printf 'bw: missing (install the Bitwarden CLI: npm install -g @bitwarden/cli)\n'
+    rc=1
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    has_jq=1
+    printf 'jq: present %s\n' "$(command -v jq)"
+  else
+    printf 'jq: missing (required to read a Bitwarden item and the scope policy)\n'
+    rc=1
+  fi
+  if [ "$has_bw" -eq 0 ]; then
+    printf 'server: unknown (bw is not installed)\n'
+    rc=1
+  else
+    probe_rc=0
+    server=$(bw_server_url) || probe_rc=$?
+    case "$probe_rc" in
+      0) printf 'server: %s\n' "$server" ;;
+      124) printf 'server: unknown (bw-timeout: bw did not answer within %ss; the Bitwarden backend is stalled or unreachable)\n' "$BW_TIMEOUT" ;;
+      *) printf 'server: unknown (bw config server printed no server URL)\n' ;;
+    esac
+    [ "$probe_rc" -eq 0 ] || rc=1
+  fi
+  if [ -z "${BW_SESSION:-}" ]; then
+    printf 'session: missing BW_SESSION (run bw unlock and export the session it prints)\n'
+    rc=1
+  elif [ "$has_bw" -eq 0 ]; then
+    printf 'session: unknown (bw is not installed, so the session cannot be proved)\n'
+    rc=1
+  elif [ "$has_jq" -eq 0 ]; then
+    printf 'session: unknown (jq is required to prove the session with a vault read)\n'
+    rc=1
+  else
+    probe_rc=0
+    bw_vault_readable || probe_rc=$?
+    if [ "$probe_rc" -eq 0 ]; then
+      printf 'session: unlocked\n'
+    elif [ "$probe_rc" -eq 124 ]; then
+      printf 'session: unknown (bw-timeout: bw did not answer within %ss; the Bitwarden backend is stalled or unreachable)\n' "$BW_TIMEOUT"
+      rc=1
+    else
+      word=$(bw_status_word) || status_rc=$?
+      if [ "$status_rc" -eq 124 ]; then
+        printf 'session: unknown (bw-timeout: bw did not answer within %ss; the Bitwarden backend is stalled or unreachable)\n' "$BW_TIMEOUT"
+      else
+        case "$word" in
+          locked | unauthenticated)
+            printf 'session: %s (run bw unlock and export the session it prints)\n' "$word"
+            ;;
+          *)
+            printf 'session: unreadable (the vault could not be read; run bw unlock and export the session it prints)\n'
+            ;;
+        esac
+      fi
+      rc=1
+    fi
+  fi
+  return "$rc"
+}
+
+cmd_list() {
+  local items listing word rc=0 status_rc=0
+  require_session_present
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] || fail_bw_timeout
+    word=$(bw_status_word) || status_rc=$?
+    [ "$status_rc" -ne 124 ] || fail_bw_timeout
+    case "$word" in
+      locked | unauthenticated)
+        fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
+        ;;
+      unlocked)
+        fail session-unreadable "the vault could not be listed with the current session; run 'bw unlock' and export the session it prints"
+        ;;
+    esac
+    fail item-listing "bw could not list the vault"
+  fi
+  listing=$(printf '%s' "$items" | jq -r '
+    .[]
+    | select((.name // "") | startswith("sq/") and length > 3)
+    | [.name[3:], .id]
+    | @tsv
+  ' 2>/dev/null) \
+    || fail item-listing "bw listed the vault but its items could not be read"
+  printf '%s' "$listing" | LC_ALL=C sort
+}
+
+cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
+  local name='' item='' task='' to_tty=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --help | -h)
+        usage get
+        exit 0
+        ;;
+      --to-tty)
+        to_tty=1
+        shift
+        ;;
+      --item)
+        [ "$#" -ge 2 ] || usage_fail "get --item needs an item id or name"
+        item=$2
+        [ -n "$item" ] || usage_fail "get --item needs an item id or name"
+        shift 2
+        ;;
+      --for)
+        [ "$#" -ge 2 ] || usage_fail "get --for needs a task id"
+        validate_task "$2"
+        task=$2
+        shift 2
+        ;;
+      -*)
+        usage_fail "unknown option for get: $1"
+        ;;
+      *)
+        [ -z "$name" ] || usage_fail "get resolves exactly one name"
+        name=$1
+        shift
+        ;;
+    esac
+  done
+  [ -n "$name" ] || usage_fail "get needs a logical secret name"
+  validate_name "$name"
+  [ -z "$task" ] || validate_task "$task"
+  [ -n "$item" ] || item="sq/$name"
+  if [ -t 1 ] && [ "$to_tty" -eq 0 ]; then
+    audit denied "$name" "$item" "$task" "" || true
+    fail tty-refused "refusing to write a secret to a terminal; redirect stdout or pass --to-tty"
+  fi
+  require_session_present
+  # A --for call is scoped to the listed name; resolve_value then requires the
+  # fetched item to be that name's own sq/<name> item, so an --item override
+  # can never reach a secret the policy does not list.
+  if [ -n "$task" ] && ! policy_allows "$task" "$name"; then
+    audit denied "$name" "$item" "$task" "" || true
+    fail "$POLICY_REASON" "$POLICY_MESSAGE"
+  fi
+  resolve_value "$name" "$item" "$task" ""
+  if [ -t 1 ]; then
+    printf '\n'
+  fi
+}
+
+cmd_run() {  # [--for <task-id>] --with <ENVVAR>=<name> ... -- <command> [args...]
+  local task='' command_string='' i
+  local -a vars=() names=() values=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --help | -h)
+        usage run
+        exit 0
+        ;;
+      --for)
+        [ "$#" -ge 2 ] || usage_fail "run --for needs a task id"
+        validate_task "$2"
+        task=$2
+        shift 2
+        ;;
+      --with)
+        [ "$#" -ge 2 ] || usage_fail "run --with needs <ENVVAR>=<name>"
+        case "$2" in
+          *=*) ;;
+          *) usage_fail "run --with needs <ENVVAR>=<name>, got '$2'" ;;
+        esac
+        validate_env_var "${2%%=*}"
+        validate_name "${2#*=}"
+        vars+=("${2%%=*}")
+        names+=("${2#*=}")
+        shift 2
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        usage_fail "unknown option for run: $1"
+        ;;
+      *)
+        usage_fail "run needs '--' before the command"
+        ;;
+    esac
+  done
+  [ "$#" -gt 0 ] || usage_fail "run needs a command after '--'"
+  [ "${#vars[@]}" -gt 0 ] || usage_fail "run needs at least one --with <ENVVAR>=<name>"
+  [ -z "$task" ] || validate_task "$task"
+  command_string="$*"
+  require_session_present
+  # Deny the whole call before resolving anything, so a scope failure never
+  # leaves a partially resolved command.
+  if [ -n "$task" ]; then
+    for i in "${!names[@]}"; do
+      if ! policy_allows "$task" "${names[$i]}"; then
+        audit denied "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string" || true
+        fail "$POLICY_REASON" "$POLICY_MESSAGE"
+      fi
+    done
+  fi
+  for i in "${!vars[@]}"; do
+    capture_bytes resolve_value "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string"
+    values+=("$CAPTURED")
+  done
+  for i in "${!vars[@]}"; do
+    export "${vars[$i]}=${values[$i]}"
+  done
+  exec "$@"
+}
+
+[ "$#" -gt 0 ] || {
+  usage >&2
+  exit 2
+}
+
+subcommand=$1
+shift
+case "$subcommand" in
+  check | list)
+    case "${1:-}" in
+      --help | -h)
+        usage "$subcommand"
+        exit 0
+        ;;
+      '') ;;
+      *) usage_fail "$subcommand takes no arguments" ;;
+    esac
+    if [ "$subcommand" = check ]; then
+      cmd_check
+    else
+      cmd_list
+    fi
+    ;;
+  get) cmd_get "$@" ;;
+  run) cmd_run "$@" ;;
+  --help | -h | help) usage ;;
+  *)
+    printf 'sq-secret: usage: unknown command %s\n' "$subcommand" >&2
+    exit 2
+    ;;
+esac
