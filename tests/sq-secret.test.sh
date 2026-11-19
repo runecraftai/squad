@@ -374,6 +374,33 @@ test_scope_policy() {
   assert_contains "$out" "policy-unknown-task" "an unscoped task names its reason"
   pass "a task with no policy entry is denied"
 
+  # An empty --for value must never collapse into "no scope": it is rejected at
+  # the option boundary, so it can neither skip the policy gate nor clear an
+  # earlier task.
+  local empty_marker="$TMP_ROOT/empty-task.marker" ok_before ok_after
+  rm -f "$POLICY" "$empty_marker"
+  ok_before=$(grep -c 'outcome=ok' "$LOG" 2>/dev/null || true)
+  out=$(sq_secret "$FAKEBIN:$PATH" get github-token --for '' 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "get with an empty --for must fail instead of resolving unscoped"
+  assert_not_contains "$out" "$VALUE" "an empty --for get must not print the value"
+  # shellcheck disable=SC2016  # the child shell expands these, not the test
+  out=$(sq_secret "$FAKEBIN:$PATH" run --for '' --with T=github-token -- \
+    sh -c 'touch "$1"' _ "$empty_marker" 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "run with an empty --for must fail instead of resolving unscoped"
+  assert_not_contains "$out" "$VALUE" "an empty --for run must not print the value"
+  [ ! -e "$empty_marker" ] || fail "an empty --for run must never execute the child"
+  printf '%s' '{"some-task":["github-token"]}' > "$POLICY"
+  out=$(sq_secret "$FAKEBIN:$PATH" get github-token --for some-task --for '' 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a later empty --for must not clear an earlier valid task"
+  assert_not_contains "$out" "$VALUE" "a cleared task must not print the value"
+  ok_after=$(grep -c 'outcome=ok' "$LOG" 2>/dev/null || true)
+  [ "${ok_before:-0}" = "${ok_after:-0}" ] \
+    || fail "an empty --for must not record a successful resolution"
+  pass "an empty --for value is refused instead of disabling the scope policy"
+
   printf '%s' '{"some-task":["db-password"]}' > "$POLICY"
   out=$(sq_secret "$FAKEBIN:$PATH" get github-token --for some-task 2>&1)
   rc=$?

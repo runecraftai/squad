@@ -488,6 +488,7 @@ cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
         ;;
       --for)
         [ "$#" -ge 2 ] || usage_fail "get --for needs a task id"
+        validate_task "$2"
         task=$2
         shift 2
         ;;
@@ -538,6 +539,7 @@ cmd_run() {  # [--for <task-id>] --with <ENVVAR>=<name> ... -- <command> [args..
         ;;
       --for)
         [ "$#" -ge 2 ] || usage_fail "run --for needs a task id"
+        validate_task "$2"
         task=$2
         shift 2
         ;;
