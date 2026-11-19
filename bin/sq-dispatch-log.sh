@@ -4,7 +4,7 @@
 #   sq-dispatch-log.sh <id> decision --harness H --model M --effort E \
 #     (--profile NAME | --reason TEXT) [--quota-summary JSON]
 #   sq-dispatch-log.sh <id> spawn --harness H --model M --effort E
-#   sq-dispatch-log.sh <id> recommendation   (reads SQUAD_RECOMMENDATION_JSON)
+#   sq-dispatch-log.sh <id> recommendation [--stdin]   (defaults to SQUAD_RECOMMENDATION_JSON)
 #   sq-dispatch-log.sh <id> outcome --source status-notify|pr-merge|teardown \
 #     --result done|failed|landed|released
 # Base: SQUAD_BASE > SQUAD_HOME > SQUAD_ROOT_OVERRIDE > repository root;
@@ -46,7 +46,7 @@ BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SCRIPT_DIR/..}}}"
 DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
 STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 
-if ! SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" 2>/dev/null <<'PY'
+if ! SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" 2>/dev/null 3<&0 <<'PY'
 import argparse
 import datetime
 import fcntl
@@ -78,6 +78,7 @@ for event in ("decision", "spawn"):
         reason.add_argument("--reason")
         command.add_argument("--quota-summary", default='{"status":"unknown"}')
 command = commands.add_parser("recommendation")
+command.add_argument("--stdin", action="store_true")
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
 command.add_argument("--result", required=True, choices=("done", "failed", "landed", "released"))
@@ -120,7 +121,15 @@ if args.event == "decision":
             raise ValueError("invalid quota field")
     record["quota_summary"] = quota
 if args.event == "recommendation":
-    recommendation = json.loads(os.environ.get("SQUAD_RECOMMENDATION_JSON", "{}"))
+    if args.stdin:
+        limit = 512 * 1024
+        with os.fdopen(3, "rb") as stream:
+            payload = stream.read(limit + 1)
+        if len(payload) > limit:
+            raise ValueError("recommendation payload too large")
+    else:
+        payload = os.environ.get("SQUAD_RECOMMENDATION_JSON", "{}")
+    recommendation = json.loads(payload)
     if not isinstance(recommendation, dict) or recommendation.get("label") != "recommendation":
         raise ValueError("invalid recommendation event")
     status = recommendation.get("status")

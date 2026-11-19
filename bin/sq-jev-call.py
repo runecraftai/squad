@@ -283,9 +283,10 @@ def record(args, event):
     env = os.environ.copy()
     env.pop("TYPESAFE_API_KEY", None)
     env["SQUAD_DATA_OVERRIDE"] = args.data
-    env["SQUAD_RECOMMENDATION_JSON"] = json.dumps({"label": "recommendation", **event})
+    env.pop("SQUAD_RECOMMENDATION_JSON", None)
+    payload = json.dumps({"label": "recommendation", **event}, separators=(",", ":"))
     logged = subprocess.run([str(Path(__file__).with_name("sq-dispatch-log.sh")),
-                             args.id, "recommendation"], check=True,
+                             args.id, "recommendation", "--stdin"], check=True, input=payload.encode(),
                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env)
     if logged.stderr:
         raise OSError("recommendation not recorded")

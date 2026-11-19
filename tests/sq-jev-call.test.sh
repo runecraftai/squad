@@ -69,7 +69,7 @@ def serve(record, state):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            body = json.dumps(state["reply"], ensure_ascii=False).encode()
+            body = json.dumps(state["reply"], ensure_ascii=False, separators=(",", ":")).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -319,6 +319,13 @@ with tempfile.TemporaryDirectory() as td:
         assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
         assert recorded() == [{**evidence_row, "model": OK_REPLY["model"],
                                "answers": {**evidence_row["answers"], DESIGN: {"type": "noul", "answer": True}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        probabilities = {f"{i:03d}" + ".x" * 60: .1 for i in range(500)}
+        state["reply"] = answer("claude/sonnet", confidence=.8, probabilities=probabilities)
+        large = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(large.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert recorded() == [{**evidence_row, "probabilities": probabilities,
+                               "answers": {QUESTION: state["reply"]["answers"][QUESTION]}}]
         (data / "task/dispatch.jsonl").unlink()
         state["reply"] = answer("claude/sonnet", confidence=.8,
                                 notes="arbitrary service text", rationale={"nested": True})
