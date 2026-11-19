@@ -39,7 +39,7 @@ Two facts drive the mapping:
 `OPTIONAL` is an offer, not a missing required tool: it never routes through the required-tool install consent path, and it never blocks dispatch.
 `.agents/skills/bootstrap-diagnostics` owns how that line is handled.
 Installing is the commander's explicit action.
-Bootstrap only runs `pi list --no-approve`: this bypasses project trust discovery so the probe cannot resolve or install packages. Bootstrap stays silent on every other harness and when `pi` is not on `PATH`.
+Bootstrap only runs `pi list --no-approve`: this bypasses project trust discovery so the probe cannot resolve or install packages. Bootstrap stays silent when `pi` is not on `PATH` or the harness is detected as non-Pi. An inherited `PI_CODING_AGENT=true` marker can cause a non-Pi session to be detected as Pi and see the offer.
 Detection accepts only the exact npm package record (with or without an `@version` suffix) followed by its installed-path line in the `User packages:` section. A project-scope install (`.pi/settings.json`, trust-gated) reads as absent, and bootstrap stays silent when the probe reports failure.
 The shared timeout helper's Perl fallback drops the child's signal bits, so a signal-terminated probe can look successful and produce a false `OPTIONAL` offer. This is accepted because the offer requires consent and installs nothing.
 `SQUAD_PI_ASK_USER_OFFER=0` silences the offer for a base that does not want it.
@@ -69,27 +69,30 @@ Refusing the card keeps the prose block authoritative for exactly the cards that
 
 A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, a card with more than four options, any missing, null, or blank option description, or any option label or description ending in `(recommended)` after trimming trailing whitespace, including on the recommended option itself. The marker check is lowercase-only; a lookalike such as `(Recommended)` still renders and is not rejected.
 
+The dialog heading (question, findings, context, and snapshot line) is limited to 6 lines and 600 characters including line breaks. A heading over either limit is refused with exit 2 (`dialog heading exceeds`); use the prose block instead.
+
 ## Answers
 
 The dialog result is the published version 2.15.0 shape, whose field names are owned by the package's `docs/tool-schema.md` "Result" section: `details.answers[]` entries carry `questionIndex`, `question`, `kind`, and `answer`, with the optional `notes`, `selected`, and `preview`, and the result carries `details.cancelled`.
 The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. Every question ends with the card ID and a deterministic fingerprint of the full validated card. A returned question that does not match that snapshot exits 4, even if the card ID and chosen label are unchanged.
 
-To recover a result, use Pi's `/session` command to find the current session's JSONL file. In the current conversation branch, take the `id` and the `arguments` object from the assistant's `toolCall` content entry for the corresponding `ask_user_question` call. Pass those saved arguments as `--call`; do not substitute newly generated arguments. Find the session entry with `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"`, and `message.toolCallId` equal to that ID. Pass the entire `message` object, including `details`, as `--result`; do not pass the enclosing session entry. The model-facing `content` alone is not sufficient and must not be used to reconstruct `details`. If the saved arguments or matching structured result are unavailable (for example, the session was not saved), use the canonical prose path below.
+To recover a result, use Pi's `/session` command to find the current session's JSONL file. In the current conversation branch, take the `id` and the `arguments` object from the assistant's `toolCall` content entry for the corresponding `ask_user_question` call. Pass them as `--call '{"toolCallId":"<saved id>","arguments":{...}}'`; do not substitute newly generated arguments. Find the session entry with `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"`, and `message.toolCallId` equal to that ID. Pass the entire `message` object, including `details`, as `--result`; do not pass the enclosing session entry. The model-facing `content` alone is not sufficient and must not be used to reconstruct `details`. If the saved call or matching structured result is unavailable (for example, the session was not saved), use the canonical prose path below.
 
-Use `--resolve` to record the decision in one command. After checking the echoed question against the card snapshot, it regenerates the dialog payload and compares it to the saved arguments as JSON: key order and formatting do not matter, but all fields and array entries must match. A mismatch exits 2 with `--call arguments do not match`; use the canonical prose path instead. On a match, it runs `bin/sq-ask.sh --answer` with the exact card bytes that passed the checks, returning the parser's output and exit code unchanged:
+Use `--resolve` to record the decision in one command. After checking the echoed question against the card snapshot, it matches the result's `toolCallId` against the saved call's ID. A missing or different result ID exits 4 with a named reason; use the canonical prose path instead. Once the IDs match, it regenerates the dialog payload and compares it to the saved arguments as JSON: key order and formatting do not matter, but all fields and array entries must match. A mismatch exits 2 with `--call arguments do not match`; use the canonical prose path instead. On a match, it runs `bin/sq-ask.sh --answer` with the exact card bytes that passed the checks, returning the parser's output and exit code unchanged:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
 # one ask_user_question call per element of the printed array
-bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<saved arguments>' --result '<tool result>' < card.json
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<saved tool-call JSON>' --result '<tool result>' < card.json
 # several cards answered in one call:
 bin/sq-card-pi-dialog.sh --resolve \
-  --dialog 1 --call '<first arguments>' --result '<first result>' \
-  --dialog 2 --call '<second arguments>' --result '<second result>' < card.json
+  --dialog 1 --call '<first saved tool-call JSON>' --result '<first result>' \
+  --dialog 2 --call '<second saved tool-call JSON>' --result '<second result>' < card.json
 ```
 
 `--answer` on the mapping script only prints the code fragment (such as `d1 o2`); do not resolve that fragment against a separately read card file.
 Both modes take the whole tool result, never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
+Either mode rejects a result carrying `details.answers[].notes` or `details.globalNote` with exit 4 (`dialog notes cannot be recorded`). Keep the decision open and confirm it through the canonical prose path rather than recording the selection without its note.
 Answering several cards in one call merges their dialogs into exactly one fragment per decision, mechanically - no fold, no renumbering, no guessed pick.
 Each submitted result must contain exactly one answer. An empty result or two answers for the same decision exit 4 without emitting a fragment, and a multi-select answer also exits 4 because this mapping never authors a multi-select question.
 A malformed answer, such as a non-string chosen label or typed text, exits 4 with a named error and never a traceback.

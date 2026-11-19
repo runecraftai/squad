@@ -390,10 +390,39 @@ card = json.loads(raw)
 def run(program, *args, data):
     return subprocess.run([program, *args], input=data, capture_output=True)
 
-def result(question, kind, answer):
-    return json.dumps({"details": {"cancelled": False, "answers": [
+def result(question, kind, answer, call_id="call-1"):
+    return json.dumps({"toolCallId": call_id, "details": {"cancelled": False, "answers": [
         {"questionIndex": 0, "question": question, "kind": kind, "answer": answer}
     ]}})
+
+def saved_call(arguments, call_id="call-1"):
+    return json.dumps({"toolCallId": call_id, "arguments": arguments}, sort_keys=True, indent=2)
+
+def check_heading(candidate, eligible):
+    data = json.dumps(candidate).encode()
+    assert run(ask, "--validate", data=data).returncode == 0
+    converted = run(dialog, "--payload", data=data)
+    if eligible:
+        assert converted.returncode == 0, converted
+        return json.loads(converted.stdout)[0]["questions"][0]["question"]
+    assert converted.returncode == 2 and not converted.stdout and b"dialog heading exceeds" in converted.stderr, converted
+
+heading_card = copy.deepcopy(card)
+for count in (2, 3, 4):
+    heading_card["findings"] = [{"id": f"finding-{n}", "text": "Check this change"} for n in range(count)]
+    heading = check_heading(heading_card, count < 4)
+    if heading is not None:
+        assert len(heading.splitlines()) == count + 3 and len(heading) < 600, heading
+
+heading_card["question"] = "Q" * 150
+heading_card["findings"] = [{"id": "long-finding", "text": "F" * 180}]
+heading_card["context"] = "C"
+base_length = len(check_heading(heading_card, True)) - 1
+for size in (599, 600, 601):
+    heading_card["context"] = "C" * (size - base_length)
+    heading = check_heading(heading_card, size <= 600)
+    if heading is not None:
+        assert len(heading) == size and len(heading.splitlines()) == 4, heading
 
 with open(blank_fixture, "rb") as f:
     blank = json.load(f)
@@ -476,7 +505,7 @@ assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.
 
 canonical = run(ask, "--answer", "d1 o2", data=reformatted)
 resolve_args = ["--resolve", "--dialog", "1", "--result", accept_result]
-call_args = ["--call", json.dumps(gate_call, sort_keys=True, indent=2)]
+call_args = ["--call", saved_call(gate_call)]
 resolved = run(dialog, *resolve_args, *call_args, data=reformatted)
 assert resolved.returncode == canonical.returncode == 0 and resolved.stdout == canonical.stdout, resolved
 assert json.loads(resolved.stdout)["selected_payload"]["action"] == "approve", resolved
@@ -486,10 +515,28 @@ assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.
 swapped_call = copy.deepcopy(gate_call)
 first, second = swapped_call["questions"][0]["options"][:2]
 first["description"], second["description"] = second["description"], first["description"]
-mismatch = run(dialog, *resolve_args, "--call", json.dumps(swapped_call), data=reformatted)
+mismatch = run(dialog, *resolve_args, "--call", saved_call(swapped_call), data=reformatted)
 assert mismatch.returncode == 2 and not mismatch.stdout and b"--call arguments do not match" in mismatch.stderr, mismatch
 missing = run(dialog, *resolve_args, data=reformatted)
 assert missing.returncode == 2 and not missing.stdout and b"needs one --call" in missing.stderr, missing
+
+for result_id, reason in [("other-call", b"toolCallId does not match"), (None, b"missing toolCallId")]:
+    returned = json.loads(accept_result)
+    if result_id is None:
+        del returned["toolCallId"]
+    else:
+        returned["toolCallId"] = result_id
+    refused = run(dialog, *resolve_args[:-1], json.dumps(returned), *call_args, data=reformatted)
+    assert refused.returncode == 4 and not refused.stdout and reason in refused.stderr, refused
+
+for field in ("notes", "globalNote"):
+    returned = json.loads(accept_result)
+    details = returned["details"]
+    target = details["answers"][0] if field == "notes" else details
+    target[field] = "Only after legal signs off"
+    for mode, extra in [("--answer", []), ("--resolve", call_args)]:
+        refused = run(dialog, mode, *resolve_args[1:-1], json.dumps(returned), *extra, data=reformatted)
+        assert refused.returncode == 4 and not refused.stdout and b"dialog notes cannot be recorded" in refused.stderr, refused
 
 ineligible = json.loads(reformatted)
 ineligible["options"][0]["label"] = "Next"
@@ -512,11 +559,11 @@ data = json.dumps(cards).encode()
 payload = json.loads(run(dialog, data=data).stdout)
 args = []
 for n, entry in enumerate(payload, 1):
-    args += ["--dialog", str(n), "--result", result(entry["questions"][0]["question"], "custom", "a" * 200)]
+    args += ["--dialog", str(n), "--result", result(entry["questions"][0]["question"], "custom", "a" * 200, f"call-{n}")]
 merged = run(dialog, "--answer", *args, data=data)
 assert merged.returncode == 4 and not merged.stdout and b"fewer dialogs" in merged.stderr, merged
 canonical = run(ask, "--answer", " ".join('d%d o0 "%s"' % (n, "a" * 200) for n in range(1, 11)), data=data)
-calls = [json.dumps(entry) for entry in payload]
+calls = [saved_call(entry, f"call-{n}") for n, entry in enumerate(payload, 1)]
 call_flags = [part for call in calls for part in ("--call", call)]
 resolved = run(dialog, "--resolve", *args, *call_flags, data=data)
 assert resolved.returncode == canonical.returncode == 4 and not resolved.stdout, resolved

@@ -68,8 +68,9 @@
 #          packages during the probe. It parses only the "User packages:" section and
 #          stops at "Project packages:", so a project-scope install reads as
 #          absent rather than installed, a failed listing makes no claim at all,
-#          and every other harness stays silent
-#          (docs/decision-card-pi-recipe.md owns the mapping it enables).
+#          and non-Pi harnesses normally stay silent. An inherited
+#          PI_CODING_AGENT=true marker can make a non-Pi session see the offer.
+#          docs/decision-card-pi-recipe.md owns the mapping it enables.
 #          Set SQUAD_PI_ASK_USER_OFFER=0 to silence it.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
 #          SQ_REPORT_MIN below; the per-tool owners point there. An installed

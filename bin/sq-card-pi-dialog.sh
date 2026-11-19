@@ -10,8 +10,8 @@
 #
 # Usage: echo '<card json>' | bin/sq-card-pi-dialog.sh [--payload]
 #        bin/sq-card-pi-dialog.sh '<card json>' [--payload]
-#        echo '<card json>' | bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<tool arguments json>' --result '<tool result json>' \
-#          [--dialog 2 --call '<tool arguments json>' --result '<tool result json>' ...]
+#        echo '<card json>' | bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<saved tool-call json>' --result '<tool result json>' \
+#          [--dialog 2 --call '<saved tool-call json>' --result '<tool result json>' ...]
 #
 # Input is one card object or a JSON array of cards, validated first by
 # bin/sq-ask.sh --validate so the schema keeps exactly one owner.
@@ -20,9 +20,12 @@
 #   --payload      Print the ask_user_question payload(s) as a JSON array, one entry
 #                  per dialog, in card order; each entry is one tool call. The default.
 #   --resolve      Use this mode to record a dialog decision. It checks the echoed
-#                  question against the card snapshot and requires each --call to be
-#                  the exact ask_user_question arguments for its --dialog (exit 2
-#                  on mismatch). It passes the derived answer and the same card bytes
+#                  question against the card snapshot. Each --call takes a saved entry
+#                  {"toolCallId":"<id>","arguments":{...}} for ask_user_question.
+#                  The ID must match the whole result's toolCallId (exit 4 if missing
+#                  from the result or different), and the saved arguments must match
+#                  the regenerated payload (exit 2 on mismatch).
+#                  It passes the derived answer and the same card bytes
 #                  to bin/sq-ask.sh --answer and returns its output and exit code unchanged.
 #   --answer       Print only the answer fragment, such as "d1 o2" or 'd1 o0 "ship it"'.
 #                  Both modes accept repeated --dialog/--result pairs to answer several
@@ -65,8 +68,11 @@
 # or description ending in "(recommended)" after trimming trailing whitespace.
 # The marker check is lowercase-only: a lookalike such as "(Recommended)" still renders.
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
-# the canonical shape. A result without details.cancelled, or a cancelled one (Esc), is
-# never converted into an answer: it exits 4, so nothing is recorded.
+# the canonical shape. The question heading (question, findings, context and snapshot
+# line) may be at most 6 lines and 600 characters including line breaks; a longer
+# heading is refused with exit 2. A result without details.cancelled, a cancelled one
+# (Esc), or one carrying details.answers[].notes or details.globalNote exits 4 without
+# recording anything; continue in prose.
 #
 # Exit codes: 0=ok, 2=invalid card or the dialog cannot represent it, 4=unusable result
 set -euo pipefail
@@ -83,6 +89,7 @@ import hashlib, json, os, subprocess, sys
 
 MAX_OPTIONS = 4
 HEADER_MAX = 16
+HEADING_LIMIT = (6, 600)
 MARK = "(recommended)"
 CTX = "Context: "
 FREE_MAX = 200
@@ -175,6 +182,10 @@ def build(cards, questions):
             raise Invalid("%s card '%s' has %d options and needs more than one dialog question; "
                           "this mapping never splits a card, so the prose block stays authoritative"
                           % (where, card["id"], count))
+        max_lines, max_chars = HEADING_LIMIT
+        if question.count("\n") + 1 > max_lines or len(question) > max_chars:
+            raise Invalid("card '%s' dialog heading exceeds %d lines or %d characters"
+                          % (card["id"], max_lines, max_chars))
         dialogs.append({"questions": [{
             "question": question,
             "header": header_for(card["title"]),
@@ -202,19 +213,39 @@ def result_answer(payload, number):
         raise Unusable("the result carries no answer for decision D%d" % number)
     if len(answers) > 1:
         raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
-    return answers[0]
+    answer = answers[0]
+    if not isinstance(answer, dict):
+        raise Unusable("each answer must be an object")
+    if "notes" in answer or "globalNote" in details:
+        raise Unusable("dialog notes cannot be recorded; use the canonical prose path")
+    return answer
+
+
+def saved_arguments(call, payload, number):
+    try:
+        entry = json.loads(call)
+    except ValueError:
+        raise Invalid("--call for dialog %d is not valid JSON" % number)
+    call_id = entry.get("toolCallId") if isinstance(entry, dict) else None
+    if not isinstance(call_id, str) or not call_id.strip() or not isinstance(entry.get("arguments"), dict):
+        raise Invalid("--call for dialog %d needs a saved entry with toolCallId and arguments" % number)
+    result_id = payload.get("toolCallId")
+    if not isinstance(result_id, str) or not result_id.strip():
+        raise Unusable("the result for dialog %d is missing toolCallId" % number)
+    if result_id != call_id:
+        raise Unusable("the result toolCallId does not match --call for dialog %d" % number)
+    return entry["arguments"]
 
 
 def answer_text(cards, submissions):
     """Merge the dialogs of one or more cards into exactly one fragment per decision."""
     questions = list(snapshot_questions(cards))
     answers = {}
+    calls = {}
     for number, payload, call in submissions:
         if not 1 <= number <= len(questions):
             raise Invalid("--dialog %d is out of range: the card renders %d dialog(s)" % (number, len(questions)))
         answer = result_answer(payload, number)
-        if not isinstance(answer, dict):
-            raise Unusable("each answer must be an object")
         position = answer.get("questionIndex")
         if not isinstance(position, int) or isinstance(position, bool) or position != 0:
             raise Unusable("questionIndex %r is not a question of dialog %d" % (position, number))
@@ -223,16 +254,13 @@ def answer_text(cards, submissions):
         if answer.get("question") != questions[number - 1]:
             raise Unusable("the returned question does not match dialog %d's card snapshot" % number)
         answers[number] = answer
+        if call is not None:
+            calls[number] = saved_arguments(call, payload, number)
 
     dialogs = build(cards, questions)
-    for number, _, call in submissions:
-        if call is not None:
-            try:
-                arguments = json.loads(call)
-            except ValueError:
-                raise Invalid("--call for dialog %d is not valid JSON" % number)
-            if arguments != dialogs[number - 1]:
-                raise Invalid("--call arguments do not match the generated payload for dialog %d" % number)
+    for number, arguments in calls.items():
+        if arguments != dialogs[number - 1]:
+            raise Invalid("--call arguments do not match the generated payload for dialog %d" % number)
 
     pieces = []
     for number, answer in answers.items():
