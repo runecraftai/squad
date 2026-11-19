@@ -384,16 +384,18 @@ cmd_check() {
 }
 
 cmd_list() {
-  local items
+  local items listing
   require_session
   items=$(bw list items --nointeraction </dev/null 2>/dev/null) \
     || fail item-listing "bw could not list the vault"
-  printf '%s' "$items" | jq -r '
+  listing=$(printf '%s' "$items" | jq -r '
     .[]
     | select((.name // "") | startswith("sq/") and length > 3)
     | [.name[3:], .id]
     | @tsv
-  ' | LC_ALL=C sort
+  ' 2>/dev/null) \
+    || fail item-listing "bw listed the vault but its items could not be read"
+  printf '%s' "$listing" | LC_ALL=C sort
 }
 
 cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
@@ -449,8 +451,8 @@ cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
 }
 
 cmd_run() {  # [--for <task-id>] --with <ENVVAR>=<name> ... -- <command> [args...]
-  local task='' command_string='' value i
-  local -a vars=() names=()
+  local task='' command_string='' i
+  local -a vars=() names=() values=()
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --help | -h)
@@ -502,8 +504,10 @@ cmd_run() {  # [--for <task-id>] --with <ENVVAR>=<name> ... -- <command> [args..
     done
   fi
   for i in "${!vars[@]}"; do
-    value=$(resolve_value "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string")
-    export "${vars[$i]}=${value}"
+    values+=("$(resolve_value "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string")")
+  done
+  for i in "${!vars[@]}"; do
+    export "${vars[$i]}=${values[$i]}"
   done
   exec "$@"
 }

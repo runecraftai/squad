@@ -74,6 +74,13 @@ case "${1:-}" in
     ;;
   get)
     [ "${2:-}" = item ] || exit 1
+    if [ -n "${FAKE_BW_ENV_PROBE:-}" ]; then
+      if [ -n "${!FAKE_BW_ENV_PROBE:-}" ]; then
+        printf 'inherited\n' >> "$vault/env-probe.log"
+      else
+        printf 'clean\n' >> "$vault/env-probe.log"
+      fi
+    fi
     if [ "${FAKE_BW_STALE_SESSION:-0}" = 1 ]; then
       printf 'Invalid or expired session key.\n' >&2
       exit 1
@@ -102,6 +109,10 @@ case "${1:-}" in
       exit 1
     fi
     if [ "${FAKE_BW_LIST_EMPTY:-0}" = 1 ]; then
+      exit 0
+    fi
+    if [ "${FAKE_BW_LIST_GARBAGE:-0}" = 1 ]; then
+      printf 'this is not json\n'
       exit 0
     fi
     [ "$status" = unlocked ] || { printf 'Vault is locked.\n' >&2; exit 1; }
@@ -248,6 +259,18 @@ test_run_keeps_the_value_out_of_argv() {
     sh -c 'test -n "$A" && test -n "$B"' \
     || fail "run must resolve every --with pair"
   pass "run resolves every requested name"
+
+  # A helper spawned while resolving a later name must not inherit an earlier
+  # value: only the consuming child sees any of them.
+  local probe="$VAULT/env-probe.log"
+  rm -f "$probe"
+  FAKE_BW_ENV_PROBE=A sq_secret "$FAKEBIN:$PATH" \
+    run --with A=github-token --with B=db-password -- true \
+    || fail "run failed while probing the helper environment"
+  assert_present "$probe" "the helper environment probe ran"
+  assert_no_grep "inherited" "$probe" \
+    "a helper spawned for a later name must not inherit an earlier value"
+  pass "run exports resolved values only to the consuming child"
 }
 
 # ── (d) the audit log ──────────────────────────────────────────────────────
@@ -330,6 +353,15 @@ test_scope_policy() {
   [ "$rc" -ne 0 ] || fail "an unlisted name must be denied"
   assert_contains "$out" "policy-denied" "an unlisted name names its reason"
   pass "an unlisted name is denied"
+
+  # shellcheck disable=SC2016  # the child shell expands these, not the test
+  out=$(sq_secret "$FAKEBIN:$PATH" run --for some-task --with T=github-token -- \
+    sh -c 'printf "%s" "$T"' 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "run must deny an unlisted name"
+  assert_contains "$out" "policy-denied" "a denied run names its reason"
+  assert_not_contains "$out" "$VALUE" "a denied run must not resolve the value"
+  pass "run denies an unlisted name under the same scope policy"
 
   printf '%s' '{"some-task":["github-token"]}' > "$POLICY"
   out=$(sq_secret "$FAKEBIN:$PATH" get github-token --for some-task 2>&1)
@@ -516,7 +548,7 @@ test_check() {
 # ── (h) list ───────────────────────────────────────────────────────────────
 
 test_list() {
-  local out
+  local out rc
   out=$(sq_secret "$FAKEBIN:$PATH" list)
   assert_contains "$out" "github-token	11111111-1111-1111-1111-111111111111" "list prints a name with its item id"
   assert_contains "$out" "db-password	22222222-2222-2222-2222-222222222222" "list prints every managed name"
@@ -524,6 +556,42 @@ test_list() {
   assert_not_contains "$out" "$VALUE" "list never prints a value"
   assert_not_contains "$out" "$SPACED" "list never prints a value"
   pass "list prints names and metadata only"
+
+  out=$(FAKE_BW_LIST_FAIL=1 sq_secret "$FAKEBIN:$PATH" list 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "list must fail when bw cannot list the vault"
+  assert_contains "$out" "item-listing" "an unlistable vault names its reason"
+  pass "list fails closed with a named reason when bw cannot list the vault"
+
+  out=$(FAKE_BW_LIST_GARBAGE=1 sq_secret "$FAKEBIN:$PATH" list 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "list must fail when the listing cannot be read"
+  assert_contains "$out" "item-listing" "an unparsable listing names its reason"
+  assert_not_contains "$out" "parse error" "an unparsable listing is not a raw jq error"
+  pass "list reports an unparsable listing as a named item-listing failure"
+}
+
+# ── (h2) an unauditable resolution is refused ──────────────────────────────
+
+test_unauditable_resolution_is_refused() {
+  local out rc
+  rm -f "$LOG"
+  ln -s "$TMP_ROOT/audit-target" "$LOG"
+  out=$(sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "an unauditable get must exit 1, got $rc"
+  assert_contains "$out" "audit-unwritable" "an unauditable get names its reason"
+  assert_not_contains "$out" "$VALUE" "an unauditable get must not print the value"
+
+  # shellcheck disable=SC2016  # the child shell expands these, not the test
+  out=$(sq_secret "$FAKEBIN:$PATH" run --with T=github-token -- \
+    sh -c 'printf "%s" "$T"' 2>&1)
+  rc=$?
+  rm -f "$LOG"
+  [ "$rc" -eq 1 ] || fail "an unauditable run must exit 1, got $rc"
+  assert_contains "$out" "audit-unwritable" "an unauditable run names its reason"
+  assert_not_contains "$out" "$VALUE" "an unauditable run must not run the child with the value"
+  pass "an unauditable resolution is refused instead of emitting an unaudited value"
 }
 
 # ── (i) nothing cached on disk ─────────────────────────────────────────────
@@ -559,6 +627,7 @@ test_get_refuses_a_terminal
 test_run_keeps_the_value_out_of_argv
 test_audit_log_records_every_resolution
 test_scope_policy
+test_unauditable_resolution_is_refused
 test_fail_closed
 test_check
 test_list
