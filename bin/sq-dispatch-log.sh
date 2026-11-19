@@ -59,7 +59,9 @@ import sys
 import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
-from sq_dispatch_evidence import SECRET_SHAPE, recordable_answer, recordable_probability, recordable_text
+from sq_dispatch_evidence import (
+    SECRET_SHAPE, recordable_answer, recordable_probability, recordable_text, unit_interval,
+)
 from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
 
 
@@ -134,7 +136,7 @@ if args.event == "recommendation":
         record.update(label="recommendation", status=status, choice=choice)
         confidence = recommendation.get("confidence")
         if confidence is not None:
-            if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            if not unit_interval(confidence):
                 raise ValueError("invalid recommendation confidence")
             record["confidence"] = confidence
         if "probabilities" in recommendation and recommendation["probabilities"] is not None:

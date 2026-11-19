@@ -1,5 +1,4 @@
 """The recommendation-evidence allowlist shared by the Jev client and the writer."""
-import math
 import re
 
 SECRET_SHAPE = re.compile(
@@ -17,7 +16,7 @@ def recordable_text(value):
 
 
 def unit_interval(value):
-    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
+    return type(value) in (int, float) and 0 <= value <= 1
 
 
 def recordable_probability(name, score):

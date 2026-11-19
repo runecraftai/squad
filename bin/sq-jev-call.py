@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sq_dispatch_evidence import (recordable_answer, recordable_probabilities,  # noqa: E402
-                                  unit_interval)
+                                  recordable_text, unit_interval)
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
@@ -274,7 +274,7 @@ def classify(body, lanes):
     if recorded:
         event["answers"] = recorded
     model = body.get("model")
-    if model is not None:
+    if recordable_text(model):
         event["model"] = model
     return event
 

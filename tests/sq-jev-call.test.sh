@@ -69,7 +69,7 @@ def serve(record, state):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            body = json.dumps(state["reply"]).encode()
+            body = json.dumps(state["reply"], ensure_ascii=False).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -306,12 +306,19 @@ with tempfile.TemporaryDirectory() as td:
                                                "confidence": .8,
                                                "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
                                     DESIGN: DESIGN_ANSWER}}
-        for rejected_model in ("jev 2026-05", "sk-abcd1234567890"):
+        for rejected_model in ("jev 2026-05", "sk-abcd1234567890", "😀" * 15000):
             (data / "task/dispatch.jsonl").unlink(missing_ok=True)
             state["reply"] = {**OK_REPLY, "model": rejected_model}
             kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
             assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
             assert recorded() == [evidence_row]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = {**OK_REPLY, "answers": {**OK_REPLY["answers"],
+                                               DESIGN: {**DESIGN_ANSWER, "confidence": 10**400}}}
+        kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert recorded() == [{**evidence_row, "model": OK_REPLY["model"],
+                               "answers": {**evidence_row["answers"], DESIGN: {"type": "noul", "answer": True}}}]
         (data / "task/dispatch.jsonl").unlink()
         state["reply"] = answer("claude/sonnet", confidence=.8,
                                 notes="arbitrary service text", rationale={"nested": True})
