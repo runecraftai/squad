@@ -316,14 +316,17 @@ with tempfile.TemporaryDirectory() as td:
         final_row = (data / "task/dispatch.jsonl").read_text()
         (data / "task/dispatch.jsonl").unlink()
         state["reply"] = answer("claude/sonnet", confidence=.8,
-                                probabilities={"claude/sonnet": .8, "pi/gpt": .1,
-                                               "other": .05, "bogus": "high"})
+                                probabilities={"claude/sonnet": .8, "pi/gpt": .1, "other": .05,
+                                               "bogus": "high", "sk-abcd1234567890": .02,
+                                               "k" * 129: .01, "tab\tkey": .01})
         leak_data = base / "leak"
         leak_argv = argv[:argv.index("--data") + 1] + [str(leak_data)] + argv[argv.index("--data") + 2:]
         leak = subprocess.run(leak_argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(leak.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         leak_rows = [json.loads(line) for line in (leak_data / "task/dispatch.jsonl").read_text().splitlines()]
         assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1, "other": .05}
+        assert leak_rows[0]["answers"][QUESTION]["probabilities"] == {"claude/sonnet": .8,
+                                                                     "pi/gpt": .1, "other": .05}
         state["reply"] = OK_REPLY
         assert "runtime-test-key" not in result.stdout + result.stderr + final_row
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"

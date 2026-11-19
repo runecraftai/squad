@@ -20,7 +20,6 @@ A low-confidence answer is still recorded and still has no authority.
 """
 import argparse
 import json
-import math
 import os
 import re
 import subprocess
@@ -29,6 +28,9 @@ import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sq_dispatch_evidence import recordable_probabilities, unit_interval  # noqa: E402
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
@@ -116,10 +118,6 @@ def project_enabled(config_path, project):
         }
     except (OSError, ValueError, AttributeError, RecursionError):
         return False
-
-
-def unit_interval(value):
-    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
 
 
 LANGUAGES = {".py": "Python", ".ts": "TypeScript", ".tsx": "TypeScript", ".js": "JavaScript",
@@ -254,8 +252,7 @@ def answer_evidence(answer):
         evidence["confidence"] = answer["confidence"]
     probabilities = answer.get("probabilities")
     if isinstance(probabilities, dict):
-        kept = {name: value for name, value in probabilities.items()
-                if isinstance(name, str) and unit_interval(value)}
+        kept = recordable_probabilities(probabilities)
         if kept:
             evidence["probabilities"] = kept
     return evidence or None
@@ -281,8 +278,9 @@ def classify(body, lanes):
             event["low_confidence"] = True
     probabilities = answer.get("probabilities")
     if isinstance(probabilities, dict):
-        event["probabilities"] = {name: value for name, value in probabilities.items()
-                                  if isinstance(name, str) and unit_interval(value)}
+        kept = recordable_probabilities(probabilities)
+        if kept:
+            event["probabilities"] = kept
     recorded = {}
     lane_evidence = answer_evidence(answer)
     if lane_evidence is not None:

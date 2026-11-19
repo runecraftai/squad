@@ -59,15 +59,8 @@ import sys
 import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
+from sq_dispatch_evidence import SECRET_SHAPE, recordable_probability, recordable_text
 from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
-
-SECRET_SHAPE = re.compile(
-    r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
-    r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"
-    r"|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]"
-    r"|(token|secret|passwd|password|api[_-]?key|credential)[=:]"
-    r"|(?<![A-Za-z0-9_+/])(?!(?:[0-9a-f]{40}|[0-9a-f]{64})(?![A-Za-z0-9_+/]))[A-Za-z0-9_+/]{32,}",
-    re.IGNORECASE)
 
 
 parser = argparse.ArgumentParser(description="Append one private dispatch event (best effort).")
@@ -94,9 +87,7 @@ if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
 
 def probabilities_field(value):
     if not isinstance(value, dict) or any(
-            not isinstance(k, str) or not re.fullmatch(r"[!-~]{1,128}", k) or SECRET_SHAPE.search(k)
-            or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
-            for k, v in value.items()):
+            not recordable_probability(k, v) for k, v in value.items()):
         raise ValueError("invalid recommendation probabilities")
     return value
 
@@ -106,7 +97,7 @@ record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
 if args.event in ("decision", "spawn"):
     for field in ("harness", "model", "effort"):
         value = getattr(args, field)
-        if not re.fullmatch(r"[!-~]{1,128}", value) or SECRET_SHAPE.search(value):
+        if not recordable_text(value):
             raise ValueError("invalid choice")
         record[field] = value
 if args.event == "decision":
@@ -138,8 +129,7 @@ if args.event == "recommendation":
         record.update(label="recommendation", status=status, reason=reason)
     elif status == "recommended":
         choice = recommendation.get("choice")
-        if not isinstance(choice, str) or not re.fullmatch(r"[!-~]{1,128}", choice) \
-                or SECRET_SHAPE.search(choice):
+        if not recordable_text(choice):
             raise ValueError("invalid recommendation choice")
         record.update(label="recommendation", status=status, choice=choice)
         confidence = recommendation.get("confidence")
@@ -167,8 +157,7 @@ if args.event == "recommendation":
                 for key, value in answer.items():
                     if key == "type" and isinstance(value, str) and re.fullmatch(r"[a-z]{1,32}", value):
                         entry[key] = value
-                    elif key == "choice" and isinstance(value, str) \
-                            and re.fullmatch(r"[!-~]{1,128}", value) and not SECRET_SHAPE.search(value):
+                    elif key == "choice" and recordable_text(value):
                         entry[key] = value
                     elif key == "answer" and (isinstance(value, bool) or value is None):
                         entry[key] = value
@@ -183,8 +172,7 @@ if args.event == "recommendation":
             record["answers"] = evidence
         if "model" in recommendation and recommendation["model"] is not None:
             model = recommendation["model"]
-            if isinstance(model, str) and re.fullmatch(r"[!-~]{1,128}", model) \
-                    and not SECRET_SHAPE.search(model):
+            if recordable_text(model):
                 record["model"] = model
     else:
         raise ValueError("invalid recommendation status")

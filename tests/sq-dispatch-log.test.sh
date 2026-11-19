@@ -480,7 +480,7 @@ recommend rec-freenotes '{"label":"recommendation","status":"recommended","choic
 recommend rec-badflag '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","low_confidence":"yes"}'
 recommend rec-badmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.7,"model":"jev 2026-05"}'
 recommend rec-secretmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"sk-abcd1234567890"}'
-recommend rec-secretprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"sk-abcd1234567890":0.6}}'
+recommend rec-secretprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"grok/grok-4":0.6,"sk-abcd1234567890":0.4}}'
 recommend rec-reason '{"label":"recommendation","status":"unavailable","reason":"answer_missing"}'
 for refused in rec-freenotes rec-badflag rec-secretprob; do
   [ ! -e "$dir/data/$refused/dispatch.jsonl" ] || fail "stored out-of-allowlist recommendation: $refused"
