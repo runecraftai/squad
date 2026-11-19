@@ -8,10 +8,12 @@
 #   (c) `run` puts the value in the child's environment while its cmdline holds none
 #   (d) the audit log takes one line per resolution and never a value
 #   (e) scope policy allows a listed name, denies an unlisted one, denies a task
-#       with no entry, and refuses a missing or malformed policy
+#       with no entry, refuses a missing or malformed policy, and requires the
+#       fetched item to be the listed name's own sq/<name> item
 #   (f) fail-closed behaviour for missing bw, missing jq, a locked session, a
 #       stale session key, an unknown item, an item with no usable password
-#       field, and an item or vault that bw cannot resolve unambiguously
+#       field, an item or vault that bw cannot resolve unambiguously, and a
+#       stalled backend that never answers
 #   (g) `check` reports each backend fact and exits non-zero when unusable
 #   (h) `list` prints names and metadata only
 #   (i) nothing is cached on disk beyond the audit log, under HOME or TMPDIR
@@ -53,6 +55,11 @@ url=${FAKE_BW_SERVER_URL-$default_server}
 status=${FAKE_BW_STATUS:-unlocked}
 lockfile=$vault/locked-during-get
 [ -e "$lockfile" ] && status=locked
+
+# A stalled backend: the fake never answers, so the broker's bound must fire.
+if [ "${FAKE_BW_HANG:-0}" = 1 ]; then
+  sleep 30
+fi
 
 # The broker's per-call contract: every call carries --nointeraction, reads its
 # stdin from /dev/null, and receives the session key in the environment. A
@@ -190,6 +197,8 @@ sq_secret() {
     FAKE_BW_VAULT="$VAULT" \
     FAKE_BW_STATUS="${FAKE_BW_STATUS:-unlocked}" \
     FAKE_BW_LOCK_GET="${FAKE_BW_LOCK_GET:-0}" \
+    FAKE_BW_HANG="${FAKE_BW_HANG:-0}" \
+    SQUAD_SECRET_BW_TIMEOUT="${SECRET_BW_TIMEOUT:-}" \
     BW_SESSION="${BW_SESSION_TEST-fake-session}" \
     SQUAD_BASE="$BASE" \
     SQUAD_STATE_OVERRIDE="$BASE/state" \
@@ -441,8 +450,25 @@ test_scope_policy() {
   out=$(sq_secret "$FAKEBIN:$PATH" get github-token --item sq/db-password --for some-task 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "an --item outside the task scope must be denied"
-  assert_contains "$out" "policy-denied" "an out-of-scope --item names its reason"
+  assert_contains "$out" "policy-item-mismatch" "an out-of-scope --item names its reason"
   assert_not_contains "$out" "$SPACED" "an out-of-scope --item must not print the value"
+
+  # A bare vault item whose name matches the listed logical name is not the
+  # item the policy authorizes: the authorized backing item is sq/<name>.
+  printf '%s' '{"some-task":["plain-item"]}' > "$POLICY"
+  out=$(sq_secret "$FAKEBIN:$PATH" get plain-item --item plain-item --for some-task 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a bare listed name must not resolve an unmanaged item"
+  assert_contains "$out" "policy-item-mismatch" "a bare listed name names its reason"
+  assert_not_contains "$out" "not-managed-here" "a bare listed name must not print the unmanaged value"
+
+  # The item's documented id form still reaches the item the policy authorizes.
+  printf '%s' '{"some-task":["github-token"]}' > "$POLICY"
+  out=$(sq_secret "$FAKEBIN:$PATH" get github-token \
+    --item 11111111-1111-1111-1111-111111111111 --for some-task 2>&1)
+  rc=$?
+  expect_code 0 "$rc" "the authorized item's id resolves under --for"
+  [ "$out" = "$VALUE" ] || fail "an --item id of the authorized item resolves: '$out'"
 
   out=$(sq_secret "$FAKEBIN:$PATH" get github-token --item sq/github-token --for some-task 2>&1)
   rc=$?
@@ -775,6 +801,29 @@ test_value_bytes_are_preserved() {
   pass "a newline-only value is resolved rather than refused as empty"
 }
 
+# ── (l) a stalled backend is bounded ───────────────────────────────────────
+
+test_stalled_backend() {
+  local out rc started elapsed
+  started=$(date +%s)
+  out=$(FAKE_BW_HANG=1 SECRET_BW_TIMEOUT=1 sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
+  rc=$?
+  elapsed=$(($(date +%s) - started))
+  [ "$rc" -ne 0 ] || fail "a stalled backend must fail instead of hanging"
+  assert_contains "$out" "bw-timeout" "a stalled backend names its reason"
+  assert_not_contains "$out" "$VALUE" "a stalled backend must not print the value"
+  [ "$elapsed" -lt 20 ] || fail "a stalled get must be bounded, took ${elapsed}s"
+
+  started=$(date +%s)
+  out=$(FAKE_BW_HANG=1 SECRET_BW_TIMEOUT=1 sq_secret "$FAKEBIN:$PATH" list 2>&1)
+  rc=$?
+  elapsed=$(($(date +%s) - started))
+  [ "$rc" -ne 0 ] || fail "list must fail instead of hanging on a stalled backend"
+  assert_contains "$out" "bw-timeout" "list names the stalled backend"
+  [ "$elapsed" -lt 20 ] || fail "a stalled list must be bounded, took ${elapsed}s"
+  pass "a stalled backend fails closed under the time bound"
+}
+
 # ── (j) shellcheck-clean ───────────────────────────────────────────────────
 
 test_shellcheck() {
@@ -798,6 +847,7 @@ test_fail_closed
 test_check
 test_list
 test_no_cache_on_disk
+test_stalled_backend
 test_value_bytes_are_preserved
 test_shellcheck
 

@@ -27,8 +27,9 @@
 #   key on a command line.
 #   The server is whatever `bw` is already configured with and is reported by
 #   `check`; this script never reconfigures `bw`.
-#   Every `bw` call runs with --nointeraction and stdin from /dev/null, so a
-#   missing session can never turn into an interactive prompt.
+#   Every `bw` call runs with --nointeraction, stdin from /dev/null, and under a
+#   hard time bound, so a missing session can never turn into an interactive
+#   prompt and a stalled server fails closed instead of hanging the caller.
 #
 # Security invariants
 #   1. A value is written only to `get` stdout, and only when stdout is not a
@@ -44,6 +45,9 @@
 #      {"<task-id>": ["name", ...]}. A --for call requires that file: only names
 #      listed for that task resolve, a task with no entry is denied, and a
 #      missing or malformed policy is a failure rather than a bypass.
+#      A scoped resolution fetches the item and then requires it to be the
+#      name's own sq/<name> item, so an --item that points at a bare name, a
+#      foreign item, or an id belonging to another entry is denied.
 #      Without --for, resolution is allowed and audited.
 #   6. Missing `bw` or `jq`, a locked or unreadable session, an unknown name,
 #      and an unreadable item each fail closed with their own named reason and a
@@ -92,6 +96,20 @@ CALLER="$SCRIPT_NAME:$$ parent=$(parent_name):$PARENT_PID"
 # Set by policy_allows when it denies, so the caller can name the reason.
 POLICY_REASON=
 POLICY_MESSAGE=
+
+# shellcheck source=bin/sq-timeout-lib.sh
+. "$SCRIPT_DIR/sq-timeout-lib.sh"
+
+# Every bw call is network-backed, so each one runs under a hard bound: a
+# stalled or unreachable server fails closed instead of hanging the caller.
+# bin/sq-timeout-lib.sh is the single owner of that bound.
+BW_TIMEOUT="${SQUAD_SECRET_BW_TIMEOUT:-20}"
+
+# bw_timed <args...>: run one bw invocation under the bound. The exit status is
+# bw's own, except 124, which means the bound was hit.
+bw_timed() {
+  fm_run_timed "$BW_TIMEOUT" bw "$@"
+}
 
 usage() {  # [<subcommand>]
   case "${1:-}" in
@@ -209,7 +227,7 @@ require_jq() {
 
 # bw_status_json: print bw's own status document.
 bw_status_json() {
-  bw status --nointeraction </dev/null 2>/dev/null
+  bw_timed status --nointeraction </dev/null 2>/dev/null
 }
 
 # json_string_field <json> <key>: print a string field, or nothing when it is
@@ -234,7 +252,7 @@ bw_status_word() {
 # reads bw's configuration; it never changes it.
 bw_server_url() {
   local url
-  url=$(bw config server --nointeraction </dev/null 2>/dev/null) || return 1
+  url=$(bw_timed config server --nointeraction </dev/null 2>/dev/null) || return 1
   url=${url#"${url%%[![:space:]]*}"}
   url=${url%"${url##*[![:space:]]}"}
   [ -n "$url" ] || return 1
@@ -246,7 +264,7 @@ bw_server_url() {
 # or unparsable listing proves nothing and is treated as unreadable.
 bw_vault_readable() {
   local items
-  items=$(bw list items --nointeraction </dev/null 2>/dev/null) || return 1
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || return 1
   [ -n "$items" ] || return 1
   printf '%s' "$items" | jq -e 'type == "array"' >/dev/null 2>&1
 }
@@ -255,22 +273,13 @@ bw_vault_readable() {
 # name, 1 when it holds none, 2 when the vault could not be listed.
 bw_item_exists() {
   local items count
-  items=$(bw list items --nointeraction </dev/null 2>/dev/null) || return 2
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || return 2
   count=$(printf '%s' "$items" | jq --arg t "$1" \
     '[.[] | select(.id == $t or .name == $t)] | length' 2>/dev/null) || return 2
   case "$count" in
     '' | *[!0-9]*) return 2 ;;
   esac
   [ "$count" -gt 0 ]
-}
-
-# item_logical_name <item>: the logical name an item override resolves to, so
-# the scope policy can constrain the item rather than only the requested name.
-item_logical_name() {
-  case "$1" in
-    sq/*) printf '%s' "${1#sq/}" ;;
-    *) printf '%s' "$1" ;;
-  esac
 }
 
 # require_session_present: fail closed unless bw and jq are present and
@@ -351,9 +360,12 @@ item_password() {
 # Every outcome is audited, and a failure to audit a successful resolution is
 # itself fatal, so no value is ever emitted unaudited.
 resolve_value() {
-  local name=$1 item=$2 task=$3 command=$4 json value word exists
-  if ! json=$(bw get item "$item" --nointeraction </dev/null 2>/dev/null); then
+  local name=$1 item=$2 task=$3 command=$4 json value word exists rc=0 resolved
+  json=$(bw_timed get item "$item" --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
     audit failed "$name" "$item" "$task" "$command" || true
+    [ "$rc" -ne 124 ] \
+      || fail bw-timeout "bw did not answer within ${BW_TIMEOUT}s; the Bitwarden backend is stalled or unreachable"
     word=$(bw_status_word) || word=
     case "$word" in
       locked | unauthenticated)
@@ -377,6 +389,16 @@ resolve_value() {
   if ! printf '%s' "$json" | jq -e 'type == "object"' >/dev/null 2>&1; then
     audit failed "$name" "$item" "$task" "$command" || true
     fail item-unreadable "the Bitwarden item '$item' could not be read"
+  fi
+  # A scoped call resolves only the item the policy authorizes: the fetched
+  # item must be this name's own sq/<name> item, so an --item that names a
+  # foreign item, a bare name, or an id belonging to another entry is denied.
+  if [ -n "$task" ]; then
+    resolved=$(printf '%s' "$json" | jq -r '.name // empty' 2>/dev/null) || resolved=
+    if [ "$resolved" != "sq/$name" ]; then
+      audit denied "$name" "$item" "$task" "$command" || true
+      fail policy-item-mismatch "the item '$item' is not the item the scope policy authorizes for '$name' (expected 'sq/$name', found '${resolved:-unknown}')"
+    fi
   fi
   if ! item_usable "$json"; then
     audit failed "$name" "$item" "$task" "$command" || true
@@ -444,9 +466,12 @@ cmd_check() {
 }
 
 cmd_list() {
-  local items listing word
+  local items listing word rc=0
   require_session_present
-  if ! items=$(bw list items --nointeraction </dev/null 2>/dev/null); then
+  items=$(bw_timed list items --nointeraction </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -ne 124 ] \
+      || fail bw-timeout "bw did not answer within ${BW_TIMEOUT}s; the Bitwarden backend is stalled or unreachable"
     word=$(bw_status_word) || word=
     case "$word" in
       locked | unauthenticated)
@@ -511,16 +536,12 @@ cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
     fail tty-refused "refusing to write a secret to a terminal; redirect stdout or pass --to-tty"
   fi
   require_session_present
-  if [ -n "$task" ]; then
-    if ! policy_allows "$task" "$name"; then
-      audit denied "$name" "$item" "$task" "" || true
-      fail "$POLICY_REASON" "$POLICY_MESSAGE"
-    fi
-    if [ "$(item_logical_name "$item")" != "$name" ] \
-      && ! policy_allows "$task" "$(item_logical_name "$item")"; then
-      audit denied "$name" "$item" "$task" "" || true
-      fail "$POLICY_REASON" "$POLICY_MESSAGE"
-    fi
+  # A --for call is scoped to the listed name; resolve_value then requires the
+  # fetched item to be that name's own sq/<name> item, so an --item override
+  # can never reach a secret the policy does not list.
+  if [ -n "$task" ] && ! policy_allows "$task" "$name"; then
+    audit denied "$name" "$item" "$task" "" || true
+    fail "$POLICY_REASON" "$POLICY_MESSAGE"
   fi
   resolve_value "$name" "$item" "$task" ""
   if [ -t 1 ]; then
