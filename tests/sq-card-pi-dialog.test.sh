@@ -37,10 +37,25 @@ sys.exit(0 if eval(sys.argv[3]) else 1)
 PY
 }
 
-# fragment <card file> <dialog> <result json>: the answer text the mapping hands
-# back to bin/sq-ask.sh --answer.
+# fragment <card file> <dialog> <answers array json>: the answer text the mapping hands
+# back to bin/sq-ask.sh --answer, built into a whole extension tool result the way the
+# extension returns it (details.answers plus details.cancelled).
 fragment() {
-  "$DIALOG" --answer --dialog "$2" --result "$3" < "$1"
+  "$DIALOG" --answer --dialog "$2" \
+    --result "{\"details\":{\"answers\":$3,\"cancelled\":false}}" < "$1"
+}
+
+# fragments <card file> <dialog> <answers> [<dialog> <answers> ...]: one merge call
+# across several dialogs of the same card.
+fragments() {
+  local card=$1
+  shift
+  local args=()
+  while [ "$#" -gt 0 ]; do
+    args+=(--dialog "$1" --result "{\"details\":{\"answers\":$2,\"cancelled\":false}}")
+    shift 2
+  done
+  "$DIALOG" --answer "${args[@]}" < "$card"
 }
 
 # resolve <card file> <answer text> <python expression>: resolve an answer through
@@ -92,8 +107,8 @@ test_round_trip() {
   [ "$answer" = "d1 o1" ] || fail "T3: expected 'd1 o1', got '$answer'"
   resolve "$PAIR" "$answer" 'r["selected_option_id"] == "tonight"'
 
-  # The whole tool result is accepted, not only its details.answers array.
-  answer=$(fragment "$PAIR" 1 '{"content":[{"type":"text","text":"answered"}],"details":{"answers":[{"questionIndex":0,"kind":"option","answer":"Hold Until Monday"}],"cancelled":false}}')
+  # The whole tool result with its details and cancelled flag is the accepted input.
+  answer=$("$DIALOG" --answer --dialog 1 --result '{"content":[{"type":"text","text":"answered"}],"details":{"answers":[{"questionIndex":0,"kind":"option","answer":"Hold Until Monday"}],"cancelled":false}}' < "$PAIR")
   [ "$answer" = "d1 o2" ] || fail "T3: expected 'd1 o2' from a whole tool result, got '$answer'"
   pass "T3: the marked recommended option round-trips back to the same card option"
 }
@@ -138,8 +153,8 @@ PY
   answer=$(fragment "$both" 2 '[{"questionIndex":0,"kind":"option","answer":"Object Store"}]')
   [ "$answer" = "d2 o3" ] || fail "T5: expected 'd2 o3', got '$answer'"
   resolve "$both" "$answer" 'r["decision_id"] == "storage-choice" and r["selected_option_id"] == "object"'
-  # Both dialogs answered together still resolve through the same parser.
-  answer="$(fragment "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]') $(fragment "$both" 3 '[{"questionIndex":1,"kind":"option","answer":"Admin Tools"}]')"
+  # Both dialogs answered together still resolve through the same parser, in one call.
+  answer=$(fragments "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 3 '[{"questionIndex":1,"kind":"option","answer":"Admin Tools"}]')
   [ "$answer" = "d1 o1 d3 o6" ] || fail "T5: expected 'd1 o1 d3 o6', got '$answer'"
   resolve "$both" "$answer" 'len(ro) == 2 and ro[0]["selected_option_id"] == "tonight" and ro[1]["selected_option_id"] == "admin"'
   pass "T5: several cards produce one dialog each, in card order, answered independently"
@@ -232,19 +247,44 @@ test_free_text_and_refusals() {
   rc=0
   out=$(fragment "$SIX" 1 '[{"questionIndex":0,"kind":"option","answer":"Billing"},{"questionIndex":1,"kind":"option","answer":"Webhooks"}]' 2>&1) || rc=$?
   [ "$rc" = 4 ] || fail "T7: two answers for one split card must exit 4, got $rc"
-  printf '%s' "$out" | grep -q 'answered twice' || fail "T7: duplicate-answer refusal is not explanatory: $out"
+  printf '%s' "$out" | grep -q 'answered more than once' || fail "T7: duplicate-answer refusal is not explanatory: $out"
 
-  # Esc is not a decision: the extension keeps answers already committed on cancel,
-  # so a cancelled result must never become a recorded answer.
+  # Esc is not a decision: only the whole tool result can prove a dialog was not
+  # cancelled, so a bare answers array is refused even when it looks answerable.
   rc=0
-  out=$(fragment "$PAIR" 1 '{"content":[{"type":"text","text":"cancelled"}],"details":{"answers":[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}],"cancelled":true}}' 2>&1) || rc=$?
+  out=$("$DIALOG" --answer --dialog 1 \
+    --result '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' < "$PAIR" 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a bare answers array must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'whole tool result' || fail "T7: the bare-array refusal is not explanatory: $out"
+
+  rc=0
+  out=$("$DIALOG" --answer --dialog 1 \
+    --result '{"details":{"answers":[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}],"cancelled":true}}' < "$PAIR" 2>&1) || rc=$?
   [ "$rc" = 4 ] || fail "T7: a cancelled details result must exit 4, got $rc"
   printf '%s' "$out" | grep -q 'cancelled' || fail "T7: cancelled refusal is not explanatory: $out"
 
   rc=0
-  out=$(fragment "$PAIR" 1 '{"answers":[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}],"cancelled":true}' 2>&1) || rc=$?
-  [ "$rc" = 4 ] || fail "T7: a cancelled top-level result must exit 4, got $rc"
-  printf '%s' "$out" | grep -q 'cancelled' || fail "T7: cancelled refusal is not explanatory: $out"
+  out=$("$DIALOG" --answer --dialog 1 \
+    --result '{"details":{"answers":[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]}}' < "$PAIR" 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a result without details.cancelled must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'cancelled' || fail "T7: the missing-cancelled refusal is not explanatory: $out"
+
+  rc=0
+  out=$("$DIALOG" --answer --dialog 1 \
+    --result '{"answers":[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}],"cancelled":true}' < "$PAIR" 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a top-level result must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'whole tool result' || fail "T7: the top-level result refusal is not explanatory: $out"
+
+  # A malformed answer payload is a usage error, never a traceback.
+  rc=0
+  out=$(fragment "$PAIR" 1 '[{"questionIndex":0,"kind":"custom","answer":5}]' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a non-string custom answer must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'custom answer must carry the typed text' || fail "T7: the custom-answer type refusal is not explanatory: $out"
+
+  rc=0
+  out=$(fragment "$PAIR" 1 '[{"questionIndex":0,"kind":"option","answer":4}]' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a non-string option answer must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'option answer must name the chosen label' || fail "T7: the option-answer type refusal is not explanatory: $out"
   pass "T7: free text resolves through O0 and every refusal fails closed with a reason"
 }
 
@@ -273,6 +313,39 @@ test_many_options_across_dialogs() {
   pass "T9: a card needing more than one dialog splits in card order with no option dropped"
 }
 
+# --- T10: a split card merges its dialogs into exactly one fragment per decision ---
+test_multi_dialog_merge() {
+  local answer rc out
+  # The card keeps its own global option numbering, so an option picked in either
+  # dialog is the card's real option code.
+  answer=$(fragments "$SEVENTEEN" 1 '[{"questionIndex":0,"kind":"option","answer":"US East"}]')
+  [ "$answer" = "d1 o1" ] || fail "T10: dialog 1 must map to 'd1 o1', got '$answer'"
+  resolve "$SEVENTEEN" "$answer" 'r["selected_option_id"] == "us-east"'
+
+  answer=$(fragments "$SEVENTEEN" 2 '[{"questionIndex":0,"kind":"option","answer":"Global Edge"}]')
+  [ "$answer" = "d1 o17" ] || fail "T10: dialog 2 must map to 'd1 o17', got '$answer'"
+  resolve "$SEVENTEEN" "$answer" 'r["selected_option_id"] == "global-edge"'
+
+  # Two answers for the same decision across dialogs is a named error, never a pick.
+  rc=0
+  out=$(fragments "$SEVENTEEN" 1 '[{"questionIndex":0,"kind":"option","answer":"US East"}]' 2 '[{"questionIndex":0,"kind":"option","answer":"Global Edge"}]' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T10: two answers across dialogs must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'answered more than once across the dialogs' \
+    || fail "T10: the cross-dialog duplicate refusal is not explanatory: $out"
+
+  # Different cards answered from different dialogs still merge into one fragment each.
+  local both
+  both="$TMP_ROOT/merge-cards.json"
+  python3 - "$PAIR" "$SEVENTEEN" > "$both" <<'PY'
+import json, sys
+print(json.dumps([json.load(open(p, encoding="utf-8")) for p in sys.argv[1:]]))
+PY
+  answer=$(fragments "$both" 1 '[{"questionIndex":0,"kind":"option","answer":"Deploy Tonight"}]' 3 '[{"questionIndex":0,"kind":"option","answer":"Global Edge"}]')
+  [ "$answer" = "d1 o1 d2 o17" ] || fail "T10: expected 'd1 o1 d2 o17', got '$answer'"
+  resolve "$both" "$answer" 'len(ro) == 2 and ro[0]["selected_option_id"] == "tonight" and ro[1]["selected_option_id"] == "global-edge"'
+  pass "T10: split-card dialogs merge into one fragment per decision, with a named duplicate error"
+}
+
 test_two_option_card
 test_four_option_card
 test_round_trip
@@ -282,3 +355,4 @@ test_prose_fallback_unchanged
 test_free_text_and_refusals
 test_fixtures_are_lint_clean
 test_many_options_across_dialogs
+test_multi_dialog_merge

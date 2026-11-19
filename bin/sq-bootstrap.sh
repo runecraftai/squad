@@ -56,11 +56,15 @@
 #          workmux-sidebar is MISSING on tmux backends while the vendored
 #          sidebar binary (packages/operation-board/sidebar) is not built.
 #          The optional Pi ask-user dialog extension is offered only to a Pi
-#          primary (pi, pi-signed): installed reports one BOOTSTRAP_INFO fact,
-#          absent reports one MISSING line naming the exact
-#          "pi install npm:@juicesharp/rpiv-ask-user-question" command and the
-#          fresh Pi session it needs. It never installs anything itself, is
-#          skipped when pi is not on PATH, and every other harness stays silent
+#          primary (pi, pi-signed): installed reports one BOOTSTRAP_INFO fact and
+#          absent reports one OPTIONAL offer naming the exact
+#          "pi install npm:@juicesharp/rpiv-ask-user-question" command and the fresh
+#          Pi session it needs. OPTIONAL is an offer, not a missing required tool:
+#          it never routes through the install consent path
+#          (.agents/skills/bootstrap-diagnostics owns that response), it never
+#          installs anything itself, and it is skipped when pi is not on PATH.
+#          Detection reads pi's USER-scope package listing only; a failed listing,
+#          a project-scope install, and every other harness stay silent
 #          (docs/decision-card-pi-recipe.md owns the mapping it enables).
 #          Set SQUAD_PI_ASK_USER_OFFER=0 to silence it.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
@@ -1068,8 +1072,12 @@ fi
 # Local detection: presence, version floors, and configuration. Nothing here
 # leaves this machine, so it stays on the session-start critical path.
 # Offer the optional Pi ask-user dialog extension to a Pi primary only. This is a
-# detect-only read (pi's own installed-package listing): it never installs anything,
-# never blocks bootstrap when pi is absent, and says nothing on any other harness.
+# detect-only read of pi's own USER-scope installed-package listing: an unreadable or
+# failed listing is reported as nothing at all rather than as absence, project-scope
+# installs (.pi/settings.json, trust-gated) are deliberately out of scope, nothing is
+# ever installed, bootstrap never blocks when pi is absent, and every other harness
+# says nothing. An absent extension is an offer, never a required tool: it uses the
+# OPTIONAL line shape so no consent path routes it to sq-bootstrap.sh install.
 pi_ask_user_offer() {
   local harness listing
   [ "${SQUAD_PI_ASK_USER_OFFER:-1}" != 0 ] || return 0
@@ -1079,12 +1087,12 @@ pi_ask_user_offer() {
     *) return 0 ;;
   esac
   command -v pi >/dev/null 2>&1 || return 0
-  listing=$(pi list 2>/dev/null || true)
+  listing=$(pi list 2>/dev/null) || return 0
   case "$listing" in
     *"npm:$PI_ASK_USER_EXTENSION"*)
       echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed" ;;
     *)
-      echo "MISSING: pi extension $PI_ASK_USER_EXTENSION (install: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)" ;;
+      echo "OPTIONAL: pi extension $PI_ASK_USER_EXTENSION not installed (offer: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)" ;;
   esac
 }
 

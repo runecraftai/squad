@@ -34,10 +34,13 @@ Two facts drive the mapping:
 `bin/sq-bootstrap.sh` offers the extension to a Pi primary (`pi`, `pi-signed`) only, as one line in the session-start digest:
 
 - installed: `BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed`.
-- absent: `MISSING: pi extension @juicesharp/rpiv-ask-user-question (install: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)`.
+- absent: `OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)`.
 
+`OPTIONAL` is an offer, not a missing required tool: it never routes through the required-tool install consent path, and it never blocks dispatch.
+`.agents/skills/bootstrap-diagnostics` owns how that line is handled.
 Installing is the commander's explicit action.
 Bootstrap reads `pi list` and nothing else: it never installs, never updates, stays silent on every other harness, and stays silent when `pi` is not on `PATH`.
+Detection covers the user-scope install `pi install` writes; a project-scope install (`.pi/settings.json`) is trust-gated and deliberately out of scope, and a failed or unreadable listing is reported as nothing rather than as absence.
 `SQUAD_PI_ASK_USER_OFFER=0` silences the offer for a base that does not want it.
 
 ## The mapping
@@ -64,19 +67,24 @@ A card the dialog cannot represent without dropping or misrepresenting an option
 
 ## Answers
 
-The dialog's answers come back as `details.answers`, one entry per question with a `kind` and the chosen label or typed text.
+The dialog's answers come back as `details.answers`, one entry per question with a `kind` and the chosen label or typed text, plus the result's own `details.cancelled`.
 The mapping turns that back into the prose answer grammar, so the existing parser stays the only resolver:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
 # one ask_user_question call per element of the printed array
 bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' < card.json
+# a card that needed two dialogs merges in one call, one fragment per decision:
+bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
 # -> "d1 o2", then:
 bin/sq-ask.sh --answer 'd1 o2' < card.json
 ```
 
 `--answer` needs the card the dialog came from, because an answer is always resolved against the JSON card and never against the text the commander saw.
-A card split across questions of one dialog can be answered once; two answers for the same card exit 4 instead of guessing, and a multi-select answer exits 4 because this mapping never authors a multi-select question.
+It takes the whole tool result and never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
+A split card keeps the card's own global option numbering across dialogs, so an option picked in the last dialog is still the card's real code and `d1 o15` stays valid.
+The merge is mechanical - no fold, no renumbering, no guessed pick - and yields exactly one fragment per decision.
+Two answers for the same decision, whether across the questions of one dialog or across two dialogs, exit 4 with a named error instead of choosing one, and a multi-select answer exits 4 because this mapping never authors a multi-select question.
 
 ## Fallback
 

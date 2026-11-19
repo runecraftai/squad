@@ -36,10 +36,13 @@ Dois fatos guiam o mapeamento:
 `bin/sq-bootstrap.sh` oferece a extensão apenas a um primário Pi (`pi`, `pi-signed`), como uma linha no digest de início de sessão:
 
 - instalada: `BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed`.
-- ausente: `MISSING: pi extension @juicesharp/rpiv-ask-user-question (install: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)`.
+- ausente: `OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)`.
 
+`OPTIONAL` é uma oferta, não uma ferramenta obrigatória ausente: ela nunca passa pelo caminho de consentimento de instalação de ferramentas obrigatórias e nunca bloqueia despacho.
+`.agents/skills/bootstrap-diagnostics` é o dono do tratamento dessa linha.
 Instalar é a ação explícita do comandante.
 O bootstrap lê `pi list` e nada mais: nunca instala, nunca atualiza, fica silencioso em qualquer outro harness e fica silencioso quando `pi` não está no `PATH`.
+A detecção cobre a instalação de escopo de usuário que `pi install` grava; uma instalação de escopo de projeto (`.pi/settings.json`) é protegida por confiança e fica deliberadamente fora de escopo, e uma listagem falha ou ilegível é reportada como nada, nunca como ausência.
 `SQUAD_PI_ASK_USER_OFFER=0` silencia a oferta para uma base que não a queira.
 
 ## O mapeamento
@@ -66,19 +69,24 @@ Um cartão que o diálogo não consegue representar sem descartar ou deturpar um
 
 ## Respostas
 
-As respostas do diálogo voltam como `details.answers`, uma entrada por pergunta com um `kind` e o rótulo escolhido ou o texto digitado.
+As respostas do diálogo voltam como `details.answers`, uma entrada por pergunta com um `kind` e o rótulo escolhido ou o texto digitado, junto com o `details.cancelled` do próprio resultado.
 O mapeamento converte isso de volta para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
 # uma chamada ask_user_question por elemento do array impresso
 bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' < card.json
+# um cartão que precisou de dois diálogos é mesclado em uma chamada, um fragmento por decisão:
+bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
 # -> "d1 o2", depois:
 bin/sq-ask.sh --answer 'd1 o2' < card.json
 ```
 
 `--answer` precisa do cartão de onde veio o diálogo, porque uma resposta é sempre resolvida contra o cartão JSON e nunca contra o texto que o comandante viu.
-Um cartão dividido entre perguntas de um diálogo pode ser respondido uma vez; duas respostas para o mesmo cartão saem com 4 em vez de adivinhar, e uma resposta multi-select sai com 4 porque este mapeamento nunca cria uma pergunta multi-select.
+Ele recebe o resultado inteiro da ferramenta e nunca um array de respostas solto: só `details.cancelled` prova que o diálogo não foi cancelado, então `Esc` nunca vira uma decisão registrada.
+Um cartão dividido mantém a numeração global de opções do próprio cartão entre diálogos, então uma opção escolhida no último diálogo continua sendo o código real do cartão e `d1 o15` continua válido.
+A mesclagem é mecânica - sem dobra, sem renumeração, sem escolha adivinhada - e produz exatamente um fragmento por decisão.
+Duas respostas para a mesma decisão, seja entre as perguntas de um diálogo ou entre dois diálogos, saem com 4 e um erro nomeado em vez de escolher uma, e uma resposta multi-select sai com 4 porque este mapeamento nunca cria uma pergunta multi-select.
 
 ## Fallback
 

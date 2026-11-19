@@ -10,7 +10,8 @@
 #
 # Usage: echo '<card json>' | bin/sq-card-pi-dialog.sh [--payload]
 #        bin/sq-card-pi-dialog.sh '<card json>' [--payload]
-#        echo '<card json>' | bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>'
+#        echo '<card json>' | bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' \
+#          [--dialog 2 --result '<tool result json>' ...]
 #
 # Input is one card object or a JSON array of cards, validated first by
 # bin/sq-ask.sh --validate so the schema keeps exactly one owner.
@@ -20,8 +21,10 @@
 #                  per dialog, in card order; each entry is one tool call. The default.
 #   --answer       Read the extension's result for the dialog named by --dialog and
 #                  print the answer text for bin/sq-ask.sh --answer, such as
-#                  "d1 o2" or 'd1 o0 "ship it"'. --result takes the whole tool result,
-#                  its details.answers array, or a bare answers array.
+#                  "d1 o2" or 'd1 o0 "ship it"'. Repeat --dialog/--result to answer
+#                  several dialogs of the same card in one call; the pairs are merged.
+#                  --result takes the whole tool result, never a bare answers array:
+#                  only details.cancelled proves the dialog was not cancelled.
 #   --help         Show this help.
 #
 # Mapping (card -> dialog):
@@ -41,12 +44,18 @@
 # order (5 -> 3+2, 6 -> 3+3, 9 -> 3+3+3), and more than four questions on one card
 # become several dialogs. Every card option is carried, in order, exactly once.
 #
+# Answers of a split card keep the card's own global option numbering, so a value the
+# commander picks in the last dialog is still the card's real option code (d1 o15 stays
+# d1 o15). Answering one dialog and answering another are therefore merged into exactly
+# one fragment per decision, mechanically: no fold, no renumbering, no guessed pick.
+# Two answers for the same decision across dialogs exit 4 instead of choosing one.
+#
 # Refused, because the dialog cannot show that card without dropping or misrepresenting
 # an option: an option label that is a reserved dialog label ("Other", "Type something.",
 # "Next"), a label shared by two options of the card, and a card with a single option.
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
-# the canonical shape. A cancelled result (Esc) is never converted into an answer, even
-# when the extension keeps answers already committed: it exits 4, so nothing is recorded.
+# the canonical shape. A result without details.cancelled, or a cancelled one (Esc), is
+# never converted into an answer: it exits 4, so nothing is recorded.
 #
 # Exit codes: 0=ok, 2=invalid card or the dialog cannot represent it, 4=unusable result
 set -euo pipefail
@@ -61,7 +70,7 @@ fi
 # One fixed program. The card arrives on stdin and the result payload in an
 # environment variable; nothing from either is interpolated into program text.
 IFS= read -r -d '' PY_PROG <<'PY' || true
-import sys, os, json
+import sys, json
 
 MAX_QUESTIONS = 4
 MAX_OPTIONS = 4
@@ -160,54 +169,63 @@ def build(cards):
     return dialogs, origin
 
 
-def pick_answers(payload):
-    if isinstance(payload, list):
-        return payload
-    if isinstance(payload, dict):
-        details = payload.get("details")
-        if payload.get("cancelled") is True or (isinstance(details, dict) and details.get("cancelled") is True):
-            raise Unusable("the dialog was cancelled; Esc never records a decision")
-        if isinstance(details, dict) and isinstance(details.get("answers"), list):
-            return details["answers"]
-        if isinstance(payload.get("answers"), list):
-            return payload["answers"]
-    raise Unusable("the result carries no answers array")
+def result_answers(payload):
+    """Read one dialog's whole tool result; nothing else can prove it was not cancelled."""
+    if not isinstance(payload, dict):
+        raise Unusable("--result must be the whole tool result object with details.answers, not a bare answers array")
+    details = payload.get("details")
+    if not isinstance(details, dict):
+        raise Unusable("--result must be the whole tool result: details is missing, so cancellation cannot be ruled out")
+    cancelled = details.get("cancelled")
+    if not isinstance(cancelled, bool):
+        raise Unusable("--result must be the whole tool result: details.cancelled is missing, so cancellation cannot be ruled out")
+    if cancelled:
+        raise Unusable("the dialog was cancelled; Esc never records a decision")
+    answers = details.get("answers")
+    if not isinstance(answers, list):
+        raise Unusable("--result must be the whole tool result: details.answers is missing")
+    return answers
 
 
-def answer_text(cards, dialog_index, payload):
+def answer_text(cards, pairs):
+    """Merge one or more dialogs of the same card into exactly one fragment per decision."""
     dialogs, origin = build(cards)
-    if dialog_index < 1 or dialog_index > len(dialogs):
-        raise Invalid("--dialog %d is out of range: the card renders %d dialog(s)" % (dialog_index, len(dialogs)))
-    answers = pick_answers(payload)
-    if not answers:
-        raise Unusable("the result carries no answer")
-    slots = origin[dialog_index - 1]
     pieces, answered = [], set()
-    for answer in answers:
-        if not isinstance(answer, dict):
-            raise Unusable("each answer must be an object")
-        position = answer.get("questionIndex")
-        if not isinstance(position, int) or isinstance(position, bool) or not 0 <= position < len(slots):
-            raise Unusable("questionIndex %r is not a question of dialog %d" % (position, dialog_index))
-        card_index, start, size = slots[position]
-        card, number = cards[card_index], card_index + 1
-        if card_index in answered:
-            raise Unusable("decision D%d was answered twice across its split questions; answer one" % number)
-        answered.add(card_index)
-        kind = answer.get("kind")
-        if kind == "option":
-            label = answer.get("answer")
-            match = [n for n, option in enumerate(card["options"]) if option["label"] == label]
-            if len(match) != 1 or not start <= match[0] < start + size:
-                raise Unusable("option answer %r does not name exactly one option of dialog question %d" % (label, position + 1))
-            pieces.append("d%d o%d" % (number, match[0] + 1))
-        elif kind == "custom":
-            text = answer.get("answer") or ""
-            if not text.strip() or not printable(text) or "\\" in text or '"' in text or len(text) > FREE_MAX:
-                raise Unusable("free text must be 1-%d printable ASCII characters without backslashes or double quotes" % FREE_MAX)
-            pieces.append('d%d o0 "%s"' % (number, text))
-        else:
-            raise Unusable("unsupported answer kind %r: this mapping never authors a multi-select question" % (kind,))
+    for dialog_index, payload in pairs:
+        if dialog_index < 1 or dialog_index > len(dialogs):
+            raise Invalid("--dialog %d is out of range: the card renders %d dialog(s)" % (dialog_index, len(dialogs)))
+        slots = origin[dialog_index - 1]
+        for answer in result_answers(payload):
+            if not isinstance(answer, dict):
+                raise Unusable("each answer must be an object")
+            position = answer.get("questionIndex")
+            if not isinstance(position, int) or isinstance(position, bool) or not 0 <= position < len(slots):
+                raise Unusable("questionIndex %r is not a question of dialog %d" % (position, dialog_index))
+            card_index, start, size = slots[position]
+            card, number = cards[card_index], card_index + 1
+            if card_index in answered:
+                raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
+            answered.add(card_index)
+            kind = answer.get("kind")
+            if kind == "option":
+                label = answer.get("answer")
+                if not isinstance(label, str):
+                    raise Unusable("an option answer must name the chosen label as a string")
+                match = [n for n, option in enumerate(card["options"]) if option["label"] == label]
+                if len(match) != 1 or not start <= match[0] < start + size:
+                    raise Unusable("option answer %r does not name exactly one option of dialog question %d" % (label, position + 1))
+                pieces.append("d%d o%d" % (number, match[0] + 1))
+            elif kind == "custom":
+                text = answer.get("answer")
+                if not isinstance(text, str):
+                    raise Unusable("a custom answer must carry the typed text as a string")
+                if not text.strip() or not printable(text) or "\\" in text or '"' in text or len(text) > FREE_MAX:
+                    raise Unusable("free text must be 1-%d printable ASCII characters without backslashes or double quotes" % FREE_MAX)
+                pieces.append('d%d o0 "%s"' % (number, text))
+            else:
+                raise Unusable("unsupported answer kind %r: this mapping never authors a multi-select question" % (kind,))
+    if not answered:
+        raise Unusable("the result carries no answer")
     return " ".join(pieces)
 
 
@@ -230,14 +248,20 @@ def main():
     if mode == "payload":
         print(json.dumps(build(cards)[0]))
     elif mode == "answer":
-        index = os.environ.get("SQ_DIALOG_INDEX", "")
-        if not index.isdigit() or int(index) < 1:
-            raise Invalid("--dialog needs a positive question number")
-        try:
-            payload = json.loads(os.environ.get("SQ_DIALOG_RESULT", ""))
-        except ValueError:
-            raise Unusable("--result is not valid JSON")
-        print(answer_text(cards, int(index), payload))
+        args = sys.argv[2:]
+        if not args or len(args) % 2:
+            raise Invalid("--answer needs one --dialog <n> and one --result <json> per answered dialog")
+        pairs = []
+        for offset in range(0, len(args), 2):
+            index = args[offset]
+            if not index.isdigit() or int(index) < 1:
+                raise Invalid("--dialog needs a positive dialog number")
+            try:
+                payload = json.loads(args[offset + 1])
+            except ValueError:
+                raise Unusable("--result is not valid JSON")
+            pairs.append((int(index), payload))
+        print(answer_text(cards, pairs))
     else:
         raise Invalid("unknown mode")
 
@@ -262,8 +286,8 @@ die() {
 
 # --- defaults ---
 MODE="payload"
-DIALOG=""
-RESULT=""
+DIALOGS=()
+RESULTS=()
 POSITIONAL=()
 
 # --- parse args ---
@@ -271,10 +295,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --payload) MODE="payload"; shift ;;
     --answer) MODE="answer"; shift ;;
-    --dialog) [[ $# -ge 2 ]] || die 2 "--dialog needs a value"; DIALOG="$2"; shift 2 ;;
-    --dialog=*) DIALOG="${1#--dialog=}"; shift ;;
-    --result) [[ $# -ge 2 ]] || die 2 "--result needs a value"; RESULT="$2"; shift 2 ;;
-    --result=*) RESULT="${1#--result=}"; shift ;;
+    --dialog) [[ $# -ge 2 ]] || die 2 "--dialog needs a value"; DIALOGS+=("$2"); shift 2 ;;
+    --dialog=*) DIALOGS+=("${1#--dialog=}"); shift ;;
+    --result) [[ $# -ge 2 ]] || die 2 "--result needs a value"; RESULTS+=("$2"); shift 2 ;;
+    --result=*) RESULTS+=("${1#--result=}"); shift ;;
     --help)
       sed -n '2,/^set -eu/p' "$0" | head -n -1 | sed 's/^# //' | sed 's/^#//'
       exit 0
@@ -310,9 +334,12 @@ case "$MODE" in
     printf '%s' "$CARD" | run_py payload
     ;;
   answer)
-    [[ -n "$DIALOG" ]] || die 2 "--answer needs --dialog <n>"
-    [[ -n "$RESULT" ]] || die 2 "--answer needs --result <json>"
-    export SQ_DIALOG_INDEX="$DIALOG" SQ_DIALOG_RESULT="$RESULT"
-    printf '%s' "$CARD" | run_py answer
+    [[ ${#DIALOGS[@]} -gt 0 ]] || die 2 "--answer needs --dialog <n> and --result <json>"
+    [[ ${#DIALOGS[@]} -eq ${#RESULTS[@]} ]] || die 2 "--answer needs one --result <json> for every --dialog <n>"
+    PAIRS=()
+    for i in "${!DIALOGS[@]}"; do
+      PAIRS+=("${DIALOGS[$i]}" "${RESULTS[$i]}")
+    done
+    printf '%s' "$CARD" | run_py answer "${PAIRS[@]}"
     ;;
 esac
