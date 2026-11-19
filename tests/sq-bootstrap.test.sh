@@ -1548,6 +1548,7 @@ case "\${1:-}" in
         user) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
         project) printf '%s\n' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
         both) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
+        stalled) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question'; sleep 5 ;;
       esac
     fi
     exit '$list_rc' ;;
@@ -1583,7 +1584,10 @@ test_pi_ask_user_offer() {
     out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
       "${marker[@]}" SQUAD_PI_ASK_USER_OFFER=1 SQUAD_FAKE_FOB_LEASE_HELP=1 \
       PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
-      "$ROOT/bin/sq-bootstrap.sh")
+      "$ROOT/bin/sq-bootstrap.sh") || fail "$label: bootstrap failed"
+    if [ "$scope" = stalled ] && [ "$(< "$log")" != list ]; then
+      fail "$label: bootstrap did not run the probe exactly once"
+    fi
     case "$mode" in
       empty)
         [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
@@ -1601,6 +1605,7 @@ pi-signed is offered too^pi-signed^0^exact^OPTIONAL: pi extension @juicesharp/rp
 another harness is never offered it^claude^0^empty^^
 a pi primary without a pi binary stays silent^no-pi^0^empty^^
 a failed user-scope listing is uncertainty, never absence^pi^0^empty^^1
+a stalled list is ignored even after emitting a partial listing^pi^1^empty^^0^stalled
 an extension only in the project scope reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^project
 ROWS
   pass "bootstrap offers the optional Pi ask-user dialog extension to a Pi primary only"

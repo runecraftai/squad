@@ -1090,7 +1090,7 @@ pi_ask_user_offer() {
     *) return 0 ;;
   esac
   command -v pi >/dev/null 2>&1 || return 0
-  listing=$(pi list 2>/dev/null) || return 0
+  listing=$(fm_run_timed 2 pi list </dev/null 2>/dev/null) || return 0
   listing=$(printf '%s\n' "$listing" | awk '/User packages:/{user=1; next} /Project packages:/{user=0} user')
   case "$listing" in
     *"npm:$PI_ASK_USER_EXTENSION"*)

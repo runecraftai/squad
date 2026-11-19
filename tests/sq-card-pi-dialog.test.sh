@@ -41,9 +41,25 @@ PY
 # fragment <card file> <dialog> <answers array json>: the answer text the mapping hands
 # back to bin/sq-ask.sh --answer, built into a whole extension tool result the way the
 # extension returns it (details.answers plus details.cancelled).
+tool_result() {
+  local payload
+  payload=$("$DIALOG" --payload < "$1") || return
+  python3 - "$payload" "$2" "$3" <<'PY'
+import json, sys
+payload, number, answers = json.loads(sys.argv[1]), int(sys.argv[2]), json.loads(sys.argv[3])
+if 1 <= number <= len(payload):
+    question = payload[number - 1]["questions"][0]["question"]
+    for answer in answers:
+        answer.setdefault("question", question)
+print(json.dumps({"content": [{"type": "text", "text": "answered"}],
+                  "details": {"answers": answers, "cancelled": False}}))
+PY
+}
+
 fragment() {
-  "$DIALOG" --answer --dialog "$2" \
-    --result "{\"details\":{\"answers\":$3,\"cancelled\":false}}" < "$1"
+  local result
+  result=$(tool_result "$@") || return
+  "$DIALOG" --answer --dialog "$2" --result "$result" < "$1"
 }
 
 # fragments <card file> <dialog> <answers> [<dialog> <answers> ...]: one merge call
@@ -51,9 +67,10 @@ fragment() {
 fragments() {
   local card=$1
   shift
-  local args=()
+  local result args=()
   while [ "$#" -gt 0 ]; do
-    args+=(--dialog "$1" --result "{\"details\":{\"answers\":$2,\"cancelled\":false}}")
+    result=$(tool_result "$card" "$1" "$2") || return
+    args+=(--dialog "$1" --result "$result")
     shift 2
   done
   "$DIALOG" --answer "${args[@]}" < "$card"
@@ -111,9 +128,6 @@ test_round_trip() {
   [ "$answer" = "d1 o1" ] || fail "T3: expected 'd1 o1', got '$answer'"
   resolve "$PAIR" "$answer" 'r["selected_option_id"] == "tonight"'
 
-  # The whole tool result with its details and cancelled flag is the accepted input.
-  answer=$("$DIALOG" --answer --dialog 1 --result '{"content":[{"type":"text","text":"answered"}],"details":{"answers":[{"questionIndex":0,"kind":"option","answer":"Hold Until Monday"}],"cancelled":false}}' < "$PAIR")
-  [ "$answer" = "d1 o2" ] || fail "T3: expected 'd1 o2' from a whole tool result, got '$answer'"
   pass "T3: the marked recommended option round-trips back to the same card option"
 }
 
@@ -222,11 +236,11 @@ test_free_text_and_refusals() {
   printf '%s' "$out" | grep -q 'double quotes' || fail "T7: the free-text refusal is not explanatory: $out"
 
   # A card that forbids free text keeps that authority: the dialog's own row cannot widen it.
-  answer=$(fragment "$FIX/merge.json" 1 '[{"questionIndex":0,"kind":"custom","answer":"neither"}]')
-  [ "$answer" = 'd1 o0 "neither"' ] || fail "T7: expected the O0 fragment for the no-free-text card, got '$answer'"
   rc=0
-  "$ASK" --answer "$answer" < "$FIX/merge.json" >/dev/null 2>&1 || rc=$?
-  [ "$rc" = 4 ] || fail "T7: a card with allow_free_text false must still reject free text, got $rc"
+  fragment "$FIX/merge.json" 1 '[{"questionIndex":0,"kind":"custom","answer":"neither"}]' \
+    > "$TMP_ROOT/refusal.out" 2> "$TMP_ROOT/refusal.err" || rc=$?
+  [ "$rc" = 4 ] && [ ! -s "$TMP_ROOT/refusal.out" ] || fail "T7: a no-free-text card must reject O0 without a fragment"
+  grep -q 'does not take free text' "$TMP_ROOT/refusal.err" || fail "T7: missing no-free-text diagnostic"
 
   rc=0
   out=$("$DIALOG" --payload < "$FIX/reserved.json" 2>&1) || rc=$?
@@ -365,6 +379,66 @@ PY
   pass "T9: several cards merge into one fragment per decision, with a named duplicate error"
 }
 
+test_protocol_validation() {
+  python3 - "$DIALOG" "$ASK" "$PAIR" <<'PY' || fail "dialog protocol validation failed"
+import json, copy, subprocess, sys
+
+dialog, ask, fixture = sys.argv[1:]
+with open(fixture, "rb") as f:
+    raw = f.read()
+card = json.loads(raw)
+
+def run(program, *args, data):
+    return subprocess.run([program, *args], input=data, capture_output=True)
+
+def result(question, kind, answer):
+    return json.dumps({"details": {"cancelled": False, "answers": [
+        {"questionIndex": 0, "question": question, "kind": kind, "answer": answer}
+    ]}})
+
+cards = []
+for n in range(10):
+    clone = copy.deepcopy(card)
+    clone["id"] = "decision-%d" % (n + 1)
+    clone["metadata"] = {}
+    cards.append(clone)
+
+def check_binding():
+    data = json.dumps(cards[:2]).encode()
+    payload = json.loads(run(dialog, data=data).stdout)
+    question = payload[1]["questions"][0]["question"]
+    tool_result = result(question, "option", card["options"][0]["label"])
+    swapped = run(dialog, "--answer", "--dialog", "1", "--result", tool_result, data=data)
+    assert swapped.returncode == 4 and not swapped.stdout and b"question" in swapped.stderr, swapped
+    correct = run(dialog, "--answer", "--dialog", "2", "--result", tool_result, data=data)
+    assert correct.returncode == 0 and correct.stdout.strip() == b"d2 o1", correct
+
+cards[1]["question"] = "Should this release wait?"
+check_binding()
+cards[1]["question"] = card["question"]
+check_binding()
+
+data = json.dumps(cards).encode()
+payload = json.loads(run(dialog, data=data).stdout)
+args = []
+for n, entry in enumerate(payload, 1):
+    args += ["--dialog", str(n), "--result", result(entry["questions"][0]["question"], "custom", "a" * 200)]
+merged = run(dialog, "--answer", *args, data=data)
+assert merged.returncode == 4 and not merged.stdout and b"fewer dialogs" in merged.stderr, merged
+for batch in [args[:36], args[36:]]:
+    fragment = run(dialog, "--answer", *batch, data=data)
+    assert fragment.returncode == 0, fragment
+    parsed = run(ask, "--answer", fragment.stdout.decode().strip(), data=data)
+    assert parsed.returncode == 0 and len(json.loads(parsed.stdout)) == len(batch) // 4, parsed
+
+malformed = raw.replace(b"Deploy Tonight", b"Deploy\x00 Tonight", 1)
+canonical = run(ask, "--validate", data=malformed)
+conversion = run(dialog, "--payload", data=malformed)
+assert canonical.returncode == conversion.returncode == 2 and not conversion.stdout, conversion
+PY
+  pass "dialog results bind to the presented question and fragments satisfy the canonical parser"
+}
+
 test_two_option_card
 test_four_option_card
 test_round_trip
@@ -374,3 +448,4 @@ test_prose_fallback_unchanged
 test_free_text_and_refusals
 test_fixtures_are_lint_clean
 test_merge_across_dialogs
+test_protocol_validation

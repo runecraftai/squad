@@ -27,7 +27,7 @@ Two facts drive the mapping:
 - There is no per-question `notes` field, so card context and findings travel inside the question text rather than being dropped.
 - The dialog appends its own free-text row (`Type something.`), so `O0 - Your own words` stays reachable without authoring an option for it.
   The labels `Other`, `Type something.`, and `Next` are reserved and rejected, which is why a card using one of them keeps the prose block.
-  That row cannot widen a card's own rule: a card with `allow_free_text: false` still shows it, and a typed answer is rejected by `bin/sq-ask.sh --answer` because the card, not the dialog, decides what it accepts.
+  That row cannot widen a card's own rule: a card with `allow_free_text: false` still shows it, and a typed answer is rejected by the mapping through `bin/sq-ask.sh --answer` because the card, not the dialog, decides what it accepts.
 
 ## The offer
 
@@ -71,7 +71,7 @@ A card the dialog cannot represent without dropping or misrepresenting an option
 ## Answers
 
 The dialog result is the published version 2.15.0 shape, whose field names are owned by the package's `docs/tool-schema.md` "Result" section: `details.answers[]` entries carry `questionIndex`, `question`, `kind`, and `answer`, with the optional `notes`, `selected`, and `preview`, and the result carries `details.cancelled`.
-The mapping reads `questionIndex`, `kind`, and `answer` from each entry plus `details.cancelled` from the result, one entry per question with a `kind` and the chosen label or typed text.
+The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. If several cards would show the same question text, their question text ends with the corresponding `Decision: D<n>` so their results stay distinguishable.
 It turns that back into the prose answer grammar, so the existing parser stays the only resolver:
 
 ```bash
@@ -89,6 +89,7 @@ It takes the whole tool result and never a bare answers array: only `details.can
 Answering several cards in one call merges their dialogs into exactly one fragment per decision, mechanically - no fold, no renumbering, no guessed pick.
 Two answers for the same decision exit 4 with a named error instead of choosing one, and a multi-select answer exits 4 because this mapping never authors a multi-select question.
 A malformed answer, such as a non-string chosen label or typed text, exits 4 with a named error and never a traceback.
+The mapping runs the canonical answer parser before printing the fragment. If it rejects a batch for exceeding the answer length limit, retry with fewer dialogs per call against the same card array so the `D` codes stay the same.
 
 ## Fallback
 

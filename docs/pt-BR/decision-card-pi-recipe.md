@@ -29,7 +29,7 @@ Dois fatos guiam o mapeamento:
 - Não há campo `notes` por pergunta, então o contexto e os findings do cartão viajam dentro do texto da pergunta em vez de serem descartados.
 - O diálogo acrescenta sua própria linha de texto livre (`Type something.`), então `O0 - Your own words` continua alcançável sem criar uma opção para ela.
   Os rótulos `Other`, `Type something.` e `Next` são reservados e rejeitados, por isso um cartão que use um deles mantém o bloco de prosa.
-  Essa linha não pode ampliar a regra do próprio cartão: um cartão com `allow_free_text: false` ainda a mostra, e uma resposta digitada é rejeitada por `bin/sq-ask.sh --answer` porque o cartão, e não o diálogo, decide o que aceita.
+  Essa linha não pode ampliar a regra do próprio cartão: um cartão com `allow_free_text: false` ainda a mostra, e uma resposta digitada é rejeitada pelo mapeamento por meio de `bin/sq-ask.sh --answer` porque o cartão, e não o diálogo, decide o que aceita.
 
 ## A oferta
 
@@ -73,7 +73,7 @@ Um cartão que o diálogo não consegue representar sem descartar ou deturpar um
 ## Respostas
 
 O resultado do diálogo é a forma publicada da versão 2.15.0, cujos nomes de campo são definidos pela seção "Result" de `docs/tool-schema.md` do pacote: as entradas de `details.answers[]` carregam `questionIndex`, `question`, `kind` e `answer`, com os opcionais `notes`, `selected` e `preview`, e o resultado carrega `details.cancelled`.
-O mapeamento lê `questionIndex`, `kind` e `answer` de cada entrada e `details.cancelled` do resultado, uma entrada por pergunta com um `kind` e o rótulo escolhido ou o texto digitado.
+O mapeamento confere `questionIndex` e o `question` devolvido com o diálogo indicado por `--dialog` antes de resolver `kind` e `answer`. Se vários cartões exibiriam o mesmo texto de pergunta, o texto termina com o `Decision: D<n>` correspondente para distinguir os resultados.
 Ele converte isso de volta para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
 
 ```bash
@@ -91,6 +91,7 @@ Ele recebe o resultado inteiro da ferramenta e nunca um array de respostas solto
 Responder vários cartões em uma chamada mescla seus diálogos em exatamente um fragmento por decisão, mecanicamente - sem dobra, sem renumeração, sem escolha adivinhada.
 Duas respostas para a mesma decisão saem com 4 e um erro nomeado em vez de escolher uma, e uma resposta multi-select sai com 4 porque este mapeamento nunca cria uma pergunta multi-select.
 Uma resposta malformada, como um rótulo escolhido ou texto digitado que não seja string, sai com 4 e um erro nomeado, nunca com um traceback.
+O mapeamento executa o analisador canônico de respostas antes de imprimir o fragmento. Se ele rejeitar um lote por exceder o limite de tamanho da resposta, tente novamente com menos diálogos por chamada e com o mesmo array de cartões para preservar os códigos `D`.
 
 ## Fallback
 

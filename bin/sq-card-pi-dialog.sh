@@ -70,10 +70,9 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 2
 fi
 
-# One fixed program. The card arrives on stdin and the result payload in an
-# environment variable; nothing from either is interpolated into program text.
 IFS= read -r -d '' PY_PROG <<'PY' || true
-import sys, json
+import json, os, subprocess, sys
+from collections import Counter
 
 MAX_OPTIONS = 4
 HEADER_MAX = 16
@@ -152,6 +151,11 @@ def build(cards):
             "options": option_rows(card["options"], card["default_option_id"]),
         }]})
         origin.append(index)
+    questions = [dialog["questions"][0] for dialog in dialogs]
+    counts = Counter(q["question"] for q in questions)
+    for number, q in enumerate(questions, 1):
+        if counts[q["question"]] > 1:
+            q["question"] += "\nDecision: D%d" % number
     return dialogs, origin
 
 
@@ -190,6 +194,8 @@ def answer_text(cards, pairs):
                 raise Unusable("questionIndex %r is not a question of dialog %d" % (position, dialog_index))
             if card_index in answered:
                 raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
+            if answer.get("question") != dialogs[dialog_index - 1]["questions"][position]["question"]:
+                raise Unusable("the returned question does not match dialog %d" % dialog_index)
             answered.add(card_index)
             kind = answer.get("kind")
             if kind == "option":
@@ -214,39 +220,52 @@ def answer_text(cards, pairs):
     return " ".join(pieces)
 
 
+def canonical_check(ask, raw, *args):
+    return subprocess.run([ask, *args], input=raw, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.PIPE)
+
+
 def main():
-    mode = sys.argv[1]
-    try:
-        raw = sys.stdin.buffer.read().decode("utf-8")
-    except UnicodeDecodeError:
-        raise Invalid("the card is not valid UTF-8")
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        raise Invalid("invalid card JSON")
+    ask = os.path.join(sys.argv[1], "sq-ask.sh")
+    mode = sys.argv[2]
+    raw = sys.stdin.buffer.read()
+    validation = canonical_check(ask, raw, "--validate")
+    if validation.returncode:
+        sys.stderr.buffer.write(validation.stderr or b"error: invalid card\n")
+        sys.exit(2)
+    data = json.loads(raw.decode("utf-8"))
     cards = data if isinstance(data, list) else [data]
-    if not cards:
-        raise Invalid("empty card array: need at least one card")
     for card in cards:
         if len(card["options"]) < 2:
             raise Invalid("a card needs at least 2 options for a dialog question; card '%s' has %d" % (card["id"], len(card["options"])))
     if mode == "payload":
         print(json.dumps(build(cards)[0]))
     elif mode == "answer":
-        args = sys.argv[2:]
+        args = sys.argv[3:]
         if not args or len(args) % 2:
             raise Invalid("--answer needs one --dialog <n> and one --result <json> per answered dialog")
         pairs = []
         for offset in range(0, len(args), 2):
             index = args[offset]
-            if not index.isdigit() or int(index) < 1:
+            try:
+                number = int(index) if index.isascii() and index.isdigit() else 0
+            except ValueError:
+                number = 0
+            if number < 1:
                 raise Invalid("--dialog needs a positive dialog number")
             try:
                 payload = json.loads(args[offset + 1])
             except ValueError:
                 raise Unusable("--result is not valid JSON")
-            pairs.append((int(index), payload))
-        print(answer_text(cards, pairs))
+            pairs.append((number, payload))
+        fragment = answer_text(cards, pairs)
+        validation = canonical_check(ask, raw, "--answer", fragment)
+        if validation.returncode:
+            message = validation.stderr.decode("utf-8", errors="replace").strip()
+            if len(pairs) > 1:
+                message += "\nFor oversized batches, retry with fewer dialogs per call using the same cards."
+            raise Unusable(message or "the canonical parser rejected the answer")
+        print(fragment)
     else:
         raise Invalid("unknown mode")
 
@@ -261,7 +280,7 @@ except Unusable as e:
     sys.exit(4)
 PY
 
-run_py() { python3 -I -c "$PY_PROG" "$@"; }
+run_py() { python3 -I -c "$PY_PROG" "$SCRIPT_DIR" "$@"; }
 
 die() {
   local code=$1; shift
@@ -298,33 +317,19 @@ if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
   die 2 "unexpected argument: ${POSITIONAL[1]} (the card is the only positional argument)"
 fi
 
-# --- read the card from the positional argument or stdin ---
+PAIRS=()
+if [[ "$MODE" == answer ]]; then
+  [[ ${#DIALOGS[@]} -gt 0 ]] || die 2 "--answer needs --dialog <n> and --result <json>"
+  [[ ${#DIALOGS[@]} -eq ${#RESULTS[@]} ]] || die 2 "--answer needs one --result <json> for every --dialog <n>"
+  for i in "${!DIALOGS[@]}"; do
+    PAIRS+=("${DIALOGS[$i]}" "${RESULTS[$i]}")
+  done
+fi
+
 if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
-  CARD="${POSITIONAL[0]}"
+  printf '%s' "${POSITIONAL[0]}" | run_py "$MODE" ${PAIRS[@]+"${PAIRS[@]}"}
 elif [[ -t 0 ]]; then
   die 2 "no decision card JSON on stdin or as argument"
 else
-  CARD=$(cat)
+  run_py "$MODE" ${PAIRS[@]+"${PAIRS[@]}"}
 fi
-[[ -n "$CARD" ]] || die 2 "the card JSON is empty"
-
-# The card schema has one owner: validate through its renderer/parser first.
-if ! VALIDATION=$(printf '%s' "$CARD" | "$SCRIPT_DIR/sq-ask.sh" --validate 2>&1 >/dev/null); then
-  printf '%s\n' "${VALIDATION:-error: invalid card}" >&2
-  exit 2
-fi
-
-case "$MODE" in
-  payload)
-    printf '%s' "$CARD" | run_py payload
-    ;;
-  answer)
-    [[ ${#DIALOGS[@]} -gt 0 ]] || die 2 "--answer needs --dialog <n> and --result <json>"
-    [[ ${#DIALOGS[@]} -eq ${#RESULTS[@]} ]] || die 2 "--answer needs one --result <json> for every --dialog <n>"
-    PAIRS=()
-    for i in "${!DIALOGS[@]}"; do
-      PAIRS+=("${DIALOGS[$i]}" "${RESULTS[$i]}")
-    done
-    printf '%s' "$CARD" | run_py answer "${PAIRS[@]}"
-    ;;
-esac
