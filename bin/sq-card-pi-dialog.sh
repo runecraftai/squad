@@ -10,7 +10,7 @@
 #
 # Usage: echo '<card json>' | bin/sq-card-pi-dialog.sh [--payload]
 #        bin/sq-card-pi-dialog.sh '<card json>' [--payload]
-#        echo '<card json>' | bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' \
+#        echo '<card json>' | bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<tool result json>' \
 #          [--dialog 2 --result '<tool result json>' ...]
 #
 # Input is one card object or a JSON array of cards, validated first by
@@ -19,11 +19,14 @@
 # Modes:
 #   --payload      Print the ask_user_question payload(s) as a JSON array, one entry
 #                  per dialog, in card order; each entry is one tool call. The default.
-#   --answer       Read the extension's result for the dialog named by --dialog and
-#                  print the answer text for bin/sq-ask.sh --answer, such as
-#                  "d1 o2" or 'd1 o0 "ship it"'. Repeat --dialog/--result to answer
-#                  several cards in one call; the pairs are merged.
-#                  --result takes the whole tool result, never a bare answers array:
+#   --resolve      Use this mode to record a dialog decision. It checks the echoed
+#                  question against the card snapshot, passes the derived answer and
+#                  the same card bytes to bin/sq-ask.sh --answer, and returns that
+#                  parser's output and exit code unchanged.
+#   --answer       Print only the answer fragment, such as "d1 o2" or 'd1 o0 "ship it"'.
+#                  Like --resolve, this accepts repeated --dialog/--result pairs to
+#                  answer several cards in one call; the pairs are merged.
+#                  Both modes take the whole tool result, never a bare answers array:
 #                  only details.cancelled proves the dialog was not cancelled.
 #   --help         Show this help.
 #
@@ -56,7 +59,8 @@
 # an option: an option label that is a reserved dialog label ("Other", "Type something.",
 # "Next"), a label shared by two options of the card, a card with a single option, and a
 # card with more than four options (it would need more than one dialog question),
-# or a card with allow_free_text disabled (the built-in free-text row cannot be hidden).
+# a card with allow_free_text disabled (the built-in free-text row cannot be hidden),
+# or a card with any missing, null, or blank option description.
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
 # the canonical shape. A result without details.cancelled, or a cancelled one (Esc), is
 # never converted into an answer: it exits 4, so nothing is recorded.
@@ -243,11 +247,15 @@ def main():
             if not card.get("allow_free_text", True):
                 raise Invalid("card '%s' has allow_free_text=false; the dialog always shows a free-text row"
                               % card["id"])
+            for option in card["options"]:
+                if not (option.get("description") or "").strip():
+                    raise Invalid("card '%s' option '%s' requires a non-blank description for the dialog"
+                                  % (card["id"], option["id"]))
         print(json.dumps(build(cards)[0]))
-    elif mode == "answer":
+    elif mode in ("answer", "resolve"):
         args = sys.argv[3:]
         if not args or len(args) % 2:
-            raise Invalid("--answer needs one --dialog <n> and one --result <json> per answered dialog")
+            raise Invalid("--%s needs one --dialog <n> and one --result <json> per answered dialog" % mode)
         pairs = []
         for offset in range(0, len(args), 2):
             index = args[offset]
@@ -263,6 +271,8 @@ def main():
                 raise Unusable("--result is not valid JSON")
             pairs.append((number, payload))
         fragment = answer_text(cards, pairs)
+        if mode == "resolve":
+            sys.exit(subprocess.run([ask, "--answer", fragment], input=raw).returncode)
         validation = canonical_check(ask, raw, "--answer", fragment)
         if validation.returncode:
             message = validation.stderr.decode("utf-8", errors="replace").strip()
@@ -303,6 +313,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --payload) MODE="payload"; shift ;;
     --answer) MODE="answer"; shift ;;
+    --resolve) MODE="resolve"; shift ;;
     --dialog) [[ $# -ge 2 ]] || die 2 "--dialog needs a value"; DIALOGS+=("$2"); shift 2 ;;
     --dialog=*) DIALOGS+=("${1#--dialog=}"); shift ;;
     --result) [[ $# -ge 2 ]] || die 2 "--result needs a value"; RESULTS+=("$2"); shift 2 ;;
@@ -322,9 +333,9 @@ if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
 fi
 
 PAIRS=()
-if [[ "$MODE" == answer ]]; then
-  [[ ${#DIALOGS[@]} -gt 0 ]] || die 2 "--answer needs --dialog <n> and --result <json>"
-  [[ ${#DIALOGS[@]} -eq ${#RESULTS[@]} ]] || die 2 "--answer needs one --result <json> for every --dialog <n>"
+if [[ "$MODE" == answer || "$MODE" == resolve ]]; then
+  [[ ${#DIALOGS[@]} -gt 0 ]] || die 2 "--$MODE needs --dialog <n> and --result <json>"
+  [[ ${#DIALOGS[@]} -eq ${#RESULTS[@]} ]] || die 2 "--$MODE needs one --result <json> for every --dialog <n>"
   for i in "${!DIALOGS[@]}"; do
     PAIRS+=("${DIALOGS[$i]}" "${RESULTS[$i]}")
   done

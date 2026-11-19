@@ -69,7 +69,7 @@ Um cartão é uma pergunta de diálogo, porque uma pergunta comporta 2-4 opçõe
 Um mapeamento dividido não é usado para este caminho de payload: a extensão responde uma entrada por pergunta, então um cartão espalhado por duas ou mais perguntas voltaria como várias respostas para a mesma decisão e só poderia ser registrado adivinhando uma escolha.
 Recusar o cartão mantém o bloco de prosa autoritativo exatamente para os cartões que precisam de mais de uma pergunta, em vez de deixá-los com um diálogo cuja resposta não pode ser mesclada.
 
-Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, ou um cartão com mais de quatro opções.
+Um cartão que o diálogo não consegue representar sem descartar ou deturpar uma opção mantém o bloco de prosa, e o mapeamento sai com 2 informando o motivo: um rótulo de diálogo reservado, um rótulo compartilhado por duas opções do cartão, um cartão com uma única opção, um cartão com mais de quatro opções ou qualquer descrição de opção ausente, nula ou em branco.
 
 ## Respostas
 
@@ -78,28 +78,28 @@ O mapeamento confere `questionIndex` e o `question` devolvido com o diálogo ind
 
 Para recuperar o resultado, use o comando `/session` do Pi para localizar o arquivo JSONL da sessão atual. No ramo atual da conversa, obtenha o `id` da entrada `toolCall` no conteúdo da mensagem do assistente que chamou `ask_user_question`. Localize a entrada da sessão com `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"` e `message.toolCallId` igual a esse ID. Passe o objeto `message` inteiro, incluindo `details`, como `--result`, sem a entrada externa da sessão. O `content` apresentado ao modelo não basta e não deve ser usado para reconstruir `details`. Se o resultado estruturado correspondente não estiver disponível (por exemplo, se a sessão não foi salva), siga o caminho de prosa canônico abaixo.
 
-O mapeamento converte o resultado para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
+Use `--resolve` para registrar a decisão em um único comando. Ele converte o resultado para a gramática de resposta em prosa e executa `bin/sq-ask.sh --answer` com os mesmos bytes do cartão que passaram pela verificação, devolvendo a saída e o código de saída do parser sem alterações:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
 # uma chamada ask_user_question por elemento do array impresso
-bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' < card.json
-# vários cartões respondidos em uma chamada são mesclados em um fragmento por decisão:
-bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
-# -> "d1 o2", depois:
-bin/sq-ask.sh --answer 'd1 o2' < card.json
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<tool result json>' < card.json
+# vários cartões respondidos em uma chamada:
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
 ```
 
-`--answer` precisa do cartão de onde veio o diálogo, porque uma resposta é sempre resolvida contra o cartão JSON e nunca contra o texto que o comandante viu.
-Ele recebe o resultado inteiro da ferramenta e nunca um array de respostas solto: só `details.cancelled` prova que o diálogo não foi cancelado, então `Esc` nunca vira uma decisão registrada.
+No script de mapeamento, `--answer` imprime apenas o fragmento com os códigos (como `d1 o2`); não resolva esse fragmento com um arquivo de cartão lido separadamente.
+Os dois modos recebem o resultado inteiro da ferramenta, nunca um array de respostas solto: só `details.cancelled` prova que o diálogo não foi cancelado, então `Esc` nunca vira uma decisão registrada.
 Responder vários cartões em uma chamada mescla seus diálogos em exatamente um fragmento por decisão, mecanicamente - sem dobra, sem renumeração, sem escolha adivinhada.
 Cada resultado enviado deve conter exatamente uma resposta. Um resultado vazio ou duas respostas para a mesma decisão fazem o comando sair com código 4 sem emitir um fragmento. Uma resposta multi-select também sai com código 4 porque este mapeamento nunca cria uma pergunta multi-select.
 Uma resposta malformada, como um rótulo escolhido ou texto digitado que não seja string, sai com 4 e um erro nomeado, nunca com um traceback.
-O mapeamento executa o analisador canônico de respostas antes de imprimir o fragmento. Se ele rejeitar um lote por exceder o limite de tamanho da resposta, tente novamente com menos diálogos por chamada e com o mesmo array de cartões para preservar os códigos `D`.
+A extensão não consegue validar previamente o texto livre digitado conforme a gramática de prosa. Texto com aspas duplas, barra invertida ou quebra de linha faz o comando sair com código 4 e o erro `free text must be …`; responda pelo bloco de prosa canônico. Cartões com `allow_free_text: false` são recusados antes da apresentação.
+Se o parser canônico rejeitar um lote por exceder o limite de tamanho da resposta, tente novamente com menos diálogos por chamada e com o mesmo array de cartões para preservar os códigos `D`.
+Um resultado inteiro que exceda o limite do sistema por argumento falha com `Argument list too long` (`E2BIG`) antes de chegar ao parser. Siga o caminho de prosa canônico; não corte o resultado nem o reconstrua a partir do texto apresentado ao modelo.
 
 ## Fallback
 
-Se a extensão estiver ausente, o cartão for recusado ou o resultado estruturado correspondente não puder ser recuperado, use o caminho de prosa original:
+Se a extensão estiver ausente, o cartão for recusado ou o resultado estruturado correspondente não puder ser recuperado ou usado, siga o caminho de prosa original:
 
 - `bin/sq-ask.sh --render` imprime o mesmo bloco de prosa de sempre;
 - `bin/sq-ask.sh --answer` resolve a resposta digitada exatamente como antes;
@@ -109,7 +109,7 @@ Se a extensão estiver ausente, o cartão for recusado ou o resultado estruturad
 
 | Arquivo | Propósito |
 |---------|-----------|
-| `bin/sq-card-pi-dialog.sh` | Cartão para payload de diálogo, e respostas do diálogo de volta para o texto de resposta em prosa |
+| `bin/sq-card-pi-dialog.sh` | Cartão para payload de diálogo, e respostas do diálogo resolvidas pelo parser canônico |
 | `bin/sq-bootstrap.sh` | A oferta somente para Pi, incluindo o comando de instalação exato |
 | `tests/sq-card-pi-dialog.test.sh` | Casos de mapeamento, recusa, ida e volta e fallback |
 | `tests/sq-bootstrap.test.sh` | A oferta: somente Pi, comando exato, nunca instala, silenciosa em outros harnesses |

@@ -67,7 +67,7 @@ One card is one dialog question, because a question holds 2-4 options:
 A split mapping is not used for the payload path: the extension answers one entry per question, so a card spread over two or more questions would come back as several answers for the same decision and could only be recorded by guessing a pick.
 Refusing the card keeps the prose block authoritative for exactly the cards that need more than one question, instead of leaving them with a dialog whose answer cannot be merged.
 
-A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, or a card with more than four options.
+A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, a card with more than four options, or any missing, null, or blank option description.
 
 ## Answers
 
@@ -76,28 +76,28 @@ The mapping checks `questionIndex` and the returned `question` against the dialo
 
 To recover a result, use Pi's `/session` command to find the current session's JSONL file. In the current conversation branch, take the `id` from the assistant's `toolCall` content entry for the corresponding `ask_user_question` call. Find the session entry with `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"`, and `message.toolCallId` equal to that ID. Pass the entire `message` object, including `details`, as `--result`; do not pass the enclosing session entry. The model-facing `content` alone is not sufficient and must not be used to reconstruct `details`. If the matching structured result is unavailable (for example, the session was not saved), use the canonical prose path below.
 
-The mapping turns the result back into the prose answer grammar, so the existing parser stays the only resolver:
+Use `--resolve` to record the decision in one command. It converts the result to the prose answer grammar and runs `bin/sq-ask.sh --answer` with the exact card bytes that passed the snapshot check, returning the parser's output and exit code unchanged:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
 # one ask_user_question call per element of the printed array
-bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<tool result json>' < card.json
-# several cards answered in one call merge into one fragment per decision:
-bin/sq-card-pi-dialog.sh --answer --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
-# -> "d1 o2", then:
-bin/sq-ask.sh --answer 'd1 o2' < card.json
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<tool result json>' < card.json
+# several cards answered in one call:
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --result '<first>' --dialog 2 --result '<second>' < card.json
 ```
 
-`--answer` needs the card the dialog came from, because an answer is always resolved against the JSON card and never against the text the commander saw.
-It takes the whole tool result and never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
+`--answer` on the mapping script only prints the code fragment (such as `d1 o2`); do not resolve that fragment against a separately read card file.
+Both modes take the whole tool result, never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
 Answering several cards in one call merges their dialogs into exactly one fragment per decision, mechanically - no fold, no renumbering, no guessed pick.
 Each submitted result must contain exactly one answer. An empty result or two answers for the same decision exit 4 without emitting a fragment, and a multi-select answer also exits 4 because this mapping never authors a multi-select question.
 A malformed answer, such as a non-string chosen label or typed text, exits 4 with a named error and never a traceback.
-The mapping runs the canonical answer parser before printing the fragment. If it rejects a batch for exceeding the answer length limit, retry with fewer dialogs per call against the same card array so the `D` codes stay the same.
+The extension cannot pre-validate its built-in text row against the prose grammar. Typed text containing a double quote, backslash, or newline exits 4 with the `free text must be …` error; use the canonical prose block to answer instead. Cards with `allow_free_text: false` are refused before presentation.
+If the canonical parser rejects a batch for exceeding the answer length limit, retry with fewer dialogs per call against the same card array so the `D` codes stay the same.
+A whole tool result that exceeds the system's per-argument limit fails with `Argument list too long` (`E2BIG`) before it reaches the parser. Use the canonical prose path; do not truncate the result or reconstruct it from model-facing text.
 
 ## Fallback
 
-When the extension is absent, a card is refused, or the matching structured result cannot be recovered, use the unchanged prose path:
+When the extension is absent, a card is refused, or a matching structured result cannot be recovered or used, use the unchanged prose path:
 
 - `bin/sq-ask.sh --render` prints the same prose block it always printed;
 - `bin/sq-ask.sh --answer` resolves the typed answer exactly as before;
@@ -107,7 +107,7 @@ When the extension is absent, a card is refused, or the matching structured resu
 
 | File | Purpose |
 |------|---------|
-| `bin/sq-card-pi-dialog.sh` | Card to dialog payload, and dialog answers back to the prose answer text |
+| `bin/sq-card-pi-dialog.sh` | Card to dialog payload, and dialog answers back through the canonical parser |
 | `bin/sq-bootstrap.sh` | The Pi-only offer, including the exact install command |
 | `tests/sq-card-pi-dialog.test.sh` | Mapping, refusal, round-trip, and fallback cases |
 | `tests/sq-bootstrap.test.sh` | The offer: Pi only, exact command, never installs, silent elsewhere |

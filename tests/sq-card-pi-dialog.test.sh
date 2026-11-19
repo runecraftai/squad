@@ -378,10 +378,10 @@ PY
 }
 
 test_protocol_validation() {
-  python3 - "$DIALOG" "$ASK" "$PAIR" "$GATE" <<'PY' || fail "dialog protocol validation failed"
+  python3 - "$DIALOG" "$ASK" "$PAIR" "$GATE" "$FIX/blank-description.json" <<'PY' || fail "dialog protocol validation failed"
 import json, copy, subprocess, sys
 
-dialog, ask, fixture, gate_fixture = sys.argv[1:]
+dialog, ask, fixture, gate_fixture, blank_fixture = sys.argv[1:]
 with open(fixture, "rb") as f:
     raw = f.read()
 card = json.loads(raw)
@@ -393,6 +393,18 @@ def result(question, kind, answer):
     return json.dumps({"details": {"cancelled": False, "answers": [
         {"questionIndex": 0, "question": question, "kind": kind, "answer": answer}
     ]}})
+
+with open(blank_fixture, "rb") as f:
+    blank = json.load(f)
+for description in (blank["options"][1]["description"], "", None):
+    blank["options"][1]["description"] = description
+    data = json.dumps(blank).encode()
+    assert run(ask, "--validate", data=data).returncode == 0
+    refused = run(dialog, "--payload", data=data)
+    assert refused.returncode == 2 and not refused.stdout and b"non-blank description" in refused.stderr, refused
+del blank["options"][1]["description"]
+refused = run(dialog, "--payload", data=json.dumps(blank).encode())
+assert refused.returncode == 2 and not refused.stdout and b"non-blank description" in refused.stderr, refused
 
 cards = []
 for n in range(10):
@@ -435,6 +447,13 @@ gate["options"][1]["payload"]["action"] = "skip"
 stale = run(dialog, "--answer", "--dialog", "1", "--result", accept_result, data=json.dumps(gate).encode())
 assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.stderr, stale
 
+canonical = run(ask, "--answer", "d1 o2", data=reformatted)
+resolved = run(dialog, "--resolve", "--dialog", "1", "--result", accept_result, data=reformatted)
+assert resolved.returncode == canonical.returncode == 0 and resolved.stdout == canonical.stdout, resolved
+assert json.loads(resolved.stdout)["selected_payload"]["action"] == "approve", resolved
+stale = run(dialog, "--resolve", "--dialog", "1", "--result", accept_result, data=json.dumps(gate).encode())
+assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.stderr, stale
+
 data = json.dumps(cards[:2]).encode()
 question = json.loads(run(dialog, data=data).stdout)[1]["questions"][0]["question"]
 empty = run(dialog, "--answer", "--dialog", "1", "--result",
@@ -449,6 +468,10 @@ for n, entry in enumerate(payload, 1):
     args += ["--dialog", str(n), "--result", result(entry["questions"][0]["question"], "custom", "a" * 200)]
 merged = run(dialog, "--answer", *args, data=data)
 assert merged.returncode == 4 and not merged.stdout and b"fewer dialogs" in merged.stderr, merged
+canonical = run(ask, "--answer", " ".join('d%d o0 "%s"' % (n, "a" * 200) for n in range(1, 11)), data=data)
+resolved = run(dialog, "--resolve", *args, data=data)
+assert resolved.returncode == canonical.returncode == 4 and not resolved.stdout, resolved
+assert resolved.stderr == canonical.stderr, resolved
 for batch in [args[:36], args[36:]]:
     fragment = run(dialog, "--answer", *batch, data=data)
     assert fragment.returncode == 0, fragment
