@@ -89,9 +89,9 @@ if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
     raise ValueError("invalid id")
 
 
-def probabilities_field(value):
+def probabilities_field(value, secret):
     if not isinstance(value, dict) or any(
-            not recordable_probability(k, v) for k, v in value.items()):
+            not recordable_probability(k, v, secret) for k, v in value.items()):
         raise ValueError("invalid recommendation probabilities")
     return value
 
@@ -139,8 +139,9 @@ if args.event == "recommendation":
             raise ValueError("invalid recommendation reason")
         record.update(label="recommendation", status=status, reason=reason)
     elif status == "recommended":
+        secret = os.environ.get("TYPESAFE_API_KEY")
         choice = recommendation.get("choice")
-        if not recordable_text(choice):
+        if not recordable_text(choice, secret):
             raise ValueError("invalid recommendation choice")
         record.update(label="recommendation", status=status, choice=choice)
         confidence = recommendation.get("confidence")
@@ -149,7 +150,7 @@ if args.event == "recommendation":
                 raise ValueError("invalid recommendation confidence")
             record["confidence"] = confidence
         if "probabilities" in recommendation and recommendation["probabilities"] is not None:
-            record["probabilities"] = probabilities_field(recommendation["probabilities"])
+            record["probabilities"] = probabilities_field(recommendation["probabilities"], secret)
         if recommendation.get("low_confidence") is not None:
             if recommendation["low_confidence"] is not True:
                 raise ValueError("invalid recommendation low_confidence")
@@ -162,14 +163,14 @@ if args.event == "recommendation":
             for question, answer in answers.items():
                 if not isinstance(question, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", question):
                     raise ValueError("invalid recommendation answers")
-                entry = recordable_answer(answer)
+                entry = recordable_answer(answer, secret)
                 if not entry or entry != answer:
                     raise ValueError("invalid recommendation answers")
                 evidence[question] = entry
             record["answers"] = evidence
         if "model" in recommendation and recommendation["model"] is not None:
             model = recommendation["model"]
-            if recordable_text(model):
+            if recordable_text(model, secret):
                 record["model"] = model
     else:
         raise ValueError("invalid recommendation status")

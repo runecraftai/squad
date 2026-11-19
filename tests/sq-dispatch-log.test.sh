@@ -497,11 +497,15 @@ recommend rec-badflag '{"label":"recommendation","status":"recommended","choice"
 recommend rec-badmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.7,"model":"jev 2026-05"}'
 recommend rec-secretmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"sk-abcd1234567890"}'
 recommend rec-secretprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"grok/grok-4":0.6,"sk-abcd1234567890":0.4}}'
+recommend rec-urlprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"https://user:pass@local.invalid":0.4}}'
+TYPESAFE_API_KEY=runtime-test-key recommend rec-keyprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"runtime-test-key":0.4}}'
+recommend rec-urlmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"https://user:pass@local.invalid"}'
+TYPESAFE_API_KEY=runtime-test-key recommend rec-keymodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"runtime-test-key"}'
 recommend rec-reason '{"label":"recommendation","status":"unavailable","reason":"answer_missing"}'
-for refused in rec-freenotes rec-badflag rec-secretprob; do
+for refused in rec-freenotes rec-badflag rec-secretprob rec-urlprob rec-keyprob; do
   [ ! -e "$dir/data/$refused/dispatch.jsonl" ] || fail "stored out-of-allowlist recommendation: $refused"
 done
-python3 - "$dir/data/rec-badmodel/dispatch.jsonl" "$dir/data/rec-secretmodel/dispatch.jsonl" <<'PY' || fail 'an out-of-allowlist model lost the lane evidence instead of being left out'
+python3 - "$dir/data/rec-"{badmodel,secretmodel,urlmodel,keymodel}/dispatch.jsonl <<'PY' || fail 'an out-of-allowlist model lost the lane evidence instead of being left out'
 import json, sys
 for path in sys.argv[1:]:
     row = json.loads(open(path).readline())

@@ -2609,7 +2609,9 @@ test_pi_handoff_ready_requires_v3_delivery_state() {
     write_ready 3 true false 0 true
     # Report the evaluate verdict, so a refusal names its own reason instead of
     # leaving the next failure to be guessed from a bare assertion message.
-    if ! verdict=$(fm_afk_pi_handoff_evaluate "$state" "s:w" 2>&1); then
+    if ! fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null; then
+      local verdict
+      verdict=$(fm_afk_pi_handoff_evaluate "$state" "s:w" 2>&1) || :
       fail "a version-3 ready record with the delivery-state fields must be accepted (verdict: ${verdict#refused })"
     fi
   ) || fail "Pi handoff ready-schema test subshell failed"

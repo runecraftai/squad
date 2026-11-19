@@ -188,8 +188,23 @@ with tempfile.TemporaryDirectory() as td:
              "status": "recommended", "choice": "claude/sonnet",
              "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet"}}}]
         (data / "task/dispatch.jsonl").unlink()
+        credential_url = "https://deploy:private-pass@service.invalid"
+        private_email = "operator@example.invalid"
+        polluted = {**LANES, "other": "force a recommendation", "codex/" + "x-" * 62: "too long",
+                    "claude/sonnet/local-account": "account-scoped lane",
+                    "runtime-test-key": "not a lane",
+                    "claude/sonnet": f"deep reasoning {credential_url} {private_email} runtime-test-key"}
+        private_argv = argv.copy()
+        private_argv[argv.index("--lanes-json") + 1] = json.dumps(polluted)
+        private_argv[argv.index("--title") + 1] = f"local-account {private_email} runtime-test-key"
         state["reply"] = answer("other")
-        unmatched = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        unmatched = subprocess.run(private_argv, text=True, capture_output=True, env=env, check=True)
+        posted = captured["body"]["questions"][QUESTION]["criteria"]
+        assert set(posted) == set(CRITERIA) and posted["other"] == CRITERIA["other"]
+        assert posted["claude/sonnet"]["fits"].startswith("deep reasoning ")
+        assert captured["body"]["state"]["task"]["title"] == "[REDACTED] [REDACTED] [REDACTED]"
+        serialized = json.dumps(captured["body"])
+        assert all(text not in serialized for text in ("private-pass", private_email, "runtime-test-key", "local-account"))
         assert json.loads(unmatched.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
         assert unmatched.stderr == "" and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
@@ -225,6 +240,7 @@ with tempfile.TemporaryDirectory() as td:
                 ({"status": "ok"}, "invalid_response"),
                 ({"answers": []}, "invalid_response"),
                 ({"answers": {}}, "answer_missing"),
+                ({"answers": {QUESTION: None}}, "invalid_response"),
                 ({"answers": {"other": {"type": "choice", "choice": "claude/sonnet"}}},
                  "answer_missing"),
                 ({"answers": {QUESTION: "claude/sonnet"}}, "invalid_response"),
@@ -308,7 +324,8 @@ with tempfile.TemporaryDirectory() as td:
                                                "confidence": .8,
                                                "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
                                     DESIGN: DESIGN_ANSWER}}
-        for rejected_model in ("jev 2026-05", "sk-abcd1234567890", "😀" * 15000):
+        for rejected_model in ("jev 2026-05", "sk-abcd1234567890", credential_url,
+                               "echo-runtime-test-key", "😀" * 15000):
             (data / "task/dispatch.jsonl").unlink(missing_ok=True)
             state["reply"] = {**OK_REPLY, "model": rejected_model}
             kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
@@ -358,7 +375,10 @@ with tempfile.TemporaryDirectory() as td:
         state["reply"] = answer("claude/sonnet", confidence=.8,
                                 probabilities={"claude/sonnet": .8, "pi/gpt": .1, "other": .05,
                                                "bogus": "high", "sk-abcd1234567890": .02,
-                                               "k" * 129: .01, "tab\tkey": .01})
+                                               "k" * 129: .01, "tab\tkey": .01,
+                                               "runtime-test-key": .01, credential_url: .01})
+        state["reply"]["answers"][DESIGN] = {**DESIGN_ANSWER, "choice": "runtime-test-key",
+                                            "probabilities": {"runtime-test-key": 1}}
         leak_data = base / "leak"
         leak_argv = argv[:argv.index("--data") + 1] + [str(leak_data)] + argv[argv.index("--data") + 2:]
         leak = subprocess.run(leak_argv, text=True, capture_output=True, env=env, check=True)
@@ -367,6 +387,7 @@ with tempfile.TemporaryDirectory() as td:
         assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1, "other": .05}
         assert leak_rows[0]["answers"][QUESTION]["probabilities"] == {"claude/sonnet": .8,
                                                                      "pi/gpt": .1, "other": .05}
+        assert leak_rows[0]["answers"][DESIGN] == DESIGN_ANSWER
         state["reply"] = OK_REPLY
         assert "runtime-test-key" not in result.stdout + result.stderr + final_row
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
@@ -416,13 +437,14 @@ with tempfile.TemporaryDirectory() as td:
         assert module.classify("text", {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}
 
         repo = base / "facts-repo"
-        for directory in ("src", "tests", "web"):
+        for directory in ("src", "tests", "web", private_email):
             (repo / directory).mkdir(parents=True)
         (repo / "README.md").write_text("# service\n")
         (repo / "src/main.py").write_text("print('x')\n")
         (repo / "tests/test_main.py").write_text("")
         (repo / "web/app.tsx").write_text("export {};\n")
         (repo / "src/lib.go").write_text("package lib\n")
+        (repo / private_email / "file.txt").write_text("")
         tied = base / "facts-tie"
         (tied / "src").mkdir(parents=True)
         (tied / "src/a.go").write_text("package a\n")
@@ -430,7 +452,7 @@ with tempfile.TemporaryDirectory() as td:
         for fixture in (repo, tied):
             subprocess.run(["git", "-C", str(fixture), "init", "-q"], check=True)
             subprocess.run(["git", "-C", str(fixture), "add", "-A"], check=True)
-        expected_facts = {"tracked_files": 5, "top_level": ["src", "tests", "web"],
+        expected_facts = {"tracked_files": 6, "top_level": [private_email, "src", "tests", "web"],
                           "has_tests": True, "language": "Python"}
         assert module.project_facts(repo) == expected_facts
         assert module.project_facts(tied)["language"] == "Go"
@@ -439,7 +461,8 @@ with tempfile.TemporaryDirectory() as td:
         facts_argv = [str(repo) if arg == str(project) else arg for arg in no_count]
         facts_payload = json.loads(subprocess.run(facts_argv + ["--dry-run"], text=True,
                                                   capture_output=True, check=True).stdout)
-        assert facts_payload["state"]["repository"] == expected_facts
+        assert facts_payload["state"]["repository"] == {
+            **expected_facts, "top_level": ["[REDACTED]", "src", "tests", "web"]}
 
         crew = base / "crew-facts.json"
         crew.write_text(json.dumps({"default": [
@@ -458,20 +481,18 @@ with tempfile.TemporaryDirectory() as td:
         assert mixed["other"] == CRITERIA["other"]
         assert mixed["codex/gpt-5"]["fits"].startswith(HIGH_CRITERIA["fits"])
         assert mixed["codex/gpt-5"]["not_for"].startswith(HIGH_CRITERIA["not_for"])
-        assert "codex/gpt-5" in mixed["codex/gpt-5"]["fits"]
-        assert "harness claude" in mixed["claude/sonnet"]["fits"]
-        assert "model sonnet" in mixed["claude/sonnet"]["fits"]
+        assert mixed["claude/sonnet"]["fits"].startswith("a task whose difficulty")
         assert mixed["codex/gpt-5"] != mixed["claude/sonnet"]
 
         no_effort = base / "crew-no-effort.json"
         no_effort.write_text(json.dumps({"default": [
             {"harness": "codex", "model": "gpt-5"},
-            {"harness": "claude", "model": "sonnet", "account": "work"}]}))
+            {"harness": "claude", "model": "sonnet", "account": private_email,
+             "effort": credential_url}]}))
         identified = project_criteria(no_effort)
         assert identified["codex/gpt-5"] != identified["claude/sonnet"]
         assert identified["codex/gpt-5"]["not_for"] != identified["claude/sonnet"]["not_for"]
-        assert "account work" in identified["claude/sonnet"]["fits"]
-        assert "harness codex" in identified["codex/gpt-5"]["fits"]
+        assert private_email not in json.dumps(identified) and "private-pass" not in json.dumps(identified)
 
         shared_effort = base / "crew-shared-effort.json"
         shared_effort.write_text(json.dumps({"default": [
@@ -482,7 +503,12 @@ with tempfile.TemporaryDirectory() as td:
         for lane in ("codex/gpt-5", "claude/sonnet"):
             assert shared[lane]["fits"].startswith(MEDIUM_CRITERIA["fits"])
             assert shared[lane]["not_for"].startswith(MEDIUM_CRITERIA["not_for"])
-            assert lane in shared[lane]["fits"] and lane in shared[lane]["not_for"]
+
+        crew.write_text(json.dumps({"rules": [{"use": {"harness": "codex", "model": "gpt-5", "effort": "high"}}],
+                                    "default": {"harness": "codex", "model": "gpt-5", "effort": "medium"}}))
+        variants = project_criteria(crew)["codex/gpt-5"]
+        assert HIGH_CRITERIA["fits"] in variants["fits"] and MEDIUM_CRITERIA["fits"] in variants["fits"]
+        assert MEDIUM_CRITERIA["not_for"] not in variants["not_for"]
     finally:
         server.shutdown()
         target.shutdown()

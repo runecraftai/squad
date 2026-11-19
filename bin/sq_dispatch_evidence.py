@@ -10,41 +10,47 @@ SECRET_SHAPE = re.compile(
     re.IGNORECASE)
 
 
-def recordable_text(value):
+URL_USERINFO = re.compile(r"((?<![\w+.-])[A-Za-z][A-Za-z0-9+.-]*://|(?<![\w/:])//)\S*@")
+EMAIL_LOCAL_CHAR = r"[\w.!#$%&'*+/=?^`{|}~-]"
+EMAIL_ADDRESS = re.compile(rf"(?<!{EMAIL_LOCAL_CHAR}){EMAIL_LOCAL_CHAR}+@[\w-]+(?:\.[\w-]+)+")
+
+
+def recordable_text(value, secret=None):
     return isinstance(value, str) and re.fullmatch(r"[!-~]{1,128}", value) is not None \
-        and SECRET_SHAPE.search(value) is None
+        and not (secret and secret in value) and SECRET_SHAPE.search(value) is None \
+        and URL_USERINFO.search(value) is None and EMAIL_ADDRESS.search(value) is None
 
 
 def unit_interval(value):
     return type(value) in (int, float) and 0 <= value <= 1
 
 
-def recordable_probability(name, score):
-    return recordable_text(name) and unit_interval(score)
+def recordable_probability(name, score, secret=None):
+    return recordable_text(name, secret) and unit_interval(score)
 
 
-def recordable_probabilities(value):
+def recordable_probabilities(value, secret=None):
     if not isinstance(value, dict):
         return {}
-    return {name: score for name, score in value.items() if recordable_probability(name, score)}
+    return {name: score for name, score in value.items() if recordable_probability(name, score, secret)}
 
 
-def recordable_answer(answer):
+def recordable_answer(answer, secret=None):
     """The bounded per-question fields a recommendation answer may record, or None."""
     if not isinstance(answer, dict):
         return None
     entry = {}
     kind = answer.get("type")
-    if isinstance(kind, str) and re.fullmatch(r"[a-z]{1,32}", kind):
+    if recordable_text(kind, secret) and re.fullmatch(r"[a-z]{1,32}", kind):
         entry["type"] = kind
-    if "choice" in answer and recordable_text(answer["choice"]):
+    if "choice" in answer and recordable_text(answer["choice"], secret):
         entry["choice"] = answer["choice"]
     if "answer" in answer and (isinstance(answer["answer"], bool) or answer["answer"] is None):
         entry["answer"] = answer["answer"]
     if "confidence" in answer and unit_interval(answer["confidence"]):
         entry["confidence"] = answer["confidence"]
     if "probabilities" in answer:
-        kept = recordable_probabilities(answer["probabilities"])
+        kept = recordable_probabilities(answer["probabilities"], secret)
         if kept:
             entry["probabilities"] = kept
     return entry
