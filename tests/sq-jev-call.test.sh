@@ -61,9 +61,14 @@ OK_REPLY = {"answers": {QUESTION: {"type": "choice", "choice": "o1", "confidence
 
 def serve(record, state):
     class Handler(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):
+        def parse_request(self):
+            if not super().parse_request():
+                return False
             record["path"] = self.path
             record["auth"] = self.headers.get("Authorization")
+            return True
+
+        def do_POST(self):
             record["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             if state.get("location"):
                 self.send_response(302)
@@ -156,6 +161,7 @@ with tempfile.TemporaryDirectory() as td:
         state["location"] = f"http://localhost:{target.server_port}/v1/systemone"
         redirect = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(redirect.stdout) == {"status": "unavailable", "reason": "service_error"}
+        assert captured["path"] == "/v1/systemone"
         assert not redirected and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "service_error"}]
