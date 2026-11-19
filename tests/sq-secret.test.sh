@@ -9,8 +9,9 @@
 #   (d) the audit log takes one line per resolution and never a value
 #   (e) scope policy allows a listed name, denies an unlisted one, denies a task
 #       with no entry, and refuses a missing or malformed policy
-#   (f) fail-closed behaviour for missing bw, a locked session, an unknown item,
-#       and an item with no usable password field
+#   (f) fail-closed behaviour for missing bw, missing jq, a locked session, an
+#       unknown item, an item with no usable password field, and an item that
+#       bw cannot resolve or classify unambiguously
 #   (g) `check` reports each backend fact and exits non-zero when unusable
 #   (h) `list` prints names and metadata only
 #   (i) nothing is cached on disk beyond the audit log
@@ -31,6 +32,12 @@ VALUE="s3cr3t-token-value"
 SPACED="p@ss word/with=chars"
 mkdir -p "$VAULT" "$BASE/state" "$BASE/config"
 
+# A supervised or AFK session exports these for its children, so pin every path
+# the broker derives from them to the fixture unless a case overrides it.
+unset SQUAD_HOME SQUAD_ROOT_OVERRIDE
+SQUAD_BASE="$BASE"
+export SQUAD_BASE SQUAD_STATE_OVERRIDE="$BASE/state" SQUAD_CONFIG_OVERRIDE="$BASE/config"
+
 # ── fake Bitwarden CLI ─────────────────────────────────────────────────────
 #
 # It answers the four calls sq-secret.sh makes and keeps the "vault" in one JSON
@@ -40,18 +47,31 @@ cat > "$FAKEBIN/bw" <<'SH'
 #!/usr/bin/env bash
 set -u
 vault=${FAKE_BW_VAULT:?}
+default_server=https://bw.example.invalid
+url=${FAKE_BW_SERVER_URL-$default_server}
 status=${FAKE_BW_STATUS:-unlocked}
+lockfile=$vault/locked-during-get
+[ -e "$lockfile" ] && status=locked
 case "${1:-}" in
   status)
-    printf '{"serverUrl":"%s","status":"%s"}\n' "${FAKE_BW_SERVER_URL:-https://bw.example.invalid}" "$status"
+    if [ -n "$url" ]; then
+      printf '{"serverUrl":"%s","status":"%s"}\n' "$url" "$status"
+    else
+      printf '{"serverUrl":null,"status":"%s"}\n' "$status"
+    fi
     ;;
   config)
     [ "${2:-}" = server ] || exit 1
-    printf '%s' "${FAKE_BW_SERVER_URL:-https://bw.example.invalid}"
+    printf 'https://bitwarden.com'
     ;;
   get)
     [ "${2:-}" = item ] || exit 1
     [ "$status" = unlocked ] || { printf 'Vault is locked.\n' >&2; exit 1; }
+    if [ "${FAKE_BW_LOCK_GET:-0}" = 1 ]; then
+      : > "$lockfile"
+      printf 'Vault is locked.\n' >&2
+      exit 1
+    fi
     found=$(jq -c --arg t "${3:-}" '[.[] | select(.id == $t or .name == $t)]' "$vault/items.json") || exit 1
     case "$(printf '%s' "$found" | jq 'length')" in
       0) printf 'Not found.\n' >&2; exit 1 ;;
@@ -61,6 +81,10 @@ case "${1:-}" in
     ;;
   list)
     [ "${2:-}" = items ] || exit 1
+    if [ "${FAKE_BW_LIST_FAIL:-0}" = 1 ]; then
+      printf 'Network error.\n' >&2
+      exit 1
+    fi
     [ "$status" = unlocked ] || { printf 'Vault is locked.\n' >&2; exit 1; }
     jq -c '.' "$vault/items.json"
     ;;
@@ -77,14 +101,25 @@ cat > "$VAULT/items.json" <<JSON
   {"id":"11111111-1111-1111-1111-111111111111","name":"sq/github-token","login":{"password":"$VALUE"}},
   {"id":"22222222-2222-2222-2222-222222222222","name":"sq/db-password","login":{"password":"$SPACED"}},
   {"id":"33333333-3333-3333-3333-333333333333","name":"sq/no-password","login":{"username":"someone"}},
-  {"id":"44444444-4444-4444-4444-444444444444","name":"plain-item","login":{"password":"not-managed-here"}}
+  {"id":"44444444-4444-4444-4444-444444444444","name":"plain-item","login":{"password":"not-managed-here"}},
+  {"id":"55555555-5555-5555-5555-555555555555","name":"sq/duplicated","login":{"password":"first"}},
+  {"id":"66666666-6666-6666-6666-666666666666","name":"sq/duplicated","login":{"password":"second"}}
 ]
 JSON
+
+# A PATH with the tools sq-secret.sh needs and a bw that answers, but no jq.
+NOJQBIN="$TMP_ROOT/nojqbin"
+mkdir -p "$NOJQBIN"
+TOOLS="bash env basename dirname date sed grep mkdir cat sort head sh tr wc ps readlink cp"
+for tool in $TOOLS; do
+  resolved=$(command -v "$tool" 2>/dev/null) && ln -s "$resolved" "$NOJQBIN/$tool"
+done
+ln -s "$FAKEBIN/bw" "$NOJQBIN/bw"
 
 # A PATH with the tools sq-secret.sh needs and no bw at all.
 MINBIN="$TMP_ROOT/minbin"
 mkdir -p "$MINBIN"
-for tool in bash env basename dirname date sed grep jq mkdir cat sort head sh tr wc; do
+for tool in $TOOLS jq; do
   resolved=$(command -v "$tool" 2>/dev/null) && ln -s "$resolved" "$MINBIN/$tool"
 done
 
@@ -93,11 +128,15 @@ done
 sq_secret() {
   local path=$1
   shift
+  [ "${FAKE_BW_LOCK_GET:-0}" = 1 ] || rm -f "$VAULT/locked-during-get"
   PATH="$path" \
     FAKE_BW_VAULT="$VAULT" \
     FAKE_BW_STATUS="${FAKE_BW_STATUS:-unlocked}" \
+    FAKE_BW_LOCK_GET="${FAKE_BW_LOCK_GET:-0}" \
     BW_SESSION="${BW_SESSION_TEST-fake-session}" \
     SQUAD_BASE="$BASE" \
+    SQUAD_STATE_OVERRIDE="$BASE/state" \
+    SQUAD_CONFIG_OVERRIDE="$BASE/config" \
     "$SECRET" "$@"
 }
 
@@ -168,13 +207,22 @@ test_run_keeps_the_value_out_of_argv() {
   local envfile="$TMP_ROOT/run.env" cmdline="$TMP_ROOT/run.cmdline"
   # shellcheck disable=SC2016  # the child shell expands these, not the test
   sq_secret "$FAKEBIN:$PATH" run --with GH_TOKEN=github-token -- \
-    sh -c 'printf "%s" "$GH_TOKEN" > "$1"; tr "\0" "\n" < "/proc/$$/cmdline" > "$2"' \
+    sh -c 'printf "%s" "$GH_TOKEN" > "$1"
+           if [ -r "/proc/$$/cmdline" ]; then
+             tr "\0" "\n" < "/proc/$$/cmdline" > "$2"
+           elif ps -o args= -p $$ > "$2" 2>/dev/null; then :
+           else printf "%s\n" unavailable > "$2"
+           fi' \
     _ "$envfile" "$cmdline" \
     || fail "run failed"
   [ "$(cat "$envfile")" = "$VALUE" ] || fail "run must place the value in the child environment"
-  assert_grep "sh" "$cmdline" "the child cmdline is recorded"
-  assert_no_grep "$VALUE" "$cmdline" "the child argv must not carry the value"
-  pass "run places the value in the child environment and never in its argv"
+  if [ "$(cat "$cmdline")" = unavailable ]; then
+    pass "no cmdline probe on this host; child argv check skipped (environment verified)"
+  else
+    assert_grep "sh" "$cmdline" "the child cmdline is recorded"
+    assert_no_grep "$VALUE" "$cmdline" "the child argv must not carry the value"
+    pass "run places the value in the child environment and never in its argv"
+  fi
 
   # shellcheck disable=SC2016  # the child shell expands these, not the test
   sq_secret "$FAKEBIN:$PATH" run --with A=github-token --with B=db-password -- \
@@ -278,6 +326,18 @@ test_fail_closed() {
   assert_not_contains "$out" "$VALUE" "a missing bw must not print the value"
   pass "a missing bw fails closed"
 
+  out=$(sq_secret "$NOJQBIN" get github-token 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a missing jq must fail"
+  assert_contains "$out" "jq-missing" "a missing jq names its reason"
+  assert_not_contains "$out" "$VALUE" "a missing jq must not print the value"
+  out=$(sq_secret "$NOJQBIN" run --with T=github-token -- printenv T 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "run must fail when jq is missing"
+  assert_contains "$out" "jq-missing" "run names a missing jq as its reason"
+  assert_not_contains "$out" "$VALUE" "run must not print the value when jq is missing"
+  pass "a missing jq fails closed on both get and run"
+
   out=$(FAKE_BW_STATUS=locked sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "a locked vault must fail"
@@ -307,6 +367,29 @@ test_fail_closed() {
   [ "$rc" -ne 0 ] || fail "an item with no password field must fail"
   assert_contains "$out" "item-no-password" "an unusable item names its reason"
   pass "an item with no usable password field fails closed instead of resolving empty"
+
+  out=$(sq_secret "$FAKEBIN:$PATH" get duplicated 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "an ambiguous item must fail"
+  assert_contains "$out" "item-unreadable" "an ambiguous item is reported as unreadable"
+  assert_not_contains "$out" "item-missing" "an existing item is never reported as missing"
+  pass "an item bw resolves ambiguously fails closed as unreadable"
+
+  out=$(FAKE_BW_LIST_FAIL=1 sq_secret "$FAKEBIN:$PATH" get no-such-name 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "an unlistable vault must fail the resolution"
+  assert_contains "$out" "item-unreadable" "a vault that cannot be listed is reported as unreadable"
+  assert_not_contains "$out" "item-missing" "a failure to inspect the vault is never reported as a missing item"
+  pass "a vault that cannot be listed is never reported as a missing item"
+
+  out=$(FAKE_BW_LOCK_GET=1 sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a vault that locks during the fetch must fail"
+  assert_contains "$out" "session-locked" "a vault that locks mid-resolution names the session"
+  assert_contains "$out" "bw unlock" "a vault that locks mid-resolution names the remedy"
+  assert_not_contains "$out" "item-missing" "a lock is never reported as a missing item"
+  assert_not_contains "$out" "$VALUE" "a lock must not print the value"
+  pass "a vault that locks between the check and the fetch fails closed"
 }
 
 # ── (g) check ──────────────────────────────────────────────────────────────
@@ -322,11 +405,27 @@ test_check() {
   assert_contains "$out" "session: unlocked" "check reports the session"
   pass "check reports every backend fact on a usable backend"
 
+  # `bw config server` echoes the cloud default even when nothing is configured,
+  # so the fact must come from bw's own status.
+  out=$(FAKE_BW_SERVER_URL='' sq_secret "$FAKEBIN:$PATH" check 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "check must exit non-zero when no server is configured"
+  assert_contains "$out" "server: not configured" "check names an unconfigured server"
+  assert_not_contains "$out" "bitwarden.com" "check never reports the cloud default as configured"
+  pass "check reports an unconfigured server as unusable"
+
   out=$(sq_secret "$MINBIN" check 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "check must exit non-zero when bw is missing"
   assert_contains "$out" "bw: missing" "check names a missing bw"
+  assert_contains "$out" "jq: present" "check still reports jq when bw is missing"
   pass "check exits non-zero when the backend is unusable"
+
+  out=$(sq_secret "$NOJQBIN" check 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "check must exit non-zero when jq is missing"
+  assert_contains "$out" "jq: missing" "check names a missing jq"
+  pass "check reports a missing jq as unusable"
 
   out=$(FAKE_BW_STATUS=locked sq_secret "$FAKEBIN:$PATH" check 2>&1)
   rc=$?

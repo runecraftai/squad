@@ -187,20 +187,44 @@ require_jq() {
     || fail jq-missing "jq is required to read a Bitwarden item and the scope policy"
 }
 
+# bw_status_json: print bw's own status document.
+bw_status_json() {
+  bw status --nointeraction </dev/null 2>/dev/null
+}
+
+# json_string_field <json> <key>: print a string field, or nothing when it is
+# null or absent. sed keeps this usable on a host without jq.
+json_string_field() {
+  printf '%s' "$1" \
+    | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+    | head -n 1
+}
+
 # bw_status_word: print bw's own status word (unlocked, locked, unauthenticated).
 bw_status_word() {
   local json word
-  json=$(bw status --nointeraction </dev/null 2>/dev/null) || return 1
-  word=$(printf '%s' "$json" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+  json=$(bw_status_json) || return 1
+  word=$(json_string_field "$json" status)
   [ -n "$word" ] || return 1
   printf '%s' "$word"
 }
 
-# require_session: fail closed unless bw is present and BW_SESSION opens the
-# vault. It never prompts and never guesses a session key.
+# bw_item_exists <item>: return 0 when the vault holds an item with that id or
+# name, 1 when it holds none, 2 when the vault could not be listed.
+bw_item_exists() {
+  local items count
+  items=$(bw list items --nointeraction </dev/null 2>/dev/null) || return 2
+  count=$(printf '%s' "$items" | jq --arg t "$1" \
+    '[.[] | select(.id == $t or .name == $t)] | length' 2>/dev/null) || return 2
+  [ "${count:-0}" -gt 0 ]
+}
+
+# require_session: fail closed unless bw and jq are present and BW_SESSION
+# opens the vault. It never prompts and never guesses a session key.
 require_session() {
   local word
   require_bw
+  require_jq
   [ -n "${BW_SESSION:-}" ] \
     || fail session-missing "BW_SESSION is not set; run 'bw unlock' and export the session it prints"
   word=$(bw_status_word) \
@@ -247,10 +271,19 @@ policy_allows() {
 # Every outcome is audited, and a failure to audit a successful resolution is
 # itself fatal, so no value is ever emitted unaudited.
 resolve_value() {
-  local name=$1 item=$2 task=$3 command=$4 json value
+  local name=$1 item=$2 task=$3 command=$4 json value word exists
   if ! json=$(bw get item "$item" --nointeraction </dev/null 2>/dev/null); then
     audit failed "$name" "$item" "$task" "$command"
-    fail item-missing "no Bitwarden item matches '$item'"
+    word=$(bw_status_word) || word=
+    case "$word" in
+      locked | unauthenticated)
+        fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
+        ;;
+    esac
+    exists=0
+    bw_item_exists "$item" || exists=$?
+    [ "$exists" -ne 1 ] || fail item-missing "no Bitwarden item matches '$item'"
+    fail item-unreadable "the Bitwarden item '$item' could not be read; 'bw get item' failed for it"
   fi
   if ! value=$(printf '%s' "$json" | jq -r '.login.password // empty' 2>/dev/null); then
     audit failed "$name" "$item" "$task" "$command"
@@ -266,7 +299,7 @@ resolve_value() {
 }
 
 cmd_check() {
-  local rc=0 server word
+  local rc=0 server word json
   if command -v bw >/dev/null 2>&1; then
     printf 'bw: present %s\n' "$(command -v bw)"
   else
@@ -279,9 +312,10 @@ cmd_check() {
     printf 'jq: missing (required to read a Bitwarden item and the scope policy)\n'
     rc=1
   fi
-  server=
   if command -v bw >/dev/null 2>&1; then
-    server=$(bw config server --nointeraction </dev/null 2>/dev/null) || server=
+    json=$(bw_status_json) || json=
+    server=$(json_string_field "$json" serverUrl)
+    word=$(json_string_field "$json" status)
   fi
   if [ -n "$server" ]; then
     printf 'server: %s\n' "$server"
@@ -293,10 +327,6 @@ cmd_check() {
     printf 'session: missing BW_SESSION (run bw unlock and export the session it prints)\n'
     rc=1
   else
-    word=
-    if command -v bw >/dev/null 2>&1; then
-      word=$(bw_status_word) || word=
-    fi
     if [ "$word" = unlocked ]; then
       printf 'session: unlocked\n'
     else
@@ -310,7 +340,6 @@ cmd_check() {
 cmd_list() {
   local items
   require_session
-  require_jq
   items=$(bw list items --nointeraction </dev/null 2>/dev/null) \
     || fail item-listing "bw could not list the vault"
   printf '%s' "$items" | jq -r '
