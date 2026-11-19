@@ -106,9 +106,11 @@ with tempfile.TemporaryDirectory() as td:
     config.write_text(json.dumps({"enabled_projects": [str(project)]}))
     captured = {}
     redirected = {}
+    proxied = {}
     state = {"reply": OK_REPLY}
     server = serve(captured, state)
     target = serve(redirected, {"reply": OK_REPLY})
+    proxy = serve(proxied, {"reply": OK_REPLY})
     url = f"http://127.0.0.1:{server.server_port}/v1/systemone"
     argv = [sys.executable, str(root / "bin/sq-jev-call.py"), "--id", "task",
             "--project", str(project), "--task-type", "feature", "--title", "title",
@@ -116,7 +118,10 @@ with tempfile.TemporaryDirectory() as td:
             "eyJabc.def.ghi https://user:pass@example.invalid KEY=value", "--file-count", "3",
             "--lanes-json", json.dumps(LANES),
             "--config", str(config), "--data", str(data), "--url", url]
-    env = {**os.environ, "TYPESAFE_API_KEY": "runtime-test-key"}
+    proxy_url = f"http://127.0.0.1:{proxy.server_port}"
+    env = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy")}
+    env.update(http_proxy=proxy_url, https_proxy=proxy_url, no_proxy="127.0.0.1",
+               TYPESAFE_API_KEY="runtime-test-key")
 
     def argv_for(path):
         return [str(path) if arg == str(project) else arg for arg in argv]
@@ -138,19 +143,19 @@ with tempfile.TemporaryDirectory() as td:
         assert not captured and not (data / "task/dispatch.jsonl").exists()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
         missing = subprocess.run(argv, text=True, capture_output=True, check=True,
-                                 env={k: v for k, v in os.environ.items() if k != "TYPESAFE_API_KEY"})
+                                 env={k: v for k, v in env.items() if k != "TYPESAFE_API_KEY"})
         assert json.loads(missing.stdout) == {"status": "unavailable", "reason": "missing_key"}
         assert not captured and recorded_rows(data) == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "missing_key"}]
         (data / "task/dispatch.jsonl").unlink()
-        dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
+        dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, env=env)
         payload = json.loads(dry.stdout)
         assert payload == expected_body(3)
         assert set(payload) == {"state", "model", "questions"}
         assert not captured
         config.write_text('{"enabled_projects":[]}')
-        dry_opt_out = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, check=True)
+        dry_opt_out = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, env=env, check=True)
         assert json.loads(dry_opt_out.stdout) == payload
         assert not captured and not (data / "task/dispatch.jsonl").exists()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
@@ -158,11 +163,11 @@ with tempfile.TemporaryDirectory() as td:
         def recorded():
             return recorded_rows(data)
 
-        state["location"] = f"http://localhost:{target.server_port}/v1/systemone"
+        state["location"] = f"http://127.0.0.1:{target.server_port}/v1/systemone"
         redirect = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(redirect.stdout) == {"status": "unavailable", "reason": "service_error"}
         assert captured["path"] == "/v1/systemone"
-        assert not redirected and recorded() == [
+        assert not redirected and not proxied and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "service_error"}]
         (data / "task/dispatch.jsonl").unlink()
@@ -172,7 +177,7 @@ with tempfile.TemporaryDirectory() as td:
         captured.clear()
         refused = subprocess.run(external, text=True, capture_output=True, env=env, check=True)
         assert json.loads(refused.stdout) == {"status": "unavailable", "reason": "endpoint_refused"}
-        assert refused.stderr == "" and not captured and recorded() == [
+        assert refused.stderr == "" and not captured and not proxied and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "endpoint_refused"}]
         (data / "task/dispatch.jsonl").unlink()
@@ -270,14 +275,13 @@ with tempfile.TemporaryDirectory() as td:
         fake_git.chmod(0o755)
         no_count = argv[:argv.index("--file-count")] + argv[argv.index("--file-count") + 2:]
         started = time.monotonic()
+        slow_git_env = {**env, "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}"}
         slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
-                              env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+                              env=slow_git_env)
         assert time.monotonic() - started < 10
         assert json.loads(slow.stdout) == expected_body(None)
         captured.clear()
-        unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True,
-                                    env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-                                         "TYPESAFE_API_KEY": "runtime-test-key"})
+        unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True, env=slow_git_env)
         assert json.loads(unmeasured.stdout) == {"status": "unavailable", "reason": "file_count_unmeasured"}
         assert not captured and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
@@ -295,7 +299,7 @@ with tempfile.TemporaryDirectory() as td:
         brief.write_text("# Private brief heading\nPrivate brief body with generated status path /localoperator/task.status\n")
         brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
         brief_argv += ["--brief", str(brief), "--dry-run"]
-        briefed = subprocess.run(brief_argv, text=True, capture_output=True, check=True)
+        briefed = subprocess.run(brief_argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(briefed.stdout) == expected_body(3)
 
         result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
@@ -464,7 +468,7 @@ with tempfile.TemporaryDirectory() as td:
                     if i not in (argv.index("--file-count"), argv.index("--file-count") + 1)]
         facts_argv = [str(repo) if arg == str(project) else arg for arg in no_count]
         facts_payload = json.loads(subprocess.run(facts_argv + ["--dry-run"], text=True,
-                                                  capture_output=True, check=True).stdout)
+                                                  capture_output=True, env=env, check=True).stdout)
         assert facts_payload["state"]["repository"] == expected_facts
         config.write_text(json.dumps({"enabled_projects": [str(repo)]}))
         private_facts_argv = facts_argv + ["--brief", str(brief)]
@@ -487,7 +491,7 @@ with tempfile.TemporaryDirectory() as td:
                             if i not in (facts_argv.index("--lanes-json"),
                                          facts_argv.index("--lanes-json") + 1)]
             out = subprocess.run(project_argv + ["--project-config", str(path), "--dry-run"],
-                                 text=True, capture_output=True, check=True).stdout
+                                 text=True, capture_output=True, env=env, check=True).stdout
             return json.loads(out)["questions"][QUESTION]["criteria"]
 
         mixed = project_criteria(crew)
@@ -526,5 +530,6 @@ with tempfile.TemporaryDirectory() as td:
     finally:
         server.shutdown()
         target.shutdown()
+        proxy.shutdown()
 print("PASS: Jev projection, project opt-in, no-key, dry-run, redirect refusal, unhashable choice, redaction fixtures, shadow event and fake HTTP contract")
 PY
