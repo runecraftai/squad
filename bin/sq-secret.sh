@@ -65,6 +65,9 @@
 # Facts
 #   `check` prints one line per fact - bw, jq, server, session - and exits
 #   non-zero when the backend is unusable.
+#   It proves the session with a real vault read rather than trusting `bw
+#   status`, and reports that fact as unknown when `bw` or `jq` cannot make
+#   the proof.
 #   `list` prints "<name>\t<item-id>" for every vault item named sq/*, never a
 #   value.
 #   `get` prints the value and nothing else.
