@@ -180,7 +180,7 @@ with tempfile.TemporaryDirectory() as td:
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "no_lane_match"}]
         (data / "task/dispatch.jsonl").unlink()
-        # The commander's live-probe answer shape: a flat two-way split and low confidence.
+        # A documented answer shape: a flat two-way split and low confidence.
         state["reply"] = {"answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
                                                   "confidence": .22,
                                                   "probabilities": {"claude/sonnet": .61, "pi/gpt": .39}}}}
@@ -299,6 +299,18 @@ with tempfile.TemporaryDirectory() as td:
             kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
             assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
             assert recorded() == [evidence_row]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = answer("claude/sonnet", confidence=.8,
+                                notes="arbitrary service text", rationale={"nested": True})
+        stripped = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(stripped.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/sonnet", "confidence": .8,
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                     "confidence": .8}}}]
+        final_row = (data / "task/dispatch.jsonl").read_text()
+        (data / "task/dispatch.jsonl").unlink()
         state["reply"] = answer("claude/sonnet", confidence=.8,
                                 probabilities={"claude/sonnet": .8, "pi/gpt": .1,
                                                "other": .05, "bogus": "high"})
@@ -309,7 +321,7 @@ with tempfile.TemporaryDirectory() as td:
         leak_rows = [json.loads(line) for line in (leak_data / "task/dispatch.jsonl").read_text().splitlines()]
         assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1, "other": .05}
         state["reply"] = OK_REPLY
-        assert "runtime-test-key" not in result.stdout + result.stderr + (data / "task/dispatch.jsonl").read_text()
+        assert "runtime-test-key" not in result.stdout + result.stderr + final_row
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
         boundary = module.redact("word " * 46 + " sk-abcd1234567890")
         assert len(boundary) == 240 and "sk-" not in boundary
@@ -343,7 +355,7 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("pipeline claude-sonnet-5 o3-mini") == "pipeline [REDACTED] [REDACTED]"
         assert module.redact("pi day with cursor and qwen2.5") == "[REDACTED] day with [REDACTED] and [REDACTED]"
         assert module.redact("kimi with Gemini 2.5 Pro and Claude 3.5 Sonnet") == "[REDACTED] with [REDACTED] and [REDACTED] [REDACTED]"
-        # The documented response shape, verbatim from the live service, maps onto configured lanes.
+        # The documented response shape maps onto configured lanes.
         live = {"answers": {"lane": {"type": "choice", "choice": "strong", "confidence": .22,
                                       "probabilities": {"strong": .61, "cheap": .39}}}}
         assert module.classify(live, {"strong", "cheap"}) == {
@@ -386,15 +398,43 @@ with tempfile.TemporaryDirectory() as td:
         crew.write_text(json.dumps({"default": [
             {"harness": "codex", "model": "gpt-5", "effort": "high"},
             {"harness": "claude", "model": "sonnet"}]}))
-        effort_argv = [arg for i, arg in enumerate(facts_argv)
-                       if i not in (facts_argv.index("--lanes-json"), facts_argv.index("--lanes-json") + 1)]
-        effort_argv += ["--project-config", str(crew)]
-        effort_payload = json.loads(subprocess.run(effort_argv + ["--dry-run"], text=True,
-                                                   capture_output=True, check=True).stdout)
-        assert effort_payload["questions"][QUESTION]["criteria"] == {
-            "claude/sonnet": module.NEUTRAL_CRITERIA,
-            "codex/gpt-5": module.EFFORT_CRITERIA["high"],
-            "other": CRITERIA["other"]}
+
+        def project_criteria(path):
+            project_argv = [arg for i, arg in enumerate(facts_argv)
+                            if i not in (facts_argv.index("--lanes-json"),
+                                         facts_argv.index("--lanes-json") + 1)]
+            out = subprocess.run(project_argv + ["--project-config", str(path), "--dry-run"],
+                                 text=True, capture_output=True, check=True).stdout
+            return json.loads(out)["questions"][QUESTION]["criteria"]
+
+        mixed = project_criteria(crew)
+        assert mixed["other"] == CRITERIA["other"]
+        assert mixed["codex/gpt-5"]["fits"].startswith(module.EFFORT_CRITERIA["high"]["fits"])
+        assert mixed["codex/gpt-5"]["not_for"].startswith(module.EFFORT_CRITERIA["high"]["not_for"])
+        assert "codex/gpt-5" in mixed["codex/gpt-5"]["fits"]
+        assert "harness claude" in mixed["claude/sonnet"]["fits"]
+        assert "model sonnet" in mixed["claude/sonnet"]["fits"]
+        assert mixed["codex/gpt-5"] != mixed["claude/sonnet"]
+
+        no_effort = base / "crew-no-effort.json"
+        no_effort.write_text(json.dumps({"default": [
+            {"harness": "codex", "model": "gpt-5"},
+            {"harness": "claude", "model": "sonnet", "account": "work"}]}))
+        identified = project_criteria(no_effort)
+        assert identified["codex/gpt-5"] != identified["claude/sonnet"]
+        assert identified["codex/gpt-5"]["not_for"] != identified["claude/sonnet"]["not_for"]
+        assert "account work" in identified["claude/sonnet"]["fits"]
+        assert "harness codex" in identified["codex/gpt-5"]["fits"]
+
+        shared_effort = base / "crew-shared-effort.json"
+        shared_effort.write_text(json.dumps({"default": [
+            {"harness": "codex", "model": "gpt-5", "effort": "medium"},
+            {"harness": "claude", "model": "sonnet", "effort": "medium"}]}))
+        shared = project_criteria(shared_effort)
+        assert shared["codex/gpt-5"] != shared["claude/sonnet"]
+        for lane in ("codex/gpt-5", "claude/sonnet"):
+            assert shared[lane]["fits"].startswith(module.EFFORT_CRITERIA["medium"]["fits"])
+            assert lane in shared[lane]["fits"] and lane in shared[lane]["not_for"]
     finally:
         server.shutdown()
         target.shutdown()

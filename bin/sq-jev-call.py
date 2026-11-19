@@ -7,8 +7,9 @@ answer as evidence instead of a decision.
 
 One `choice` question keyed `lane` carries criteria that describe what each
 configured lane fits and what belongs to another lane, taken from the lane's own
-description when it has one and otherwise from its configured effort, plus a
-reserved `other` option so a mismatch is an answer instead of a forced choice.
+description when it has one, otherwise from its configured effort and lane
+identity, and otherwise from its harness, model and account, plus a reserved
+`other` option so a mismatch is an answer instead of a forced choice.
 A second `noul` question records whether the task needs design decisions a fixed
 plan cannot settle; it never selects the lane.
 
@@ -165,7 +166,7 @@ def project_facts(project):
 
 
 def load_lanes(args):
-    """Allowed lanes mapped to their configured description and effort."""
+    """Allowed lanes mapped to their configured description, effort and identity."""
     lanes = {}
     try:
         if args.lanes_json:
@@ -174,7 +175,10 @@ def load_lanes(args):
                 if not isinstance(lane, str) or not lane:
                     continue
                 text = description.strip() if isinstance(description, str) else ""
-                lanes[lane] = (text if text and text != lane else "", "")
+                parts = lane.split("/")
+                lanes[lane] = {"description": text if text and text != lane else "", "effort": "",
+                               "harness": parts[0], "model": parts[1] if len(parts) > 1 else "",
+                               "account": parts[2] if len(parts) > 2 else ""}
         else:
             dispatch = json.loads(Path(args.project_config).read_text())
             profiles = []
@@ -188,7 +192,12 @@ def load_lanes(args):
                     continue
                 lane = "/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
                 effort = profile.get("effort")
-                lanes[lane] = ("", effort.strip().lower() if isinstance(effort, str) else "")
+                account = profile.get("account")
+                lanes[lane] = {"description": "",
+                               "effort": effort.strip().lower() if isinstance(effort, str) else "",
+                               "harness": str(profile.get("harness", "")),
+                               "model": str(profile.get("model", "")),
+                               "account": account.strip() if isinstance(account, str) else ""}
     except (OSError, ValueError, AttributeError, RecursionError):
         return {}
     return lanes
@@ -210,10 +219,22 @@ EFFORT_CRITERIA = {
 }
 
 
-def lane_criteria(description, effort):
+def lane_criteria(lane, configured):
+    description = configured.get("description", "")
+    effort = configured.get("effort", "")
     if description:
         return {"fits": description, "not_for": "a task that another listed lane covers"}
-    return dict(EFFORT_CRITERIA.get(effort, NEUTRAL_CRITERIA))
+    if effort:
+        base = EFFORT_CRITERIA.get(effort, NEUTRAL_CRITERIA)
+        return {"fits": f"{base['fits']}, run as lane {lane} at {effort} effort",
+                "not_for": f"{base['not_for']}, or a task that another lane than {lane} matches"}
+    identity = ", ".join(part for part in (
+        f"harness {configured['harness']}" if configured.get("harness") else "",
+        f"model {configured['model']}" if configured.get("model") else "",
+        f"account {configured['account']}" if configured.get("account") else "") if part)
+    return {"fits": f"a task whose difficulty and risk suit lane {lane}, configured as "
+                     f"{identity or 'its harness and model'}",
+            "not_for": f"a task that another listed lane, rather than {lane}, handles better"}
 
 
 def answer_evidence(answer):
@@ -238,13 +259,6 @@ def answer_evidence(answer):
         if kept:
             evidence["probabilities"] = kept
     return evidence or None
-
-
-def model_evidence(value):
-    """The reported model, kept only when the writer's model shape accepts it."""
-    if isinstance(value, str) and re.fullmatch(r"[!-~]{1,128}", value):
-        return value
-    return None
 
 
 def classify(body, lanes):
@@ -278,7 +292,7 @@ def classify(body, lanes):
         recorded[DESIGN_KEY] = design
     if recorded:
         event["answers"] = recorded
-    model = model_evidence(body.get("model"))
+    model = body.get("model")
     if model is not None:
         event["model"] = model
     return event
@@ -354,7 +368,7 @@ def main():
             "language": facts.get("language"),
         },
     }
-    criteria = {lane: lane_criteria(*configured) for lane, configured in sorted(lanes.items())}
+    criteria = {lane: lane_criteria(lane, configured) for lane, configured in sorted(lanes.items())}
     criteria[OTHER_OPTION] = {"fits": "none of these lanes fits the task",
                               "not_for": "a task that one of the listed lanes covers"}
     payload = {
