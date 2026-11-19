@@ -240,6 +240,13 @@ def answer_evidence(answer):
     return evidence or None
 
 
+def model_evidence(value):
+    """The reported model, kept only when the writer's model shape accepts it."""
+    if isinstance(value, str) and re.fullmatch(r"[!-~]{1,128}", value):
+        return value
+    return None
+
+
 def classify(body, lanes):
     answers = body.get("answers") if isinstance(body, dict) else None
     if not isinstance(answers, dict):
@@ -271,8 +278,8 @@ def classify(body, lanes):
         recorded[DESIGN_KEY] = design
     if recorded:
         event["answers"] = recorded
-    model = body.get("model")
-    if isinstance(model, str) and 0 < len(model) <= 128:
+    model = model_evidence(body.get("model"))
+    if model is not None:
         event["model"] = model
     return event
 

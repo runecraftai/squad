@@ -286,6 +286,19 @@ with tempfile.TemporaryDirectory() as td:
                                                  "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
                                      DESIGN: DESIGN_ANSWER},
                          "model": "jev-2026-05"}]
+        evidence_row = {"id": "task", "event": "recommendation", "label": "recommendation",
+                        "status": "recommended", "choice": "claude/sonnet", "confidence": .8,
+                        "probabilities": {"claude/sonnet": .8, "pi/gpt": .2},
+                        "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                               "confidence": .8,
+                                               "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
+                                    DESIGN: DESIGN_ANSWER}}
+        for rejected_model in ("jev 2026-05", "sk-abcd1234567890"):
+            (data / "task/dispatch.jsonl").unlink(missing_ok=True)
+            state["reply"] = {**OK_REPLY, "model": rejected_model}
+            kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+            assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+            assert recorded() == [evidence_row]
         state["reply"] = answer("claude/sonnet", confidence=.8,
                                 probabilities={"claude/sonnet": .8, "pi/gpt": .1,
                                                "other": .05, "bogus": "high"})
@@ -342,6 +355,46 @@ with tempfile.TemporaryDirectory() as td:
             "status": "unavailable", "reason": "no_lane_match"}
         assert module.classify(None, {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}
         assert module.classify("text", {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}
+
+        repo = base / "facts-repo"
+        for directory in ("src", "tests", "web"):
+            (repo / directory).mkdir(parents=True)
+        (repo / "README.md").write_text("# service\n")
+        (repo / "src/main.py").write_text("print('x')\n")
+        (repo / "tests/test_main.py").write_text("")
+        (repo / "web/app.tsx").write_text("export {};\n")
+        (repo / "src/lib.go").write_text("package lib\n")
+        tied = base / "facts-tie"
+        (tied / "src").mkdir(parents=True)
+        (tied / "src/a.go").write_text("package a\n")
+        (tied / "src/b.py").write_text("")
+        for fixture in (repo, tied):
+            subprocess.run(["git", "-C", str(fixture), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(fixture), "add", "-A"], check=True)
+        expected_facts = {"tracked_files": 5, "top_level": ["src", "tests", "web"],
+                          "has_tests": True, "language": "Python"}
+        assert module.project_facts(repo) == expected_facts
+        assert module.project_facts(tied)["language"] == "Go"
+        no_count = [arg for i, arg in enumerate(argv)
+                    if i not in (argv.index("--file-count"), argv.index("--file-count") + 1)]
+        facts_argv = [str(repo) if arg == str(project) else arg for arg in no_count]
+        facts_payload = json.loads(subprocess.run(facts_argv + ["--dry-run"], text=True,
+                                                  capture_output=True, check=True).stdout)
+        assert facts_payload["state"]["repository"] == expected_facts
+
+        crew = base / "crew-facts.json"
+        crew.write_text(json.dumps({"default": [
+            {"harness": "codex", "model": "gpt-5", "effort": "high"},
+            {"harness": "claude", "model": "sonnet"}]}))
+        effort_argv = [arg for i, arg in enumerate(facts_argv)
+                       if i not in (facts_argv.index("--lanes-json"), facts_argv.index("--lanes-json") + 1)]
+        effort_argv += ["--project-config", str(crew)]
+        effort_payload = json.loads(subprocess.run(effort_argv + ["--dry-run"], text=True,
+                                                   capture_output=True, check=True).stdout)
+        assert effort_payload["questions"][QUESTION]["criteria"] == {
+            "claude/sonnet": module.NEUTRAL_CRITERIA,
+            "codex/gpt-5": module.EFFORT_CRITERIA["high"],
+            "other": CRITERIA["other"]}
     finally:
         server.shutdown()
         target.shutdown()

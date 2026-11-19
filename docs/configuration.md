@@ -431,6 +431,7 @@ Redaction covers secret-shaped values, URL credentials, and harness and model id
 Every configured lane's criteria carry `fits` and `not_for` descriptions - the lane's own configured description when it has one, otherwise text derived from its configured effort - plus a reserved `other` option so a mismatch is an answer instead of a forced choice.
 A second `noul` question records whether the task needs design decisions that a fixed plan cannot settle; the client records that judgment and never lets it select the lane.
 The recommendation is read back from `answers.lane`: a `choice` naming a configured lane is recorded with its `confidence`, the full `probabilities` map, the per-question answers, and the `model` version the service reported, while `other` or any other choice is `no_lane_match`.
+The reported `model` is recorded only when it is printable ASCII of at most 128 characters and not secret-shaped; otherwise the row is still written without it, so a malformed model never costs the lane evidence.
 A `confidence` below the client's documented threshold (0.5) also records `low_confidence: true`; a low-confidence answer is still recorded and still has no authority, and it is never presented as a confident recommendation.
 `bin/sq-dispatch-log.sh` accepts only that evidence allowlist for a recommendation row, so no other service output reaches `dispatch.jsonl`.
 `TYPESAFE_API_KEY` is read only from the environment and is sent only as the bearer credential; it is never passed in argv, written to a log or to `dispatch.jsonl`, or stored in a fixture.

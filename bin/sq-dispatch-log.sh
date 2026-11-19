@@ -32,7 +32,9 @@
 # A recommended row carries the chosen lane's choice and confidence, the full
 # probabilities map, the per-question answers evidence (only type, choice,
 # answer, confidence and probabilities per question), the model version the
-# service reported, and low_confidence when the client flagged a flat answer.
+# service reported when it fits the model allowlist, and low_confidence when the
+# client flagged a flat answer. A model outside that allowlist is left out
+# instead of refusing the row, so the lane evidence still lands.
 # Nothing outside that allowlist is written; an unavailable row carries only
 # one lower-case reason.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
@@ -178,10 +180,9 @@ if args.event == "recommendation":
             record["answers"] = evidence
         if "model" in recommendation and recommendation["model"] is not None:
             model = recommendation["model"]
-            if not isinstance(model, str) or not re.fullmatch(r"[!-~]{1,128}", model) \
-                    or SECRET_SHAPE.search(model):
-                raise ValueError("invalid recommendation model")
-            record["model"] = model
+            if isinstance(model, str) and re.fullmatch(r"[!-~]{1,128}", model) \
+                    and not SECRET_SHAPE.search(model):
+                record["model"] = model
     else:
         raise ValueError("invalid recommendation status")
 if args.event == "outcome":

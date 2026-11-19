@@ -456,7 +456,9 @@ derived_case landed-clean 'done: PR ok\n' landed none
 pass 'derived failure classes take the last done or failed line, and blocked or paused lines only when none exists'
 
 # A recommendation row is the Jev client's only durable output, so the writer keeps
-# its evidence allowlist and refuses anything outside it instead of storing it.
+# its evidence allowlist and refuses anything outside it instead of storing it. The
+# reported model is optional metadata, so an unaccepted model is left out rather
+# than discarding the lane evidence the row exists to carry.
 dir="$TMP_ROOT/recommendation"
 mkdir -p "$dir/data"
 recommend() { # <id> <json>
@@ -476,10 +478,19 @@ assert row["answers"]["needs_design_decision"]["answer"] is False
 PY
 recommend rec-freenotes '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","answers":{"lane":{"notes":"arbitrary service text"}}}'
 recommend rec-badflag '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","low_confidence":"yes"}'
-recommend rec-badmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"sk-abcd1234567890"}'
+recommend rec-badmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.7,"model":"jev 2026-05"}'
+recommend rec-secretmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"sk-abcd1234567890"}'
 recommend rec-reason '{"label":"recommendation","status":"unavailable","reason":"answer_missing"}'
-for refused in rec-freenotes rec-badflag rec-badmodel; do
+for refused in rec-freenotes rec-badflag; do
   [ ! -e "$dir/data/$refused/dispatch.jsonl" ] || fail "stored out-of-allowlist recommendation: $refused"
 done
+python3 - "$dir/data/rec-badmodel/dispatch.jsonl" "$dir/data/rec-secretmodel/dispatch.jsonl" <<'PY' || fail 'an out-of-allowlist model lost the lane evidence instead of being left out'
+import json, sys
+for path in sys.argv[1:]:
+    row = json.loads(open(path).readline())
+    assert row["status"] == "recommended" and row["choice"] == "grok/grok-4", row
+    assert "model" not in row, row
+PY
+assert_grep '"confidence":0.7' "$dir/data/rec-badmodel/dispatch.jsonl" 'recommendation evidence lost with an out-of-allowlist model'
 assert_grep '"reason":"answer_missing"' "$dir/data/rec-reason/dispatch.jsonl" 'unavailable recommendation reason lost'
-pass 'recommendation rows carry only the evidence allowlist, and refused evidence writes nothing'
+pass 'recommendation rows carry only the evidence allowlist, leave out an invalid model, and refuse other evidence entirely'
