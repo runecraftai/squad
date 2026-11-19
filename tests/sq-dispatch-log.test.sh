@@ -480,8 +480,9 @@ recommend rec-freenotes '{"label":"recommendation","status":"recommended","choic
 recommend rec-badflag '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","low_confidence":"yes"}'
 recommend rec-badmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.7,"model":"jev 2026-05"}'
 recommend rec-secretmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"sk-abcd1234567890"}'
+recommend rec-secretprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"sk-abcd1234567890":0.6}}'
 recommend rec-reason '{"label":"recommendation","status":"unavailable","reason":"answer_missing"}'
-for refused in rec-freenotes rec-badflag; do
+for refused in rec-freenotes rec-badflag rec-secretprob; do
   [ ! -e "$dir/data/$refused/dispatch.jsonl" ] || fail "stored out-of-allowlist recommendation: $refused"
 done
 python3 - "$dir/data/rec-badmodel/dispatch.jsonl" "$dir/data/rec-secretmodel/dispatch.jsonl" <<'PY' || fail 'an out-of-allowlist model lost the lane evidence instead of being left out'

@@ -27,6 +27,10 @@ CRITERIA = {lane: {"fits": text, "not_for": "a task that another listed lane cov
             for lane, text in LANES.items()}
 CRITERIA["other"] = {"fits": "none of these lanes fits the task",
                      "not_for": "a task that one of the listed lanes covers"}
+HIGH_CRITERIA = {"fits": "a demanding or ambiguous change that needs careful reasoning across several files",
+                 "not_for": "a small mechanical change where speed matters more than depth"}
+MEDIUM_CRITERIA = {"fits": "a routine change with some ambiguity, where breadth matters more than depth",
+                   "not_for": "a small mechanical change, or an unusually hard and risky one"}
 LANE_INSTRUCTIONS = ("Choose the one lane whose harness, model and effort best match this task's "
                      "difficulty, risk and need for design judgment.")
 DESIGN_INSTRUCTIONS = "Does this task need design decisions that a fixed plan cannot settle?"
@@ -409,8 +413,8 @@ with tempfile.TemporaryDirectory() as td:
 
         mixed = project_criteria(crew)
         assert mixed["other"] == CRITERIA["other"]
-        assert mixed["codex/gpt-5"]["fits"].startswith(module.EFFORT_CRITERIA["high"]["fits"])
-        assert mixed["codex/gpt-5"]["not_for"].startswith(module.EFFORT_CRITERIA["high"]["not_for"])
+        assert mixed["codex/gpt-5"]["fits"].startswith(HIGH_CRITERIA["fits"])
+        assert mixed["codex/gpt-5"]["not_for"].startswith(HIGH_CRITERIA["not_for"])
         assert "codex/gpt-5" in mixed["codex/gpt-5"]["fits"]
         assert "harness claude" in mixed["claude/sonnet"]["fits"]
         assert "model sonnet" in mixed["claude/sonnet"]["fits"]
@@ -433,7 +437,8 @@ with tempfile.TemporaryDirectory() as td:
         shared = project_criteria(shared_effort)
         assert shared["codex/gpt-5"] != shared["claude/sonnet"]
         for lane in ("codex/gpt-5", "claude/sonnet"):
-            assert shared[lane]["fits"].startswith(module.EFFORT_CRITERIA["medium"]["fits"])
+            assert shared[lane]["fits"].startswith(MEDIUM_CRITERIA["fits"])
+            assert shared[lane]["not_for"].startswith(MEDIUM_CRITERIA["not_for"])
             assert lane in shared[lane]["fits"] and lane in shared[lane]["not_for"]
     finally:
         server.shutdown()

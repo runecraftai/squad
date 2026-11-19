@@ -94,7 +94,8 @@ if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
 
 def probabilities_field(value):
     if not isinstance(value, dict) or any(
-            not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
+            not isinstance(k, str) or not re.fullmatch(r"[!-~]{1,128}", k) or SECRET_SHAPE.search(k)
+            or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
             for k, v in value.items()):
         raise ValueError("invalid recommendation probabilities")
     return value
@@ -137,7 +138,8 @@ if args.event == "recommendation":
         record.update(label="recommendation", status=status, reason=reason)
     elif status == "recommended":
         choice = recommendation.get("choice")
-        if not isinstance(choice, str) or not re.fullmatch(r"[!-~]{1,128}", choice):
+        if not isinstance(choice, str) or not re.fullmatch(r"[!-~]{1,128}", choice) \
+                or SECRET_SHAPE.search(choice):
             raise ValueError("invalid recommendation choice")
         record.update(label="recommendation", status=status, choice=choice)
         confidence = recommendation.get("confidence")
@@ -165,7 +167,8 @@ if args.event == "recommendation":
                 for key, value in answer.items():
                     if key == "type" and isinstance(value, str) and re.fullmatch(r"[a-z]{1,32}", value):
                         entry[key] = value
-                    elif key == "choice" and isinstance(value, str) and re.fullmatch(r"[!-~]{1,128}", value):
+                    elif key == "choice" and isinstance(value, str) \
+                            and re.fullmatch(r"[!-~]{1,128}", value) and not SECRET_SHAPE.search(value):
                         entry[key] = value
                     elif key == "answer" and (isinstance(value, bool) or value is None):
                         entry[key] = value
