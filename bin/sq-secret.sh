@@ -45,8 +45,8 @@
 #      listed for that task resolve, a task with no entry is denied, and a
 #      missing or malformed policy is a failure rather than a bypass.
 #      Without --for, resolution is allowed and audited.
-#   6. Missing `bw` or `jq`, a locked session, an unknown name, and an
-#      unreadable item each fail closed with their own named reason and a
+#   6. Missing `bw` or `jq`, a locked or unreadable session, an unknown name,
+#      and an unreadable item each fail closed with their own named reason and a
 #      non-zero exit.
 #
 # Facts
@@ -216,7 +216,10 @@ bw_item_exists() {
   items=$(bw list items --nointeraction </dev/null 2>/dev/null) || return 2
   count=$(printf '%s' "$items" | jq --arg t "$1" \
     '[.[] | select(.id == $t or .name == $t)] | length' 2>/dev/null) || return 2
-  [ "${count:-0}" -gt 0 ]
+  case "$count" in
+    '' | *[!0-9]*) return 2 ;;
+  esac
+  [ "$count" -gt 0 ]
 }
 
 # require_session: fail closed unless bw and jq are present and BW_SESSION
@@ -273,7 +276,7 @@ policy_allows() {
 resolve_value() {
   local name=$1 item=$2 task=$3 command=$4 json value word exists
   if ! json=$(bw get item "$item" --nointeraction </dev/null 2>/dev/null); then
-    audit failed "$name" "$item" "$task" "$command"
+    audit failed "$name" "$item" "$task" "$command" || true
     word=$(bw_status_word) || word=
     case "$word" in
       locked | unauthenticated)
@@ -282,15 +285,24 @@ resolve_value() {
     esac
     exists=0
     bw_item_exists "$item" || exists=$?
-    [ "$exists" -ne 1 ] || fail item-missing "no Bitwarden item matches '$item'"
-    fail item-unreadable "the Bitwarden item '$item' could not be read; 'bw get item' failed for it"
+    case "$exists" in
+      0)
+        fail item-unreadable "the Bitwarden item '$item' could not be read; 'bw get item' failed for it"
+        ;;
+      1)
+        fail item-missing "no Bitwarden item matches '$item'"
+        ;;
+      *)
+        fail session-unreadable "the vault could not be read while resolving '$item'; run 'bw unlock' and export the session it prints"
+        ;;
+    esac
   fi
   if ! value=$(printf '%s' "$json" | jq -r '.login.password // empty' 2>/dev/null); then
-    audit failed "$name" "$item" "$task" "$command"
+    audit failed "$name" "$item" "$task" "$command" || true
     fail item-unreadable "the Bitwarden item '$item' could not be read"
   fi
   if [ -z "$value" ]; then
-    audit failed "$name" "$item" "$task" "$command"
+    audit failed "$name" "$item" "$task" "$command" || true
     fail item-no-password "the Bitwarden item '$item' carries no usable password field"
   fi
   audit ok "$name" "$item" "$task" "$command" \
@@ -299,8 +311,9 @@ resolve_value() {
 }
 
 cmd_check() {
-  local rc=0 server word json
+  local rc=0 server word json has_bw=0 status_read=0
   if command -v bw >/dev/null 2>&1; then
+    has_bw=1
     printf 'bw: present %s\n' "$(command -v bw)"
   else
     printf 'bw: missing (install the Bitwarden CLI: npm install -g @bitwarden/cli)\n'
@@ -312,12 +325,18 @@ cmd_check() {
     printf 'jq: missing (required to read a Bitwarden item and the scope policy)\n'
     rc=1
   fi
-  if command -v bw >/dev/null 2>&1; then
-    json=$(bw_status_json) || json=
+  if [ "$has_bw" -eq 1 ] && json=$(bw_status_json) && [ -n "$json" ]; then
+    status_read=1
     server=$(json_string_field "$json" serverUrl)
     word=$(json_string_field "$json" status)
   fi
-  if [ -n "$server" ]; then
+  if [ "$has_bw" -eq 0 ]; then
+    printf 'server: unknown (bw is not installed)\n'
+    rc=1
+  elif [ "$status_read" -eq 0 ]; then
+    printf 'server: unknown (bw status could not be read)\n'
+    rc=1
+  elif [ -n "$server" ]; then
     printf 'server: %s\n' "$server"
   else
     printf 'server: not configured (run bw config server <url>)\n'
@@ -388,12 +407,12 @@ cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
   [ -z "$task" ] || validate_task "$task"
   [ -n "$item" ] || item="sq/$name"
   if [ -t 1 ] && [ "$to_tty" -eq 0 ]; then
-    audit denied "$name" "$item" "$task" ""
+    audit denied "$name" "$item" "$task" "" || true
     fail tty-refused "refusing to write a secret to a terminal; redirect stdout or pass --to-tty"
   fi
   require_session
   if [ -n "$task" ] && ! policy_allows "$task" "$name"; then
-    audit denied "$name" "$item" "$task" ""
+    audit denied "$name" "$item" "$task" "" || true
     fail "$POLICY_REASON" "$POLICY_MESSAGE"
   fi
   value=$(resolve_value "$name" "$item" "$task" "")
@@ -451,7 +470,7 @@ cmd_run() {  # [--for <task-id>] --with <ENVVAR>=<name> ... -- <command> [args..
   if [ -n "$task" ]; then
     for i in "${!names[@]}"; do
       if ! policy_allows "$task" "${names[$i]}"; then
-        audit denied "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string"
+        audit denied "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string" || true
         fail "$POLICY_REASON" "$POLICY_MESSAGE"
       fi
     done

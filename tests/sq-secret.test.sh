@@ -9,9 +9,9 @@
 #   (d) the audit log takes one line per resolution and never a value
 #   (e) scope policy allows a listed name, denies an unlisted one, denies a task
 #       with no entry, and refuses a missing or malformed policy
-#   (f) fail-closed behaviour for missing bw, missing jq, a locked session, an
-#       unknown item, an item with no usable password field, and an item that
-#       bw cannot resolve or classify unambiguously
+#   (f) fail-closed behaviour for missing bw, missing jq, a locked session, a
+#       stale session key, an unknown item, an item with no usable password
+#       field, and an item or vault that bw cannot resolve unambiguously
 #   (g) `check` reports each backend fact and exits non-zero when unusable
 #   (h) `list` prints names and metadata only
 #   (i) nothing is cached on disk beyond the audit log
@@ -54,6 +54,10 @@ lockfile=$vault/locked-during-get
 [ -e "$lockfile" ] && status=locked
 case "${1:-}" in
   status)
+    if [ "${FAKE_BW_STATUS_FAIL:-0}" = 1 ]; then
+      printf 'Failed to read status.\n' >&2
+      exit 1
+    fi
     if [ -n "$url" ]; then
       printf '{"serverUrl":"%s","status":"%s"}\n' "$url" "$status"
     else
@@ -66,6 +70,10 @@ case "${1:-}" in
     ;;
   get)
     [ "${2:-}" = item ] || exit 1
+    if [ "${FAKE_BW_STALE_SESSION:-0}" = 1 ]; then
+      printf 'Invalid or expired session key.\n' >&2
+      exit 1
+    fi
     [ "$status" = unlocked ] || { printf 'Vault is locked.\n' >&2; exit 1; }
     if [ "${FAKE_BW_LOCK_GET:-0}" = 1 ]; then
       : > "$lockfile"
@@ -81,9 +89,16 @@ case "${1:-}" in
     ;;
   list)
     [ "${2:-}" = items ] || exit 1
+    if [ "${FAKE_BW_STALE_SESSION:-0}" = 1 ]; then
+      printf 'Invalid or expired session key.\n' >&2
+      exit 1
+    fi
     if [ "${FAKE_BW_LIST_FAIL:-0}" = 1 ]; then
       printf 'Network error.\n' >&2
       exit 1
+    fi
+    if [ "${FAKE_BW_LIST_EMPTY:-0}" = 1 ]; then
+      exit 0
     fi
     [ "$status" = unlocked ] || { printf 'Vault is locked.\n' >&2; exit 1; }
     jq -c '.' "$vault/items.json"
@@ -309,6 +324,16 @@ test_scope_policy() {
   [ "$out" = "$VALUE" ] || fail "run honors a listed name: '$out'"
   pass "a listed name resolves under its task scope"
 
+  # A refusal must still name its reason when the audit log cannot be written.
+  rm -f "$LOG"
+  ln -s "$TMP_ROOT/audit-target" "$LOG"
+  out=$(sq_secret "$FAKEBIN:$PATH" get db-password --for some-task 2>&1)
+  rc=$?
+  rm -f "$LOG"
+  [ "$rc" -eq 1 ] || fail "a policy denial must still exit 1 when the audit log is unwritable"
+  assert_contains "$out" "policy-denied" "a refusal names its reason even when the audit log is unwritable"
+  pass "a refusal names its reason even when the audit log is unwritable"
+
   rm -f "$POLICY"
   out=$(sq_secret "$FAKEBIN:$PATH" get github-token)
   [ "$out" = "$VALUE" ] || fail "resolution without --for stays allowed: '$out'"
@@ -378,9 +403,26 @@ test_fail_closed() {
   out=$(FAKE_BW_LIST_FAIL=1 sq_secret "$FAKEBIN:$PATH" get no-such-name 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "an unlistable vault must fail the resolution"
-  assert_contains "$out" "item-unreadable" "a vault that cannot be listed is reported as unreadable"
+  assert_contains "$out" "session-unreadable" "a vault that cannot be listed is reported as unreadable"
+  assert_contains "$out" "bw unlock" "an unlistable vault names the unlock remedy"
   assert_not_contains "$out" "item-missing" "a failure to inspect the vault is never reported as a missing item"
   pass "a vault that cannot be listed is never reported as a missing item"
+
+  out=$(FAKE_BW_LIST_EMPTY=1 sq_secret "$FAKEBIN:$PATH" get no-such-name 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "an unlistable vault must fail the resolution"
+  assert_not_contains "$out" "item-missing" "an unparsable listing is never reported as a missing item"
+  assert_contains "$out" "session-unreadable" "an unparsable listing is reported as unreadable"
+  pass "an empty listing is not mistaken for a vault with no match"
+
+  out=$(FAKE_BW_STALE_SESSION=1 sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a stale session key must fail the resolution"
+  assert_contains "$out" "session-unreadable" "a stale session key is reported as a session failure"
+  assert_contains "$out" "bw unlock" "a stale session key names the unlock remedy"
+  assert_not_contains "$out" "item-unreadable" "a stale session key never blames the item"
+  assert_not_contains "$out" "$VALUE" "a stale session key must not print the value"
+  pass "a stale session key fails closed as a session failure with the remedy"
 
   out=$(FAKE_BW_LOCK_GET=1 sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
   rc=$?
@@ -413,6 +455,13 @@ test_check() {
   assert_contains "$out" "server: not configured" "check names an unconfigured server"
   assert_not_contains "$out" "bitwarden.com" "check never reports the cloud default as configured"
   pass "check reports an unconfigured server as unusable"
+
+  out=$(FAKE_BW_STATUS_FAIL=1 sq_secret "$FAKEBIN:$PATH" check 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "check must exit non-zero when bw status cannot be read"
+  assert_contains "$out" "server: unknown" "check separates an unreadable status from an unconfigured server"
+  assert_not_contains "$out" "server: not configured" "check never blames the configuration for an unreadable status"
+  pass "check separates an unreadable status from an unconfigured server"
 
   out=$(sq_secret "$MINBIN" check 2>&1)
   rc=$?
