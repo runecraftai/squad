@@ -285,7 +285,7 @@ while [[ $# -gt 0 ]]; do
     --result) [[ $# -ge 2 ]] || die 2 "--result needs a value"; RESULTS+=("$2"); shift 2 ;;
     --result=*) RESULTS+=("${1#--result=}"); shift ;;
     --help)
-      sed -n '2,/^set -eu/p' "$0" | head -n -1 | sed 's/^# //' | sed 's/^#//'
+      sed -n '2,/^set -eu/p' "$0" | sed '$d' | sed 's/^# //' | sed 's/^#//'
       exit 0
       ;;
     --) shift; POSITIONAL+=("$@"); break ;;
