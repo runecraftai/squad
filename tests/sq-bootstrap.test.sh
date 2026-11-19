@@ -1545,10 +1545,12 @@ case "\${1:-}" in
   list)
     if [ '$installed' = 1 ]; then
       case '$scope' in
-        user) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
-        project) printf '%s\n' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
-        both) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' ;;
-        stalled) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question'; sleep 5 ;;
+        user) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' ;;
+        project) printf '%s\n' 'User packages:' '  npm:other' '    /fixture/user/node_modules/other' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
+        both) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question@2.15.0' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
+        lookalike) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question-extra' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question-extra' ;;
+        pathless) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '  npm:other' '    /fixture/user/node_modules/other' ;;
+        stalled) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question'; sleep 5 ;;
       esac
     fi
     exit '$list_rc' ;;
@@ -1600,7 +1602,9 @@ test_pi_ask_user_offer() {
   done <<'ROWS'
 pi primary is offered the exact install command^pi^0^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^
 an installed extension is one no-action fact^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^
-an installed extension is still found beside project entries^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^0^both
+a versioned installed extension is still found beside project entries^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^0^both
+an installed lookalike reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^lookalike
+a record without its own installed path reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^pathless
 pi-signed is offered too^pi-signed^0^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^
 another harness is never offered it^claude^0^empty^^
 a pi primary without a pi binary stays silent^no-pi^0^empty^^

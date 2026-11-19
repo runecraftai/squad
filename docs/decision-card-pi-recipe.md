@@ -27,7 +27,7 @@ Two facts drive the mapping:
 - There is no per-question `notes` field, so card context and findings travel inside the question text rather than being dropped.
 - The dialog appends its own free-text row (`Type something.`), so `O0 - Your own words` stays reachable without authoring an option for it.
   The labels `Other`, `Type something.`, and `Next` are reserved and rejected, which is why a card using one of them keeps the prose block.
-  That row cannot widen a card's own rule: a card with `allow_free_text: false` still shows it, and a typed answer is rejected by the mapping through `bin/sq-ask.sh --answer` because the card, not the dialog, decides what it accepts.
+  The built-in row cannot be hidden, so `--payload` refuses a card with `allow_free_text: false` with exit 2 and a named reason, without emitting a payload; use the canonical prose block instead.
 
 ## The offer
 
@@ -40,7 +40,8 @@ Two facts drive the mapping:
 `.agents/skills/bootstrap-diagnostics` owns how that line is handled.
 Installing is the commander's explicit action.
 Bootstrap reads `pi list` and nothing else: it never installs, never updates, stays silent on every other harness, and stays silent when `pi` is not on `PATH`.
-Detection parses only the `User packages:` section of `pi list` and stops at `Project packages:`, so it covers exactly the user-scope install `pi install` writes; a project-scope install (`.pi/settings.json`, trust-gated) is out of scope and therefore reads as absent, never as installed, and a failed or unreadable listing is reported as nothing rather than as absence.
+Detection accepts only the exact npm package record (with or without an `@version` suffix) followed by its installed-path line in the `User packages:` section of `pi list`. A project-scope install (`.pi/settings.json`, trust-gated) reads as absent, and bootstrap stays silent when the probe reports failure.
+The shared timeout helper's Perl fallback drops the child's signal bits, so a signal-terminated `pi list` can look successful and produce a false `OPTIONAL` offer. This is accepted because the offer requires consent and installs nothing.
 `SQUAD_PI_ASK_USER_OFFER=0` silences the offer for a base that does not want it.
 
 ## The mapping
@@ -59,7 +60,7 @@ It validates the card through `bin/sq-ask.sh --validate` first, so the schema ke
 
 One card is one dialog question, because a question holds 2-4 options:
 
-- a card with 2-4 options becomes exactly one `ask_user_question` question, with every option on its own row and the recommended one marked;
+- an eligible card with 2-4 options becomes exactly one `ask_user_question` question, with every option on its own row and the recommended one marked;
 - several cards in one reply become one dialog per card, in card order, each rendered as its own `ask_user_question` call;
 - a card with more than four options keeps the prose block: the mapping exits 2 naming the reason, so no option is ever dropped, folded, or truncated.
 
@@ -71,8 +72,11 @@ A card the dialog cannot represent without dropping or misrepresenting an option
 ## Answers
 
 The dialog result is the published version 2.15.0 shape, whose field names are owned by the package's `docs/tool-schema.md` "Result" section: `details.answers[]` entries carry `questionIndex`, `question`, `kind`, and `answer`, with the optional `notes`, `selected`, and `preview`, and the result carries `details.cancelled`.
-The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. Every question ends with `Decision: <card id>` so results stay distinguishable even when cards with identical question text are presented separately.
-It turns that back into the prose answer grammar, so the existing parser stays the only resolver:
+The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. Every question ends with the card ID and a deterministic fingerprint of the full validated card. A returned question that does not match that snapshot exits 4, even if the card ID and chosen label are unchanged.
+
+To recover a result, use Pi's `/session` command to find the current session's JSONL file. In the current conversation branch, take the `id` from the assistant's `toolCall` content entry for the corresponding `ask_user_question` call. Find the session entry with `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"`, and `message.toolCallId` equal to that ID. Pass the entire `message` object, including `details`, as `--result`; do not pass the enclosing session entry. The model-facing `content` alone is not sufficient and must not be used to reconstruct `details`. If the matching structured result is unavailable (for example, the session was not saved), use the canonical prose path below.
+
+The mapping turns the result back into the prose answer grammar, so the existing parser stays the only resolver:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
@@ -93,7 +97,7 @@ The mapping runs the canonical answer parser before printing the fragment. If it
 
 ## Fallback
 
-With the extension absent, nothing changes:
+When the extension is absent, a card is refused, or the matching structured result cannot be recovered, use the unchanged prose path:
 
 - `bin/sq-ask.sh --render` prints the same prose block it always printed;
 - `bin/sq-ask.sh --answer` resolves the typed answer exactly as before;

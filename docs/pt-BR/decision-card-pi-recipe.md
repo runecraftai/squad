@@ -29,7 +29,7 @@ Dois fatos guiam o mapeamento:
 - Não há campo `notes` por pergunta, então o contexto e os findings do cartão viajam dentro do texto da pergunta em vez de serem descartados.
 - O diálogo acrescenta sua própria linha de texto livre (`Type something.`), então `O0 - Your own words` continua alcançável sem criar uma opção para ela.
   Os rótulos `Other`, `Type something.` e `Next` são reservados e rejeitados, por isso um cartão que use um deles mantém o bloco de prosa.
-  Essa linha não pode ampliar a regra do próprio cartão: um cartão com `allow_free_text: false` ainda a mostra, e uma resposta digitada é rejeitada pelo mapeamento por meio de `bin/sq-ask.sh --answer` porque o cartão, e não o diálogo, decide o que aceita.
+  A linha nativa não pode ser ocultada, então `--payload` recusa um cartão com `allow_free_text: false` com código 2 e informa o motivo, sem emitir payload; use o bloco de prosa canônico.
 
 ## A oferta
 
@@ -42,7 +42,8 @@ Dois fatos guiam o mapeamento:
 `.agents/skills/bootstrap-diagnostics` é o dono do tratamento dessa linha.
 Instalar é a ação explícita do comandante.
 O bootstrap lê `pi list` e nada mais: nunca instala, nunca atualiza, fica silencioso em qualquer outro harness e fica silencioso quando `pi` não está no `PATH`.
-A detecção lê apenas a seção `User packages:` de `pi list` e para em `Project packages:`, então cobre exatamente a instalação de escopo de usuário que `pi install` grava; uma instalação de escopo de projeto (`.pi/settings.json`, protegida por confiança) fica fora de escopo e, portanto, é lida como ausente, nunca como instalada, e uma listagem falha ou ilegível é reportada como nada, nunca como ausência.
+A detecção aceita apenas o registro exato do pacote npm (com ou sem sufixo `@versão`), seguido pela linha do caminho de instalação na seção `User packages:` de `pi list`. Uma instalação no escopo de projeto (`.pi/settings.json`, protegida por confiança) é lida como ausente, e o bootstrap não emite nada quando a consulta indica falha.
+A alternativa em Perl do utilitário compartilhado de timeout descarta os bits de sinal do processo filho, então um `pi list` encerrado por sinal pode parecer bem-sucedido e gerar uma oferta `OPTIONAL` indevida. Essa limitação é aceita porque a oferta exige consentimento e não instala nada.
 `SQUAD_PI_ASK_USER_OFFER=0` silencia a oferta para uma base que não a queira.
 
 ## O mapeamento
@@ -61,7 +62,7 @@ Ele valida o cartão por `bin/sq-ask.sh --validate` primeiro, então o esquema m
 
 Um cartão é uma pergunta de diálogo, porque uma pergunta comporta 2-4 opções:
 
-- um cartão com 2-4 opções vira exatamente uma pergunta `ask_user_question`, com cada opção em sua própria linha e a recomendada marcada;
+- um cartão elegível com 2-4 opções vira exatamente uma pergunta `ask_user_question`, com cada opção em sua própria linha e a recomendada marcada;
 - vários cartões em uma resposta viram um diálogo por cartão, na ordem dos cartões, cada um renderizado como sua própria chamada `ask_user_question`;
 - um cartão com mais de quatro opções mantém o bloco de prosa: o mapeamento sai com 2 informando o motivo, então nenhuma opção é descartada, dobrada ou truncada.
 
@@ -73,8 +74,11 @@ Um cartão que o diálogo não consegue representar sem descartar ou deturpar um
 ## Respostas
 
 O resultado do diálogo é a forma publicada da versão 2.15.0, cujos nomes de campo são definidos pela seção "Result" de `docs/tool-schema.md` do pacote: as entradas de `details.answers[]` carregam `questionIndex`, `question`, `kind` e `answer`, com os opcionais `notes`, `selected` e `preview`, e o resultado carrega `details.cancelled`.
-O mapeamento confere `questionIndex` e o `question` devolvido com o diálogo indicado por `--dialog` antes de resolver `kind` e `answer`. Toda pergunta termina com `Decision: <id do cartão>` para distinguir os resultados mesmo quando cartões com perguntas idênticas são apresentados separadamente.
-Ele converte isso de volta para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
+O mapeamento confere `questionIndex` e o `question` devolvido com o diálogo indicado por `--dialog` antes de resolver `kind` e `answer`. Toda pergunta termina com o ID do cartão e uma impressão digital determinística de todo o cartão validado. Se a pergunta devolvida não corresponder a essa versão do cartão, o comando sai com código 4, mesmo que o ID e o rótulo escolhido permaneçam iguais.
+
+Para recuperar o resultado, use o comando `/session` do Pi para localizar o arquivo JSONL da sessão atual. No ramo atual da conversa, obtenha o `id` da entrada `toolCall` no conteúdo da mensagem do assistente que chamou `ask_user_question`. Localize a entrada da sessão com `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"` e `message.toolCallId` igual a esse ID. Passe o objeto `message` inteiro, incluindo `details`, como `--result`, sem a entrada externa da sessão. O `content` apresentado ao modelo não basta e não deve ser usado para reconstruir `details`. Se o resultado estruturado correspondente não estiver disponível (por exemplo, se a sessão não foi salva), siga o caminho de prosa canônico abaixo.
+
+O mapeamento converte o resultado para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
 
 ```bash
 bin/sq-card-pi-dialog.sh --payload < card.json
@@ -95,7 +99,7 @@ O mapeamento executa o analisador canônico de respostas antes de imprimir o fra
 
 ## Fallback
 
-Com a extensão ausente, nada muda:
+Se a extensão estiver ausente, o cartão for recusado ou o resultado estruturado correspondente não puder ser recuperado, use o caminho de prosa original:
 
 - `bin/sq-ask.sh --render` imprime o mesmo bloco de prosa de sempre;
 - `bin/sq-ask.sh --answer` resolve a resposta digitada exatamente como antes;

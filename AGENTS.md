@@ -440,6 +440,7 @@ A code is durable only when anchored to something Squad already tracks: a backlo
 Without such an anchor, a code is ephemeral: valid only for the current conversation, never assumed to survive a session reset.
 Codes are display only: write the option label or id, never a code, into a status line, a steer, a backlog note, or a decision record.
 `docs/decision-card-standard.md` owns the JSON payload behind a decision block and the `bin/sq-ask.sh` renderer and answer parser; the block above is the only commander-facing shape.
+As the sole presentation exception, Pi may show a decision card in an optional native dialog, but the prose block and answer codes remain the only canonical and authoritative forms.
 
 ### Conversational aliases
 

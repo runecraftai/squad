@@ -1090,14 +1090,19 @@ pi_ask_user_offer() {
     *) return 0 ;;
   esac
   command -v pi >/dev/null 2>&1 || return 0
-  listing=$(fm_run_timed 2 pi list </dev/null 2>/dev/null) || return 0
-  listing=$(printf '%s\n' "$listing" | awk '/User packages:/{user=1; next} /Project packages:/{user=0} user')
-  case "$listing" in
-    *"npm:$PI_ASK_USER_EXTENSION"*)
-      echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed" ;;
-    *)
-      echo "OPTIONAL: pi extension $PI_ASK_USER_EXTENSION not installed (offer: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)" ;;
-  esac
+  listing=$(NO_COLOR=1 FORCE_COLOR=0 fm_run_timed 2 pi list </dev/null 2>/dev/null) || return 0
+  if printf '%s\n' "$listing" | awk -v record="  npm:$PI_ASK_USER_EXTENSION" '
+    $0 == "User packages:" { user=1; pending=0; next }
+    /^[^[:space:]]/ { user=0 }
+    user && pending && /^    \/[^[:space:]]/ { found=1 }
+    { pending = user && ($0 == record ||
+        (index($0, record "@") == 1 && substr($0, length(record)+2) ~ /^[^@[:space:]]+$/)) }
+    END { exit !found }
+  '; then
+    echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed"
+  else
+    echo "OPTIONAL: pi extension $PI_ASK_USER_EXTENSION not installed (offer: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)"
+  fi
 }
 
 detect_local_tools() {

@@ -55,7 +55,8 @@
 # Refused, because the dialog cannot show that card without dropping or misrepresenting
 # an option: an option label that is a reserved dialog label ("Other", "Type something.",
 # "Next"), a label shared by two options of the card, a card with a single option, and a
-# card with more than four options (it would need more than one dialog question).
+# card with more than four options (it would need more than one dialog question),
+# or a card with allow_free_text disabled (the built-in free-text row cannot be hidden).
 # A refusal exits 2 with a message and leaves the caller on the prose block, which stays
 # the canonical shape. A result without details.cancelled, or a cancelled one (Esc), is
 # never converted into an answer: it exits 4, so nothing is recorded.
@@ -71,7 +72,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 IFS= read -r -d '' PY_PROG <<'PY' || true
-import json, os, subprocess, sys
+import hashlib, json, os, subprocess, sys
 
 MAX_OPTIONS = 4
 HEADER_MAX = 16
@@ -106,7 +107,9 @@ def question_for(card, findings):
         lines.append("F%d - %s %s" % (code, finding["id"], finding["text"]))
     if card.get("context"):
         lines.append(CTX + card["context"])
-    lines.append("Decision: " + card["id"])
+    snapshot = json.dumps(card, sort_keys=True, separators=(",", ":"))
+    fingerprint = hashlib.sha256(snapshot.encode("utf-8")).hexdigest()[:24]
+    lines.append("Decision: %s (snapshot: %s)" % (card["id"], fingerprint))
     return "\n".join(lines)
 
 
@@ -194,7 +197,7 @@ def answer_text(cards, pairs):
         if card_index in answered:
             raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
         if answer.get("question") != dialogs[dialog_index - 1]["questions"][position]["question"]:
-            raise Unusable("the returned question does not match dialog %d" % dialog_index)
+            raise Unusable("the returned question does not match dialog %d's card snapshot" % dialog_index)
         answered.add(card_index)
         kind = answer.get("kind")
         if kind == "option":
@@ -236,6 +239,10 @@ def main():
         if len(card["options"]) < 2:
             raise Invalid("a card needs at least 2 options for a dialog question; card '%s' has %d" % (card["id"], len(card["options"])))
     if mode == "payload":
+        for card in cards:
+            if not card.get("allow_free_text", True):
+                raise Invalid("card '%s' has allow_free_text=false; the dialog always shows a free-text row"
+                              % card["id"])
         print(json.dumps(build(cards)[0]))
     elif mode == "answer":
         args = sys.argv[3:]

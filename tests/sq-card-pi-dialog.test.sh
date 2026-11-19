@@ -98,14 +98,14 @@ test_two_option_card() {
   check "$PAIR" '[o["label"] for o in p[0]["questions"][0]["options"]] == [o["label"] for o in c[0]["options"]]'
   check "$PAIR" 'len(p[0]["questions"][0]["header"]) <= 16'
   check "$PAIR" 'p[0]["questions"][0]["question"].startswith(c[0]["question"])'
-  check "$PAIR" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"], "Context: " + c[0]["context"], "Decision: " + c[0]["id"]]'
+  check "$PAIR" 'p[0]["questions"][0]["question"].splitlines()[:-1] == [c[0]["question"], "Context: " + c[0]["context"]]'
   check "$PAIR" 'p[0]["questions"][0]["options"][1]["description"] == c[0]["options"][1]["description"] + " (recommended)"'
   check "$PAIR" 'not p[0]["questions"][0]["options"][0]["description"].endswith("(recommended)")'
   # The free-text row belongs to the dialog, so the mapping never authors an option for it.
   check "$PAIR" 'all(o["label"] not in ("Other", "Type something.", "Next") for q in p[0]["questions"] for o in q["options"])'
 
   # Findings ride in the question text of that card's own question, once, in card order.
-  check "$GATE" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"]] + ["F%d - %s %s" % (n, f["id"], f["text"]) for n, f in enumerate(c[0]["findings"], 1)] + ["Decision: " + c[0]["id"]]'
+  check "$GATE" 'p[0]["questions"][0]["question"].splitlines()[:-1] == [c[0]["question"]] + ["F%d - %s %s" % (n, f["id"], f["text"]) for n, f in enumerate(c[0]["findings"], 1)]'
   pass "T1: a 2-option card becomes one dialog question with the recommended row marked and its findings carried"
 }
 
@@ -235,12 +235,10 @@ test_free_text_and_refusals() {
   [ "$rc" = 4 ] || fail "T7: a double quote in free text must exit 4, got $rc"
   printf '%s' "$out" | grep -q 'double quotes' || fail "T7: the free-text refusal is not explanatory: $out"
 
-  # A card that forbids free text keeps that authority: the dialog's own row cannot widen it.
   rc=0
-  fragment "$FIX/merge.json" 1 '[{"questionIndex":0,"kind":"custom","answer":"neither"}]' \
-    > "$TMP_ROOT/refusal.out" 2> "$TMP_ROOT/refusal.err" || rc=$?
-  [ "$rc" = 4 ] && [ ! -s "$TMP_ROOT/refusal.out" ] || fail "T7: a no-free-text card must reject O0 without a fragment"
-  grep -q 'does not take free text' "$TMP_ROOT/refusal.err" || fail "T7: missing no-free-text diagnostic"
+  "$DIALOG" --payload < "$FIX/merge.json" > "$TMP_ROOT/refusal.out" 2> "$TMP_ROOT/refusal.err" || rc=$?
+  [ "$rc" = 2 ] && [ ! -s "$TMP_ROOT/refusal.out" ] || fail "T7: a no-free-text card must be refused without a payload"
+  grep -q 'allow_free_text=false' "$TMP_ROOT/refusal.err" || fail "T7: missing no-free-text diagnostic"
 
   rc=0
   out=$("$DIALOG" --payload < "$FIX/reserved.json" 2>&1) || rc=$?
@@ -380,10 +378,10 @@ PY
 }
 
 test_protocol_validation() {
-  python3 - "$DIALOG" "$ASK" "$PAIR" <<'PY' || fail "dialog protocol validation failed"
+  python3 - "$DIALOG" "$ASK" "$PAIR" "$GATE" <<'PY' || fail "dialog protocol validation failed"
 import json, copy, subprocess, sys
 
-dialog, ask, fixture = sys.argv[1:]
+dialog, ask, fixture, gate_fixture = sys.argv[1:]
 with open(fixture, "rb") as f:
     raw = f.read()
 card = json.loads(raw)
@@ -425,6 +423,17 @@ swapped = run(dialog, "--answer", "--dialog", "1", "--result", option_result, da
 assert swapped.returncode == 4 and not swapped.stdout and b"question" in swapped.stderr, swapped
 correct = run(dialog, "--answer", "--dialog", "1", "--result", option_result, data=first)
 assert correct.returncode == 0 and correct.stdout.strip() == b"d1 o1", correct
+
+with open(gate_fixture, "rb") as f:
+    gate = json.load(f)
+gate_question = json.loads(run(dialog, data=json.dumps(gate).encode()).stdout)[0]["questions"][0]["question"]
+accept_result = result(gate_question, "option", gate["options"][1]["label"])
+reformatted = json.dumps(gate, sort_keys=True, indent=2).encode()
+correct = run(dialog, "--answer", "--dialog", "1", "--result", accept_result, data=reformatted)
+assert correct.returncode == 0 and correct.stdout.strip() == b"d1 o2", correct
+gate["options"][1]["payload"]["action"] = "skip"
+stale = run(dialog, "--answer", "--dialog", "1", "--result", accept_result, data=json.dumps(gate).encode())
+assert stale.returncode == 4 and not stale.stdout and b"card snapshot" in stale.stderr, stale
 
 data = json.dumps(cards[:2]).encode()
 question = json.loads(run(dialog, data=data).stdout)[1]["questions"][0]["question"]
