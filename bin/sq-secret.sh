@@ -315,6 +315,36 @@ policy_allows() {
   POLICY_MESSAGE=
 }
 
+# capture_bytes <command...>: run a command and store its stdout in CAPTURED
+# byte for byte, keeping trailing newlines that a bare command substitution
+# would strip. Returns the command's own status.
+capture_bytes() {
+  CAPTURED=$(
+    "$@"
+    rc=$?
+    printf x
+    exit "$rc"
+  ) || return 1
+  CAPTURED=${CAPTURED%x}
+}
+
+# item_usable <json>: succeed only when the item carries a non-empty string
+# password, so an empty or newline-only field is judged on the field itself
+# rather than on a shell-stripped copy of it.
+item_usable() {
+  printf '%s' "$1" | jq -e '
+    (.login? // {})
+    | type == "object"
+      and ((.password? | type) == "string")
+      and ((.password | length) > 0)
+  ' >/dev/null 2>&1
+}
+
+# item_password <json>: print the item's password bytes exactly.
+item_password() {
+  printf '%s' "$1" | jq -j '.login.password' 2>/dev/null
+}
+
 # resolve_value <name> <item> <task> <command>: print the item's password.
 # The caller has already established the session with require_session_present;
 # the item read itself proves the session and classifies its own failure.
@@ -344,21 +374,26 @@ resolve_value() {
         ;;
     esac
   fi
-  if ! value=$(printf '%s' "$json" | jq -r '.login.password // empty' 2>/dev/null); then
+  if ! printf '%s' "$json" | jq -e 'type == "object"' >/dev/null 2>&1; then
     audit failed "$name" "$item" "$task" "$command" || true
     fail item-unreadable "the Bitwarden item '$item' could not be read"
   fi
-  if [ -z "$value" ]; then
+  if ! item_usable "$json"; then
     audit failed "$name" "$item" "$task" "$command" || true
     fail item-no-password "the Bitwarden item '$item' carries no usable password field"
   fi
+  if ! capture_bytes item_password "$json"; then
+    audit failed "$name" "$item" "$task" "$command" || true
+    fail item-unreadable "the Bitwarden item '$item' could not be read"
+  fi
+  value=$CAPTURED
   audit ok "$name" "$item" "$task" "$command" \
     || fail audit-unwritable "state/secrets-audit.log could not be written; refusing an unaudited resolution"
   printf '%s' "$value"
 }
 
 cmd_check() {
-  local rc=0 server word has_bw=0
+  local rc=0 server word has_bw=0 has_jq=0
   if command -v bw >/dev/null 2>&1; then
     has_bw=1
     printf 'bw: present %s\n' "$(command -v bw)"
@@ -367,6 +402,7 @@ cmd_check() {
     rc=1
   fi
   if command -v jq >/dev/null 2>&1; then
+    has_jq=1
     printf 'jq: present %s\n' "$(command -v jq)"
   else
     printf 'jq: missing (required to read a Bitwarden item and the scope policy)\n'
@@ -383,6 +419,12 @@ cmd_check() {
   fi
   if [ -z "${BW_SESSION:-}" ]; then
     printf 'session: missing BW_SESSION (run bw unlock and export the session it prints)\n'
+    rc=1
+  elif [ "$has_bw" -eq 0 ]; then
+    printf 'session: unknown (bw is not installed, so the session cannot be proved)\n'
+    rc=1
+  elif [ "$has_jq" -eq 0 ]; then
+    printf 'session: unknown (jq is required to prove the session with a vault read)\n'
     rc=1
   elif bw_vault_readable; then
     printf 'session: unlocked\n'
@@ -539,7 +581,8 @@ cmd_run() {  # [--for <task-id>] --with <ENVVAR>=<name> ... -- <command> [args..
     done
   fi
   for i in "${!vars[@]}"; do
-    values+=("$(resolve_value "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string")")
+    capture_bytes resolve_value "${names[$i]}" "sq/${names[$i]}" "$task" "$command_string"
+    values+=("$CAPTURED")
   done
   for i in "${!vars[@]}"; do
     export "${vars[$i]}=${values[$i]}"

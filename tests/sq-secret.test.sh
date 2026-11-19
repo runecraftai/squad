@@ -14,8 +14,9 @@
 #       field, and an item or vault that bw cannot resolve unambiguously
 #   (g) `check` reports each backend fact and exits non-zero when unusable
 #   (h) `list` prints names and metadata only
-#   (i) nothing is cached on disk beyond the audit log
+#   (i) nothing is cached on disk beyond the audit log, under HOME or TMPDIR
 #   (j) shellcheck-clean
+#   (k) a value's bytes reach `get` stdout and the child environment unchanged
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -52,12 +53,34 @@ url=${FAKE_BW_SERVER_URL-$default_server}
 status=${FAKE_BW_STATUS:-unlocked}
 lockfile=$vault/locked-during-get
 [ -e "$lockfile" ] && status=locked
+
+# The broker's per-call contract: every call carries --nointeraction, reads its
+# stdin from /dev/null, and receives the session key in the environment. A
+# regression in any of those must fail here instead of passing silently.
+die() {
+  printf 'fake bw: %s: %s\n' "$1" "$2" >&2
+  exit 1
+}
+case " $* " in
+  *' --nointeraction '*) ;;
+  *) die nointeraction "call without --nointeraction: $*" ;;
+esac
+[ ! -t 0 ] || die stdin "stdin is a terminal: $*"
+if [ -r /proc/self/fd/0 ] && command -v readlink >/dev/null 2>&1; then
+  [ "$(readlink /proc/self/fd/0)" = /dev/null ] \
+    || die stdin "stdin is not /dev/null: $*"
+fi
+require_session_key() {
+  [ -n "${BW_SESSION:-}" ] || die session "no BW_SESSION for a vault call: $*"
+}
+
 case "${1:-}" in
   status)
     if [ "${FAKE_BW_STATUS_FAIL:-0}" = 1 ]; then
       printf 'Failed to read status.\n' >&2
       exit 1
     fi
+    [ "$status" != unlocked ] || require_session_key
     if [ -n "$url" ]; then
       printf '{"serverUrl":"%s","status":"%s"}\n' "$url" "$status"
     else
@@ -74,6 +97,7 @@ case "${1:-}" in
     ;;
   get)
     [ "${2:-}" = item ] || exit 1
+    require_session_key
     if [ -n "${FAKE_BW_ENV_PROBE:-}" ]; then
       if [ -n "${!FAKE_BW_ENV_PROBE:-}" ]; then
         printf 'inherited\n' >> "$vault/env-probe.log"
@@ -100,6 +124,7 @@ case "${1:-}" in
     ;;
   list)
     [ "${2:-}" = items ] || exit 1
+    require_session_key
     if [ "${FAKE_BW_STALE_SESSION:-0}" = 1 ]; then
       printf 'Invalid or expired session key.\n' >&2
       exit 1
@@ -133,7 +158,9 @@ cat > "$VAULT/items.json" <<JSON
   {"id":"33333333-3333-3333-3333-333333333333","name":"sq/no-password","login":{"username":"someone"}},
   {"id":"44444444-4444-4444-4444-444444444444","name":"plain-item","login":{"password":"not-managed-here"}},
   {"id":"55555555-5555-5555-5555-555555555555","name":"sq/duplicated","login":{"password":"first"}},
-  {"id":"66666666-6666-6666-6666-666666666666","name":"sq/duplicated","login":{"password":"second"}}
+  {"id":"66666666-6666-6666-6666-666666666666","name":"sq/duplicated","login":{"password":"second"}},
+  {"id":"77777777-7777-7777-7777-777777777777","name":"sq/trailing-newline","login":{"password":"tail-value\n"}},
+  {"id":"88888888-8888-8888-8888-888888888888","name":"sq/newlines","login":{"password":"\n\n"}}
 ]
 JSON
 
@@ -590,13 +617,20 @@ test_check() {
   assert_contains "$out" "bw: missing" "check names a missing bw"
   assert_contains "$out" "server: unknown (bw is not installed)" "check names the server as unknown when bw is missing"
   assert_contains "$out" "jq: present" "check still reports jq when bw is missing"
+  assert_contains "$out" "session: unknown" "check does not blame the session when bw is missing"
   pass "check exits non-zero when the backend is unusable"
 
   out=$(sq_secret "$NOJQBIN" check 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "check must exit non-zero when jq is missing"
   assert_contains "$out" "jq: missing" "check names a missing jq"
-  pass "check reports a missing jq as unusable"
+  assert_contains "$out" "session: unknown" \
+    "check names the missing jq, not the session, as the reason the probe cannot run"
+  assert_not_contains "$out" "bw unlock" \
+    "a missing jq never sends the operator to bw unlock"
+  assert_not_contains "$out" "session: unreadable" \
+    "a missing jq is not reported as an unreadable vault"
+  pass "check reports a missing jq as unusable without blaming the session"
 
   out=$(FAKE_BW_STATUS=locked sq_secret "$FAKEBIN:$PATH" check 2>&1)
   rc=$?
@@ -668,16 +702,50 @@ test_unauditable_resolution_is_refused() {
 # ── (i) nothing cached on disk ─────────────────────────────────────────────
 
 test_no_cache_on_disk() {
-  local listing
-  rm -rf "${BASE:?}/state"
-  mkdir -p "$BASE/state"
-  sq_secret "$FAKEBIN:$PATH" get github-token >/dev/null
-  sq_secret "$FAKEBIN:$PATH" run --with T=db-password -- true
+  local listing home_listing tmp_listing fixture_home="$TMP_ROOT/home" fixture_tmp="$TMP_ROOT/tmp"
+  rm -rf "${BASE:?}/state" "$fixture_home" "$fixture_tmp"
+  mkdir -p "$BASE/state" "$fixture_home" "$fixture_tmp"
+  HOME="$fixture_home" TMPDIR="$fixture_tmp" \
+    sq_secret "$FAKEBIN:$PATH" get github-token >/dev/null
+  HOME="$fixture_home" TMPDIR="$fixture_tmp" \
+    sq_secret "$FAKEBIN:$PATH" run --with T=db-password -- true
   listing=$(cd "$BASE" && find . -type f | LC_ALL=C sort)
   [ "$listing" = "./state/secrets-audit.log" ] \
     || fail "resolution must cache nothing but the audit log, found: $listing"
+  home_listing=$(cd "$fixture_home" && find . -mindepth 1 | LC_ALL=C sort)
+  [ -z "$home_listing" ] \
+    || fail "resolution must write nothing under HOME, found: $home_listing"
+  tmp_listing=$(cd "$fixture_tmp" && find . -mindepth 1 | LC_ALL=C sort)
+  [ -z "$tmp_listing" ] \
+    || fail "resolution must cache nothing under TMPDIR, found: $tmp_listing"
   assert_no_grep "$VALUE" "$LOG" "the audit log never carries a value"
   pass "resolution caches nothing on disk beyond the audit log"
+}
+
+# ── (k) the value's bytes are preserved ───────────────────────────────────
+
+test_value_bytes_are_preserved() {
+  local out="$TMP_ROOT/bytes.out" envfile="$TMP_ROOT/bytes.env"
+  local expected="$TMP_ROOT/bytes.expected"
+  printf 'tail-value\n' > "$expected"
+  sq_secret "$FAKEBIN:$PATH" get trailing-newline > "$out" \
+    || fail "a value with a trailing newline must resolve"
+  cmp -s "$expected" "$out" \
+    || fail "get must hand over the bytes the vault holds: $(od -c "$out" | head -3)"
+  # shellcheck disable=SC2016  # the child shell expands this, not the test
+  sq_secret "$FAKEBIN:$PATH" run --with T=trailing-newline -- \
+    sh -c 'printf "%s" "$T" > "$1"' _ "$envfile" \
+    || fail "run must resolve a value with a trailing newline"
+  cmp -s "$expected" "$envfile" \
+    || fail "run must export the exact bytes: $(od -c "$envfile" | head -3)"
+  pass "get and run preserve a trailing newline in the value"
+
+  printf '\n\n' > "$expected"
+  sq_secret "$FAKEBIN:$PATH" get newlines > "$out" \
+    || fail "a newline-only password is a populated field, not an empty one"
+  cmp -s "$expected" "$out" \
+    || fail "a newline-only value must resolve unchanged: $(od -c "$out" | head -3)"
+  pass "a newline-only value is resolved rather than refused as empty"
 }
 
 # ── (j) shellcheck-clean ───────────────────────────────────────────────────
@@ -703,6 +771,7 @@ test_fail_closed
 test_check
 test_list
 test_no_cache_on_disk
+test_value_bytes_are_preserved
 test_shellcheck
 
 printf 'all sq-secret tests passed\n'
