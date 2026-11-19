@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "id": "region-rollout",
+  "title": "Region Rollout",
+  "question": "Which region should the rollout reach first?",
+  "context": "Seventeen regions are in scope and the rollout is one region at a time.",
+  "options": [
+    {
+      "id": "us-east",
+      "label": "US East",
+      "description": "Largest traffic share"
+    },
+    {
+      "id": "us-west",
+      "label": "US West",
+      "description": "Smaller, well instrumented"
+    },
+    {
+      "id": "us-central",
+      "label": "US Central",
+      "description": "Shared by internal services"
+    },
+    {
+      "id": "ca-central",
+      "label": "CA Central",
+      "description": "Single data residency zone"
+    },
+    {
+      "id": "sa-east",
+      "label": "SA East",
+      "description": "High latency from the rest"
+    },
+    {
+      "id": "eu-west",
+      "label": "EU West",
+      "description": "Busiest European region"
+    },
+    {
+      "id": "eu-central",
+      "label": "EU Central",
+      "description": "Compliance-scoped workloads"
+    },
+    {
+      "id": "eu-north",
+      "label": "EU North",
+      "description": "Mostly batch traffic"
+    },
+    {
+      "id": "eu-south",
+      "label": "EU South",
+      "description": "Newer, little production load"
+    },
+    {
+      "id": "me-south",
+      "label": "ME South",
+      "description": "One partner integration"
+    },
+    {
+      "id": "af-south",
+      "label": "AF South",
+      "description": "Cold standby only"
+    },
+    {
+      "id": "ap-south",
+      "label": "AP South",
+      "description": "Fast growing user base"
+    },
+    {
+      "id": "ap-east",
+      "label": "AP East",
+      "description": "Read-heavy, low write volume"
+    },
+    {
+      "id": "ap-southeast",
+      "label": "AP Southeast",
+      "description": "Staging mirror of production"
+    },
+    {
+      "id": "ap-northeast",
+      "label": "AP Northeast",
+      "description": "Latency-sensitive callers"
+    },
+    {
+      "id": "ap-north",
+      "label": "AP North",
+      "description": "Pilot customers only"
+    },
+    {
+      "id": "global-edge",
+      "label": "Global Edge",
+      "description": "Cache layer, no origin traffic"
+    }
+  ],
+  "default_option_id": "global-edge",
+  "allow_free_text": true,
+  "metadata": {
+    "key": "region-rollout"
+  }
+}

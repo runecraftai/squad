@@ -21,6 +21,7 @@ PAIR="$FIX/pair.json"
 FOUR="$FIX/four.json"
 SIX="$FIX/six.json"
 NINE="$FIX/nine.json"
+SEVENTEEN="$FIX/seventeen.json"
 
 # check <card file> <python expression>: convert the card to a dialog payload and
 # evaluate the expression with `p` (the payload array) and `c` (the cards array).
@@ -250,9 +251,26 @@ test_free_text_and_refusals() {
 # --- T8: the fixtures the suite added are clean under the grammar linter ---------
 test_fixtures_are_lint_clean() {
   local out
-  out=$("$LINT" "$PAIR" "$FOUR" "$SIX" "$NINE" "$FIX/reserved.json" "$FIX/single.json" "$FIX/duplicate-label.json" 2>&1)
+  out=$("$LINT" "$PAIR" "$FOUR" "$SIX" "$NINE" "$SEVENTEEN" "$FIX/reserved.json" "$FIX/single.json" "$FIX/duplicate-label.json" 2>&1)
   [ -z "$out" ] || fail "T8: sq-card-lint warned on the fixtures: $out"
   pass "T8: sq-card-lint reports no warnings on the fixture cards"
+}
+
+# --- T9: more questions than one dialog allows split across dialogs, in order ---
+test_many_options_across_dialogs() {
+  check "$SEVENTEEN" 'len(p) == 2'
+  check "$SEVENTEEN" '[len(d["questions"]) for d in p] == [4, 1]'
+  check "$SEVENTEEN" 'all(1 <= len(d["questions"]) <= 4 for d in p)'
+  check "$SEVENTEEN" 'all(2 <= len(q["options"]) <= 4 for d in p for q in d["questions"])'
+  # Every card option appears exactly once, in card order, across the dialogs.
+  check "$SEVENTEEN" '[o["label"] for d in p for q in d["questions"] for o in q["options"]] == [o["label"] for o in c[0]["options"]]'
+  # The question split continues across the dialog boundary instead of restarting.
+  check "$SEVENTEEN" 'p[0]["questions"][-1]["question"].splitlines()[0].endswith("(part 4 of 5)")'
+  check "$SEVENTEEN" 'p[1]["questions"][0]["question"].splitlines()[0].endswith("(part 5 of 5)")'
+  # The last card option, the recommended one, lands in the second dialog still marked.
+  check "$SEVENTEEN" 'p[1]["questions"][0]["options"][-1]["label"] == c[0]["options"][-1]["label"]'
+  check "$SEVENTEEN" 'p[1]["questions"][0]["options"][-1]["description"].endswith("(recommended)")'
+  pass "T9: a card needing more than one dialog splits in card order with no option dropped"
 }
 
 test_two_option_card
@@ -263,3 +281,4 @@ test_one_dialog_per_card
 test_prose_fallback_unchanged
 test_free_text_and_refusals
 test_fixtures_are_lint_clean
+test_many_options_across_dialogs
