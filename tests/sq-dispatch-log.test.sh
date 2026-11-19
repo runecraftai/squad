@@ -465,7 +465,19 @@ recommend() { # <id> <json>
   SQUAD_BASE="$dir" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_RECOMMENDATION_JSON="$2" \
     "$ROOT/bin/sq-dispatch-log.sh" "$1" recommendation >/dev/null 2>&1
 }
-recommend rec-good '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61,"codex/gpt-5":0.39},"low_confidence":true,"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}'
+run_case "$dir" sq-dispatch-log.sh no-stdin spawn --harness codex --model gpt-5 --effort high 0<&-
+printf '%s\n' '{"label":"recommendation","status":"recommended","choice":"codex/gpt-5"}' |
+  run_case "$dir" sq-dispatch-log.sh no-stdin recommendation --stdin
+python3 - "$dir/data/no-stdin/dispatch.jsonl" <<'PY' || fail 'dispatch writer did not handle stdin by event'
+import json, sys
+with open(sys.argv[1]) as log:
+    spawn, recommendation = map(json.loads, log)
+assert spawn["event"] == "spawn" and spawn["model"] == "gpt-5", spawn
+assert recommendation["event"] == "recommendation" and recommendation["choice"] == "codex/gpt-5", recommendation
+PY
+pass 'spawn appends with stdin closed and a recommendation can still be streamed'
+
+recommend rec-good '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61,"codex/gpt-5":0.39},"low_confidence":true,"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}' 0<&-
 python3 - "$dir/data/rec-good/dispatch.jsonl" <<'PY' || fail 'recommendation evidence row was not written as declared'
 import json, sys
 row = json.loads(open(sys.argv[1]).readline())

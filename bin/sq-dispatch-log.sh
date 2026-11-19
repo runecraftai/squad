@@ -46,7 +46,8 @@ BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SCRIPT_DIR/..}}}"
 DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
 STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 
-if ! SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" 2>/dev/null 3<&0 <<'PY'
+append_event() {
+  SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" <<'PY'
 import argparse
 import datetime
 import fcntl
@@ -77,7 +78,7 @@ for event in ("decision", "spawn"):
         reason.add_argument("--profile")
         reason.add_argument("--reason")
         command.add_argument("--quota-summary", default='{"status":"unknown"}')
-command = commands.add_parser("recommendation")
+command = commands.add_parser("recommendation", allow_abbrev=False)
 command.add_argument("--stdin", action="store_true")
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
@@ -222,7 +223,15 @@ os.close(fd)
 os.close(task_fd)
 os.close(data_fd)
 PY
-then
+}
+
+if ! {
+  if [[ ${2-} == recommendation && ${3-} == --stdin ]]; then
+    append_event "$@" 3<&0
+  else
+    append_event "$@"
+  fi
+} 2>/dev/null; then
   printf '%s\n' 'sq-dispatch-log: could not append dispatch event' >&2
 fi
 exit 0
