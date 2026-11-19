@@ -1554,6 +1554,16 @@ if [ '$installed' = 1 ]; then
     pathless) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '  npm:other' '    /fixture/user/node_modules/other' ;;
     stalled) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question'; sleep 5 ;;
   esac
+else
+  case '$scope' in
+    warning)
+      printf '%s\n' 'Warning (package command, global settings): EACCES: permission denied, opening settings.json' >&2
+      printf '%s\n' 'No packages installed.' ;;
+    blank) ;;
+    unknown) printf '%s\n' 'Package listing unavailable.' ;;
+    malformed) printf '%s\n' 'User packages:' 'unrecognized package record' ;;
+    *) printf '%s\n' 'No packages installed.' ;;
+  esac
 fi
 exit '$list_rc'
 SH
@@ -1583,7 +1593,10 @@ test_pi_ask_user_offer() {
     out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
       "${marker[@]}" SQUAD_PI_ASK_USER_OFFER=1 SQUAD_FAKE_FOB_LEASE_HELP=1 \
       PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
-      "$ROOT/bin/sq-bootstrap.sh") || fail "$label: bootstrap failed"
+      "$ROOT/bin/sq-bootstrap.sh" 2> "$case_dir/bootstrap.stderr") || fail "$label: bootstrap failed"
+    if grep -q 'Warning (package command, global settings)' "$case_dir/bootstrap.stderr"; then
+      fail "$label: Pi probe diagnostic leaked to stderr"
+    fi
     case "$harness" in
       pi|pi-signed)
         [ "$(< "$log")" = 'list --no-approve' ] || fail "$label: expected exactly one safe probe, got: $(< "$log")" ;;
@@ -1606,6 +1619,10 @@ pi-signed is offered too^pi-signed^0^exact^OPTIONAL: pi extension @juicesharp/rp
 another harness is never offered it^claude^0^empty^^
 a pi primary without a pi binary stays silent^no-pi^0^empty^^
 a failed user-scope listing is uncertainty, never absence^pi^0^empty^^1
+a reported global-settings read failure stays silent despite an empty-package report^pi^0^empty^^0^warning
+an empty listing is inconclusive^pi^0^empty^^0^blank
+an unknown listing is inconclusive^pi^0^empty^^0^unknown
+a malformed listing with a known header is inconclusive^pi^0^empty^^0^malformed
 a stalled list is ignored even after emitting a partial listing^pi^1^empty^^0^stalled
 an extension only in the project scope reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^project
 ROWS

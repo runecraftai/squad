@@ -198,6 +198,8 @@ def result_answer(payload, number):
     """Read one dialog's whole tool result; nothing else can prove it was not cancelled."""
     if not isinstance(payload, dict):
         raise Unusable("--result must be the whole tool result object with details.answers, not a bare answers array")
+    if payload.get("isError") is True:
+        raise Unusable("the tool result is marked as an error; use the canonical prose path")
     details = payload.get("details")
     if not isinstance(details, dict):
         raise Unusable("--result must be the whole tool result: details is missing, so cancellation cannot be ruled out")

@@ -390,10 +390,15 @@ card = json.loads(raw)
 def run(program, *args, data):
     return subprocess.run([program, *args], input=data, capture_output=True)
 
-def result(question, kind, answer, call_id="call-1"):
-    return json.dumps({"toolCallId": call_id, "details": {"cancelled": False, "answers": [
-        {"questionIndex": 0, "question": question, "kind": kind, "answer": answer}
-    ]}})
+def result(question, kind, answer, call_id="call-1", is_error=False):
+    return json.dumps({
+        "role": "toolResult", "toolName": "ask_user_question", "toolCallId": call_id,
+        "isError": is_error, "timestamp": 0,
+        "content": [{"type": "text", "text": "Tool failed" if is_error else answer}],
+        "details": {"cancelled": False, "answers": [
+            {"questionIndex": 0, "question": question, "kind": kind, "answer": answer}
+        ]},
+    })
 
 def saved_call(arguments, call_id="call-1"):
     return json.dumps({"toolCallId": call_id, "arguments": arguments}, sort_keys=True, indent=2)
@@ -528,6 +533,11 @@ for result_id, reason in [("other-call", b"toolCallId does not match"), (None, b
         returned["toolCallId"] = result_id
     refused = run(dialog, *resolve_args[:-1], json.dumps(returned), *call_args, data=reformatted)
     assert refused.returncode == 4 and not refused.stdout and reason in refused.stderr, refused
+
+failed_result = result(gate_question, "option", gate["options"][1]["label"], is_error=True)
+for mode, extra in [("--answer", []), ("--resolve", call_args)]:
+    refused = run(dialog, mode, *resolve_args[1:-1], failed_result, *extra, data=reformatted)
+    assert refused.returncode == 4 and not refused.stdout and b"tool result is marked as an error" in refused.stderr, refused
 
 for field in ("notes", "globalNote"):
     returned = json.loads(accept_result)

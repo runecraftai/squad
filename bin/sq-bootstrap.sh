@@ -1084,7 +1084,7 @@ fi
 # says nothing. An absent extension is an offer, never a required tool: it uses the
 # OPTIONAL line shape so no consent path routes it to sq-bootstrap.sh install.
 pi_ask_user_offer() {
-  local harness listing
+  local harness listing diagnostics probe_status=0 state
   [ "${SQUAD_PI_ASK_USER_OFFER:-1}" != 0 ] || return 0
   harness=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || true)
   case "$harness" in
@@ -1092,19 +1092,42 @@ pi_ask_user_offer() {
     *) return 0 ;;
   esac
   command -v pi >/dev/null 2>&1 || return 0
-  listing=$(NO_COLOR=1 FORCE_COLOR=0 fm_run_timed 2 pi list --no-approve </dev/null 2>/dev/null) || return 0
-  if printf '%s\n' "$listing" | awk -v record="  npm:$PI_ASK_USER_EXTENSION" '
-    $0 == "User packages:" { user=1; pending=0; next }
-    /^[^[:space:]]/ { user=0 }
-    user && pending && /^    \/[^[:space:]]/ { found=1 }
-    { pending = user && ($0 == record ||
-        (index($0, record "@") == 1 && substr($0, length(record)+2) ~ /^[^@[:space:]]+$/)) }
-    END { exit !found }
-  '; then
-    echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed"
-  else
-    echo "OPTIONAL: pi extension $PI_ASK_USER_EXTENSION not installed (offer: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)"
-  fi
+  diagnostics=$(mktemp "${TMPDIR:-/tmp}/sq-pi-list.XXXXXX" 2>/dev/null) || return 0
+  listing=$(NO_COLOR=1 FORCE_COLOR=0 fm_run_timed 2 pi list --no-approve </dev/null 2>"$diagnostics") || probe_status=$?
+  if [ -s "$diagnostics" ]; then probe_status=1; fi
+  rm -f "$diagnostics" 2>/dev/null || return 0
+  [ "$probe_status" -eq 0 ] || return 0
+
+  state=$(printf '%s\n' "$listing" | awk -v record="  npm:$PI_ASK_USER_EXTENSION" '
+    /^[[:space:]]*$/ { path_allowed=0; next }
+    empty { exit 1 }
+    $0 == "No packages installed." && !scope { empty=1; next }
+    $0 == "User packages:" && !scope { scope="user"; next }
+    $0 == "Project packages:" && (!scope || (scope == "user" && entries)) {
+      scope="project"; entries=0; path_allowed=0; next
+    }
+    scope && /^  [^[:space:]]/ {
+      entries++
+      path_allowed=1
+      pending = scope == "user" && ($0 == record ||
+        (index($0, record "@") == 1 && substr($0, length(record)+2) ~ /^[^@[:space:]]+$/))
+      next
+    }
+    path_allowed && /^    \// {
+      if (pending) found=1
+      path_allowed=0
+      next
+    }
+    { exit 1 }
+    END {
+      if (!empty && !entries) exit 1
+      print (found ? "installed" : "absent")
+    }
+  ' 2>/dev/null) || return 0
+  case "$state" in
+    installed) echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed" ;;
+    absent) echo "OPTIONAL: pi extension $PI_ASK_USER_EXTENSION not installed (offer: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)" ;;
+  esac
 }
 
 detect_local_tools() {
