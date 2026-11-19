@@ -306,12 +306,33 @@ test_free_text_and_refusals() {
   pass "T7: free text resolves through O0 and every refusal fails closed with a reason"
 }
 
-# --- T8: the fixtures the suite added are clean under the grammar linter ---------
+# --- T8: every fixture renders to prose the grammar linter accepts --------------
 test_fixtures_are_lint_clean() {
-  local out
-  out=$("$LINT" "$PAIR" "$FOUR" "$GATE" "$FIVE" "$SIX" "$NINE" "$SEVENTEEN" "$FIX/reserved.json" "$FIX/single.json" "$FIX/duplicate-label.json" 2>&1)
-  [ -z "$out" ] || fail "T8: sq-card-lint warned on the fixtures: $out"
-  pass "T8: sq-card-lint reports no warnings on the fixture cards"
+  local fixture name rendered out
+  local rendered_files=()
+  for fixture in "$PAIR" "$FOUR" "$GATE" "$FIVE" "$SIX" "$NINE" "$SEVENTEEN" \
+    "$FIX/reserved.json" "$FIX/single.json" "$FIX/duplicate-label.json"; do
+    name=$(basename "$fixture" .json)
+    rendered="$TMP_ROOT/rendered-$name.prose"
+    "$ASK" --render < "$fixture" > "$rendered" \
+      || fail "T8: sq-ask --render failed on $(basename "$fixture")"
+    python3 - "$fixture" "$rendered" <<'PY' || fail "T8: the rendered block for $(basename "$fixture") does not match its card"
+import json, sys
+card = json.load(open(sys.argv[1], encoding="utf-8"))
+card = card[0] if isinstance(card, list) else card
+lines = open(sys.argv[2], encoding="utf-8").read().splitlines()
+opts = [line for line in lines if line.startswith("  O") and "Your own words" not in line]
+rec = [line for line in opts if line.endswith(" (recommended)")]
+sys.exit(0 if any(line.startswith("D1 - ") for line in lines)
+         and len(opts) == len(card["options"])
+         and all(o["label"] in line for o, line in zip(card["options"], opts))
+         and len(rec) == 1 else 1)
+PY
+    rendered_files+=("$rendered")
+  done
+  out=$("$LINT" "${rendered_files[@]}" 2>&1)
+  [ -z "$out" ] || fail "T8: sq-card-lint warned on the rendered fixtures: $out"
+  pass "T8: every fixture renders to a complete prose block sq-card-lint accepts"
 }
 
 # --- T9: answering several cards in one call merges one fragment per decision ----

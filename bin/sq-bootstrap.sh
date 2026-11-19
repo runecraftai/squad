@@ -20,6 +20,7 @@
 #                 "XO_SYNC: XO <id>: skipped: <reason>",
 #                 "NUDGE_XOS: XO <id>: send failed: <reason>",
 #                 "BOOTSTRAP_INFO: nudged sq-<id> with '<message>'",
+#                 "OPTIONAL: <what> (offer: <command>)",
 #                 "XO_LIVENESS: XO <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
 #                 "XO_HANDOFF: XO <id>: pending delivery: <n> item(s)".
 #          When a RUNNING local XO worktree is fast-forwarded to

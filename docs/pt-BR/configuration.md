@@ -541,6 +541,7 @@ SQUAD_SESSION_START_QUEUED_LIMIT=20   # linhas de backlog queued comuns no diges
 SQUAD_BOOTSTRAP_DETECT_ONLY=0   # modo de início de sessão interno/somente-leitura: pula varreduras mutantes do bootstrap e imprime texto advisory TANGLE
 SQUAD_BOOTSTRAP_LOCKED=0   # flag interno de início de sessão que declara que esta sessão já detém o lock da unidade: troca o texto detect-only de TANGLE por autorreparo e é o único valor que executa o sweep de registros de aposentadoria e a varredura destacada de sandboxes do drill (bin/sq-bootstrap.sh)
 SQUAD_BOOTSTRAP_NETWORK=all   # divisão de fase de início de sessão interna: all, skip (apenas etapas locais) ou only (apenas etapas de rede); veja bin/sq-bootstrap.sh
+SQUAD_PI_ASK_USER_OFFER=1   # oferta opcional de diálogo ask-user apenas para Pi na detecção do bootstrap: 0 a silencia; o padrão é ativada (bin/sq-bootstrap.sh)
 SQUAD_DRILL_SANDBOX_GC=1   # varredura destacada no início de sessão com lock de sandboxes obsoletos /tmp/drill-execution-policy-* do drill; 0 desativa (bin/sq-bootstrap.sh)
 SQUAD_DRILL_SANDBOX_GRACE_MINUTES=360   # janela de tolerância antes de varrer um sandbox do drill sem referência; seis horas porque runs vivos ficam ociosos em gates de aprovação e polls longos de CI, onde nem idade nem referências em /proc os mostram vivos (bin/sq-drill-sandbox-gc.sh)
 SQUAD_DRILL_SANDBOX_ROOT=/tmp   # diretório varrido em busca de sandboxes do drill; costura de teste (bin/sq-drill-sandbox-gc.sh)

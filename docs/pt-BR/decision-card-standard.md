@@ -144,7 +144,7 @@ O picker degrada de fzf para whiptail, dialog, leitura bash e por fim a opção 
 | `bin/sq-card-lint.sh` | Verificação somente de aviso para desvio de gramática em relatórios e registros de decisão; o cabeçalho define os códigos |
 | `docs/decision-card-examples.md` | Três exemplos com prosa de referência |
 | `tests/sq-ask.test.sh` | Testes de renderizador, parser, validador, picker e deriva de docs |
-| `tests/sq-card-pi-dialog.test.sh` | Testes de mapeamento de diálogo, divisão, recusa, ida e volta e fallback |
+| `tests/sq-card-pi-dialog.test.sh` | Testes de mapeamento de diálogo, payload de uma pergunta, recusa, ida e volta e fallback |
 | `tests/sq-card-lint.test.sh` | Códigos de lint, pulo de exemplos em cercas e o contrato de saída sempre zero |
 | `tests/fixtures/decision-prose/` | Cartões e prosa de referência |
 
