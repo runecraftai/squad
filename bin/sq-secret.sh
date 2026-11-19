@@ -49,6 +49,12 @@
 #      and an unreadable item each fail closed with their own named reason and a
 #      non-zero exit.
 #
+# Scope and session
+#   The scope policy constrains what this broker resolves, not what an inherited
+#   session lets a child read: `run` hands BW_SESSION to the child because the
+#   session belongs to the same user account and a child that calls `bw` itself
+#   needs it, so isolating it would add a mechanism with no real security gain.
+#
 # Facts
 #   `check` prints one line per fact - bw, jq, server, session - and exits
 #   non-zero when the backend is unusable.
@@ -68,7 +74,21 @@ STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 CONFIG="${SQUAD_CONFIG_OVERRIDE:-$SQUAD_BASE/config}"
 POLICY="$CONFIG/secrets-policy.json"
 AUDIT_LOG="$STATE/secrets-audit.log"
-CALLER="$(basename -- "${BASH_SOURCE[0]}"):$$"
+SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
+PARENT_PID=$PPID
+
+# parent_name: the name of the process that asked for the secret, so an audit
+# line can be attributed after that process has exited. `ps -o comm=` answers on
+# both Linux and macOS; a host that cannot answer records "unknown" instead.
+parent_name() {
+  local name
+  name=$(ps -o comm= -p "$PARENT_PID" 2>/dev/null \
+    | sed -n '1s/^[[:space:]]*//;1s/[[:space:]]*$//p') || name=
+  name=${name##*/}
+  printf '%s' "${name:-unknown}"
+}
+
+CALLER="$SCRIPT_NAME:$$ parent=$(parent_name):$PARENT_PID"
 # Set by policy_allows when it denies, so the caller can name the reason.
 POLICY_REASON=
 POLICY_MESSAGE=
@@ -209,6 +229,18 @@ bw_status_word() {
   printf '%s' "$word"
 }
 
+# bw_server_url: print the server bw is effectively configured with, including
+# the built-in cloud default, or return 1 when bw reports no server. This only
+# reads bw's configuration; it never changes it.
+bw_server_url() {
+  local url
+  url=$(bw config server --nointeraction </dev/null 2>/dev/null) || return 1
+  url=${url#"${url%%[![:space:]]*}"}
+  url=${url%"${url##*[![:space:]]}"}
+  [ -n "$url" ] || return 1
+  printf '%s' "$url"
+}
+
 # bw_item_exists <item>: return 0 when the vault holds an item with that id or
 # name, 1 when it holds none, 2 when the vault could not be listed.
 bw_item_exists() {
@@ -311,7 +343,7 @@ resolve_value() {
 }
 
 cmd_check() {
-  local rc=0 server word json has_bw=0 status_read=0
+  local rc=0 server word has_bw=0
   if command -v bw >/dev/null 2>&1; then
     has_bw=1
     printf 'bw: present %s\n' "$(command -v bw)"
@@ -325,22 +357,17 @@ cmd_check() {
     printf 'jq: missing (required to read a Bitwarden item and the scope policy)\n'
     rc=1
   fi
-  if [ "$has_bw" -eq 1 ] && json=$(bw_status_json) && [ -n "$json" ]; then
-    status_read=1
-    server=$(json_string_field "$json" serverUrl)
-    word=$(json_string_field "$json" status)
-  fi
   if [ "$has_bw" -eq 0 ]; then
     printf 'server: unknown (bw is not installed)\n'
     rc=1
-  elif [ "$status_read" -eq 0 ]; then
-    printf 'server: unknown (bw status could not be read)\n'
-    rc=1
-  elif [ -n "$server" ]; then
+  elif server=$(bw_server_url); then
     printf 'server: %s\n' "$server"
   else
-    printf 'server: not configured (run bw config server <url>)\n'
+    printf 'server: unknown (bw config server printed no server URL)\n'
     rc=1
+  fi
+  if [ -n "${BW_SESSION:-}" ]; then
+    word=$(bw_status_word) || word=
   fi
   if [ -z "${BW_SESSION:-}" ]; then
     printf 'session: missing BW_SESSION (run bw unlock and export the session it prints)\n'
@@ -370,7 +397,7 @@ cmd_list() {
 }
 
 cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
-  local name='' item='' task='' to_tty=0 value
+  local name='' item='' task='' to_tty=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --help | -h)
@@ -415,8 +442,7 @@ cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
     audit denied "$name" "$item" "$task" "" || true
     fail "$POLICY_REASON" "$POLICY_MESSAGE"
   fi
-  value=$(resolve_value "$name" "$item" "$task" "")
-  printf '%s' "$value"
+  resolve_value "$name" "$item" "$task" ""
   if [ -t 1 ]; then
     printf '\n'
   fi

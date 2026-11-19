@@ -66,7 +66,11 @@ case "${1:-}" in
     ;;
   config)
     [ "${2:-}" = server ] || exit 1
-    printf 'https://bitwarden.com'
+    if [ "${FAKE_BW_CONFIG_FAIL:-0}" = 1 ]; then
+      printf 'Could not read the configured server.\n' >&2
+      exit 1
+    fi
+    printf '%s' "${FAKE_BW_CONFIG_SERVER-https://bw.example.invalid}"
     ;;
   get)
     [ "${2:-}" = item ] || exit 1
@@ -267,12 +271,26 @@ test_audit_log_records_every_resolution() {
   assert_contains "$last" 'name="github-token"' "the audit line names the logical secret"
   assert_contains "$last" 'item="sq/github-token"' "the audit line names the backing item"
   assert_contains "$last" 'task="audit-task"' "the audit line records the resolved task id"
-  assert_contains "$last" 'caller="sq-secret.sh:' "the audit line records the caller script and pid"
+  assert_contains "$last" 'caller="sq-secret.sh:' "the audit line records the broker script and pid"
   assert_contains "$last" 'command="true"' "the audit line records the child command"
   assert_contains "$last" "outcome=ok" "the audit line records the outcome"
   assert_no_grep "$VALUE" "$LOG" "the audit log must never contain a value"
   assert_no_grep "$SPACED" "$LOG" "the audit log must never contain a value"
   pass "the audit log records one value-free line per resolution"
+
+  # The caller field must name the process that asked for the secret, not only
+  # the broker, so a resolution stays attributable after that process exits.
+  local caller_pid
+  rm -f "$LOG"
+  ( printf '%s' "$BASHPID" > "$TMP_ROOT/caller.pid"
+    sq_secret "$FAKEBIN:$PATH" get github-token >/dev/null ) \
+    || fail "get from a known parent process failed"
+  caller_pid=$(cat "$TMP_ROOT/caller.pid")
+  last=$(tail -n 1 "$LOG")
+  assert_contains "$last" "parent=bash:$caller_pid" \
+    "the audit line records the invoking process and its pid"
+  assert_contains "$last" 'caller="sq-secret.sh:' "the audit line also records the broker itself"
+  pass "the audit line records the invoking process alongside the broker"
 
   rm -f "$LOG"
   sq_secret "$FAKEBIN:$PATH" get nope >/dev/null 2>&1 || true
@@ -447,26 +465,38 @@ test_check() {
   assert_contains "$out" "session: unlocked" "check reports the session"
   pass "check reports every backend fact on a usable backend"
 
-  # `bw config server` echoes the cloud default even when nothing is configured,
-  # so the fact must come from bw's own status.
-  out=$(FAKE_BW_SERVER_URL='' sq_secret "$FAKEBIN:$PATH" check 2>&1)
+  # `bw config server` reports the effective server, including the built-in
+  # cloud default that `bw status` describes as serverUrl null.
+  out=$(FAKE_BW_SERVER_URL='' FAKE_BW_CONFIG_SERVER=https://bitwarden.com \
+    sq_secret "$FAKEBIN:$PATH" check 2>&1)
   rc=$?
-  [ "$rc" -ne 0 ] || fail "check must exit non-zero when no server is configured"
-  assert_contains "$out" "server: not configured" "check names an unconfigured server"
-  assert_not_contains "$out" "bitwarden.com" "check never reports the cloud default as configured"
-  pass "check reports an unconfigured server as unusable"
+  expect_code 0 "$rc" "check on a default-configured bw"
+  assert_contains "$out" "server: https://bitwarden.com" \
+    "check reports the server bw is configured with even when status reports null"
+  assert_not_contains "$out" "server: unknown" "a default server is a configured server"
+  assert_not_contains "$out" "server: not configured" "a default server is a configured server"
+  pass "check reports the built-in default server instead of calling it unconfigured"
+
+  out=$(FAKE_BW_CONFIG_FAIL=1 sq_secret "$FAKEBIN:$PATH" check 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "check must exit non-zero when bw config server cannot be read"
+  assert_contains "$out" "server: unknown" "check separates an unreadable server from a usable one"
+  assert_contains "$out" "session: unlocked" "an unreadable server does not hide the session fact"
+  pass "check reports an unreadable server as unusable"
 
   out=$(FAKE_BW_STATUS_FAIL=1 sq_secret "$FAKEBIN:$PATH" check 2>&1)
   rc=$?
-  [ "$rc" -ne 0 ] || fail "check must exit non-zero when bw status cannot be read"
-  assert_contains "$out" "server: unknown" "check separates an unreadable status from an unconfigured server"
-  assert_not_contains "$out" "server: not configured" "check never blames the configuration for an unreadable status"
-  pass "check separates an unreadable status from an unconfigured server"
+  [ "$rc" -ne 0 ] || fail "check must exit non-zero when the session cannot be read"
+  assert_contains "$out" "server: https://bw.example.invalid" \
+    "an unreadable session does not hide the server fact"
+  assert_contains "$out" "session: unknown" "check reports an unreadable session"
+  pass "check separates the server fact from an unreadable session"
 
   out=$(sq_secret "$MINBIN" check 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "check must exit non-zero when bw is missing"
   assert_contains "$out" "bw: missing" "check names a missing bw"
+  assert_contains "$out" "server: unknown (bw is not installed)" "check names the server as unknown when bw is missing"
   assert_contains "$out" "jq: present" "check still reports jq when bw is missing"
   pass "check exits non-zero when the backend is unusable"
 
