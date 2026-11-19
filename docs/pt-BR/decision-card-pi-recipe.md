@@ -73,7 +73,7 @@ Um cartão que o diálogo não consegue representar sem descartar ou deturpar um
 ## Respostas
 
 O resultado do diálogo é a forma publicada da versão 2.15.0, cujos nomes de campo são definidos pela seção "Result" de `docs/tool-schema.md` do pacote: as entradas de `details.answers[]` carregam `questionIndex`, `question`, `kind` e `answer`, com os opcionais `notes`, `selected` e `preview`, e o resultado carrega `details.cancelled`.
-O mapeamento confere `questionIndex` e o `question` devolvido com o diálogo indicado por `--dialog` antes de resolver `kind` e `answer`. Se vários cartões exibiriam o mesmo texto de pergunta, o texto termina com o `Decision: D<n>` correspondente para distinguir os resultados.
+O mapeamento confere `questionIndex` e o `question` devolvido com o diálogo indicado por `--dialog` antes de resolver `kind` e `answer`. Toda pergunta termina com `Decision: <id do cartão>` para distinguir os resultados mesmo quando cartões com perguntas idênticas são apresentados separadamente.
 Ele converte isso de volta para a gramática de resposta em prosa, então o parser existente continua sendo o único resolvedor:
 
 ```bash
@@ -89,7 +89,7 @@ bin/sq-ask.sh --answer 'd1 o2' < card.json
 `--answer` precisa do cartão de onde veio o diálogo, porque uma resposta é sempre resolvida contra o cartão JSON e nunca contra o texto que o comandante viu.
 Ele recebe o resultado inteiro da ferramenta e nunca um array de respostas solto: só `details.cancelled` prova que o diálogo não foi cancelado, então `Esc` nunca vira uma decisão registrada.
 Responder vários cartões em uma chamada mescla seus diálogos em exatamente um fragmento por decisão, mecanicamente - sem dobra, sem renumeração, sem escolha adivinhada.
-Duas respostas para a mesma decisão saem com 4 e um erro nomeado em vez de escolher uma, e uma resposta multi-select sai com 4 porque este mapeamento nunca cria uma pergunta multi-select.
+Cada resultado enviado deve conter exatamente uma resposta. Um resultado vazio ou duas respostas para a mesma decisão fazem o comando sair com código 4 sem emitir um fragmento. Uma resposta multi-select também sai com código 4 porque este mapeamento nunca cria uma pergunta multi-select.
 Uma resposta malformada, como um rótulo escolhido ou texto digitado que não seja string, sai com 4 e um erro nomeado, nunca com um traceback.
 O mapeamento executa o analisador canônico de respostas antes de imprimir o fragmento. Se ele rejeitar um lote por exceder o limite de tamanho da resposta, tente novamente com menos diálogos por chamada e com o mesmo array de cartões para preservar os códigos `D`.
 

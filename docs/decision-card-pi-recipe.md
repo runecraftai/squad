@@ -71,7 +71,7 @@ A card the dialog cannot represent without dropping or misrepresenting an option
 ## Answers
 
 The dialog result is the published version 2.15.0 shape, whose field names are owned by the package's `docs/tool-schema.md` "Result" section: `details.answers[]` entries carry `questionIndex`, `question`, `kind`, and `answer`, with the optional `notes`, `selected`, and `preview`, and the result carries `details.cancelled`.
-The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. If several cards would show the same question text, their question text ends with the corresponding `Decision: D<n>` so their results stay distinguishable.
+The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. Every question ends with `Decision: <card id>` so results stay distinguishable even when cards with identical question text are presented separately.
 It turns that back into the prose answer grammar, so the existing parser stays the only resolver:
 
 ```bash
@@ -87,7 +87,7 @@ bin/sq-ask.sh --answer 'd1 o2' < card.json
 `--answer` needs the card the dialog came from, because an answer is always resolved against the JSON card and never against the text the commander saw.
 It takes the whole tool result and never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
 Answering several cards in one call merges their dialogs into exactly one fragment per decision, mechanically - no fold, no renumbering, no guessed pick.
-Two answers for the same decision exit 4 with a named error instead of choosing one, and a multi-select answer exits 4 because this mapping never authors a multi-select question.
+Each submitted result must contain exactly one answer. An empty result or two answers for the same decision exit 4 without emitting a fragment, and a multi-select answer also exits 4 because this mapping never authors a multi-select question.
 A malformed answer, such as a non-string chosen label or typed text, exits 4 with a named error and never a traceback.
 The mapping runs the canonical answer parser before printing the fragment. If it rejects a batch for exceeding the answer length limit, retry with fewer dialogs per call against the same card array so the `D` codes stay the same.
 

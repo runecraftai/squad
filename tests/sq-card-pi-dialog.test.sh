@@ -98,14 +98,14 @@ test_two_option_card() {
   check "$PAIR" '[o["label"] for o in p[0]["questions"][0]["options"]] == [o["label"] for o in c[0]["options"]]'
   check "$PAIR" 'len(p[0]["questions"][0]["header"]) <= 16'
   check "$PAIR" 'p[0]["questions"][0]["question"].startswith(c[0]["question"])'
-  check "$PAIR" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"], "Context: " + c[0]["context"]]'
+  check "$PAIR" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"], "Context: " + c[0]["context"], "Decision: " + c[0]["id"]]'
   check "$PAIR" 'p[0]["questions"][0]["options"][1]["description"] == c[0]["options"][1]["description"] + " (recommended)"'
   check "$PAIR" 'not p[0]["questions"][0]["options"][0]["description"].endswith("(recommended)")'
   # The free-text row belongs to the dialog, so the mapping never authors an option for it.
   check "$PAIR" 'all(o["label"] not in ("Other", "Type something.", "Next") for q in p[0]["questions"] for o in q["options"])'
 
   # Findings ride in the question text of that card's own question, once, in card order.
-  check "$GATE" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"]] + ["F%d - %s %s" % (n, f["id"], f["text"]) for n, f in enumerate(c[0]["findings"], 1)]'
+  check "$GATE" 'p[0]["questions"][0]["question"].splitlines() == [c[0]["question"]] + ["F%d - %s %s" % (n, f["id"], f["text"]) for n, f in enumerate(c[0]["findings"], 1)] + ["Decision: " + c[0]["id"]]'
   pass "T1: a 2-option card becomes one dialog question with the recommended row marked and its findings carried"
 }
 
@@ -417,6 +417,21 @@ cards[1]["question"] = "Should this release wait?"
 check_binding()
 cards[1]["question"] = card["question"]
 check_binding()
+
+first, second = [json.dumps(c).encode() for c in cards[:2]]
+question = json.loads(run(dialog, data=first).stdout)[0]["questions"][0]["question"]
+option_result = result(question, "option", card["options"][0]["label"])
+swapped = run(dialog, "--answer", "--dialog", "1", "--result", option_result, data=second)
+assert swapped.returncode == 4 and not swapped.stdout and b"question" in swapped.stderr, swapped
+correct = run(dialog, "--answer", "--dialog", "1", "--result", option_result, data=first)
+assert correct.returncode == 0 and correct.stdout.strip() == b"d1 o1", correct
+
+data = json.dumps(cards[:2]).encode()
+question = json.loads(run(dialog, data=data).stdout)[1]["questions"][0]["question"]
+empty = run(dialog, "--answer", "--dialog", "1", "--result",
+            '{"details":{"cancelled":false,"answers":[]}}',
+            "--dialog", "2", "--result", result(question, "option", card["options"][0]["label"]), data=data)
+assert empty.returncode == 4 and not empty.stdout and b"no answer for decision D1" in empty.stderr, empty
 
 data = json.dumps(cards).encode()
 payload = json.loads(run(dialog, data=data).stdout)

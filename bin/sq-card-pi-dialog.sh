@@ -72,7 +72,6 @@ fi
 
 IFS= read -r -d '' PY_PROG <<'PY' || true
 import json, os, subprocess, sys
-from collections import Counter
 
 MAX_OPTIONS = 4
 HEADER_MAX = 16
@@ -107,6 +106,7 @@ def question_for(card, findings):
         lines.append("F%d - %s %s" % (code, finding["id"], finding["text"]))
     if card.get("context"):
         lines.append(CTX + card["context"])
+    lines.append("Decision: " + card["id"])
     return "\n".join(lines)
 
 
@@ -151,15 +151,10 @@ def build(cards):
             "options": option_rows(card["options"], card["default_option_id"]),
         }]})
         origin.append(index)
-    questions = [dialog["questions"][0] for dialog in dialogs]
-    counts = Counter(q["question"] for q in questions)
-    for number, q in enumerate(questions, 1):
-        if counts[q["question"]] > 1:
-            q["question"] += "\nDecision: D%d" % number
     return dialogs, origin
 
 
-def result_answers(payload):
+def result_answer(payload, number):
     """Read one dialog's whole tool result; nothing else can prove it was not cancelled."""
     if not isinstance(payload, dict):
         raise Unusable("--result must be the whole tool result object with details.answers, not a bare answers array")
@@ -174,7 +169,11 @@ def result_answers(payload):
     answers = details.get("answers")
     if not isinstance(answers, list):
         raise Unusable("--result must be the whole tool result: details.answers is missing")
-    return answers
+    if not answers:
+        raise Unusable("the result carries no answer for decision D%d" % number)
+    if len(answers) > 1:
+        raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
+    return answers[0]
 
 
 def answer_text(cards, pairs):
@@ -186,37 +185,35 @@ def answer_text(cards, pairs):
             raise Invalid("--dialog %d is out of range: the card renders %d dialog(s)" % (dialog_index, len(dialogs)))
         card_index = origin[dialog_index - 1]
         card, number = cards[card_index], card_index + 1
-        for answer in result_answers(payload):
-            if not isinstance(answer, dict):
-                raise Unusable("each answer must be an object")
-            position = answer.get("questionIndex")
-            if not isinstance(position, int) or isinstance(position, bool) or position != 0:
-                raise Unusable("questionIndex %r is not a question of dialog %d" % (position, dialog_index))
-            if card_index in answered:
-                raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
-            if answer.get("question") != dialogs[dialog_index - 1]["questions"][position]["question"]:
-                raise Unusable("the returned question does not match dialog %d" % dialog_index)
-            answered.add(card_index)
-            kind = answer.get("kind")
-            if kind == "option":
-                label = answer.get("answer")
-                if not isinstance(label, str):
-                    raise Unusable("an option answer must name the chosen label as a string")
-                match = [n for n, option in enumerate(card["options"]) if option["label"] == label]
-                if len(match) != 1:
-                    raise Unusable("option answer %r does not name exactly one option of dialog %d" % (label, dialog_index))
-                pieces.append("d%d o%d" % (number, match[0] + 1))
-            elif kind == "custom":
-                text = answer.get("answer")
-                if not isinstance(text, str):
-                    raise Unusable("a custom answer must carry the typed text as a string")
-                if not text.strip() or not printable(text) or "\\" in text or '"' in text or len(text) > FREE_MAX:
-                    raise Unusable("free text must be 1-%d printable ASCII characters without backslashes or double quotes" % FREE_MAX)
-                pieces.append('d%d o0 "%s"' % (number, text))
-            else:
-                raise Unusable("unsupported answer kind %r: this mapping never authors a multi-select question" % (kind,))
-    if not answered:
-        raise Unusable("the result carries no answer")
+        answer = result_answer(payload, number)
+        if not isinstance(answer, dict):
+            raise Unusable("each answer must be an object")
+        position = answer.get("questionIndex")
+        if not isinstance(position, int) or isinstance(position, bool) or position != 0:
+            raise Unusable("questionIndex %r is not a question of dialog %d" % (position, dialog_index))
+        if card_index in answered:
+            raise Unusable("decision D%d was answered more than once across the dialogs; answer one" % number)
+        if answer.get("question") != dialogs[dialog_index - 1]["questions"][position]["question"]:
+            raise Unusable("the returned question does not match dialog %d" % dialog_index)
+        answered.add(card_index)
+        kind = answer.get("kind")
+        if kind == "option":
+            label = answer.get("answer")
+            if not isinstance(label, str):
+                raise Unusable("an option answer must name the chosen label as a string")
+            match = [n for n, option in enumerate(card["options"]) if option["label"] == label]
+            if len(match) != 1:
+                raise Unusable("option answer %r does not name exactly one option of dialog %d" % (label, dialog_index))
+            pieces.append("d%d o%d" % (number, match[0] + 1))
+        elif kind == "custom":
+            text = answer.get("answer")
+            if not isinstance(text, str):
+                raise Unusable("a custom answer must carry the typed text as a string")
+            if not text.strip() or not printable(text) or "\\" in text or '"' in text or len(text) > FREE_MAX:
+                raise Unusable("free text must be 1-%d printable ASCII characters without backslashes or double quotes" % FREE_MAX)
+            pieces.append('d%d o0 "%s"' % (number, text))
+        else:
+            raise Unusable("unsupported answer kind %r: this mapping never authors a multi-select question" % (kind,))
     return " ".join(pieces)
 
 
