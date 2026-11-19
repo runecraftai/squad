@@ -116,6 +116,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-tasks-lib.sh`    | Shared backlog-backend selector and `sq-tasks` compatibility probe                  |
 | `sq-quota-lib.sh`    | Shared `sq-quota` compatibility floor for the bootstrap diagnostic                  |
 | `sq-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
+| `sq-secret.sh`           | Resolve a secret by logical name from Bitwarden and hand it to a child's environment, never to chat, an argv, or disk |
 | `sq-stand-to-drain.sh`       | Atomically drain queued sentry wakes, emit bounded best-effort status-event annotations, unit-wide OPEN DECISIONS and TEARDOWN PENDING sections, then assert supervision health |
 | `sq-stand-to-lib.sh`         | Shared durable stand-to queue, portable locks, and sentry identity/health helpers       |
 | `sq-handoff-request.sh`      | Record, resolve, and list durable new-session handoff requests at milestone closes (docs/handoff-request.md) |
