@@ -282,21 +282,6 @@ require_session_present() {
     || fail session-missing "BW_SESSION is not set; run 'bw unlock' and export the session it prints"
 }
 
-# require_session: fail closed unless BW_SESSION opens the vault. The session is
-# proven with a real vault read, never with `bw status` alone.
-require_session() {
-  local word
-  require_session_present
-  bw_vault_readable && return 0
-  word=$(bw_status_word) || word=
-  case "$word" in
-    locked | unauthenticated)
-      fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
-      ;;
-  esac
-  fail session-unreadable "the vault could not be read with the current session; run 'bw unlock' and export the session it prints"
-}
-
 # policy_allows <task-id> <name>: return 0 when the task is scoped for the name.
 # On denial it sets POLICY_REASON and POLICY_MESSAGE; a missing or malformed
 # policy is a denial, never a bypass.
@@ -331,7 +316,8 @@ policy_allows() {
 }
 
 # resolve_value <name> <item> <task> <command>: print the item's password.
-# The caller has already established the session with require_session.
+# The caller has already established the session with require_session_present;
+# the item read itself proves the session and classifies its own failure.
 # Every outcome is audited, and a failure to audit a successful resolution is
 # itself fatal, so no value is ever emitted unaudited.
 resolve_value() {
@@ -424,6 +410,9 @@ cmd_list() {
       locked | unauthenticated)
         fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
         ;;
+      unlocked)
+        fail session-unreadable "the vault could not be listed with the current session; run 'bw unlock' and export the session it prints"
+        ;;
     esac
     fail item-listing "bw could not list the vault"
   fi
@@ -478,7 +467,7 @@ cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
     audit denied "$name" "$item" "$task" "" || true
     fail tty-refused "refusing to write a secret to a terminal; redirect stdout or pass --to-tty"
   fi
-  require_session
+  require_session_present
   if [ -n "$task" ]; then
     if ! policy_allows "$task" "$name"; then
       audit denied "$name" "$item" "$task" "" || true
@@ -538,7 +527,7 @@ cmd_run() {  # [--for <task-id>] --with <ENVVAR>=<name> ... -- <command> [args..
   [ "${#vars[@]}" -gt 0 ] || usage_fail "run needs at least one --with <ENVVAR>=<name>"
   [ -z "$task" ] || validate_task "$task"
   command_string="$*"
-  require_session
+  require_session_present
   # Deny the whole call before resolving anything, so a scope failure never
   # leaves a partially resolved command.
   if [ -n "$task" ]; then

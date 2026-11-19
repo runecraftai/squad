@@ -363,6 +363,26 @@ test_scope_policy() {
   assert_not_contains "$out" "$VALUE" "a denied run must not resolve the value"
   pass "run denies an unlisted name under the same scope policy"
 
+  # A scope denial must gate the whole call: a listed name that precedes the
+  # denied one must not be resolved, audited as ok, or handed to a child.
+  local marker="$TMP_ROOT/run-gate.marker" ok_before ok_after
+  printf '%s' '{"gate-task":["github-token"]}' > "$POLICY"
+  rm -f "$marker"
+  ok_before=$(grep -c 'outcome=ok' "$LOG" 2>/dev/null || true)
+  # shellcheck disable=SC2016  # the child shell expands this, not the test
+  out=$(sq_secret "$FAKEBIN:$PATH" run --for gate-task \
+    --with A=github-token --with B=db-password -- \
+    sh -c 'touch "$1"' _ "$marker" 2>&1)
+  rc=$?
+  ok_after=$(grep -c 'outcome=ok' "$LOG" 2>/dev/null || true)
+  [ "$rc" -ne 0 ] || fail "run must deny a call whose later name is unscoped"
+  assert_contains "$out" "policy-denied" "a multi-name denial names its reason"
+  assert_not_contains "$out" "$VALUE" "a multi-name denial must not resolve the listed name"
+  [ ! -e "$marker" ] || fail "a denied multi-name run must never execute the child"
+  [ "${ok_before:-0}" = "${ok_after:-0}" ] \
+    || fail "a denied multi-name run must resolve nothing before denying"
+  pass "run denies the whole call before resolving any name"
+
   printf '%s' '{"some-task":["github-token"]}' > "$POLICY"
   out=$(sq_secret "$FAKEBIN:$PATH" get github-token --item sq/db-password --for some-task 2>&1)
   rc=$?
@@ -487,6 +507,15 @@ test_fail_closed() {
   assert_not_contains "$out" "$VALUE" "a stale session key must not print the value"
   pass "a stale session key fails closed as a session failure with the remedy"
 
+  # A resolution must stand on the item read it actually performs: a vault
+  # listing the script never needed cannot veto a value the item read resolved.
+  out=$(FAKE_BW_LIST_GARBAGE=1 sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
+  rc=$?
+  expect_code 0 "$rc" "a resolution whose item read succeeds"
+  [ "$out" = "$VALUE" ] \
+    || fail "an unusable bulk listing must not block a working item read: '$out'"
+  pass "a resolution does not depend on a whole-vault listing"
+
   out=$(FAKE_BW_LOCK_GET=1 sq_secret "$FAKEBIN:$PATH" get github-token 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "a vault that locks during the fetch must fail"
@@ -592,8 +621,18 @@ test_list() {
   out=$(FAKE_BW_LIST_FAIL=1 sq_secret "$FAKEBIN:$PATH" list 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "list must fail when bw cannot list the vault"
-  assert_contains "$out" "item-listing" "an unlistable vault names its reason"
-  pass "list fails closed with a named reason when bw cannot list the vault"
+  assert_contains "$out" "session-unreadable" \
+    "a vault that refuses a listing under an unlocked status is a session failure"
+  assert_contains "$out" "bw unlock" "an unlistable vault names the unlock remedy"
+
+  out=$(FAKE_BW_STALE_SESSION=1 sq_secret "$FAKEBIN:$PATH" list 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "list must fail on a stale session"
+  assert_contains "$out" "session-unreadable" "a stale session is reported as a session failure"
+  assert_contains "$out" "bw unlock" "a stale session names the unlock remedy"
+  assert_not_contains "$out" "item-listing" "a stale session is not blamed on the listing"
+  assert_not_contains "$out" "github-token" "a stale session prints no listing"
+  pass "list fails closed with a named session reason when the vault cannot be listed"
 
   out=$(FAKE_BW_LIST_GARBAGE=1 sq_secret "$FAKEBIN:$PATH" list 2>&1)
   rc=$?
