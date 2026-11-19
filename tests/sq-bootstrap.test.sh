@@ -1528,103 +1528,102 @@ test_sandbox_gc_skipped_without_lock() {
 test_sandbox_gc_skipped_without_lock
 
 # --- the optional Pi ask-user dialog extension offer -------------------------
-# Bootstrap offers the optional Pi dialog extension to a Pi primary only: absent
-# reports one OPTIONAL offer naming the exact `pi install` command and the fresh
-# Pi session it needs, installed reports one no-action fact, and no other harness,
-# no missing pi binary, and no failed listing ever produces a line. Only the user
-# scope `pi list` reports is detected, so a project-scope-only entry reads as
-# absent. The OPTIONAL shape keeps the offer out of the required-tool install path.
-# Nothing here installs anything, so the fake pi fails the case if bootstrap calls
-# it with anything but `list --no-approve`.
-install_offer_fake_pi() {  # <fakebin> <installed 1/0> <log> [exit-code-for-list] [scope]
-  local fakebin=$1 installed=$2 log=$3 list_rc=${4:-0} scope=${5:-user}
-  cat > "$fakebin/pi" <<SH
-#!/usr/bin/env bash
-if [ "\$#" -ne 2 ] || [ "\$1" != list ] || [ "\$2" != --no-approve ]; then
-  printf 'unexpected pi argv: %s\n' "\$*" >> '$log'
-  exit 9
-fi
-printf '%s\n' "\$*" >> '$log'
-if [ '$installed' = 1 ]; then
-  case '$scope' in
-    user) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' ;;
-    project) printf '%s\n' 'User packages:' '  npm:other' '    /fixture/user/node_modules/other' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
-    both) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question@2.15.0' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question' '' 'Project packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/project/node_modules/@juicesharp/rpiv-ask-user-question' ;;
-    lookalike) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question-extra' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question-extra' ;;
-    pathless) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '  npm:other' '    /fixture/user/node_modules/other' ;;
-    stalled) printf '%s\n' 'User packages:' '  npm:@juicesharp/rpiv-ask-user-question' '    /fixture/user/node_modules/@juicesharp/rpiv-ask-user-question'; sleep 5 ;;
-  esac
-else
-  case '$scope' in
-    warning)
-      printf '%s\n' 'Warning (package command, global settings): EACCES: permission denied, opening settings.json' >&2
-      printf '%s\n' 'No packages installed.' ;;
-    blank) ;;
-    unknown) printf '%s\n' 'Package listing unavailable.' ;;
-    malformed) printf '%s\n' 'User packages:' 'unrecognized package record' ;;
-    *) printf '%s\n' 'No packages installed.' ;;
-  esac
-fi
-exit '$list_rc'
-SH
-  chmod +x "$fakebin/pi"
-}
-
 test_pi_ask_user_offer() {
-  local label harness installed mode expect case_dir fakebin log out n list_rc scope
+  local label harness fixture result case_dir fakebin log out n real_node agent_dir override modules expect
+  local extension='@juicesharp/rpiv-ask-user-question'
   local -a marker=()
+  real_node=$(NODE_OPTIONS= node -p 'process.execPath') || fail "Node is required for Pi settings fixtures"
   n=0
-  while IFS='^' read -r label harness installed mode expect list_rc scope; do
-    [ -n "$label" ] || continue
+  while IFS='^' read -r label harness fixture result; do
     n=$((n + 1))
     case_dir="$TMP_ROOT/offer-$n"
-    mkdir -p "$case_dir/home/config"
+    agent_dir="$case_dir/home/.pi/agent"
+    override=
+    if [ "$fixture" = versioned ]; then
+      mkdir -p "$agent_dir"
+      printf '%s\n' '{"packages":[]}' > "$agent_dir/settings.json"
+      override='~/custom pi agent'
+      agent_dir="$case_dir/home/custom pi agent"
+    fi
+    modules="$agent_dir/npm/node_modules"
+    mkdir -p "$case_dir/home/config" "$case_dir/project/.pi" "$modules"
     printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+    case "$fixture" in
+      installed)
+        printf '{"packages":["npm:%s"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      versioned)
+        printf '{"packages":[{"source":"npm:%s@2.15.0"}," ./my-extension"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension"
+        printf '%s\n' '{invalid project settings' > "$case_dir/project/.pi/settings.json" ;;
+      lookalike)
+        printf '{"packages":["npm:%s-extra","npm:%s@"]}\n' "$extension" "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" "$modules/$extension-extra" ;;
+      unconfigured)
+        printf '%s\n' '{}' > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      uninstalled)
+        printf '{"packages":["npm:%s"],"npmCommand":["npx","--yes","pnpm"]}\n' "$extension" > "$agent_dir/settings.json" ;;
+      not-directory)
+        printf '{"packages":["npm:%s"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/${extension%/*}"
+        : > "$modules/$extension" ;;
+      project)
+        printf '%s\n' '{"packages":[]}' > "$agent_dir/settings.json"
+        printf '{"packages":["npm:%s"]}\n' "$extension" > "$case_dir/project/.pi/settings.json"
+        mkdir -p "$case_dir/project/.pi/npm/node_modules/$extension" "$modules/$extension" ;;
+      unreadable) mkdir "$agent_dir/settings.json" ;;
+      fifo) mkfifo "$agent_dir/settings.json" ;;
+      malformed) printf '%s\n' '{"packages":[' > "$agent_dir/settings.json" ;;
+      blank) : > "$agent_dir/settings.json" ;;
+      wrong-shape) printf '%s\n' '{"packages":[{}]}' > "$agent_dir/settings.json" ;;
+      missing) ;;
+    esac
     fakebin=$(make_fake_toolchain "$case_dir")
+    rm "$fakebin/node"
+    ln -s "$real_node" "$fakebin/node"
     log="$case_dir/pi.log"
-    : > "$log"
-    install_offer_fake_pi "$fakebin" "$installed" "$log" "${list_rc:-0}" "${scope:-user}"
+    cat > "$fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+printf 'unexpected pi argv: %s\n' "$*" >> "$PI_INVOCATION_LOG"
+exit 9
+SH
+    chmod +x "$fakebin/pi"
     case "$harness" in
       pi) marker=(PI_CODING_AGENT=true) ;;
       pi-signed) marker=(PI_CODING_AGENT=true SQUAD_PI_HARNESS=pi-signed) ;;
       claude) marker=(CLAUDECODE=1) ;;
       no-pi) marker=(PI_CODING_AGENT=true); rm -f "$fakebin/pi" ;;
     esac
-    out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
+    case "$result" in
+      absent) expect="OPTIONAL: pi extension $extension not installed (offer: pi install npm:$extension, then start a fresh pi session)" ;;
+      installed) expect="BOOTSTRAP_INFO: pi extension $extension installed" ;;
+      silent) expect= ;;
+    esac
+    out=$(cd "$case_dir/project" && env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
       "${marker[@]}" SQUAD_PI_ASK_USER_OFFER=1 SQUAD_FAKE_FOB_LEASE_HELP=1 \
-      PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+      PATH="$fakebin:$BASE_PATH" HOME="$case_dir/home" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+      PI_CODING_AGENT_DIR="$override" PI_INVOCATION_LOG="$log" \
       "$ROOT/bin/sq-bootstrap.sh" 2> "$case_dir/bootstrap.stderr") || fail "$label: bootstrap failed"
-    if grep -q 'Warning (package command, global settings)' "$case_dir/bootstrap.stderr"; then
-      fail "$label: Pi probe diagnostic leaked to stderr"
-    fi
-    case "$harness" in
-      pi|pi-signed)
-        [ "$(< "$log")" = 'list --no-approve' ] || fail "$label: expected exactly one safe probe, got: $(< "$log")" ;;
-      *)
-        [ ! -s "$log" ] || fail "$label: unexpected Pi invocation: $(< "$log")" ;;
-    esac
-    case "$mode" in
-      empty)
-        [ -z "$out" ] || fail "$label: expected silence, got: $out" ;;
-      exact)
-        [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out" ;;
-    esac
+    [ ! -e "$log" ] || fail "$label: unexpected Pi invocation: $(< "$log")"
+    [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out"
   done <<'ROWS'
-pi primary is offered the exact install command^pi^0^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^
-an installed extension is one no-action fact^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^
-a versioned installed extension is still found beside project entries^pi^1^exact^BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed^0^both
-an installed lookalike reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^lookalike
-a record without its own installed path reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^pathless
-pi-signed is offered too^pi-signed^0^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^
-another harness is never offered it^claude^0^empty^^
-a pi primary without a pi binary stays silent^no-pi^0^empty^^
-a failed user-scope listing is uncertainty, never absence^pi^0^empty^^1
-a reported global-settings read failure stays silent despite an empty-package report^pi^0^empty^^0^warning
-an empty listing is inconclusive^pi^0^empty^^0^blank
-an unknown listing is inconclusive^pi^0^empty^^0^unknown
-a malformed listing with a known header is inconclusive^pi^0^empty^^0^malformed
-a stalled list is ignored even after emitting a partial listing^pi^1^empty^^0^stalled
-an extension only in the project scope reads as absent^pi^1^exact^OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)^0^project
+pi primary is offered the exact install command^pi^missing^absent
+an installed extension is one no-action fact^pi^installed^installed
+a versioned object source is found in the override beside a local sibling^pi^versioned^installed
+lookalikes do not match even with a managed module directory^pi^lookalike^absent
+a module without a configured source reads as absent^pi^unconfigured^absent
+a configured source without its module reads as absent^pi^uninstalled^absent
+a regular file is not an installed module directory^pi^not-directory^absent
+pi-signed is offered too^pi-signed^missing^absent
+another harness is never offered it^claude^missing^silent
+a pi primary without a pi binary stays silent^no-pi^missing^silent
+settings that cannot be read as a file stay silent^pi^unreadable^silent
+a settings pipe is not read^pi^fifo^silent
+malformed settings stay silent^pi^malformed^silent
+empty settings stay silent^pi^blank^silent
+invalid package entries stay silent^pi^wrong-shape^silent
+an extension configured only in project settings reads as absent^pi^project^absent
 ROWS
   pass "bootstrap offers the optional Pi ask-user dialog extension to a Pi primary only"
 }

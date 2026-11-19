@@ -41,9 +41,9 @@ Dois fatos guiam o mapeamento:
 `OPTIONAL` é uma oferta, não uma ferramenta obrigatória ausente: ela nunca passa pelo caminho de consentimento de instalação de ferramentas obrigatórias e nunca bloqueia despacho.
 `.agents/skills/bootstrap-diagnostics` é o dono do tratamento dessa linha.
 Instalar é a ação explícita do comandante.
-O bootstrap só executa `pi list --no-approve`: isso evita a verificação de confiança do projeto para que a consulta não possa resolver nem instalar pacotes. O bootstrap fica silencioso quando `pi` não está no `PATH` ou quando o harness não é identificado como Pi. Um marcador `PI_CODING_AGENT=true` herdado pode fazer uma sessão de outro harness ser identificada como Pi e receber a oferta.
-A detecção aceita apenas o registro exato do pacote npm (com ou sem sufixo `@versão`), seguido pela linha do caminho de instalação na seção `User packages:`. Uma instalação no escopo de projeto (`.pi/settings.json`, protegida por confiança) é lida como ausente, e o bootstrap não emite nada quando a consulta indica falha.
-A alternativa em Perl do utilitário compartilhado de timeout descarta os bits de sinal do processo filho, então uma consulta encerrada por sinal pode parecer bem-sucedida e gerar uma oferta `OPTIONAL` indevida. Essa limitação é aceita porque a oferta exige consentimento e não instala nada.
+O bootstrap lê o `settings.json` do usuário em `PI_CODING_AGENT_DIR` (por padrão, `~/.pi/agent`), sem iniciar o Pi nem chamar um gerenciador de pacotes. Ele procura a origem npm exata (com ou sem sufixo `@versão`) e verifica se o diretório do módulo existe em `npm/node_modules` no mesmo diretório do agente. Ele nunca lê as configurações do projeto. Se a origem ou o diretório do módulo estiver ausente, ele emite a oferta; se as configurações estiverem ilegíveis ou malformadas, fica silencioso.
+O bootstrap também fica silencioso quando `pi` não está no `PATH` ou quando o harness não é identificado como Pi. Um marcador `PI_CODING_AGENT=true` herdado pode fazer uma sessão de outro harness ser identificada como Pi e receber a oferta.
+A alternativa em Perl do utilitário compartilhado de timeout pode perder o estado de sinal do processo filho, mas uma consulta que não emite um resultado reconhecido fica silenciosa.
 `SQUAD_PI_ASK_USER_OFFER=0` silencia a oferta para uma base que não a queira.
 
 ## O mapeamento

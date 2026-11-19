@@ -39,9 +39,9 @@ Two facts drive the mapping:
 `OPTIONAL` is an offer, not a missing required tool: it never routes through the required-tool install consent path, and it never blocks dispatch.
 `.agents/skills/bootstrap-diagnostics` owns how that line is handled.
 Installing is the commander's explicit action.
-Bootstrap only runs `pi list --no-approve`: this bypasses project trust discovery so the probe cannot resolve or install packages. Bootstrap stays silent when `pi` is not on `PATH` or the harness is detected as non-Pi. An inherited `PI_CODING_AGENT=true` marker can cause a non-Pi session to be detected as Pi and see the offer.
-Detection accepts only the exact npm package record (with or without an `@version` suffix) followed by its installed-path line in the `User packages:` section. A project-scope install (`.pi/settings.json`, trust-gated) reads as absent, and bootstrap stays silent when the probe reports failure.
-The shared timeout helper's Perl fallback drops the child's signal bits, so a signal-terminated probe can look successful and produce a false `OPTIONAL` offer. This is accepted because the offer requires consent and installs nothing.
+Bootstrap reads the user-scope `settings.json` in `PI_CODING_AGENT_DIR` (default `~/.pi/agent`) without starting Pi or invoking a package manager. It checks for the exact npm source (with or without an `@version` suffix) and its module directory under that same agent directory's `npm/node_modules`. It never reads project settings. A missing source or missing module directory produces the offer; unreadable or malformed settings leave it silent.
+Bootstrap also stays silent when `pi` is not on `PATH` or the harness is detected as non-Pi. An inherited `PI_CODING_AGENT=true` marker can cause a non-Pi session to be detected as Pi and see the offer.
+The shared timeout helper's Perl fallback can lose the child's signal status, but a probe that does not emit a recognized result stays silent.
 `SQUAD_PI_ASK_USER_OFFER=0` silences the offer for a base that does not want it.
 
 ## The mapping

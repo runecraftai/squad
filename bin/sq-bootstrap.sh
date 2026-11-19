@@ -64,12 +64,11 @@
 #          it never routes through the install consent path
 #          (.agents/skills/bootstrap-diagnostics owns that response), it never
 #          installs anything itself, and it is skipped when pi is not on PATH.
-#          Detection runs `pi list --no-approve` so Pi cannot resolve or install
-#          packages during the probe. It parses only the "User packages:" section and
-#          stops at "Project packages:", so a project-scope install reads as
-#          absent rather than installed, a failed listing makes no claim at all,
-#          and non-Pi harnesses normally stay silent. An inherited
-#          PI_CODING_AGENT=true marker can make a non-Pi session see the offer.
+#          Detection reads only the user settings in PI_CODING_AGENT_DIR (default
+#          ~/.pi/agent) and checks for the managed npm module directory. It never
+#          starts Pi or reads project settings. Unreadable or malformed user
+#          settings make no claim at all. Non-Pi harnesses normally stay silent,
+#          but an inherited PI_CODING_AGENT=true marker can expose the offer.
 #          docs/decision-card-pi-recipe.md owns the mapping it enables.
 #          Set SQUAD_PI_ASK_USER_OFFER=0 to silence it.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
@@ -1077,14 +1076,11 @@ fi
 # Local detection: presence, version floors, and configuration. Nothing here
 # leaves this machine, so it stays on the session-start critical path.
 # Offer the optional Pi ask-user dialog extension to a Pi primary only. This is a
-# detect-only read of pi's own USER-scope installed-package listing: an unreadable or
-# failed listing is reported as nothing at all rather than as absence, project-scope
-# installs (.pi/settings.json, trust-gated) are deliberately out of scope, nothing is
-# ever installed, bootstrap never blocks when pi is absent, and every other harness
-# says nothing. An absent extension is an offer, never a required tool: it uses the
-# OPTIONAL line shape so no consent path routes it to sq-bootstrap.sh install.
+# user-scope settings read and module-directory check only; project-scope installs
+# are out of scope. An absent extension is an offer, never a required tool: it uses
+# the OPTIONAL line shape so no consent path routes it to sq-bootstrap.sh install.
 pi_ask_user_offer() {
-  local harness listing diagnostics probe_status=0 state
+  local harness state
   [ "${SQUAD_PI_ASK_USER_OFFER:-1}" != 0 ] || return 0
   harness=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || true)
   case "$harness" in
@@ -1092,38 +1088,38 @@ pi_ask_user_offer() {
     *) return 0 ;;
   esac
   command -v pi >/dev/null 2>&1 || return 0
-  diagnostics=$(mktemp "${TMPDIR:-/tmp}/sq-pi-list.XXXXXX" 2>/dev/null) || return 0
-  listing=$(NO_COLOR=1 FORCE_COLOR=0 fm_run_timed 2 pi list --no-approve </dev/null 2>"$diagnostics") || probe_status=$?
-  if [ -s "$diagnostics" ]; then probe_status=1; fi
-  rm -f "$diagnostics" 2>/dev/null || return 0
-  [ "$probe_status" -eq 0 ] || return 0
+  state=$(NODE_OPTIONS= fm_run_timed 2 node -e '
+    const fs = require("node:fs");
+    const { join } = require("node:path");
+    const { homedir } = require("node:os");
+    const { fileURLToPath } = require("node:url");
+    const extension = process.argv[1];
+    const home = homedir();
+    let agentDir = process.env.PI_CODING_AGENT_DIR || join(home, ".pi", "agent");
+    if (agentDir === "~") agentDir = home;
+    else if (agentDir.startsWith("~/")) agentDir = join(home, agentDir.slice(2));
+    else if (agentDir.startsWith("file://")) agentDir = fileURLToPath(agentDir);
 
-  state=$(printf '%s\n' "$listing" | awk -v record="  npm:$PI_ASK_USER_EXTENSION" '
-    /^[[:space:]]*$/ { path_allowed=0; next }
-    empty { exit 1 }
-    $0 == "No packages installed." && !scope { empty=1; next }
-    $0 == "User packages:" && !scope { scope="user"; next }
-    $0 == "Project packages:" && (!scope || (scope == "user" && entries)) {
-      scope="project"; entries=0; path_allowed=0; next
+    const path = join(agentDir, "settings.json");
+    const statOptions = { throwIfNoEntry: false };
+    const metadata = fs.statSync(path, statOptions);
+    if (!metadata && !fs.lstatSync(path, statOptions)) {
+      console.log("absent");
+    } else {
+      if (!metadata?.isFile()) process.exit(1);
+      const settings = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fs.readFileSync(path)));
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) process.exit(1);
+      const packages = Object.hasOwn(settings, "packages") ? settings.packages : [];
+      if (!Array.isArray(packages)) process.exit(1);
+      const sources = packages.map(entry => typeof entry === "string" ? entry : entry?.source);
+      if (sources.some(source => typeof source !== "string" || !source.trim())) process.exit(1);
+      const target = "npm:" + extension;
+      const configured = sources.some(source => source === target ||
+        (source.startsWith(target + "@") && /^[^@/\s]+$/u.test(source.slice(target.length + 1))));
+      const installed = configured && fs.statSync(join(agentDir, "npm", "node_modules", extension), statOptions)?.isDirectory();
+      console.log(installed ? "installed" : "absent");
     }
-    scope && /^  [^[:space:]]/ {
-      entries++
-      path_allowed=1
-      pending = scope == "user" && ($0 == record ||
-        (index($0, record "@") == 1 && substr($0, length(record)+2) ~ /^[^@[:space:]]+$/))
-      next
-    }
-    path_allowed && /^    \// {
-      if (pending) found=1
-      path_allowed=0
-      next
-    }
-    { exit 1 }
-    END {
-      if (!empty && !entries) exit 1
-      print (found ? "installed" : "absent")
-    }
-  ' 2>/dev/null) || return 0
+  ' -- "$PI_ASK_USER_EXTENSION" </dev/null 2>/dev/null) || return 0
   case "$state" in
     installed) echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed" ;;
     absent) echo "OPTIONAL: pi extension $PI_ASK_USER_EXTENSION not installed (offer: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)" ;;
