@@ -241,6 +241,10 @@ def answer_evidence(answer):
     return recordable_answer(answer) or None
 
 
+def response_integer(token):
+    return int(token) if len(token) <= 64 else float(token)
+
+
 def classify(body, lanes):
     answers = body.get("answers") if isinstance(body, dict) else None
     if not isinstance(answers, dict):
@@ -378,7 +382,8 @@ def main():
         method="POST",
     )
     try:
-        event = classify(json.loads(fetch_with_deadline(request, DEADLINE_SECONDS)), lanes)
+        response = json.loads(fetch_with_deadline(request, DEADLINE_SECONDS), parse_int=response_integer)
+        event = classify(response, lanes)
     except Exception:
         event = {"status": "unavailable", "reason": "service_error"}
     return finish(args, event)

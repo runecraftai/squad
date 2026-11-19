@@ -69,7 +69,9 @@ def serve(record, state):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            body = json.dumps(state["reply"], ensure_ascii=False, separators=(",", ":")).encode()
+            reply = state["reply"]
+            body = reply if isinstance(reply, bytes) else json.dumps(
+                reply, ensure_ascii=False, separators=(",", ":")).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -312,13 +314,16 @@ with tempfile.TemporaryDirectory() as td:
             kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
             assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
             assert recorded() == [evidence_row]
-        (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = {**OK_REPLY, "answers": {**OK_REPLY["answers"],
-                                               DESIGN: {**DESIGN_ANSWER, "confidence": 10**400}}}
-        kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
-        assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
-        assert recorded() == [{**evidence_row, "model": OK_REPLY["model"],
-                               "answers": {**evidence_row["answers"], DESIGN: {"type": "noul", "answer": True}}}]
+        for digits in (401, 5000):
+            (data / "task/dispatch.jsonl").unlink()
+            reply = {**OK_REPLY, "answers": {**OK_REPLY["answers"], DESIGN: {
+                **DESIGN_ANSWER, "confidence": "oversized_integer"}}}
+            state["reply"] = json.dumps(reply).encode().replace(b'"oversized_integer"', b"9" * digits)
+            kept = subprocess.run(argv, text=True, capture_output=True,
+                                  env={**env, "PYTHONINTMAXSTRDIGITS": "4300"}, check=True)
+            assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+            assert recorded() == [{**evidence_row, "model": OK_REPLY["model"],
+                                   "answers": {**evidence_row["answers"], DESIGN: {"type": "noul", "answer": True}}}]
         (data / "task/dispatch.jsonl").unlink()
         probabilities = {f"{i:03d}" + ".x" * 60: .1 for i in range(500)}
         state["reply"] = answer("claude/sonnet", confidence=.8, probabilities=probabilities)

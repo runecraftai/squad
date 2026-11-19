@@ -47,7 +47,7 @@ DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
 STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 
 append_event() {
-  SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" <<'PY'
+  SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 -c '
 import argparse
 import datetime
 import fcntl
@@ -77,7 +77,7 @@ for event in ("decision", "spawn"):
         reason = command.add_mutually_exclusive_group(required=True)
         reason.add_argument("--profile")
         reason.add_argument("--reason")
-        command.add_argument("--quota-summary", default='{"status":"unknown"}')
+        command.add_argument("--quota-summary", default=json.dumps({"status": "unknown"}))
 command = commands.add_parser("recommendation", allow_abbrev=False)
 command.add_argument("--stdin", action="store_true")
 command = commands.add_parser("outcome")
@@ -124,8 +124,7 @@ if args.event == "decision":
 if args.event == "recommendation":
     if args.stdin:
         limit = 512 * 1024
-        with os.fdopen(3, "rb") as stream:
-            payload = stream.read(limit + 1)
+        payload = sys.stdin.buffer.read(limit + 1)
         if len(payload) > limit:
             raise ValueError("recommendation payload too large")
     else:
@@ -222,16 +221,10 @@ os.fsync(fd)
 os.close(fd)
 os.close(task_fd)
 os.close(data_fd)
-PY
+' "$DATA" "$STATE" "$@"
 }
 
-if ! {
-  if [[ ${2-} == recommendation && ${3-} == --stdin ]]; then
-    append_event "$@" 3<&0
-  else
-    append_event "$@"
-  fi
-} 2>/dev/null; then
+if ! append_event "$@" 2>/dev/null; then
   printf '%s\n' 'sq-dispatch-log: could not append dispatch event' >&2
 fi
 exit 0
