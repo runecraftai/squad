@@ -29,8 +29,8 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sq_dispatch_evidence import (DESIGN_KEY, EMAIL_ADDRESS, QUESTION_KEY, URL_USERINFO,  # noqa: E402
-                                  recordable_answer, recordable_text, unit_interval)
+from sq_dispatch_evidence import (DESIGN_KEY, EMAIL_ADDRESS, MAX_RESPONSE, QUESTION_KEY, URL_USERINFO,  # noqa: E402
+                                  recordable_answer, recordable_reason, recordable_text, unit_interval)
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
@@ -41,7 +41,6 @@ DESIGN_INSTRUCTIONS = "Does this task need design decisions that a fixed plan ca
 LOW_CONFIDENCE_THRESHOLD = 0.5
 TASK_TYPES = frozenset({"strike", "recon", "xo", "feature"})
 MAX_TEXT = 240
-MAX_RESPONSE = 65536
 DEADLINE_SECONDS = 3
 
 
@@ -159,7 +158,7 @@ def project_facts(project):
 
 def load_lanes(args, secret):
     lanes = {}
-    accounts = set()
+    explicit_accounts = set()
     try:
         if args.lanes_json:
             configured = json.loads(args.lanes_json)
@@ -167,7 +166,7 @@ def load_lanes(args, secret):
                 lanes[lane] = {""}
                 parts = lane.split("/", 2)
                 if len(parts) == 3:
-                    accounts.add(parts[2])
+                    explicit_accounts.add(parts[2])
         else:
             dispatch = json.loads(Path(args.project_config).read_text())
             profiles = []
@@ -181,16 +180,13 @@ def load_lanes(args, secret):
                     continue
                 lane = "/".join(str(profile.get(key, "default")) for key in ("harness", "model"))
                 effort = profile.get("effort")
-                account = profile.get("account")
-                if isinstance(account, str) and account.strip():
-                    accounts.add(account.strip())
                 efforts = lanes.setdefault(lane, set())
                 efforts.add(effort.strip().lower() if isinstance(effort, str) else "")
     except (OSError, ValueError, TypeError, AttributeError, RecursionError):
         lanes = {}
     return {lane: efforts for lane, efforts in lanes.items()
             if lane != OTHER_OPTION and recordable_text(lane, secret)
-            and redact(lane, accounts, secret, lane_id=True) == lane}
+            and redact(lane, explicit_accounts, secret, lane_id=True) == lane}
 
 
 def lane_criteria(option, efforts, approved):
@@ -249,7 +245,9 @@ def classify(body, options, secret=None):
 
 def record(args, event):
     env = os.environ.copy()
-    env.pop("TYPESAFE_API_KEY", None)
+    secret = env.pop("TYPESAFE_API_KEY", None)
+    if event["status"] == "unavailable" and not recordable_reason(event["reason"], secret):
+        raise OSError("invalid recommendation reason")
     env["SQUAD_DATA_OVERRIDE"] = args.data
     env.pop("SQUAD_RECOMMENDATION_JSON", None)
     payload = json.dumps({"label": "recommendation", **event}, separators=(",", ":"))

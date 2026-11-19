@@ -171,6 +171,10 @@ with tempfile.TemporaryDirectory() as td:
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "service_error"}]
         (data / "task/dispatch.jsonl").unlink()
+        colliding_reason = subprocess.run(argv, text=True, capture_output=True, check=True,
+                                          env={**env, "TYPESAFE_API_KEY": "service_error"})
+        assert json.loads(colliding_reason.stdout) == {"status": "error"}
+        assert colliding_reason.stderr == "" and not recorded()
         state["location"] = None
 
         external = [arg if arg != url else "https://api.typesafe.example/v1/systemone" for arg in argv]
@@ -295,6 +299,22 @@ with tempfile.TemporaryDirectory() as td:
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "no_lanes"}]
         (data / "task/dispatch.jsonl").unlink()
+        crew_file = base / "crew.json"
+        file_argv = no_lanes_argv[:-1] + [str(crew_file)]
+        crew_file.write_text(json.dumps({"default": {"harness": "claude", "account": "default"}}))
+        state["reply"] = answer("o1")
+        single = subprocess.run(file_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(single.stdout) == {"status": "recommended", "choice": "claude/default"}
+        assert captured["path"] == "/v1/systemone"
+        single_body = expected_body(3)
+        single_body["questions"][QUESTION]["criteria"] = {key: CRITERIA[key] for key in ("o1", "other")}
+        assert captured["body"] == single_body
+        assert recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/default",
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/default"}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = OK_REPLY
         brief = base / "brief.md"
         brief.write_text("# Private brief heading\nPrivate brief body with generated status path /localoperator/task.status\n")
         brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
@@ -353,6 +373,18 @@ with tempfile.TemporaryDirectory() as td:
                                 probabilities={f"o{i}": .1 for i in range(1, len(probabilities) + 1)})
         large = subprocess.run(large_argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(large.stdout) == {"status": "recommended", "choice": first_lane}
+        assert recorded() == [{**evidence_row, "choice": first_lane, "probabilities": probabilities,
+                               "answers": {QUESTION: {"type": "choice", "choice": first_lane,
+                                                      "confidence": .8, "probabilities": probabilities}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        models = [f"{i:04d}" + ".x" * 58 for i in range(2100)]
+        crew_file.write_text(json.dumps({"default": [{"harness": "codex", "model": model} for model in models]}))
+        probabilities = {f"codex/{model}": .1 for model in models}
+        first_lane = next(iter(probabilities))
+        state["reply"] = answer("o1", confidence=.8,
+                                probabilities={f"o{i}": .1 for i in range(1, len(probabilities) + 1)})
+        large_file = subprocess.run(file_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(large_file.stdout) == {"status": "recommended", "choice": first_lane}
         assert recorded() == [{**evidence_row, "choice": first_lane, "probabilities": probabilities,
                                "answers": {QUESTION: {"type": "choice", "choice": first_lane,
                                                       "confidence": .8, "probabilities": probabilities}}}]

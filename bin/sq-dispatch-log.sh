@@ -61,7 +61,8 @@ import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
 from sq_dispatch_evidence import (
-    ANSWER_QUESTIONS, SECRET_SHAPE, recordable_answer, recordable_probability, recordable_text, unit_interval,
+    ANSWER_QUESTIONS, MAX_RECOMMENDATION_BYTES, SECRET_SHAPE, recordable_answer,
+    recordable_probability, recordable_reason, recordable_text, unit_interval,
 )
 from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
 
@@ -123,9 +124,8 @@ if args.event == "decision":
     record["quota_summary"] = quota
 if args.event == "recommendation":
     if args.stdin:
-        limit = 512 * 1024
-        payload = sys.stdin.buffer.read(limit + 1)
-        if len(payload) > limit:
+        payload = sys.stdin.buffer.read(MAX_RECOMMENDATION_BYTES + 1)
+        if len(payload) > MAX_RECOMMENDATION_BYTES:
             raise ValueError("recommendation payload too large")
     else:
         payload = os.environ.get("SQUAD_RECOMMENDATION_JSON", "{}")
@@ -133,13 +133,13 @@ if args.event == "recommendation":
     if not isinstance(recommendation, dict) or recommendation.get("label") != "recommendation":
         raise ValueError("invalid recommendation event")
     status = recommendation.get("status")
+    secret = os.environ.get("TYPESAFE_API_KEY")
     if status == "unavailable":
         reason = recommendation.get("reason")
-        if not isinstance(reason, str) or not re.fullmatch(r"[a-z][a-z_]{0,63}", reason):
+        if not recordable_reason(reason, secret):
             raise ValueError("invalid recommendation reason")
         record.update(label="recommendation", status=status, reason=reason)
     elif status == "recommended":
-        secret = os.environ.get("TYPESAFE_API_KEY")
         choice = recommendation.get("choice")
         if not recordable_text(choice, secret):
             raise ValueError("invalid recommendation choice")

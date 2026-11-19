@@ -135,8 +135,12 @@ test_recommendation_never_changes_actual_dispatch() {
   status=$?
   expect_code 0 "$status" "baseline explicit spawn should succeed"
   jev_port=$(cat "$case_shadow/port")
-  out_shadow=$(export TYPESAFE_API_KEY=runtime-test-key SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$jev_port/v1/systemone"
-    spawn_explicit "$shadow" "$case_shadow/launch.log")
+  out_shadow=$(
+    unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY
+    export http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 all_proxy=http://127.0.0.1:1 no_proxy=127.0.0.1
+    export TYPESAFE_API_KEY=runtime-test-key SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$jev_port/v1/systemone"
+    spawn_explicit "$shadow" "$case_shadow/launch.log"
+  )
   status=$?
   expect_code 0 "$status" "explicit spawn with Jev shadow should succeed"
 

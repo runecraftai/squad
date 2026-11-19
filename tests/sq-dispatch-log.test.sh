@@ -489,6 +489,23 @@ for answer_key in runtime_test_bearer_42 plausible_question; do
 done
 pass 'direct stdin refuses unknown answer keys without appending or logging the bearer'
 
+python3 - "$ROOT/bin/sq-dispatch-log.sh" "$dir/data" <<'PY' || fail 'writer accepted an unsafe unavailable reason'
+import json, os, pathlib, subprocess, sys
+writer, data = sys.argv[1:]
+for mode in ([], ['--stdin']):
+    for reason, secret in [('not_documented', 'test_bearer'), ('test_bearer', 'test_bearer'),
+                           ('service_error', 'service_error'), ('answer_missing', 'missing')]:
+        payload = json.dumps({'label': 'recommendation', 'status': 'unavailable', 'reason': reason})
+        env = dict(os.environ, SQUAD_DATA_OVERRIDE=data, TYPESAFE_API_KEY=secret)
+        if not mode:
+            env['SQUAD_RECOMMENDATION_JSON'] = payload
+        result = subprocess.run([writer, 'rec-unsafe-reason', 'recommendation', *mode],
+                                input=payload if mode else '', env=env, capture_output=True, text=True, check=True)
+        assert not result.stdout and result.stderr == 'sq-dispatch-log: could not append dispatch event\n'
+        assert not (pathlib.Path(data) / 'rec-unsafe-reason/dispatch.jsonl').exists()
+PY
+pass 'both recommendation input modes reject undocumented reasons and bearer matches'
+
 recommend rec-good '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61,"codex/gpt-5":0.39},"low_confidence":true,"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}' 0<&-
 python3 - "$dir/data/rec-good/dispatch.jsonl" <<'PY' || fail 'recommendation evidence row was not written as declared'
 import json, sys

@@ -4,6 +4,15 @@ import re
 QUESTION_KEY = "lane"
 DESIGN_KEY = "needs_design_decision"
 ANSWER_QUESTIONS = frozenset({QUESTION_KEY, DESIGN_KEY})
+UNAVAILABLE_REASONS = frozenset({
+    "missing_key", "no_lanes", "file_count_unmeasured", "endpoint_refused",
+    "invalid_response", "answer_missing", "no_lane_match", "service_error",
+})
+MAX_RESPONSE = 65536
+MAX_EVIDENCE_TEXT = 128
+MIN_WIRE_PROBABILITY_BYTES = len('"o1":0')
+MAX_LOG_PROBABILITY_BYTES = 2 * MAX_EVIDENCE_TEXT + len('"":,') + 24
+MAX_RECOMMENDATION_BYTES = 4096 + 2 * (MAX_RESPONSE // MIN_WIRE_PROBABILITY_BYTES) * MAX_LOG_PROBABILITY_BYTES
 
 SECRET_SHAPE = re.compile(
     r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
@@ -20,9 +29,13 @@ EMAIL_ADDRESS = re.compile(rf"(?<!{EMAIL_LOCAL_CHAR}){EMAIL_LOCAL_CHAR}+@[\w-]+(
 
 
 def recordable_text(value, secret=None):
-    return isinstance(value, str) and re.fullmatch(r"[!-~]{1,128}", value) is not None \
+    return isinstance(value, str) and 1 <= len(value) <= MAX_EVIDENCE_TEXT and re.fullmatch(r"[!-~]+", value) is not None \
         and not (secret and secret in value) and SECRET_SHAPE.search(value) is None \
         and URL_USERINFO.search(value) is None and EMAIL_ADDRESS.search(value) is None
+
+
+def recordable_reason(value, secret=None):
+    return isinstance(value, str) and value in UNAVAILABLE_REASONS and recordable_text(value, secret)
 
 
 def unit_interval(value):
