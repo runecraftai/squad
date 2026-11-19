@@ -122,7 +122,7 @@ PY
 test_recommendation_never_changes_actual_dispatch() {
   local baseline shadow case_base case_shadow home_shadow proj_shadow proj_real
   local out_shadow jev_port status requests
-  local reply='{"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.9,"probabilities":{"grok/grok-4":0.9,"codex/gpt-5":0.1}}},"model":"jev-2026-05"}'
+  local reply='{"answers":{"lane":{"type":"choice","choice":"o2","confidence":0.9,"probabilities":{"o2":0.9,"o1":0.08,"other":0.02}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}'
   baseline=$(make_case shadow-off)
   shadow=$(make_case shadow-on)
   IFS='|' read -r case_base _ <<< "$baseline"
@@ -160,24 +160,26 @@ assert set(request["body"]) == {"state", "model", "questions"}
 assert request["body"]["model"] == "jev-latest"
 state = request["body"]["state"]
 assert set(state) == {"task", "repository"}
-assert set(state["task"]) == {"type", "title", "description"}
+assert state["task"] == {"type": "strike"}
 repository = state["repository"]
-assert set(repository) == {"tracked_files", "top_level", "has_tests", "language"}
+assert set(repository) == {"tracked_files", "extension_counts", "has_tests", "has_docs"}
 assert isinstance(repository["tracked_files"], int) and repository["tracked_files"] >= 1
-assert repository["top_level"] == [] and repository["has_tests"] is False and repository["language"] is None
+assert repository["extension_counts"] == {".md": 1} and repository["has_tests"] is False and repository["has_docs"] is True
 questions = request["body"]["questions"]
 assert set(questions) == {"lane", "needs_design_decision"}
 assert questions["lane"]["type"] == "choice"
 assert questions["needs_design_decision"]["type"] == "noul"
 criteria = questions["lane"]["criteria"]
-assert set(criteria) == {"codex/gpt-5", "grok/grok-4", "other"}
-for lane in ("codex/gpt-5", "grok/grok-4"):
-    assert set(criteria[lane]) == {"fits", "not_for"}
-    assert criteria[lane]["fits"] and criteria[lane]["fits"] != lane
-assert criteria["grok/grok-4"] != criteria["codex/gpt-5"]
+assert set(criteria) == {"o1", "o2", "other"}
+for option in ("o1", "o2"):
+    assert set(criteria[option]) == {"fits", "not_for"}
+    assert criteria[option]["fits"] and criteria[option]["fits"] != option
+assert criteria["o1"]["fits"].startswith("a routine change")
+assert criteria["o2"]["fits"].startswith("a demanding or ambiguous change")
 assert criteria["other"]["fits"] == "none of these lanes fits the task"
-assert "codex/gpt-5" not in questions["lane"]["instructions"]
-assert "grok/grok-4" not in questions["lane"]["instructions"]
+assert all(text not in json.dumps(request["body"]) for text in (
+    "codex/gpt-5", "grok/grok-4", "brief for", ".status",
+))
 PY
 
   diff <(dispatch_rows "$case_base/home/data/$ID/dispatch.jsonl") \
@@ -193,10 +195,12 @@ assert len(recommendations) == 1
 assert recommendations[0]["choice"] == "grok/grok-4"
 assert recommendations[0]["event"] == "recommendation"
 assert recommendations[0]["confidence"] == 0.9
-assert recommendations[0]["probabilities"] == {"grok/grok-4": 0.9, "codex/gpt-5": 0.1}
+assert recommendations[0]["probabilities"] == {"grok/grok-4": 0.9, "codex/gpt-5": 0.08, "other": 0.02}
 assert recommendations[0]["model"] == "jev-2026-05"
-assert set(recommendations[0]["answers"]) == {"lane"}
+assert set(recommendations[0]["answers"]) == {"lane", "needs_design_decision"}
 assert recommendations[0]["answers"]["lane"]["choice"] == "grok/grok-4"
+assert recommendations[0]["answers"]["lane"]["probabilities"] == recommendations[0]["probabilities"]
+assert recommendations[0]["answers"]["needs_design_decision"] == {"type": "noul", "answer": False}
 assert "low_confidence" not in recommendations[0]
 assert {row.get("event") for row in rows if row.get("label") != "recommendation"} == {"decision", "spawn"}
 PY

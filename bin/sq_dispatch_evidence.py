@@ -1,6 +1,10 @@
 """The recommendation-evidence allowlist shared by the Jev client and the writer."""
 import re
 
+QUESTION_KEY = "lane"
+DESIGN_KEY = "needs_design_decision"
+ANSWER_QUESTIONS = frozenset({QUESTION_KEY, DESIGN_KEY})
+
 SECRET_SHAPE = re.compile(
     r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
     r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"

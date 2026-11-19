@@ -61,7 +61,7 @@ import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
 from sq_dispatch_evidence import (
-    SECRET_SHAPE, recordable_answer, recordable_probability, recordable_text, unit_interval,
+    ANSWER_QUESTIONS, SECRET_SHAPE, recordable_answer, recordable_probability, recordable_text, unit_interval,
 )
 from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
 
@@ -161,7 +161,7 @@ if args.event == "recommendation":
                 raise ValueError("invalid recommendation answers")
             evidence = {}
             for question, answer in answers.items():
-                if not isinstance(question, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", question):
+                if question not in ANSWER_QUESTIONS:
                     raise ValueError("invalid recommendation answers")
                 entry = recordable_answer(answer, secret)
                 if not entry or entry != answer:

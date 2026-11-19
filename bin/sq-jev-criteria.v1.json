@@ -1,0 +1,33 @@
+{
+  "default": {
+    "fits": "a task whose difficulty, risk and reasoning depth match this configured lane",
+    "not_for": "a task that another listed lane matches more closely"
+  },
+  "efforts": {
+    "low": {
+      "fits": "a well-understood, mechanical change whose steps a short plan already settles",
+      "not_for": "a change that needs careful reasoning or spans unfamiliar code"
+    },
+    "medium": {
+      "fits": "a routine change with some ambiguity, where breadth matters more than depth",
+      "not_for": "a small mechanical change, or an unusually hard and risky one"
+    },
+    "high": {
+      "fits": "a demanding or ambiguous change that needs careful reasoning across several files",
+      "not_for": "a small mechanical change where speed matters more than depth"
+    },
+    "xhigh": {
+      "fits": "a hard, open-ended change that needs the deepest reasoning a lane can offer",
+      "not_for": "a small mechanical change where speed matters more than depth"
+    },
+    "max": {
+      "fits": "a hard, open-ended change that needs the deepest reasoning a lane can offer",
+      "not_for": "a small mechanical change where speed matters more than depth"
+    }
+  },
+  "mixed_not_for": "a task that matches none of these variants",
+  "other": {
+    "fits": "none of these lanes fits the task",
+    "not_for": "a task that one of the listed lanes covers"
+  }
+}

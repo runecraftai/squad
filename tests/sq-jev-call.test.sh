@@ -23,16 +23,18 @@ QUESTION = "lane"
 DESIGN = "needs_design_decision"
 LANES = {"claude/sonnet": "deep reasoning over large diffs",
          "pi/gpt": "fast mechanical edits"}
-CRITERIA = {lane: {"fits": text, "not_for": "a task that another listed lane covers"}
-            for lane, text in LANES.items()}
+CRITERIA = {option: {
+    "fits": f"a task whose difficulty, risk and reasoning depth match this configured lane, for option {option}",
+    "not_for": f"a task that another listed lane matches more closely, for option {option}",
+} for option in ("o1", "o2")}
 CRITERIA["other"] = {"fits": "none of these lanes fits the task",
                      "not_for": "a task that one of the listed lanes covers"}
 HIGH_CRITERIA = {"fits": "a demanding or ambiguous change that needs careful reasoning across several files",
                  "not_for": "a small mechanical change where speed matters more than depth"}
 MEDIUM_CRITERIA = {"fits": "a routine change with some ambiguity, where breadth matters more than depth",
                    "not_for": "a small mechanical change, or an unusually hard and risky one"}
-LANE_INSTRUCTIONS = ("Choose the one lane whose harness, model and effort best match this task's "
-                     "difficulty, risk and need for design judgment.")
+LANE_INSTRUCTIONS = ("Choose the option whose criteria best match the task's difficulty, "
+                     "risk and need for design judgment.")
 DESIGN_INSTRUCTIONS = "Does this task need design decisions that a fixed plan cannot settle?"
 DESIGN_ANSWER = {"type": "noul", "answer": True, "confidence": .7}
 
@@ -41,18 +43,18 @@ def answer(choice, **extra):
     return {"answers": {QUESTION: {"type": "choice", "choice": choice, **extra}}}
 
 
-def expected_body(description, tracked_files):
-    return {"state": {"task": {"type": "feature", "title": "title", "description": description},
-                       "repository": {"tracked_files": tracked_files, "top_level": [],
-                                      "has_tests": None, "language": None}},
+def expected_body(tracked_files):
+    return {"state": {"task": {"type": "feature"},
+                       "repository": {"tracked_files": tracked_files, "extension_counts": {},
+                                      "has_tests": False, "has_docs": False}},
             "model": "jev-latest",
             "questions": {QUESTION: {"type": "choice", "instructions": LANE_INSTRUCTIONS,
                                      "criteria": CRITERIA},
                           DESIGN: {"type": "noul", "instructions": DESIGN_INSTRUCTIONS}}}
 
 
-OK_REPLY = {"answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet", "confidence": .8,
-                                   "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
+OK_REPLY = {"answers": {QUESTION: {"type": "choice", "choice": "o1", "confidence": .8,
+                                   "probabilities": {"o1": .8, "o2": .2}},
                          DESIGN: DESIGN_ANSWER},
             "model": "jev-2026-05"}
 
@@ -137,11 +139,9 @@ with tempfile.TemporaryDirectory() as td:
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "missing_key"}]
         (data / "task/dispatch.jsonl").unlink()
-        description = ("~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
-                       "https://[REDACTED]@example.invalid [REDACTED]")
         dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
         payload = json.loads(dry.stdout)
-        assert payload == expected_body(description, 3)
+        assert payload == expected_body(3)
         assert set(payload) == {"state", "model", "questions"}
         assert not captured
         config.write_text('{"enabled_projects":[]}')
@@ -172,7 +172,7 @@ with tempfile.TemporaryDirectory() as td:
         (data / "task/dispatch.jsonl").unlink()
 
         captured.clear()
-        state["reply"] = answer(["claude/sonnet"], confidence=.8)
+        state["reply"] = answer(["o1"], confidence=.8)
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unhashable.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
         assert unhashable.stderr == "" and recorded() == [
@@ -180,7 +180,7 @@ with tempfile.TemporaryDirectory() as td:
              "status": "unavailable", "reason": "no_lane_match"}]
         (data / "task/dispatch.jsonl").unlink()
         captured.clear()
-        state["reply"] = answer("claude/sonnet")
+        state["reply"] = answer("o1")
         bare = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(bare.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
         assert recorded() == [
@@ -201,19 +201,17 @@ with tempfile.TemporaryDirectory() as td:
         unmatched = subprocess.run(private_argv, text=True, capture_output=True, env=env, check=True)
         posted = captured["body"]["questions"][QUESTION]["criteria"]
         assert set(posted) == set(CRITERIA) and posted["other"] == CRITERIA["other"]
-        assert posted["claude/sonnet"]["fits"].startswith("deep reasoning ")
-        assert captured["body"]["state"]["task"]["title"] == "[REDACTED] [REDACTED] [REDACTED]"
+        assert captured["body"] == expected_body(3)
         serialized = json.dumps(captured["body"])
-        assert all(text not in serialized for text in ("private-pass", private_email, "runtime-test-key", "local-account"))
+        assert all(text not in serialized for text in ("private-pass", private_email, "runtime-test-key", "local-account",
+                                                       "deep reasoning", "fast mechanical edits", *LANES))
         assert json.loads(unmatched.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
         assert unmatched.stderr == "" and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "no_lane_match"}]
         (data / "task/dispatch.jsonl").unlink()
         # A documented answer shape: a flat two-way split and low confidence.
-        state["reply"] = {"answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
-                                                  "confidence": .22,
-                                                  "probabilities": {"claude/sonnet": .61, "pi/gpt": .39}}}}
+        state["reply"] = answer("o1", confidence=.22, probabilities={"o1": .61, "o2": .39})
         flat = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(flat.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
         assert recorded() == [
@@ -229,7 +227,7 @@ with tempfile.TemporaryDirectory() as td:
         assert json.loads(judgment_only.stdout) == {"status": "unavailable", "reason": "answer_missing"}
         assert recorded()[0]["reason"] == "answer_missing"
         (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = answer("strong", confidence=.22, probabilities={"strong": .61, "cheap": .39})
+        state["reply"] = answer("claude/sonnet", confidence=.22, probabilities={"strong": .61, "cheap": .39})
         unrecognised = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unrecognised.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
         assert unrecognised.stderr == "" and recorded() == [
@@ -252,7 +250,7 @@ with tempfile.TemporaryDirectory() as td:
             assert json.loads(broken.stdout) == {"status": "unavailable", "reason": reason}
             assert recorded()[0]["reason"] == reason
             (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = answer("claude/sonnet", confidence=.8, padding="x" * 70000)
+        state["reply"] = answer("o1", confidence=.8, padding="x" * 70000)
         oversized = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(oversized.stdout) == {"status": "unavailable", "reason": "service_error"}
         assert recorded()[0]["reason"] == "service_error"
@@ -269,7 +267,7 @@ with tempfile.TemporaryDirectory() as td:
         slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
                               env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
         assert time.monotonic() - started < 10
-        assert json.loads(slow.stdout) == expected_body(description, None)
+        assert json.loads(slow.stdout) == expected_body(None)
         captured.clear()
         unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True,
                                     env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
@@ -288,13 +286,11 @@ with tempfile.TemporaryDirectory() as td:
              "status": "unavailable", "reason": "no_lanes"}]
         (data / "task/dispatch.jsonl").unlink()
         brief = base / "brief.md"
-        brief.write_text("# Port lanes\nMove the sonnet and opus work to codex for this task; use kimi with Gemini 2.5 Pro.\n")
+        brief.write_text("# Private brief heading\nPrivate brief body with generated status path /localoperator/task.status\n")
         brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
         brief_argv += ["--brief", str(brief), "--dry-run"]
         briefed = subprocess.run(brief_argv, text=True, capture_output=True, check=True)
-        assert json.loads(briefed.stdout) == expected_body(
-            "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task; "
-            "use [REDACTED] with [REDACTED].", 3)
+        assert json.loads(briefed.stdout) == expected_body(3)
 
         result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
@@ -305,10 +301,7 @@ with tempfile.TemporaryDirectory() as td:
         assert posted[QUESTION]["type"] == "choice" and posted[QUESTION]["criteria"] == CRITERIA
         assert posted[DESIGN] == {"type": "noul", "instructions": DESIGN_INSTRUCTIONS}
         assert "Task projection" not in posted[QUESTION]["instructions"]
-        assert captured["body"]["state"] == {"task": {"type": "feature", "title": "title",
-                                                          "description": description},
-                                             "repository": {"tracked_files": 3, "top_level": [],
-                                                            "has_tests": None, "language": None}}
+        assert captured["body"]["state"] == expected_body(3)["state"]
         rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
         assert rows == [{"timestamp": rows[0]["timestamp"], "id":"task", "event":"recommendation",
                          "label":"recommendation", "status":"recommended", "choice":"claude/sonnet", "confidence":.8,
@@ -342,14 +335,19 @@ with tempfile.TemporaryDirectory() as td:
             assert recorded() == [{**evidence_row, "model": OK_REPLY["model"],
                                    "answers": {**evidence_row["answers"], DESIGN: {"type": "noul", "answer": True}}}]
         (data / "task/dispatch.jsonl").unlink()
-        probabilities = {f"{i:03d}" + ".x" * 60: .1 for i in range(500)}
-        state["reply"] = answer("claude/sonnet", confidence=.8, probabilities=probabilities)
-        large = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
-        assert json.loads(large.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
-        assert recorded() == [{**evidence_row, "probabilities": probabilities,
-                               "answers": {QUESTION: state["reply"]["answers"][QUESTION]}}]
+        probabilities = {f"{i:03d}" + ".x" * 60: .1 for i in range(520)}
+        large_argv = argv.copy()
+        large_argv[argv.index("--lanes-json") + 1] = json.dumps(dict.fromkeys(probabilities))
+        first_lane = next(iter(probabilities))
+        state["reply"] = answer("o1", confidence=.8,
+                                probabilities={f"o{i}": .1 for i in range(1, len(probabilities) + 1)})
+        large = subprocess.run(large_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(large.stdout) == {"status": "recommended", "choice": first_lane}
+        assert recorded() == [{**evidence_row, "choice": first_lane, "probabilities": probabilities,
+                               "answers": {QUESTION: {"type": "choice", "choice": first_lane,
+                                                      "confidence": .8, "probabilities": probabilities}}}]
         (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = answer("claude/sonnet", confidence=.8,
+        state["reply"] = answer("o1", confidence=.8,
                                 notes="arbitrary service text", rationale={"nested": True})
         stripped = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(stripped.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
@@ -360,8 +358,7 @@ with tempfile.TemporaryDirectory() as td:
                                      "confidence": .8}}}]
         final_row = (data / "task/dispatch.jsonl").read_text()
         (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = {"answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
-                                                  "confidence": .8},
+        state["reply"] = {"answers": {QUESTION: {"type": "choice", "choice": "o1", "confidence": .8},
                                       DESIGN: {"type": "noul", "choice": "sk-abcd1234567890"}}}
         unreportable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unreportable.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
@@ -372,8 +369,8 @@ with tempfile.TemporaryDirectory() as td:
                                      "confidence": .8},
                          DESIGN: {"type": "noul"}}}]
         (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = answer("claude/sonnet", confidence=.8,
-                                probabilities={"claude/sonnet": .8, "pi/gpt": .1, "other": .05,
+        state["reply"] = answer("o1", confidence=.8,
+                                probabilities={"o1": .8, "o2": .1, "other": .05, "sq-send": .1, "o3": .1,
                                                "bogus": "high", "sk-abcd1234567890": .02,
                                                "k" * 129: .01, "tab\tkey": .01,
                                                "runtime-test-key": .01, credential_url: .01})
@@ -424,27 +421,27 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("pi day with cursor and qwen2.5") == "[REDACTED] day with [REDACTED] and [REDACTED]"
         assert module.redact("kimi with Gemini 2.5 Pro and Claude 3.5 Sonnet") == "[REDACTED] with [REDACTED] and [REDACTED] [REDACTED]"
         # The documented response shape maps onto configured lanes.
-        live = {"answers": {"lane": {"type": "choice", "choice": "strong", "confidence": .22,
-                                      "probabilities": {"strong": .61, "cheap": .39}}}}
-        assert module.classify(live, {"strong", "cheap"}) == {
+        live = answer("o2", confidence=.22, probabilities={"o2": .61, "o1": .39})
+        assert module.classify(live, {"o1": "cheap", "o2": "strong"}) == {
             "status": "recommended", "choice": "strong", "confidence": .22, "low_confidence": True,
             "probabilities": {"strong": .61, "cheap": .39},
             "answers": {"lane": {"type": "choice", "choice": "strong", "confidence": .22,
                                    "probabilities": {"strong": .61, "cheap": .39}}}}
-        assert module.classify(live, {"claude/sonnet", "pi/gpt"}) == {
+        assert module.classify(live, {"o1": "claude/sonnet"}) == {
             "status": "unavailable", "reason": "no_lane_match"}
-        assert module.classify(None, {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}
-        assert module.classify("text", {"strong"}) == {"status": "unavailable", "reason": "invalid_response"}
+        assert module.classify(None, {"o1": "strong"}) == {"status": "unavailable", "reason": "invalid_response"}
+        assert module.classify("text", {"o1": "strong"}) == {"status": "unavailable", "reason": "invalid_response"}
 
         repo = base / "facts-repo"
-        for directory in ("src", "tests", "web", private_email):
+        for directory in ("localoperator", "tests", "web", private_email):
             (repo / directory).mkdir(parents=True)
         (repo / "README.md").write_text("# service\n")
-        (repo / "src/main.py").write_text("print('x')\n")
+        (repo / "localoperator/src.py").write_text("print('x')\n")
         (repo / "tests/test_main.py").write_text("")
         (repo / "web/app.tsx").write_text("export {};\n")
-        (repo / "src/lib.go").write_text("package lib\n")
+        (repo / "localoperator/lib.go").write_text("package lib\n")
         (repo / private_email / "file.txt").write_text("")
+        (repo / "localoperator/file.privateextension").write_text("")
         tied = base / "facts-tie"
         (tied / "src").mkdir(parents=True)
         (tied / "src/a.go").write_text("package a\n")
@@ -452,17 +449,27 @@ with tempfile.TemporaryDirectory() as td:
         for fixture in (repo, tied):
             subprocess.run(["git", "-C", str(fixture), "init", "-q"], check=True)
             subprocess.run(["git", "-C", str(fixture), "add", "-A"], check=True)
-        expected_facts = {"tracked_files": 6, "top_level": [private_email, "src", "tests", "web"],
-                          "has_tests": True, "language": "Python"}
+        expected_facts = {"tracked_files": 7, "extension_counts": {".go": 1, ".md": 1, ".py": 2, ".tsx": 1, ".txt": 1},
+                          "has_tests": True, "has_docs": True}
         assert module.project_facts(repo) == expected_facts
-        assert module.project_facts(tied)["language"] == "Go"
+        assert module.project_facts(tied) == {"tracked_files": 2, "extension_counts": {".go": 1, ".py": 1},
+                                             "has_tests": False, "has_docs": False}
         no_count = [arg for i, arg in enumerate(argv)
                     if i not in (argv.index("--file-count"), argv.index("--file-count") + 1)]
         facts_argv = [str(repo) if arg == str(project) else arg for arg in no_count]
         facts_payload = json.loads(subprocess.run(facts_argv + ["--dry-run"], text=True,
                                                   capture_output=True, check=True).stdout)
-        assert facts_payload["state"]["repository"] == {
-            **expected_facts, "top_level": ["[REDACTED]", "src", "tests", "web"]}
+        assert facts_payload["state"]["repository"] == expected_facts
+        config.write_text(json.dumps({"enabled_projects": [str(repo)]}))
+        private_facts_argv = facts_argv + ["--brief", str(brief)]
+        private_facts_argv[facts_argv.index("--task-type") + 1] = "private_task_type"
+        unknown_task = subprocess.run(private_facts_argv, text=True, capture_output=True, check=True,
+                                      env={**env, "USER": "localoperator", "LOGNAME": "localoperator"})
+        assert json.loads(unknown_task.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert captured["body"] == {**facts_payload, "state": {"task": {"type": "unknown"}, "repository": expected_facts}}
+        assert all(text not in json.dumps(captured["body"]) for text in (
+            "localoperator", "privateextension", "Private brief", "task.status", "private_task_type", private_email,
+        ))
 
         crew = base / "crew-facts.json"
         crew.write_text(json.dumps({"default": [
@@ -479,10 +486,10 @@ with tempfile.TemporaryDirectory() as td:
 
         mixed = project_criteria(crew)
         assert mixed["other"] == CRITERIA["other"]
-        assert mixed["codex/gpt-5"]["fits"].startswith(HIGH_CRITERIA["fits"])
-        assert mixed["codex/gpt-5"]["not_for"].startswith(HIGH_CRITERIA["not_for"])
-        assert mixed["claude/sonnet"]["fits"].startswith("a task whose difficulty")
-        assert mixed["codex/gpt-5"] != mixed["claude/sonnet"]
+        assert mixed["o2"]["fits"].startswith(HIGH_CRITERIA["fits"])
+        assert mixed["o2"]["not_for"].startswith(HIGH_CRITERIA["not_for"])
+        assert mixed["o1"] == CRITERIA["o1"]
+        assert mixed["o2"] != mixed["o1"]
 
         no_effort = base / "crew-no-effort.json"
         no_effort.write_text(json.dumps({"default": [
@@ -490,8 +497,9 @@ with tempfile.TemporaryDirectory() as td:
             {"harness": "claude", "model": "sonnet", "account": private_email,
              "effort": credential_url}]}))
         identified = project_criteria(no_effort)
-        assert identified["codex/gpt-5"] != identified["claude/sonnet"]
-        assert identified["codex/gpt-5"]["not_for"] != identified["claude/sonnet"]["not_for"]
+        assert identified == CRITERIA
+        assert identified["o2"] != identified["o1"]
+        assert identified["o2"]["not_for"] != identified["o1"]["not_for"]
         assert private_email not in json.dumps(identified) and "private-pass" not in json.dumps(identified)
 
         shared_effort = base / "crew-shared-effort.json"
@@ -499,14 +507,14 @@ with tempfile.TemporaryDirectory() as td:
             {"harness": "codex", "model": "gpt-5", "effort": "medium"},
             {"harness": "claude", "model": "sonnet", "effort": "medium"}]}))
         shared = project_criteria(shared_effort)
-        assert shared["codex/gpt-5"] != shared["claude/sonnet"]
-        for lane in ("codex/gpt-5", "claude/sonnet"):
-            assert shared[lane]["fits"].startswith(MEDIUM_CRITERIA["fits"])
-            assert shared[lane]["not_for"].startswith(MEDIUM_CRITERIA["not_for"])
+        assert shared["o2"] != shared["o1"]
+        for option in ("o1", "o2"):
+            assert shared[option]["fits"].startswith(MEDIUM_CRITERIA["fits"])
+            assert shared[option]["not_for"].startswith(MEDIUM_CRITERIA["not_for"])
 
         crew.write_text(json.dumps({"rules": [{"use": {"harness": "codex", "model": "gpt-5", "effort": "high"}}],
                                     "default": {"harness": "codex", "model": "gpt-5", "effort": "medium"}}))
-        variants = project_criteria(crew)["codex/gpt-5"]
+        variants = project_criteria(crew)["o1"]
         assert HIGH_CRITERIA["fits"] in variants["fits"] and MEDIUM_CRITERIA["fits"] in variants["fits"]
         assert MEDIUM_CRITERIA["not_for"] not in variants["not_for"]
     finally:

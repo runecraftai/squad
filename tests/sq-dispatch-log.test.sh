@@ -481,6 +481,14 @@ assert [(row["event"], row["choice"]) for row in recommendations] == [
 PY
 pass 'spawn appends with stdin closed and recommendations stream with or without --'
 
+for answer_key in runtime_test_bearer_42 plausible_question; do
+  printf '{"label":"recommendation","status":"recommended","choice":"codex/gpt-5","answers":{"%s":{"type":"noul","answer":true}}}\n' "$answer_key" |
+    TYPESAFE_API_KEY=runtime_test_bearer_42 run_case "$dir" sq-dispatch-log.sh no-stdin recommendation --stdin 2>"$dir/refusal"
+  [ "$(<"$dir/refusal")" = 'sq-dispatch-log: could not append dispatch event' ] || fail 'unknown answer key was not refused'
+  [ "$(wc -l < "$dir/data/no-stdin/dispatch.jsonl")" -eq 3 ] || fail 'unknown answer key changed dispatch log'
+done
+pass 'direct stdin refuses unknown answer keys without appending or logging the bearer'
+
 recommend rec-good '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61,"codex/gpt-5":0.39},"low_confidence":true,"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}' 0<&-
 python3 - "$dir/data/rec-good/dispatch.jsonl" <<'PY' || fail 'recommendation evidence row was not written as declared'
 import json, sys

@@ -6,10 +6,8 @@ named `task` and `repository` fields, and a map of keyed questions - and records
 answer as evidence instead of a decision.
 
 One `choice` question keyed `lane` carries criteria that describe what each
-configured lane fits and what belongs to another lane, taken from the lane's own
-description when it has one, otherwise from its supported effort variants,
-plus a reserved `other` option so a mismatch is an answer instead of a forced
-choice.
+configured lane fits and what belongs to another lane, using only approved
+criteria selected by effort, opaque option IDs, and a reserved `other` option.
 A second `noul` question records whether the task needs design decisions a fixed
 plan cannot settle; it never selects the lane.
 
@@ -27,22 +25,21 @@ import sys
 import threading
 import urllib.parse
 import urllib.request
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sq_dispatch_evidence import (EMAIL_ADDRESS, URL_USERINFO, recordable_answer,  # noqa: E402
-                                  recordable_text, unit_interval)
+from sq_dispatch_evidence import (DESIGN_KEY, EMAIL_ADDRESS, QUESTION_KEY, URL_USERINFO,  # noqa: E402
+                                  recordable_answer, recordable_text, unit_interval)
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 MODEL = "jev-latest"
-QUESTION_KEY = "lane"
-DESIGN_KEY = "needs_design_decision"
 OTHER_OPTION = "other"
-LANE_INSTRUCTIONS = ("Choose the one lane whose harness, model and effort best match "
-                     "this task's difficulty, risk and need for design judgment.")
+LANE_INSTRUCTIONS = ("Choose the option whose criteria best match the task's difficulty, "
+                     "risk and need for design judgment.")
 DESIGN_INSTRUCTIONS = "Does this task need design decisions that a fixed plan cannot settle?"
 LOW_CONFIDENCE_THRESHOLD = 0.5
-MAX_TOP_LEVEL = 24
+TASK_TYPES = frozenset({"strike", "recon", "xo", "feature"})
 MAX_TEXT = 240
 MAX_RESPONSE = 65536
 DEADLINE_SECONDS = 3
@@ -127,12 +124,9 @@ def project_enabled(config_path, project):
         return False
 
 
-LANGUAGES = {".py": "Python", ".ts": "TypeScript", ".tsx": "TypeScript", ".js": "JavaScript",
-             ".jsx": "JavaScript", ".mjs": "JavaScript", ".go": "Go", ".rs": "Rust", ".rb": "Ruby",
-             ".java": "Java", ".kt": "Kotlin", ".swift": "Swift", ".c": "C", ".h": "C",
-             ".cc": "C++", ".cpp": "C++", ".hpp": "C++", ".cs": "C#", ".php": "PHP",
-             ".sh": "Shell", ".bash": "Shell", ".zsh": "Shell", ".ex": "Elixir", ".exs": "Elixir",
-             ".scala": "Scala", ".lua": "Lua", ".sql": "SQL", ".r": "R"}
+FILE_EXTENSIONS = (".bash", ".c", ".cc", ".cpp", ".cs", ".ex", ".exs", ".go", ".h", ".hpp",
+                   ".java", ".js", ".jsx", ".kt", ".lua", ".md", ".mjs", ".php", ".py", ".r",
+                   ".rb", ".rs", ".scala", ".sh", ".sql", ".swift", ".ts", ".tsx", ".txt", ".zsh")
 
 
 def names_tests(files):
@@ -153,20 +147,13 @@ def project_facts(project):
     except (OSError, subprocess.SubprocessError):
         return None
     files = [path.decode("utf-8", "replace") for path in tracked.split(b"\0") if path]
-    counts = {}
-    directories = set()
-    for path in files:
-        parts = path.split("/")
-        if len(parts) > 1 and not parts[0].startswith("."):
-            directories.add(parts[0])
-        language = LANGUAGES.get(os.path.splitext(path)[1].lower())
-        if language:
-            counts[language] = counts.get(language, 0) + 1
+    counts = Counter(os.path.splitext(path)[1].lower() for path in files)
     return {
         "tracked_files": len(files),
-        "top_level": sorted(directories)[:MAX_TOP_LEVEL],
+        "extension_counts": {ext: counts[ext] for ext in FILE_EXTENSIONS if counts[ext]},
         "has_tests": names_tests(files),
-        "language": min(counts, key=lambda name: (-counts[name], name)) if counts else None,
+        "has_docs": any(path.lower().startswith(("docs/", "doc/", "readme.", "readme/"))
+                        or path.lower() == "readme" for path in files),
     }
 
 
@@ -176,9 +163,8 @@ def load_lanes(args, secret):
     try:
         if args.lanes_json:
             configured = json.loads(args.lanes_json)
-            for lane, description in (configured.items() if isinstance(configured, dict) else ()):
-                text = description.strip() if isinstance(description, str) else ""
-                lanes[lane] = (text if text != lane else "", {""})
+            for lane in (configured if isinstance(configured, dict) else ()):
+                lanes[lane] = {""}
                 parts = lane.split("/", 2)
                 if len(parts) == 3:
                     accounts.add(parts[2])
@@ -198,52 +184,29 @@ def load_lanes(args, secret):
                 account = profile.get("account")
                 if isinstance(account, str) and account.strip():
                     accounts.add(account.strip())
-                efforts = lanes.setdefault(lane, ("", set()))[1]
+                efforts = lanes.setdefault(lane, set())
                 efforts.add(effort.strip().lower() if isinstance(effort, str) else "")
     except (OSError, ValueError, TypeError, AttributeError, RecursionError):
         lanes = {}
-    names = accounts | {part for lane in lanes for part in lane.split("/")}
-    candidates = {lane: config for lane, config in lanes.items()
-                  if lane != OTHER_OPTION and recordable_text(lane, secret)
-                  and redact(lane, accounts, secret, lane_id=True) == lane}
-    return candidates, names
+    return {lane: efforts for lane, efforts in lanes.items()
+            if lane != OTHER_OPTION and recordable_text(lane, secret)
+            and redact(lane, accounts, secret, lane_id=True) == lane}
 
 
-NEUTRAL_CRITERIA = {"fits": "a task whose difficulty, risk and reasoning depth match this configured lane",
-                    "not_for": "a task that another listed lane matches more closely"}
-EFFORT_CRITERIA = {
-    "low": {"fits": "a well-understood, mechanical change whose steps a short plan already settles",
-            "not_for": "a change that needs careful reasoning or spans unfamiliar code"},
-    "medium": {"fits": "a routine change with some ambiguity, where breadth matters more than depth",
-               "not_for": "a small mechanical change, or an unusually hard and risky one"},
-    "high": {"fits": "a demanding or ambiguous change that needs careful reasoning across several files",
-             "not_for": "a small mechanical change where speed matters more than depth"},
-    "xhigh": {"fits": "a hard, open-ended change that needs the deepest reasoning a lane can offer",
-              "not_for": "a small mechanical change where speed matters more than depth"},
-    "max": {"fits": "a hard, open-ended change that needs the deepest reasoning a lane can offer",
-            "not_for": "a small mechanical change where speed matters more than depth"},
-}
-
-
-def lane_criteria(number, configured, clean):
-    description, efforts = configured
-    if description:
-        return {"fits": clean(description), "not_for": clean("a task that another listed lane covers")}
-    variants = [EFFORT_CRITERIA[effort] for effort in sorted(efforts & EFFORT_CRITERIA.keys())]
-    if not efforts <= EFFORT_CRITERIA.keys():
-        variants.append(NEUTRAL_CRITERIA)
+def lane_criteria(option, efforts, approved):
+    variants = [approved["efforts"].get(effort, approved["default"]) for effort in sorted(efforts)]
     fits = dict.fromkeys(variant["fits"] for variant in variants)
     exclusions = {variant["not_for"] for variant in variants}
-    not_for = exclusions.pop() if len(exclusions) == 1 else "a task that matches none of these variants"
-    return {"fits": " or ".join(clean(f"{fit}, for candidate {number}") for fit in fits),
-            "not_for": clean(f"{not_for}, for candidate {number}")}
+    not_for = exclusions.pop() if len(exclusions) == 1 else approved["mixed_not_for"]
+    return {"fits": " or ".join(fits) + f", for option {option}",
+            "not_for": f"{not_for}, for option {option}"}
 
 
 def response_integer(token):
     return int(token) if len(token) <= 64 else float(token)
 
 
-def classify(body, lanes, secret=None):
+def classify(body, options, secret=None):
     answers = body.get("answers") if isinstance(body, dict) else None
     if not isinstance(answers, dict):
         return {"status": "unavailable", "reason": "invalid_response"}
@@ -252,9 +215,10 @@ def classify(body, lanes, secret=None):
     answer = answers[QUESTION_KEY]
     if not isinstance(answer, dict) or answer.get("type") != "choice":
         return {"status": "unavailable", "reason": "invalid_response"}
-    choice = answer.get("choice")
-    if not isinstance(choice, str) or choice not in lanes:
+    option = answer.get("choice")
+    if not isinstance(option, str) or option not in options:
         return {"status": "unavailable", "reason": "no_lane_match"}
+    choice = options[option]
     event = {"status": "recommended", "choice": choice}
     confidence = answer.get("confidence")
     if unit_interval(confidence):
@@ -263,11 +227,16 @@ def classify(body, lanes, secret=None):
             event["low_confidence"] = True
     recorded = {}
     lane_evidence = recordable_answer(answer, secret)
-    if lane_evidence:
-        recorded[QUESTION_KEY] = lane_evidence
-        if "probabilities" in lane_evidence:
-            event["probabilities"] = lane_evidence["probabilities"]
+    lane_evidence["choice"] = choice
+    offered = {**options, OTHER_OPTION: OTHER_OPTION}
+    probabilities = {offered[key]: score for key, score in lane_evidence.pop("probabilities", {}).items()
+                     if key in offered and recordable_text(offered[key], secret)}
+    if probabilities:
+        lane_evidence["probabilities"] = event["probabilities"] = probabilities
+    recorded[QUESTION_KEY] = lane_evidence
     design = recordable_answer(answers.get(DESIGN_KEY), secret)
+    if design is not None:
+        design.pop("probabilities", None)
     if design:
         recorded[DESIGN_KEY] = design
     if recorded:
@@ -311,7 +280,7 @@ def main():
     parser.add_argument("--brief")
     parser.add_argument("--project-config", default="config/crew-dispatch.json")
     parser.add_argument("--file-count", type=int)
-    parser.add_argument("--lanes-json", help="JSON object mapping allowed lane ids to descriptions")
+    parser.add_argument("--lanes-json", help="JSON object keyed by allowed lane IDs; values are ignored")
     parser.add_argument("--config", default=os.path.join(os.environ.get("SQUAD_CONFIG_OVERRIDE", "config"), "jev-dispatch.json"))
     parser.add_argument("--data", default=os.environ.get("SQUAD_DATA_OVERRIDE", "data"))
     parser.add_argument("--url", default=os.environ.get("SQUAD_JEV_URL_OVERRIDE", API_URL), help=argparse.SUPPRESS)
@@ -323,39 +292,20 @@ def main():
     key = os.environ.get("TYPESAFE_API_KEY")
     if not key and not args.dry_run:
         return finish(args, {"status": "unavailable", "reason": "missing_key"})
-    if args.brief:
-        try:
-            lines = Path(args.brief).read_text(errors="replace").splitlines()
-            heading = next((line.lstrip("# ").strip() for line in lines if line.startswith("# ")), "")
-            paragraph = " ".join(line.strip() for line in lines if line.strip() and not line.startswith("#"))
-            args.title = args.title or heading
-            args.description = args.description or paragraph
-        except OSError:
-            pass
-    lanes, names = load_lanes(args, key)
-
-    def clean(value):
-        return redact(value, names, key)
-
-    facts = project_facts(args.project) or {}
-    tracked_files = args.file_count if args.file_count is not None else facts.get("tracked_files")
-    projection = {
-        "task": {
-            "type": clean(args.task_type),
-            "title": clean(args.title),
-            "description": clean(args.description),
-        },
-        "repository": {
-            "tracked_files": tracked_files,
-            "top_level": [clean(name) for name in facts.get("top_level", [])],
-            "has_tests": facts.get("has_tests"),
-            "language": facts.get("language"),
-        },
+    lanes = load_lanes(args, key)
+    facts = project_facts(args.project) or {
+        "tracked_files": None, "extension_counts": {}, "has_tests": False, "has_docs": False,
     }
-    criteria = {lane: lane_criteria(number, lanes[lane], clean)
-                for number, lane in enumerate(sorted(lanes), 1)}
-    criteria[OTHER_OPTION] = {"fits": "none of these lanes fits the task",
-                              "not_for": "a task that one of the listed lanes covers"}
+    if args.file_count is not None and args.file_count >= 0:
+        facts["tracked_files"] = args.file_count
+    projection = {
+        "task": {"type": args.task_type if args.task_type in TASK_TYPES else "unknown"},
+        "repository": facts,
+    }
+    options = {f"o{number}": lane for number, lane in enumerate(sorted(lanes), 1)}
+    approved = json.loads(Path(__file__).resolve().with_name("sq-jev-criteria.v1.json").read_text())
+    criteria = {option: lane_criteria(option, lanes[lane], approved) for option, lane in options.items()}
+    criteria[OTHER_OPTION] = {field: approved["other"][field] for field in ("fits", "not_for")}
     payload = {
         "state": projection,
         "model": MODEL,
@@ -370,7 +320,7 @@ def main():
         return 0
     if not lanes:
         return finish(args, {"status": "unavailable", "reason": "no_lanes"})
-    if tracked_files is None:
+    if facts["tracked_files"] is None:
         return finish(args, {"status": "unavailable", "reason": "file_count_unmeasured"})
     parsed_url = urllib.parse.urlparse(args.url)
     if args.url != API_URL and parsed_url.hostname not in ("127.0.0.1", "localhost", "::1"):
@@ -382,7 +332,7 @@ def main():
     )
     try:
         response = json.loads(fetch_with_deadline(request, DEADLINE_SECONDS), parse_int=response_integer)
-        event = classify(response, lanes, key)
+        event = classify(response, options, key)
     except Exception:
         event = {"status": "unavailable", "reason": "service_error"}
     return finish(args, event)
