@@ -364,6 +364,19 @@ test_scope_policy() {
   pass "run denies an unlisted name under the same scope policy"
 
   printf '%s' '{"some-task":["github-token"]}' > "$POLICY"
+  out=$(sq_secret "$FAKEBIN:$PATH" get github-token --item sq/db-password --for some-task 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "an --item outside the task scope must be denied"
+  assert_contains "$out" "policy-denied" "an out-of-scope --item names its reason"
+  assert_not_contains "$out" "$SPACED" "an out-of-scope --item must not print the value"
+
+  out=$(sq_secret "$FAKEBIN:$PATH" get github-token --item sq/github-token --for some-task 2>&1)
+  rc=$?
+  expect_code 0 "$rc" "an --item that matches the scoped name"
+  [ "$out" = "$VALUE" ] || fail "an in-scope --item resolves: '$out'"
+  pass "the --for policy also constrains the resolved item"
+
+  printf '%s' '{"some-task":["github-token"]}' > "$POLICY"
   out=$(sq_secret "$FAKEBIN:$PATH" get github-token --for some-task 2>&1)
   rc=$?
   expect_code 0 "$rc" "a listed name resolves"
@@ -518,11 +531,29 @@ test_check() {
 
   out=$(FAKE_BW_STATUS_FAIL=1 sq_secret "$FAKEBIN:$PATH" check 2>&1)
   rc=$?
-  [ "$rc" -ne 0 ] || fail "check must exit non-zero when the session cannot be read"
+  expect_code 0 "$rc" "check on a vault that a real read proves readable"
   assert_contains "$out" "server: https://bw.example.invalid" \
-    "an unreadable session does not hide the server fact"
-  assert_contains "$out" "session: unknown" "check reports an unreadable session"
-  pass "check separates the server fact from an unreadable session"
+    "a status failure does not hide the server fact"
+  assert_contains "$out" "session: unlocked" \
+    "a real vault read proves the session without trusting bw status"
+  pass "check proves the session with a vault read instead of bw status"
+
+  out=$(FAKE_BW_STALE_SESSION=1 sq_secret "$FAKEBIN:$PATH" check 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "check must exit non-zero when the vault read fails"
+  assert_not_contains "$out" "session: unlocked" \
+    "a stale session is never reported as unlocked"
+  assert_contains "$out" "session: unreadable" "check names a session the vault read cannot prove"
+  assert_contains "$out" "bw unlock" "check names the unlock remedy when the read fails"
+  pass "check refuses to report a stale session as unlocked"
+
+  out=$(FAKE_BW_LIST_FAIL=1 sq_secret "$FAKEBIN:$PATH" check 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "check must exit non-zero when the vault cannot be read"
+  assert_not_contains "$out" "session: unlocked" "an unreadable vault is never reported as unlocked"
+  assert_contains "$out" "session: unreadable" "check names an unreadable vault"
+  assert_contains "$out" "bw unlock" "check names the unlock remedy for an unreadable vault"
+  pass "check fails when the vault cannot be read"
 
   out=$(sq_secret "$MINBIN" check 2>&1)
   rc=$?
@@ -541,6 +572,7 @@ test_check() {
   out=$(FAKE_BW_STATUS=locked sq_secret "$FAKEBIN:$PATH" check 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || fail "check must exit non-zero on a locked session"
+  assert_contains "$out" "session: locked" "check reports a locked session"
   assert_contains "$out" "bw unlock" "check names the unlock remedy"
   pass "check reports a locked session as unusable"
 }

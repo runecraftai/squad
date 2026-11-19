@@ -241,6 +241,16 @@ bw_server_url() {
   printf '%s' "$url"
 }
 
+# bw_vault_readable: return 0 only when a real vault read succeeds, so a
+# session that merely reports "unlocked" cannot pass as usable. A failed, empty
+# or unparsable listing proves nothing and is treated as unreadable.
+bw_vault_readable() {
+  local items
+  items=$(bw list items --nointeraction </dev/null 2>/dev/null) || return 1
+  [ -n "$items" ] || return 1
+  printf '%s' "$items" | jq -e 'type == "array"' >/dev/null 2>&1
+}
+
 # bw_item_exists <item>: return 0 when the vault holds an item with that id or
 # name, 1 when it holds none, 2 when the vault could not be listed.
 bw_item_exists() {
@@ -254,18 +264,37 @@ bw_item_exists() {
   [ "$count" -gt 0 ]
 }
 
-# require_session: fail closed unless bw and jq are present and BW_SESSION
-# opens the vault. It never prompts and never guesses a session key.
-require_session() {
-  local word
+# item_logical_name <item>: the logical name an item override resolves to, so
+# the scope policy can constrain the item rather than only the requested name.
+item_logical_name() {
+  case "$1" in
+    sq/*) printf '%s' "${1#sq/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# require_session_present: fail closed unless bw and jq are present and
+# BW_SESSION is set. It never prompts and never guesses a session key.
+require_session_present() {
   require_bw
   require_jq
   [ -n "${BW_SESSION:-}" ] \
     || fail session-missing "BW_SESSION is not set; run 'bw unlock' and export the session it prints"
-  word=$(bw_status_word) \
-    || fail session-unreadable "bw status could not be read; run 'bw unlock' and export the session it prints"
-  [ "$word" = unlocked ] \
-    || fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
+}
+
+# require_session: fail closed unless BW_SESSION opens the vault. The session is
+# proven with a real vault read, never with `bw status` alone.
+require_session() {
+  local word
+  require_session_present
+  bw_vault_readable && return 0
+  word=$(bw_status_word) || word=
+  case "$word" in
+    locked | unauthenticated)
+      fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
+      ;;
+  esac
+  fail session-unreadable "the vault could not be read with the current session; run 'bw unlock' and export the session it prints"
 }
 
 # policy_allows <task-id> <name>: return 0 when the task is scoped for the name.
@@ -366,28 +395,38 @@ cmd_check() {
     printf 'server: unknown (bw config server printed no server URL)\n'
     rc=1
   fi
-  if [ -n "${BW_SESSION:-}" ]; then
-    word=$(bw_status_word) || word=
-  fi
   if [ -z "${BW_SESSION:-}" ]; then
     printf 'session: missing BW_SESSION (run bw unlock and export the session it prints)\n'
     rc=1
+  elif bw_vault_readable; then
+    printf 'session: unlocked\n'
   else
-    if [ "$word" = unlocked ]; then
-      printf 'session: unlocked\n'
-    else
-      printf 'session: %s (run bw unlock and export the session it prints)\n' "${word:-unknown}"
-      rc=1
-    fi
+    word=$(bw_status_word) || word=
+    case "$word" in
+      locked | unauthenticated)
+        printf 'session: %s (run bw unlock and export the session it prints)\n' "$word"
+        ;;
+      *)
+        printf 'session: unreadable (the vault could not be read; run bw unlock and export the session it prints)\n'
+        ;;
+    esac
+    rc=1
   fi
   return "$rc"
 }
 
 cmd_list() {
-  local items listing
-  require_session
-  items=$(bw list items --nointeraction </dev/null 2>/dev/null) \
-    || fail item-listing "bw could not list the vault"
+  local items listing word
+  require_session_present
+  if ! items=$(bw list items --nointeraction </dev/null 2>/dev/null); then
+    word=$(bw_status_word) || word=
+    case "$word" in
+      locked | unauthenticated)
+        fail session-locked "the vault is $word; run 'bw unlock' and export the session it prints"
+        ;;
+    esac
+    fail item-listing "bw could not list the vault"
+  fi
   listing=$(printf '%s' "$items" | jq -r '
     .[]
     | select((.name // "") | startswith("sq/") and length > 3)
@@ -440,9 +479,16 @@ cmd_get() {  # <name> [--item <id-or-name>] [--for <task-id>] [--to-tty]
     fail tty-refused "refusing to write a secret to a terminal; redirect stdout or pass --to-tty"
   fi
   require_session
-  if [ -n "$task" ] && ! policy_allows "$task" "$name"; then
-    audit denied "$name" "$item" "$task" "" || true
-    fail "$POLICY_REASON" "$POLICY_MESSAGE"
+  if [ -n "$task" ]; then
+    if ! policy_allows "$task" "$name"; then
+      audit denied "$name" "$item" "$task" "" || true
+      fail "$POLICY_REASON" "$POLICY_MESSAGE"
+    fi
+    if [ "$(item_logical_name "$item")" != "$name" ] \
+      && ! policy_allows "$task" "$(item_logical_name "$item")"; then
+      audit denied "$name" "$item" "$task" "" || true
+      fail "$POLICY_REASON" "$POLICY_MESSAGE"
+    fi
   fi
   resolve_value "$name" "$item" "$task" ""
   if [ -t 1 ]; then
