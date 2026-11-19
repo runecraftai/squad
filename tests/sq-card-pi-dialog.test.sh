@@ -187,6 +187,12 @@ test_free_text_and_refusals() {
   [ "$answer" = 'd1 o0 "ship it on Friday"' ] || fail "T7: expected the O0 fragment, got '$answer'"
   resolve "$PAIR" "$answer" 'r["free_text"] == "ship it on Friday" and r["selected_option_id"] is None'
 
+  # Free text the prose grammar cannot quote is refused, never emitted unparseable.
+  rc=0
+  out=$(fragment "$PAIR" 1 '[{"questionIndex":0,"kind":"custom","answer":"ship \"it\" now"}]' 2>&1) || rc=$?
+  [ "$rc" = 4 ] || fail "T7: a double quote in free text must exit 4, got $rc"
+  printf '%s' "$out" | grep -q 'double quotes' || fail "T7: the free-text refusal is not explanatory: $out"
+
   # A card that forbids free text keeps that authority: the dialog's own row cannot widen it.
   answer=$(fragment "$FIX/merge.json" 1 '[{"questionIndex":0,"kind":"custom","answer":"neither"}]')
   [ "$answer" = 'd1 o0 "neither"' ] || fail "T7: expected the O0 fragment for the no-free-text card, got '$answer'"
@@ -203,6 +209,13 @@ test_free_text_and_refusals() {
   out=$("$DIALOG" --payload < "$FIX/single.json" 2>&1) || rc=$?
   [ "$rc" = 2 ] || fail "T7: a single-option card must exit 2, got $rc"
   printf '%s' "$out" | grep -q 'at least 2 options' || fail "T7: single-option refusal is not explanatory: $out"
+
+  # A label shared by two options that land in different split questions is never
+  # resolvable, so the card keeps the prose block before the dialog is shown.
+  rc=0
+  out=$("$DIALOG" --payload < "$FIX/duplicate-label.json" 2>&1) || rc=$?
+  [ "$rc" = 2 ] || fail "T7: a label shared across split questions must exit 2, got $rc"
+  printf '%s' "$out" | grep -q "share the label 'Same'" || fail "T7: duplicate-label refusal is not explanatory: $out"
 
   rc=0
   out=$(printf '%s' '{"version":1,"id":"broken","title":"Broken","question":"Broken?","options":[{"id":"a","label":"A"}],"default_option_id":"missing"}' \
@@ -225,7 +238,7 @@ test_free_text_and_refusals() {
 # --- T8: the fixtures the suite added are clean under the grammar linter ---------
 test_fixtures_are_lint_clean() {
   local out
-  out=$("$LINT" "$PAIR" "$FOUR" "$SIX" "$NINE" "$FIX/reserved.json" "$FIX/single.json" 2>&1)
+  out=$("$LINT" "$PAIR" "$FOUR" "$SIX" "$NINE" "$FIX/reserved.json" "$FIX/single.json" "$FIX/duplicate-label.json" 2>&1)
   [ -z "$out" ] || fail "T8: sq-card-lint warned on the fixtures: $out"
   pass "T8: sq-card-lint reports no warnings on the fixture cards"
 }

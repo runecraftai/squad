@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "duplicate-label",
+  "title": "Duplicate Label",
+  "question": "Which slice should start the cutover?",
+  "options": [
+    {
+      "id": "billing",
+      "label": "Same",
+      "description": "Highest revenue risk"
+    },
+    {
+      "id": "accounts",
+      "label": "Accounts",
+      "description": "Everything depends on it"
+    },
+    {
+      "id": "invoices",
+      "label": "Invoices",
+      "description": "Read-mostly, low risk"
+    },
+    {
+      "id": "reports",
+      "label": "Same",
+      "description": "Batch only, no live traffic"
+    },
+    {
+      "id": "webhooks",
+      "label": "Webhooks",
+      "description": "External callers, hardest rollback"
+    }
+  ],
+  "default_option_id": "invoices"
+}

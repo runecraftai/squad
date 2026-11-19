@@ -25,8 +25,8 @@
 #   --help         Show this help.
 #
 # Mapping (card -> dialog):
-#   question      -> questions[].question, then one "Context: <context>" line when the
-#                    card has context and one "F<n> - <id> <text>" line per finding.
+#   question      -> questions[].question, then one "F<n> - <id> <text>" line per finding
+#                    and finally one "Context: <context>" line when the card has context.
 #                    The published payload has no notes field, so context and findings
 #                    ride in the question text rather than being dropped.
 #   title         -> questions[].header, cut to the 16-character payload limit; a split
@@ -43,9 +43,9 @@
 #
 # Refused, because the dialog cannot show that card without dropping or misrepresenting
 # an option: an option label that is a reserved dialog label ("Other", "Type something.",
-# "Next"), a label shared by two options of the same dialog question, and a card with a
-# single option. A refusal exits 2 with a message and leaves the caller on the prose
-# block, which stays the canonical shape.
+# "Next"), a label shared by two options of the card, and a card with a single option.
+# A refusal exits 2 with a message and leaves the caller on the prose block, which stays
+# the canonical shape.
 #
 # Exit codes: 0=ok, 2=invalid card or the dialog cannot represent it, 4=unusable result
 set -euo pipefail
@@ -111,15 +111,21 @@ def question_for(card, part, parts, findings):
     return "\n".join(lines)
 
 
-def option_rows(chunk, default_id, where):
-    rows, seen = [], set()
-    for option in chunk:
+def check_labels(card, where):
+    seen = set()
+    for option in card["options"]:
         label = option["label"]
         if label in RESERVED:
             raise Invalid("%s option label '%s' is a reserved dialog label (%s)" % (where, label, ", ".join(RESERVED)))
         if label in seen:
-            raise Invalid("%s two options share the label '%s', which the dialog rejects" % (where, label))
+            raise Invalid("%s two options share the label '%s', which the dialog cannot resolve" % (where, label))
         seen.add(label)
+
+
+def option_rows(chunk, default_id):
+    rows = []
+    for option in chunk:
+        label = option["label"]
         description = option.get("description") or ""
         if option["id"] == default_id:
             description = description + MARK if description else MARK.strip()
@@ -135,13 +141,14 @@ def build(cards):
         where = "card %d:" % (index + 1) if len(cards) > 1 else "card:"
         findings = [(finding_code + n, f) for n, f in enumerate(card.get("findings") or [], 1)]
         finding_code += len(findings)
+        check_labels(card, where)
         sizes = chunk_sizes(len(card["options"]))
         questions, slots, start = [], [], 0
         for part, size in enumerate(sizes, 1):
             questions.append({
                 "question": question_for(card, part, len(sizes), findings if part == 1 else []),
                 "header": header_for(card["title"], part, len(sizes)),
-                "options": option_rows(card["options"][start:start + size], card["default_option_id"], where),
+                "options": option_rows(card["options"][start:start + size], card["default_option_id"]),
             })
             slots.append((index, start, size))
             start += size
@@ -193,8 +200,8 @@ def answer_text(cards, dialog_index, payload):
             pieces.append("d%d o%d" % (number, match[0] + 1))
         elif kind == "custom":
             text = answer.get("answer") or ""
-            if not text.strip() or not printable(text) or "\\" in text or len(text) > FREE_MAX:
-                raise Unusable("free text must be 1-%d printable ASCII characters without backslashes" % FREE_MAX)
+            if not text.strip() or not printable(text) or "\\" in text or '"' in text or len(text) > FREE_MAX:
+                raise Unusable("free text must be 1-%d printable ASCII characters without backslashes or double quotes" % FREE_MAX)
             pieces.append('d%d o0 "%s"' % (number, text))
         else:
             raise Unusable("unsupported answer kind %r: this mapping never authors a multi-select question" % (kind,))

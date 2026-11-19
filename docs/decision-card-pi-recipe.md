@@ -47,8 +47,8 @@ It validates the card through `bin/sq-ask.sh --validate` first, so the schema ke
 
 | Card | Dialog |
 |------|--------|
-| `question` | `questions[].question`, then one `Context: <context>` line and one `F<n> - <id> <text>` line per finding, on the first question of the card |
-| `title` | `questions[].header`, cut to the 16-character limit at a word boundary |
+| `question` | `questions[].question`, then one `F<n> - <id> <text>` line per finding and finally one `Context: <context>` line, on the first question of the card |
+| `title` | `questions[].header`, cut to the 16-character limit at the last space of the retained text when it keeps one, otherwise at the limit; a split question's `k/n` marker counts inside the 16 |
 | `options[].label` | `options[].label`, unchanged |
 | `options[].description` | `options[].description`; the recommended option gains a trailing ` (recommended)` so the recommendation is visible on its own row |
 | `allow_free_text` | not authored: the dialog's own free-text row is the `O0` escape |
@@ -60,7 +60,7 @@ Splits replace truncation, because a dialog holds 1-4 questions and a question 2
 - more than four questions on a card become several dialogs, each one `ask_user_question` call;
 - several cards in one reply become one dialog per card, in card order.
 
-A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of one dialog question, or a card with a single option.
+A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, or a card with a single option.
 
 ## Answers
 
