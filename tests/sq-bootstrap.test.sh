@@ -1556,8 +1556,22 @@ test_pi_ask_user_offer() {
         printf '{"packages":[{"source":"npm:%s@2.15.0"}," ./my-extension"]}\n' "$extension" > "$agent_dir/settings.json"
         mkdir -p "$modules/$extension"
         printf '%s\n' '{invalid project settings' > "$case_dir/project/.pi/settings.json" ;;
+      tagged)
+        printf '{"packages":["npm:%s@release-candidate.1"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      ranged)
+        printf '{"packages":["npm:%s@>=2.0.0 <3.0.0 || ^4.0.0-beta.1"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      bad-suffix-installed|bad-suffix-uninstalled)
+        printf '{"packages":["npm:%s@2.15.0?"]}\n' "$extension" > "$agent_dir/settings.json"
+        if [ "$fixture" = bad-suffix-installed ]; then mkdir -p "$modules/$extension"; fi ;;
+      bad-range)
+        printf '{"packages":["npm:%s","npm:%s@^2..15"]}\n' "$extension" "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      empty-suffix)
+        printf '{"packages":["npm:%s@"]}\n' "$extension" > "$agent_dir/settings.json" ;;
       lookalike)
-        printf '{"packages":["npm:%s-extra","npm:%s@"]}\n' "$extension" "$extension" > "$agent_dir/settings.json"
+        printf '{"packages":["npm:%s-extra","npm:%s-extra@2.15.0?"]}\n' "$extension" "$extension" > "$agent_dir/settings.json"
         mkdir -p "$modules/$extension" "$modules/$extension-extra" ;;
       unconfigured)
         printf '%s\n' '{}' > "$agent_dir/settings.json"
@@ -1611,6 +1625,12 @@ SH
 pi primary is offered the exact install command^pi^missing^absent
 an installed extension is one no-action fact^pi^installed^installed
 a versioned object source is found in the override beside a local sibling^pi^versioned^installed
+a dist-tagged source is recognized^pi^tagged^installed
+a semver range source is recognized^pi^ranged^installed
+a malformed suffix with a module directory stays silent^pi^bad-suffix-installed^silent
+a malformed suffix without a module directory stays silent^pi^bad-suffix-uninstalled^silent
+a malformed range stays silent even beside a valid source^pi^bad-range^silent
+an empty suffix stays silent^pi^empty-suffix^silent
 lookalikes do not match even with a managed module directory^pi^lookalike^absent
 a module without a configured source reads as absent^pi^unconfigured^absent
 a configured source without its module reads as absent^pi^uninstalled^absent

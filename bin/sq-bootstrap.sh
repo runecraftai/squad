@@ -1114,8 +1114,24 @@ pi_ask_user_offer() {
       const sources = packages.map(entry => typeof entry === "string" ? entry : entry?.source);
       if (sources.some(source => typeof source !== "string" || !source.trim())) process.exit(1);
       const target = "npm:" + extension;
-      const configured = sources.some(source => source === target ||
-        (source.startsWith(target + "@") && /^[^@/\s]+$/u.test(source.slice(target.length + 1))));
+      const number = "(?:0|[1-9][0-9]*)";
+      const part = `(?:${number}|[xX*])`;
+      const preId = `(?:${number}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`;
+      const ids = id => String.raw`${id}(?:\.${id})*`;
+      const version = String.raw`v?(?:${part}(?:\.${part}(?:\.${part})?)?|${number}\.${number}\.${number}(?:-${ids(preId)})?(?:\+${ids("[0-9A-Za-z-]+")})?)`;
+      const comparator = String.raw`(?:(?:[<>]=?|=|\^|~>?)\s*)?${version}`;
+      const rangeSet = new RegExp(String.raw`^(?:${version}\s+-\s+${version}|${comparator}(?:\s+${comparator})*)$`);
+      const validSuffix = suffix => {
+        if (/[^\t\x20-\x7e]/.test(suffix)) return false;
+        return /^[A-Za-z0-9.~\-]+$/.test(suffix) ||
+          suffix.split("||").every(set => rangeSet.test(set.trim()));
+      };
+      let configured = false;
+      for (const source of sources) {
+        if (source !== target && !source.startsWith(target + "@")) continue;
+        if (source !== target && !validSuffix(source.slice(target.length + 1))) process.exit(1);
+        configured = true;
+      }
       const installed = configured && fs.statSync(join(agentDir, "npm", "node_modules", extension), statOptions)?.isDirectory();
       console.log(installed ? "installed" : "absent");
     }
