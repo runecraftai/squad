@@ -2589,10 +2589,14 @@ test_pi_handoff_ready_requires_v3_delivery_state() {
     fm_backend_tuios_target_ready() { return 0; }
     fm_pid_identity() { printf 'identity'; }
     SQUAD_SUPERVISOR_BACKEND=tuios
-    local now
-    now=$(date '+%s%3N' 2>/dev/null)
-    case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
     write_ready() {  # <version> [idle] [draft] [prompts] [sending]
+      # Stamp the heartbeat per write, as a live extension does. A timestamp
+      # captured once before the earlier assertions goes stale when a slow or
+      # loaded runner spends more than the 5s window on them, so the v3 record
+      # was correctly refused as stale and this assertion failed spuriously.
+      local now
+      now=$(date '+%s%3N' 2>/dev/null)
+      case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
       jq -n --argjson version "$1" --argjson pid "$$" --argjson heartbeat "$now" \
         --argjson idle "${2:-true}" --argjson draft "${3:-false}" --argjson prompts "${4:-0}" --argjson sending "${5:-false}" \
         '{version:$version,pid:$pid,identity:"identity",session:"s",window:"w",idle:$idle,draft:$draft,prompts:$prompts,sending:$sending,heartbeat:$heartbeat}' \
@@ -2603,8 +2607,13 @@ test_pi_handoff_ready_requires_v3_delivery_state() {
       fail "a version-2 ready record without the in-flight-send field must be refused"
     fi
     write_ready 3 true false 0 true
-    fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null \
-      || fail "a version-3 ready record with the delivery-state fields must be accepted"
+    # Report the evaluate verdict, so a refusal names its own reason instead of
+    # leaving the next failure to be guessed from a bare assertion message.
+    if ! fm_afk_pi_handoff_ready "$state" "s:w" >/dev/null; then
+      local verdict
+      verdict=$(fm_afk_pi_handoff_evaluate "$state" "s:w" 2>&1) || :
+      fail "a version-3 ready record with the delivery-state fields must be accepted (verdict: ${verdict#refused })"
+    fi
   ) || fail "Pi handoff ready-schema test subshell failed"
   pass "Pi handoff: the ready contract requires the v3 delivery-state schema"
 }

@@ -19,15 +19,56 @@ root = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location("jev", root / "bin/sq-jev-call.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-OK_REPLY = {"type": "choice", "choice": "claude/sonnet", "confidence": .8,
-            "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}}
+QUESTION = "lane"
+DESIGN = "needs_design_decision"
+LANES = {"claude/sonnet": "deep reasoning over large diffs",
+         "pi/gpt": "fast mechanical edits"}
+CRITERIA = {option: {
+    "fits": f"a task whose difficulty, risk and reasoning depth match this configured lane, for option {option}",
+    "not_for": f"a task that another listed lane matches more closely, for option {option}",
+} for option in ("o1", "o2")}
+CRITERIA["other"] = {"fits": "none of these lanes fits the task",
+                     "not_for": "a task that one of the listed lanes covers"}
+HIGH_CRITERIA = {"fits": "a demanding or ambiguous change that needs careful reasoning across several files",
+                 "not_for": "a small mechanical change where speed matters more than depth"}
+MEDIUM_CRITERIA = {"fits": "a routine change with some ambiguity, where breadth matters more than depth",
+                   "not_for": "a small mechanical change, or an unusually hard and risky one"}
+LANE_INSTRUCTIONS = ("Choose the option whose criteria best match the task's difficulty, "
+                     "risk and need for design judgment.")
+DESIGN_INSTRUCTIONS = "Does this task need design decisions that a fixed plan cannot settle?"
+DESIGN_ANSWER = {"type": "noul", "answer": True, "confidence": .7}
+
+
+def answer(choice, **extra):
+    return {"answers": {QUESTION: {"type": "choice", "choice": choice, **extra}}}
+
+
+def expected_body(tracked_files):
+    return {"state": {"task": {"type": "feature"},
+                       "repository": {"tracked_files": tracked_files, "extension_counts": {},
+                                      "has_tests": False, "has_docs": False}},
+            "model": "jev-latest",
+            "questions": {QUESTION: {"type": "choice", "instructions": LANE_INSTRUCTIONS,
+                                     "criteria": CRITERIA},
+                          DESIGN: {"type": "noul", "instructions": DESIGN_INSTRUCTIONS}}}
+
+
+OK_REPLY = {"answers": {QUESTION: {"type": "choice", "choice": "o1", "confidence": .8,
+                                   "probabilities": {"o1": .8, "o2": .2}},
+                         DESIGN: DESIGN_ANSWER},
+            "model": "jev-2026-05"}
 
 
 def serve(record, state):
     class Handler(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):
+        def parse_request(self):
+            if not super().parse_request():
+                return False
             record["path"] = self.path
             record["auth"] = self.headers.get("Authorization")
+            return True
+
+        def do_POST(self):
             record["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             if state.get("location"):
                 self.send_response(302)
@@ -35,7 +76,9 @@ def serve(record, state):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            body = json.dumps(state["reply"]).encode()
+            reply = state["reply"]
+            body = reply if isinstance(reply, bytes) else json.dumps(
+                reply, ensure_ascii=False, separators=(",", ":")).encode()
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -63,17 +106,22 @@ with tempfile.TemporaryDirectory() as td:
     config.write_text(json.dumps({"enabled_projects": [str(project)]}))
     captured = {}
     redirected = {}
+    proxied = {}
     state = {"reply": OK_REPLY}
     server = serve(captured, state)
     target = serve(redirected, {"reply": OK_REPLY})
+    proxy = serve(proxied, {"reply": OK_REPLY})
     url = f"http://127.0.0.1:{server.server_port}/v1/systemone"
     argv = [sys.executable, str(root / "bin/sq-jev-call.py"), "--id", "task",
             "--project", str(project), "--task-type", "feature", "--title", "title",
             "--description", "$HOME/private sk-abcd1234567890 ghp_abcdefgh AKIA1234567890ABCDEF "
             "eyJabc.def.ghi https://user:pass@example.invalid KEY=value", "--file-count", "3",
-            "--lanes-json", '{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"}',
+            "--lanes-json", json.dumps(LANES),
             "--config", str(config), "--data", str(data), "--url", url]
-    env = {**os.environ, "TYPESAFE_API_KEY": "runtime-test-key"}
+    proxy_url = f"http://127.0.0.1:{proxy.server_port}"
+    env = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy")}
+    env.update(http_proxy=proxy_url, https_proxy=proxy_url, no_proxy="127.0.0.1",
+               TYPESAFE_API_KEY="runtime-test-key")
 
     def argv_for(path):
         return [str(path) if arg == str(project) else arg for arg in argv]
@@ -95,24 +143,19 @@ with tempfile.TemporaryDirectory() as td:
         assert not captured and not (data / "task/dispatch.jsonl").exists()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
         missing = subprocess.run(argv, text=True, capture_output=True, check=True,
-                                 env={k: v for k, v in os.environ.items() if k != "TYPESAFE_API_KEY"})
+                                 env={k: v for k, v in env.items() if k != "TYPESAFE_API_KEY"})
         assert json.loads(missing.stdout) == {"status": "unavailable", "reason": "missing_key"}
         assert not captured and recorded_rows(data) == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "missing_key"}]
         (data / "task/dispatch.jsonl").unlink()
-        dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True)
+        dry = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, env=env)
         payload = json.loads(dry.stdout)
-        assert payload == {"type":"choice",
-                           "criteria":{"claude/sonnet":"claude/sonnet","pi/gpt":"pi/gpt"},
-                           "instructions":"Recommend the best-fitting lane for this task. Task projection: "
-                           + json.dumps({"task_type":"feature","title":"title","description":
-                           "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
-                           "https://[REDACTED]@example.invalid [REDACTED]","file_count":3},
-                           ensure_ascii=True,separators=(",",":"))}
+        assert payload == expected_body(3)
+        assert set(payload) == {"state", "model", "questions"}
         assert not captured
         config.write_text('{"enabled_projects":[]}')
-        dry_opt_out = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, check=True)
+        dry_opt_out = subprocess.run(argv + ["--dry-run"], text=True, capture_output=True, env=env, check=True)
         assert json.loads(dry_opt_out.stdout) == payload
         assert not captured and not (data / "task/dispatch.jsonl").exists()
         config.write_text(json.dumps({"enabled_projects": [str(project)]}))
@@ -120,17 +163,31 @@ with tempfile.TemporaryDirectory() as td:
         def recorded():
             return recorded_rows(data)
 
-        state["location"] = f"http://localhost:{target.server_port}/v1/systemone"
+        state["location"] = f"http://127.0.0.1:{target.server_port}/v1/systemone"
         redirect = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(redirect.stdout) == {"status": "unavailable", "reason": "service_error"}
-        assert not redirected and recorded() == [
+        assert captured["path"] == "/v1/systemone"
+        assert not redirected and not proxied and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "service_error"}]
         (data / "task/dispatch.jsonl").unlink()
+        colliding_reason = subprocess.run(argv, text=True, capture_output=True, check=True,
+                                          env={**env, "TYPESAFE_API_KEY": "service_error"})
+        assert json.loads(colliding_reason.stdout) == {"status": "error"}
+        assert colliding_reason.stderr == "" and not recorded()
         state["location"] = None
 
+        external = [arg if arg != url else "https://api.typesafe.example/v1/systemone" for arg in argv]
         captured.clear()
-        state["reply"] = {"type": "choice", "choice": ["claude/sonnet"], "confidence": .8}
+        refused = subprocess.run(external, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(refused.stdout) == {"status": "unavailable", "reason": "endpoint_refused"}
+        assert refused.stderr == "" and not captured and not proxied and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "endpoint_refused"}]
+        (data / "task/dispatch.jsonl").unlink()
+
+        captured.clear()
+        state["reply"] = answer(["o1"], confidence=.8)
         unhashable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(unhashable.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
         assert unhashable.stderr == "" and recorded() == [
@@ -138,14 +195,77 @@ with tempfile.TemporaryDirectory() as td:
              "status": "unavailable", "reason": "no_lane_match"}]
         (data / "task/dispatch.jsonl").unlink()
         captured.clear()
-        state["reply"] = {"type": "choice", "choice": "claude/sonnet"}
+        state["reply"] = answer("o1")
         bare = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(bare.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
         assert recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
-             "status": "recommended", "choice": "claude/sonnet"}]
+             "status": "recommended", "choice": "claude/sonnet",
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet"}}}]
         (data / "task/dispatch.jsonl").unlink()
-        state["reply"] = {"type": "choice", "choice": "claude/sonnet", "confidence": .8, "padding": "x" * 70000}
+        credential_url = "https://deploy:private-pass@service.invalid"
+        private_email = "operator@example.invalid"
+        polluted = {**LANES, "other": "force a recommendation", "codex/" + "x-" * 62: "too long",
+                    "claude/sonnet/local-account": "account-scoped lane",
+                    "runtime-test-key": "not a lane",
+                    "claude/sonnet": f"deep reasoning {credential_url} {private_email} runtime-test-key"}
+        private_argv = argv.copy()
+        private_argv[argv.index("--lanes-json") + 1] = json.dumps(polluted)
+        private_argv[argv.index("--title") + 1] = f"local-account {private_email} runtime-test-key"
+        state["reply"] = answer("other")
+        unmatched = subprocess.run(private_argv, text=True, capture_output=True, env=env, check=True)
+        posted = captured["body"]["questions"][QUESTION]["criteria"]
+        assert set(posted) == set(CRITERIA) and posted["other"] == CRITERIA["other"]
+        assert captured["body"] == expected_body(3)
+        serialized = json.dumps(captured["body"])
+        assert all(text not in serialized for text in ("private-pass", private_email, "runtime-test-key", "local-account",
+                                                       "deep reasoning", "fast mechanical edits", *LANES))
+        assert json.loads(unmatched.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
+        assert unmatched.stderr == "" and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "no_lane_match"}]
+        (data / "task/dispatch.jsonl").unlink()
+        # A documented answer shape: a flat two-way split and low confidence.
+        state["reply"] = answer("o1", confidence=.22, probabilities={"o1": .61, "o2": .39})
+        flat = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(flat.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/sonnet", "confidence": .22,
+             "low_confidence": True,
+             "probabilities": {"claude/sonnet": .61, "pi/gpt": .39},
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet", "confidence": .22,
+                                     "probabilities": {"claude/sonnet": .61, "pi/gpt": .39}}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = {"answers": {DESIGN: DESIGN_ANSWER}}
+        judgment_only = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(judgment_only.stdout) == {"status": "unavailable", "reason": "answer_missing"}
+        assert recorded()[0]["reason"] == "answer_missing"
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = answer("claude/sonnet", confidence=.22, probabilities={"strong": .61, "cheap": .39})
+        unrecognised = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(unrecognised.stdout) == {"status": "unavailable", "reason": "no_lane_match"}
+        assert unrecognised.stderr == "" and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "unavailable", "reason": "no_lane_match"}]
+        (data / "task/dispatch.jsonl").unlink()
+        for malformed, reason in (
+                ({"status": "ok"}, "invalid_response"),
+                ({"answers": []}, "invalid_response"),
+                ({"answers": {}}, "answer_missing"),
+                ({"answers": {QUESTION: None}}, "invalid_response"),
+                ({"answers": {"other": {"type": "choice", "choice": "claude/sonnet"}}},
+                 "answer_missing"),
+                ({"answers": {QUESTION: "claude/sonnet"}}, "invalid_response"),
+                ({"answers": {QUESTION: {"type": "ranking", "choice": "claude/sonnet"}}},
+                 "invalid_response")):
+            state["reply"] = malformed
+            broken = subprocess.run(argv, text=True, capture_output=True, env=env)
+            assert broken.returncode == 0 and broken.stderr == ""
+            assert json.loads(broken.stdout) == {"status": "unavailable", "reason": reason}
+            assert recorded()[0]["reason"] == reason
+            (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = answer("o1", confidence=.8, padding="x" * 70000)
         oversized = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(oversized.stdout) == {"status": "unavailable", "reason": "service_error"}
         assert recorded()[0]["reason"] == "service_error"
@@ -159,22 +279,13 @@ with tempfile.TemporaryDirectory() as td:
         fake_git.chmod(0o755)
         no_count = argv[:argv.index("--file-count")] + argv[argv.index("--file-count") + 2:]
         started = time.monotonic()
+        slow_git_env = {**env, "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}"}
         slow = subprocess.run(no_count + ["--dry-run"], text=True, capture_output=True, check=True,
-                              env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"})
+                              env=slow_git_env)
         assert time.monotonic() - started < 10
-        assert json.loads(slow.stdout) == {"type": "choice",
-                                           "criteria": {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"},
-                                           "instructions":
-                                           "Recommend the best-fitting lane for this task. Task projection: "
-                                           + json.dumps({"task_type": "feature", "title": "title", "description":
-                                                         "~/private [REDACTED] [REDACTED] [REDACTED] [REDACTED] "
-                                                         "https://[REDACTED]@example.invalid [REDACTED]",
-                                                         "file_count": None},
-                                                        ensure_ascii=True, separators=(",", ":"))}
+        assert json.loads(slow.stdout) == expected_body(None)
         captured.clear()
-        unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True,
-                                    env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-                                         "TYPESAFE_API_KEY": "runtime-test-key"})
+        unmeasured = subprocess.run(no_count, text=True, capture_output=True, check=True, env=slow_git_env)
         assert json.loads(unmeasured.stdout) == {"status": "unavailable", "reason": "file_count_unmeasured"}
         assert not captured and recorded() == [
             {"id": "task", "event": "recommendation", "label": "recommendation",
@@ -188,37 +299,136 @@ with tempfile.TemporaryDirectory() as td:
             {"id": "task", "event": "recommendation", "label": "recommendation",
              "status": "unavailable", "reason": "no_lanes"}]
         (data / "task/dispatch.jsonl").unlink()
+        crew_file = base / "crew.json"
+        file_argv = no_lanes_argv[:-1] + [str(crew_file)]
+        crew_file.write_text(json.dumps({"default": {"harness": "claude", "account": "default"}}))
+        state["reply"] = answer("o1")
+        single = subprocess.run(file_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(single.stdout) == {"status": "recommended", "choice": "claude/default"}
+        assert captured["path"] == "/v1/systemone"
+        single_body = expected_body(3)
+        single_body["questions"][QUESTION]["criteria"] = {key: CRITERIA[key] for key in ("o1", "other")}
+        assert captured["body"] == single_body
+        assert recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/default",
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/default"}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = OK_REPLY
         brief = base / "brief.md"
-        brief.write_text("# Port lanes\nMove the sonnet and opus work to codex for this task; use kimi with Gemini 2.5 Pro.\n")
+        brief.write_text("# Private brief heading\nPrivate brief body with generated status path /localoperator/task.status\n")
         brief_argv = [arg for i, arg in enumerate(argv) if i not in (argv.index("--description"), argv.index("--description") + 1)]
         brief_argv += ["--brief", str(brief), "--dry-run"]
-        briefed = subprocess.run(brief_argv, text=True, capture_output=True, check=True)
-        assert json.loads(briefed.stdout) == {"type": "choice",
-                                              "criteria": {"claude/sonnet": "claude/sonnet", "pi/gpt": "pi/gpt"},
-                                              "instructions":
-                                              "Recommend the best-fitting lane for this task. Task projection: "
-                                              + json.dumps({"task_type": "feature", "title": "title", "description":
-                                                            "Move the [REDACTED] and [REDACTED] work to [REDACTED] for this task; use [REDACTED] with [REDACTED].",
-                                                            "file_count": 3},
-                                                           ensure_ascii=True, separators=(",", ":"))}
+        briefed = subprocess.run(brief_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(briefed.stdout) == expected_body(3)
 
         result =subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(result.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         assert captured["path"] == "/v1/systemone" and captured["auth"] == "Bearer runtime-test-key"
         assert captured["body"] == payload
+        assert set(captured["body"]) == {"state", "model", "questions"}
+        posted = captured["body"]["questions"]
+        assert posted[QUESTION]["type"] == "choice" and posted[QUESTION]["criteria"] == CRITERIA
+        assert posted[DESIGN] == {"type": "noul", "instructions": DESIGN_INSTRUCTIONS}
+        assert "Task projection" not in posted[QUESTION]["instructions"]
+        assert captured["body"]["state"] == expected_body(3)["state"]
         rows = [json.loads(line) for line in (data / "task/dispatch.jsonl").read_text().splitlines()]
         assert rows == [{"timestamp": rows[0]["timestamp"], "id":"task", "event":"recommendation",
                          "label":"recommendation", "status":"recommended", "choice":"claude/sonnet", "confidence":.8,
-                         "probabilities":{"claude/sonnet":.8,"pi/gpt":.2}}]
-        state["reply"] = {**OK_REPLY, "probabilities": {"claude/sonnet": .8, "pi/gpt": .1, "sq-send": .1}}
+                         "probabilities":{"claude/sonnet":.8,"pi/gpt":.2},
+                         "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet", "confidence": .8,
+                                                 "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
+                                     DESIGN: DESIGN_ANSWER},
+                         "model": "jev-2026-05"}]
+        evidence_row = {"id": "task", "event": "recommendation", "label": "recommendation",
+                        "status": "recommended", "choice": "claude/sonnet", "confidence": .8,
+                        "probabilities": {"claude/sonnet": .8, "pi/gpt": .2},
+                        "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                               "confidence": .8,
+                                               "probabilities": {"claude/sonnet": .8, "pi/gpt": .2}},
+                                    DESIGN: DESIGN_ANSWER}}
+        for rejected_model in ("jev 2026-05", "sk-abcd1234567890", credential_url,
+                               "echo-runtime-test-key", "😀" * 15000):
+            (data / "task/dispatch.jsonl").unlink(missing_ok=True)
+            state["reply"] = {**OK_REPLY, "model": rejected_model}
+            kept = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+            assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+            assert recorded() == [evidence_row]
+        for digits in (401, 5000):
+            (data / "task/dispatch.jsonl").unlink()
+            reply = {**OK_REPLY, "answers": {**OK_REPLY["answers"], DESIGN: {
+                **DESIGN_ANSWER, "confidence": "oversized_integer"}}}
+            state["reply"] = json.dumps(reply).encode().replace(b'"oversized_integer"', b"9" * digits)
+            kept = subprocess.run(argv, text=True, capture_output=True,
+                                  env={**env, "PYTHONINTMAXSTRDIGITS": "4300"}, check=True)
+            assert json.loads(kept.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+            assert recorded() == [{**evidence_row, "model": OK_REPLY["model"],
+                                   "answers": {**evidence_row["answers"], DESIGN: {"type": "noul", "answer": True}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        probabilities = {f"{i:03d}" + ".x" * 60: .1 for i in range(520)}
+        large_argv = argv.copy()
+        large_argv[argv.index("--lanes-json") + 1] = json.dumps(dict.fromkeys(probabilities))
+        first_lane = next(iter(probabilities))
+        state["reply"] = answer("o1", confidence=.8,
+                                probabilities={f"o{i}": .1 for i in range(1, len(probabilities) + 1)})
+        large = subprocess.run(large_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(large.stdout) == {"status": "recommended", "choice": first_lane}
+        assert recorded() == [{**evidence_row, "choice": first_lane, "probabilities": probabilities,
+                               "answers": {QUESTION: {"type": "choice", "choice": first_lane,
+                                                      "confidence": .8, "probabilities": probabilities}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        models = [f"{i:04d}" + ".x" * 58 for i in range(2100)]
+        crew_file.write_text(json.dumps({"default": [{"harness": "codex", "model": model} for model in models]}))
+        probabilities = {f"codex/{model}": .1 for model in models}
+        first_lane = next(iter(probabilities))
+        state["reply"] = answer("o1", confidence=.8,
+                                probabilities={f"o{i}": .1 for i in range(1, len(probabilities) + 1)})
+        large_file = subprocess.run(file_argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(large_file.stdout) == {"status": "recommended", "choice": first_lane}
+        assert recorded() == [{**evidence_row, "choice": first_lane, "probabilities": probabilities,
+                               "answers": {QUESTION: {"type": "choice", "choice": first_lane,
+                                                      "confidence": .8, "probabilities": probabilities}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = answer("o1", confidence=.8,
+                                notes="arbitrary service text", rationale={"nested": True})
+        stripped = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(stripped.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/sonnet", "confidence": .8,
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                     "confidence": .8}}}]
+        final_row = (data / "task/dispatch.jsonl").read_text()
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = {"answers": {QUESTION: {"type": "choice", "choice": "o1", "confidence": .8},
+                                      DESIGN: {"type": "noul", "choice": "sk-abcd1234567890"}}}
+        unreportable = subprocess.run(argv, text=True, capture_output=True, env=env, check=True)
+        assert json.loads(unreportable.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert unreportable.stderr == "" and recorded() == [
+            {"id": "task", "event": "recommendation", "label": "recommendation",
+             "status": "recommended", "choice": "claude/sonnet", "confidence": .8,
+             "answers": {QUESTION: {"type": "choice", "choice": "claude/sonnet",
+                                     "confidence": .8},
+                         DESIGN: {"type": "noul"}}}]
+        (data / "task/dispatch.jsonl").unlink()
+        state["reply"] = answer("o1", confidence=.8,
+                                probabilities={"o1": .8, "o2": .1, "other": .05, "sq-send": .1, "o3": .1,
+                                               "bogus": "high", "sk-abcd1234567890": .02,
+                                               "k" * 129: .01, "tab\tkey": .01,
+                                               "runtime-test-key": .01, credential_url: .01})
+        state["reply"]["answers"][DESIGN] = {**DESIGN_ANSWER, "choice": "runtime-test-key",
+                                            "probabilities": {"runtime-test-key": 1}}
         leak_data = base / "leak"
         leak_argv = argv[:argv.index("--data") + 1] + [str(leak_data)] + argv[argv.index("--data") + 2:]
         leak = subprocess.run(leak_argv, text=True, capture_output=True, env=env, check=True)
         assert json.loads(leak.stdout) == {"status":"recommended","choice":"claude/sonnet"}
         leak_rows = [json.loads(line) for line in (leak_data / "task/dispatch.jsonl").read_text().splitlines()]
-        assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1}
+        assert leak_rows[0]["probabilities"] == {"claude/sonnet": .8, "pi/gpt": .1, "other": .05}
+        assert leak_rows[0]["answers"][QUESTION]["probabilities"] == {"claude/sonnet": .8,
+                                                                     "pi/gpt": .1, "other": .05}
+        assert leak_rows[0]["answers"][DESIGN] == DESIGN_ANSWER
         state["reply"] = OK_REPLY
-        assert "runtime-test-key" not in result.stdout + result.stderr + (data / "task/dispatch.jsonl").read_text()
+        assert "runtime-test-key" not in result.stdout + result.stderr + final_row
         assert module.redact("prefix $HOME/secret then sk-abcd1234567890") == "prefix ~/secret then [REDACTED]"
         boundary = module.redact("word " * 46 + " sk-abcd1234567890")
         assert len(boundary) == 240 and "sk-" not in boundary
@@ -252,8 +462,106 @@ with tempfile.TemporaryDirectory() as td:
         assert module.redact("pipeline claude-sonnet-5 o3-mini") == "pipeline [REDACTED] [REDACTED]"
         assert module.redact("pi day with cursor and qwen2.5") == "[REDACTED] day with [REDACTED] and [REDACTED]"
         assert module.redact("kimi with Gemini 2.5 Pro and Claude 3.5 Sonnet") == "[REDACTED] with [REDACTED] and [REDACTED] [REDACTED]"
+        # The documented response shape maps onto configured lanes.
+        live = answer("o2", confidence=.22, probabilities={"o2": .61, "o1": .39})
+        assert module.classify(live, {"o1": "cheap", "o2": "strong"}) == {
+            "status": "recommended", "choice": "strong", "confidence": .22, "low_confidence": True,
+            "probabilities": {"strong": .61, "cheap": .39},
+            "answers": {"lane": {"type": "choice", "choice": "strong", "confidence": .22,
+                                   "probabilities": {"strong": .61, "cheap": .39}}}}
+        assert module.classify(live, {"o1": "claude/sonnet"}) == {
+            "status": "unavailable", "reason": "no_lane_match"}
+        assert module.classify(None, {"o1": "strong"}) == {"status": "unavailable", "reason": "invalid_response"}
+        assert module.classify("text", {"o1": "strong"}) == {"status": "unavailable", "reason": "invalid_response"}
+
+        repo = base / "facts-repo"
+        for directory in ("localoperator", "tests", "web", private_email):
+            (repo / directory).mkdir(parents=True)
+        (repo / "README.md").write_text("# service\n")
+        (repo / "localoperator/src.py").write_text("print('x')\n")
+        (repo / "tests/test_main.py").write_text("")
+        (repo / "web/app.tsx").write_text("export {};\n")
+        (repo / "localoperator/lib.go").write_text("package lib\n")
+        (repo / private_email / "file.txt").write_text("")
+        (repo / "localoperator/file.privateextension").write_text("")
+        tied = base / "facts-tie"
+        (tied / "src").mkdir(parents=True)
+        (tied / "src/a.go").write_text("package a\n")
+        (tied / "src/b.py").write_text("")
+        for fixture in (repo, tied):
+            subprocess.run(["git", "-C", str(fixture), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(fixture), "add", "-A"], check=True)
+        expected_facts = {"tracked_files": 7, "extension_counts": {".go": 1, ".md": 1, ".py": 2, ".tsx": 1, ".txt": 1},
+                          "has_tests": True, "has_docs": True}
+        assert module.project_facts(repo) == expected_facts
+        assert module.project_facts(tied) == {"tracked_files": 2, "extension_counts": {".go": 1, ".py": 1},
+                                             "has_tests": False, "has_docs": False}
+        no_count = [arg for i, arg in enumerate(argv)
+                    if i not in (argv.index("--file-count"), argv.index("--file-count") + 1)]
+        facts_argv = [str(repo) if arg == str(project) else arg for arg in no_count]
+        facts_payload = json.loads(subprocess.run(facts_argv + ["--dry-run"], text=True,
+                                                  capture_output=True, env=env, check=True).stdout)
+        assert facts_payload["state"]["repository"] == expected_facts
+        config.write_text(json.dumps({"enabled_projects": [str(repo)]}))
+        private_facts_argv = facts_argv + ["--brief", str(brief)]
+        private_facts_argv[facts_argv.index("--task-type") + 1] = "private_task_type"
+        unknown_task = subprocess.run(private_facts_argv, text=True, capture_output=True, check=True,
+                                      env={**env, "USER": "localoperator", "LOGNAME": "localoperator"})
+        assert json.loads(unknown_task.stdout) == {"status": "recommended", "choice": "claude/sonnet"}
+        assert captured["body"] == {**facts_payload, "state": {"task": {"type": "unknown"}, "repository": expected_facts}}
+        assert all(text not in json.dumps(captured["body"]) for text in (
+            "localoperator", "privateextension", "Private brief", "task.status", "private_task_type", private_email,
+        ))
+
+        crew = base / "crew-facts.json"
+        crew.write_text(json.dumps({"default": [
+            {"harness": "codex", "model": "gpt-5", "effort": "high"},
+            {"harness": "claude", "model": "sonnet"}]}))
+
+        def project_criteria(path):
+            project_argv = [arg for i, arg in enumerate(facts_argv)
+                            if i not in (facts_argv.index("--lanes-json"),
+                                         facts_argv.index("--lanes-json") + 1)]
+            out = subprocess.run(project_argv + ["--project-config", str(path), "--dry-run"],
+                                 text=True, capture_output=True, env=env, check=True).stdout
+            return json.loads(out)["questions"][QUESTION]["criteria"]
+
+        mixed = project_criteria(crew)
+        assert mixed["other"] == CRITERIA["other"]
+        assert mixed["o2"]["fits"].startswith(HIGH_CRITERIA["fits"])
+        assert mixed["o2"]["not_for"].startswith(HIGH_CRITERIA["not_for"])
+        assert mixed["o1"] == CRITERIA["o1"]
+        assert mixed["o2"] != mixed["o1"]
+
+        no_effort = base / "crew-no-effort.json"
+        no_effort.write_text(json.dumps({"default": [
+            {"harness": "codex", "model": "gpt-5"},
+            {"harness": "claude", "model": "sonnet", "account": private_email,
+             "effort": credential_url}]}))
+        identified = project_criteria(no_effort)
+        assert identified == CRITERIA
+        assert identified["o2"] != identified["o1"]
+        assert identified["o2"]["not_for"] != identified["o1"]["not_for"]
+        assert private_email not in json.dumps(identified) and "private-pass" not in json.dumps(identified)
+
+        shared_effort = base / "crew-shared-effort.json"
+        shared_effort.write_text(json.dumps({"default": [
+            {"harness": "codex", "model": "gpt-5", "effort": "medium"},
+            {"harness": "claude", "model": "sonnet", "effort": "medium"}]}))
+        shared = project_criteria(shared_effort)
+        assert shared["o2"] != shared["o1"]
+        for option in ("o1", "o2"):
+            assert shared[option]["fits"].startswith(MEDIUM_CRITERIA["fits"])
+            assert shared[option]["not_for"].startswith(MEDIUM_CRITERIA["not_for"])
+
+        crew.write_text(json.dumps({"rules": [{"use": {"harness": "codex", "model": "gpt-5", "effort": "high"}}],
+                                    "default": {"harness": "codex", "model": "gpt-5", "effort": "medium"}}))
+        variants = project_criteria(crew)["o1"]
+        assert HIGH_CRITERIA["fits"] in variants["fits"] and MEDIUM_CRITERIA["fits"] in variants["fits"]
+        assert MEDIUM_CRITERIA["not_for"] not in variants["not_for"]
     finally:
         server.shutdown()
         target.shutdown()
+        proxy.shutdown()
 print("PASS: Jev projection, project opt-in, no-key, dry-run, redirect refusal, unhashable choice, redaction fixtures, shadow event and fake HTTP contract")
 PY

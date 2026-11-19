@@ -355,16 +355,43 @@ Bases XO herdam este arquivo do primário, então os próprios operadores de um 
 Jev é um serviço opcional de recomendação de harness e modelo, somente em modo sombra, que `bin/sq-spawn.sh` consulta com uma projeção da tarefa antes de lançar um spawn.
 Ele é desabilitado por padrão e habilitado por projeto: `config/jev-dispatch.json` é um arquivo opcional, local, gitignored cujo `enabled_projects` lista raízes de projeto em caminho absoluto, por exemplo `{"enabled_projects":["/absolute/project/path"]}`.
 Um arquivo ausente, malformado ou um projeto não listado significa que nenhuma requisição é enviada.
-Uma recomendação nunca altera o dispatch: `bin/sq-jev-call.py` a acrescenta em `data/<id>/dispatch.jsonl` como um evento `recommendation` rotulado, por meio de `bin/sq-dispatch-log.sh`; `sq-spawn.sh` descarta a saída do cliente, e nenhum harness, modelo, esforço, conta ou script é selecionado a partir dela.
-O roteamento de `config/crew-dispatch.json` não é alterado pelo Jev.
-A requisição contém apenas o tipo da tarefa, um título e uma descrição, a contagem de arquivos rastreados e os candidatos de lane configurados.
-O título e a descrição vêm do primeiro cabeçalho e do texto do corpo do brief, a menos que sejam informados diretamente, e são redigidos antes de serem truncados em 240 caracteres.
-A redação cobre valores com formato de segredo, credenciais em URLs e identificadores de harness e modelo, incluindo os nomes das lanes em `config/crew-dispatch.json`; a contagem de arquivos é o número de entradas de `git ls-files`.
-`TYPESAFE_API_KEY` é lida somente do ambiente e enviada somente como credencial bearer; ela nunca é passada em argv, gravada em log ou em `dispatch.jsonl`, nem armazenada em fixture.
-O cliente contata apenas a URL fixa do serviço (um `SQUAD_JEV_URL_OVERRIDE` restrito a loopback existe para testes), recusa redirecionamentos e aplica um prazo de 3 segundos.
-Toda falha é registrada como `status: "unavailable"` com um `reason` não sensível: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `no_lane_match` ou `service_error`.
-`bin/sq-jev-call.py --dry-run --project <path> --task-type <type>` imprime o corpo exato da requisição sem o opt-in, a chave ou uma chamada de rede.
-`tests/sq-jev-call.test.sh` e `tests/sq-jev-shadow-dispatch.test.sh` verificam o cliente e a garantia de não influência offline; nenhum deles chama o serviço real.
+O cliente usa `bin/sq-dispatch-log.sh` para acrescentar um evento separado com o rótulo `recommendation` a `data/<id>/dispatch.jsonl`.
+`sq-spawn.sh` descarta a saída do cliente, então o Jev nunca altera o roteamento nem a escolha de harness, modelo, esforço, conta ou script.
+
+### O que a requisição envia
+
+O cliente envia um POST para `https://api.typesafe.ai/v1/systemone` com um `model` fixo (`jev-latest`), um objeto `state` e um mapa `questions` indexado por pergunta.
+A lista fechada de campos permitidos em `state` contém `task.type` (`strike`, `recon`, `xo`, `feature` ou `unknown`) e os dados agregados de `repository`: `tracked_files`, `extension_counts`, `has_tests` e `has_docs`.
+Por padrão, esses dados vêm de uma única leitura de `git ls-files` com limite de tempo, e apenas um conjunto fixo de extensões comuns pode aparecer como chaves de `extension_counts`.
+As perguntas são `lane` (uma `choice` entre IDs opacos de `o1` a `oN`, mais `other` quando nenhuma lane é adequada) e `needs_design_decision` (uma `noul` que pergunta se a tarefa exige decisões de projeto que um plano fixo não resolve).
+Os esforços configurados selecionam critérios fixos de [`bin/sq-jev-criteria.v1.json`](../../bin/sq-jev-criteria.v1.json), com critérios padrão para esforços ausentes ou desconhecidos, sem substituições locais nem descrições personalizadas de lanes.
+Quando perfis da mesma lane selecionam critérios diferentes, o cliente combina as variantes aprovadas.
+O cliente atribui IDs opacos na ordem lexicográfica das lanes e mantém o mapeamento local; em perfis definidos no arquivo de configuração, o harness e o modelo (`default` se omitido) identificam a lane, não a conta.
+Não são enviados título ou descrição da tarefa, texto do brief, nomes de arquivos ou diretórios, caminhos, logins, rótulos de contas, IDs de harness ou de lane, nem texto fornecido pelo chamador.
+A lista de campos permitidos no envio só pode crescer por decisão explícita que nomeie um campo por vez, sem jamais permitir o envio de texto livre.
+
+`TYPESAFE_API_KEY` é lida somente do ambiente e enviada somente como credencial bearer; ela nunca é passada em argv, gravada em logs ou armazenada em fixtures.
+O cliente recusa redirecionamentos e aplica um prazo de 3 segundos para a requisição; `SQUAD_JEV_URL_OVERRIDE` permite usar um endpoint de loopback em testes.
+
+### O que o log registra
+
+Para `status: "recommended"`, `choice` contém a lane configurada correspondente a `answers.lane.choice`, não o ID recebido do serviço.
+Quando fornecidos e válidos, o registro inclui `confidence`, o mapa completo de `probabilities` das opções oferecidas (convertidas em IDs locais de lane, com `other` preservado), as respostas filtradas por pergunta em `answers` e o `model` informado pelo serviço.
+O mesmo mapa de probabilidades da lane fica em `answers.lane`; a resposta sobre decisões de projeto é uma evidência separada e não pode selecionar a lane.
+A confiança e as probabilidades válidas são números de 0 a 1, e uma confiança da lane abaixo de 0,5 acrescenta `low_confidence: true` sem impedir o registro.
+
+A evidência textual, incluindo chaves de probabilidades, deve conter de 1 a 128 caracteres ASCII imprimíveis, sem espaços, valores com formato de segredo, credenciais em URLs, endereços de e-mail ou o valor da credencial bearer em uso.
+O cliente descarta opções de probabilidade desconhecidas e filtra as respostas do serviço antes de gravar; o gravador rejeita entradas de probabilidade inseguras, chaves de perguntas desconhecidas e evidências inválidas por pergunta segundo a [lista de permissões compartilhada](../../bin/sq_dispatch_evidence.py).
+Um `model` inválido é omitido sem perder a evidência da lane.
+
+Falhas do serviço ou de elegibilidade podem produzir `status: "unavailable"` com um dos motivos fixos: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `answer_missing`, `no_lane_match` ou `service_error`.
+Um mapa `answers` ausente ou malformado ou uma resposta `lane` malformada resulta em `invalid_response`; um mapa sem a entrada `lane` resulta em `answer_missing`.
+Uma resposta `choice` que seleciona `other` ou não identifica uma lane oferecida resulta em `no_lane_match`.
+Nos dois modos de entrada, o gravador recusa motivos fora da lista permitida ou que contenham a credencial bearer em uso.
+Se não for possível gravar a evidência com segurança, o cliente retorna um `status: "error"` genérico em vez de expor um motivo.
+
+`bin/sq-jev-call.py --dry-run --id preview --project <path> --task-type <type>` imprime o corpo da requisição sem exigir ativação ou chave e sem fazer uma chamada de rede.
+A cobertura de regressão offline está em [`tests/sq-jev-call.test.sh`](../../tests/sq-jev-call.test.sh), [`tests/sq-dispatch-log.test.sh`](../../tests/sq-dispatch-log.test.sh) e [`tests/sq-jev-shadow-dispatch.test.sh`](../../tests/sq-jev-shadow-dispatch.test.sh).
 
 ## Toolchain
 

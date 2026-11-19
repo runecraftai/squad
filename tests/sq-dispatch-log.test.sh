@@ -454,3 +454,94 @@ derived_case released-blocked-only 'blocked: quota exhausted\n' released quota
 derived_case released-paused-only 'paused: policy hold\n' released guard
 derived_case landed-clean 'done: PR ok\n' landed none
 pass 'derived failure classes take the last done or failed line, and blocked or paused lines only when none exists'
+
+# A recommendation row is the Jev client's only durable output, so the writer keeps
+# its evidence allowlist and refuses anything outside it instead of storing it. The
+# reported model is optional metadata, so an unaccepted model is left out rather
+# than discarding the lane evidence the row exists to carry.
+dir="$TMP_ROOT/recommendation"
+mkdir -p "$dir/data"
+recommend() { # <id> <json>
+  SQUAD_BASE="$dir" SQUAD_DATA_OVERRIDE="$dir/data" SQUAD_RECOMMENDATION_JSON="$2" \
+    "$ROOT/bin/sq-dispatch-log.sh" "$1" recommendation >/dev/null 2>&1
+}
+run_case "$dir" sq-dispatch-log.sh no-stdin spawn --harness codex --model gpt-5 --effort high 0<&-
+printf '%s\n' '{"label":"recommendation","status":"recommended","choice":"codex/gpt-5"}' |
+  run_case "$dir" sq-dispatch-log.sh no-stdin recommendation --stdin
+printf '%s\n' '{"label":"recommendation","status":"recommended","choice":"claude/sonnet"}' |
+  run_case "$dir" sq-dispatch-log.sh -- no-stdin recommendation --stdin
+python3 - "$dir/data/no-stdin/dispatch.jsonl" <<'PY' || fail 'dispatch writer did not handle stdin by event'
+import json, sys
+with open(sys.argv[1]) as log:
+    spawn, *recommendations = map(json.loads, log)
+assert spawn["event"] == "spawn" and spawn["model"] == "gpt-5", spawn
+assert [(row["event"], row["choice"]) for row in recommendations] == [
+    ("recommendation", "codex/gpt-5"), ("recommendation", "claude/sonnet"),
+], recommendations
+PY
+pass 'spawn appends with stdin closed and recommendations stream with or without --'
+
+for answer_key in runtime_test_bearer_42 plausible_question; do
+  printf '{"label":"recommendation","status":"recommended","choice":"codex/gpt-5","answers":{"%s":{"type":"noul","answer":true}}}\n' "$answer_key" |
+    TYPESAFE_API_KEY=runtime_test_bearer_42 run_case "$dir" sq-dispatch-log.sh no-stdin recommendation --stdin 2>"$dir/refusal"
+  [ "$(<"$dir/refusal")" = 'sq-dispatch-log: could not append dispatch event' ] || fail 'unknown answer key was not refused'
+  [ "$(wc -l < "$dir/data/no-stdin/dispatch.jsonl")" -eq 3 ] || fail 'unknown answer key changed dispatch log'
+done
+pass 'direct stdin refuses unknown answer keys without appending or logging the bearer'
+
+python3 - "$ROOT/bin/sq-dispatch-log.sh" "$dir/data" <<'PY' || fail 'writer accepted an unsafe unavailable reason'
+import json, os, pathlib, subprocess, sys
+writer, data = sys.argv[1:]
+for mode in ([], ['--stdin']):
+    for reason, secret in [('not_documented', 'test_bearer'), ('test_bearer', 'test_bearer'),
+                           ('service_error', 'service_error'), ('answer_missing', 'missing')]:
+        payload = json.dumps({'label': 'recommendation', 'status': 'unavailable', 'reason': reason})
+        env = dict(os.environ, SQUAD_DATA_OVERRIDE=data, TYPESAFE_API_KEY=secret)
+        if not mode:
+            env['SQUAD_RECOMMENDATION_JSON'] = payload
+        result = subprocess.run([writer, 'rec-unsafe-reason', 'recommendation', *mode],
+                                input=payload if mode else '', env=env, capture_output=True, text=True, check=True)
+        assert not result.stdout and result.stderr == 'sq-dispatch-log: could not append dispatch event\n'
+        assert not (pathlib.Path(data) / 'rec-unsafe-reason/dispatch.jsonl').exists()
+PY
+pass 'both recommendation input modes reject undocumented reasons and bearer matches'
+
+recommend rec-good '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61,"codex/gpt-5":0.39},"low_confidence":true,"answers":{"lane":{"type":"choice","choice":"grok/grok-4","confidence":0.22,"probabilities":{"grok/grok-4":0.61}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}' 0<&-
+python3 - "$dir/data/rec-good/dispatch.jsonl" <<'PY' || fail 'recommendation evidence row was not written as declared'
+import json, sys
+row = json.loads(open(sys.argv[1]).readline())
+assert set(row) == {"timestamp", "id", "event", "label", "status", "choice", "confidence",
+                    "probabilities", "low_confidence", "answers", "model"}, row
+assert row["confidence"] == 0.22 and row["low_confidence"] is True and row["model"] == "jev-2026-05"
+assert row["probabilities"] == {"grok/grok-4": 0.61, "codex/gpt-5": 0.39}
+assert row["answers"]["lane"]["choice"] == "grok/grok-4"
+assert row["answers"]["needs_design_decision"]["answer"] is False
+PY
+recommend rec-freenotes '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","answers":{"lane":{"notes":"arbitrary service text"}}}'
+recommend rec-badflag '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","low_confidence":"yes"}'
+recommend rec-badmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","confidence":0.7,"model":"jev 2026-05"}'
+recommend rec-secretmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"sk-abcd1234567890"}'
+recommend rec-secretprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"grok/grok-4":0.6,"sk-abcd1234567890":0.4}}'
+recommend rec-urlprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"https://user:pass@local.invalid":0.4}}'
+TYPESAFE_API_KEY=runtime-test-key recommend rec-keyprob '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","probabilities":{"runtime-test-key":0.4}}'
+recommend rec-urlmodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"https://user:pass@local.invalid"}'
+TYPESAFE_API_KEY=runtime-test-key recommend rec-keymodel '{"label":"recommendation","status":"recommended","choice":"grok/grok-4","model":"runtime-test-key"}'
+recommend rec-reason '{"label":"recommendation","status":"unavailable","reason":"answer_missing"}'
+for refused in rec-freenotes rec-badflag rec-secretprob rec-urlprob rec-keyprob; do
+  [ ! -e "$dir/data/$refused/dispatch.jsonl" ] || fail "stored out-of-allowlist recommendation: $refused"
+done
+python3 - "$dir/data/rec-"{badmodel,secretmodel,urlmodel,keymodel}/dispatch.jsonl <<'PY' || fail 'an out-of-allowlist model lost the lane evidence instead of being left out'
+import json, sys
+for path in sys.argv[1:]:
+    row = json.loads(open(path).readline())
+    assert row["status"] == "recommended" and row["choice"] == "grok/grok-4", row
+    assert "model" not in row, row
+    if path.endswith("rec-badmodel/dispatch.jsonl"):
+        assert row["confidence"] == 0.7, row
+PY
+python3 - "$dir/data/rec-reason/dispatch.jsonl" <<'PY' || fail 'unavailable recommendation reason lost'
+import json, sys
+row = json.loads(open(sys.argv[1]).readline())
+assert row["status"] == "unavailable" and row["reason"] == "answer_missing", row
+PY
+pass 'recommendation rows carry only the evidence allowlist, leave out an invalid model, and refuse other evidence entirely'

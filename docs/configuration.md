@@ -421,16 +421,43 @@ XO bases inherit this file from the primary, so an XO's own operators apply the 
 Jev is an optional, shadow-only harness and model recommendation service that `bin/sq-spawn.sh` consults with a task projection before launching a spawn.
 It is disabled by default and opt-in per project: `config/jev-dispatch.json` is an optional local, gitignored file whose `enabled_projects` lists absolute project roots, for example `{"enabled_projects":["/absolute/project/path"]}`.
 An absent, malformed, or unlisted project means no request is sent.
-A recommendation never changes the dispatch: `bin/sq-jev-call.py` appends it to `data/<id>/dispatch.jsonl` as a labelled `recommendation` event through `bin/sq-dispatch-log.sh`, `sq-spawn.sh` discards the client output, and no harness, model, effort, account, or script is selected from it.
-`config/crew-dispatch.json` routing is unchanged by Jev.
-The request contains only the task type, a title and description, the tracked file count, and the configured lane candidates.
-The title and description come from the brief's first heading and body text unless supplied directly, and they are redacted before truncation to 240 characters.
-Redaction covers secret-shaped values, URL credentials, and harness and model identifiers, including the names of the lanes in `config/crew-dispatch.json`; the file count is the number of `git ls-files` entries.
-`TYPESAFE_API_KEY` is read only from the environment and is sent only as the bearer credential; it is never passed in argv, written to a log or to `dispatch.jsonl`, or stored in a fixture.
-The client contacts only the fixed service URL (a loopback-only `SQUAD_JEV_URL_OVERRIDE` exists for tests), refuses redirects, and enforces a 3-second deadline.
-Every failure is recorded as `status: "unavailable"` with one non-sensitive `reason`: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `no_lane_match`, or `service_error`.
-`bin/sq-jev-call.py --dry-run --project <path> --task-type <type>` prints the exact request body without the opt-in, the key, or a network call.
-`tests/sq-jev-call.test.sh` and `tests/sq-jev-shadow-dispatch.test.sh` verify the client and the non-influence guarantee offline; neither calls the live service.
+The client uses `bin/sq-dispatch-log.sh` to append a separate event labelled `recommendation` to `data/<id>/dispatch.jsonl`.
+`sq-spawn.sh` discards the client output, so Jev never changes the routing or the selected harness, model, effort, account, or script.
+
+### What the request sends
+
+The client posts to `https://api.typesafe.ai/v1/systemone` with a fixed `model` (`jev-latest`), a `state` object, and a keyed `questions` map.
+The closed allowlist for `state` is `task.type` (`strike`, `recon`, `xo`, `feature`, or `unknown`) and the `repository` aggregates `tracked_files`, `extension_counts`, `has_tests`, and `has_docs`.
+By default these aggregates come from one time-bounded `git ls-files` read, and only a fixed set of common extensions can appear as keys in `extension_counts`.
+The questions are `lane` (a `choice` among opaque IDs `o1` through `oN`, plus `other` for no fit) and `needs_design_decision` (a `noul` asking whether the task needs design decisions that a fixed plan cannot settle).
+Configured efforts select fixed criteria from [`bin/sq-jev-criteria.v1.json`](../bin/sq-jev-criteria.v1.json), with default criteria for missing or unknown efforts and no local overrides or custom lane descriptions.
+When profiles for the same lane select different criteria, the client combines the approved variants.
+The client assigns opaque IDs in sorted lane order and keeps the mapping local; for file-backed profiles the lane is identified by harness and model (`default` if the model is omitted), not by account.
+No task title, description, brief text, file or directory name, path, login, account label, harness or lane ID, or caller-supplied prose is sent.
+The outbound allowlist may grow only by an explicit decision naming one field at a time, never by allowing free-form passthrough.
+
+`TYPESAFE_API_KEY` is read only from the environment and sent only as the bearer credential; it is never passed in argv, written to logs, or stored in fixtures.
+The client refuses redirects and enforces a 3-second request deadline; `SQUAD_JEV_URL_OVERRIDE` permits a loopback endpoint for tests.
+
+### What the log records
+
+For `status: "recommended"`, `choice` is the configured lane mapped from `answers.lane.choice`, not the wire option ID.
+When supplied and valid, the row includes `confidence`, the full `probabilities` map for offered options (remapped to local lane IDs, with `other` retained), the filtered per-question `answers`, and the service-reported `model`.
+The same lane probability map is kept under `answers.lane`; the design answer is separate evidence and cannot select a lane.
+Valid confidence and probability scores are numbers from 0 to 1, and a lane confidence below 0.5 adds `low_confidence: true` without suppressing the row.
+
+Text evidence, including probability keys, must be nonempty printable ASCII without spaces, at most 128 characters, and free of secret-shaped values, URL credentials, email addresses, and the active bearer value.
+The client discards unknown probability options and filters service answers before writing; the writer rejects unsafe probability entries, unknown question keys, and invalid per-question evidence under the [shared allowlist](../bin/sq_dispatch_evidence.py).
+An invalid reported `model` is omitted without losing the lane evidence.
+
+Service and eligibility failures can produce `status: "unavailable"` with one fixed reason: `missing_key`, `no_lanes`, `file_count_unmeasured`, `endpoint_refused`, `invalid_response`, `answer_missing`, `no_lane_match`, or `service_error`.
+An absent or malformed `answers` map or a malformed `lane` answer gives `invalid_response`; a map with no `lane` entry gives `answer_missing`.
+A `choice` answer that selects `other` or does not identify an offered lane gives `no_lane_match`.
+Both writer input modes reject reasons outside the allowlist or containing the active bearer.
+If evidence cannot be safely appended, the client returns a generic `status: "error"` rather than exposing a reason.
+
+`bin/sq-jev-call.py --dry-run --id preview --project <path> --task-type <type>` prints the request body without requiring opt-in or a key and without making a network call.
+Offline regression coverage lives in [`tests/sq-jev-call.test.sh`](../tests/sq-jev-call.test.sh), [`tests/sq-dispatch-log.test.sh`](../tests/sq-dispatch-log.test.sh), and [`tests/sq-jev-shadow-dispatch.test.sh`](../tests/sq-jev-shadow-dispatch.test.sh).
 
 ## Claude account selection (config/claude-accounts)
 

@@ -4,7 +4,7 @@
 #   sq-dispatch-log.sh <id> decision --harness H --model M --effort E \
 #     (--profile NAME | --reason TEXT) [--quota-summary JSON]
 #   sq-dispatch-log.sh <id> spawn --harness H --model M --effort E
-#   sq-dispatch-log.sh <id> recommendation   (reads SQUAD_RECOMMENDATION_JSON)
+#   sq-dispatch-log.sh <id> recommendation [--stdin]   (defaults to SQUAD_RECOMMENDATION_JSON)
 #   sq-dispatch-log.sh <id> outcome --source status-notify|pr-merge|teardown \
 #     --result done|failed|landed|released
 # Base: SQUAD_BASE > SQUAD_HOME > SQUAD_ROOT_OVERRIDE > repository root;
@@ -29,6 +29,8 @@
 # Only the bucket is stored, never the status text. Teardown and status-notify
 # write outcome before removing status.
 # Every record includes timestamp, id and event. Appends survive task teardown.
+# See "Jev shadow recommendations" in docs/configuration.md for recommendation
+# fields and sq_dispatch_evidence.py for the shared validation rules.
 # Writers serialize on the file with a bounded lock wait of at most 500 ms;
 # unsafe paths, lock contention beyond that budget, missing dependencies and
 # write failures emit one generic warning, then exit 0.
@@ -38,7 +40,8 @@ BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SCRIPT_DIR/..}}}"
 DATA="${SQUAD_DATA_OVERRIDE:-$BASE/data}"
 STATE="${SQUAD_STATE_OVERRIDE:-$BASE/state}"
 
-if ! SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 - "$DATA" "$STATE" "$@" 2>/dev/null <<'PY'
+append_event() {
+  SQ_DISPATCH_LIB="$SCRIPT_DIR" python3 -c '
 import argparse
 import datetime
 import fcntl
@@ -51,15 +54,11 @@ import sys
 import time
 
 sys.path.insert(0, os.environ["SQ_DISPATCH_LIB"])
+from sq_dispatch_evidence import (
+    ANSWER_QUESTIONS, MAX_RECOMMENDATION_BYTES, SECRET_SHAPE, recordable_answer,
+    recordable_probability, recordable_reason, recordable_text, unit_interval,
+)
 from sq_dispatch_failure import FAILURE_CLASSES, status_verdict
-
-SECRET_SHAPE = re.compile(
-    r"(?<![A-Za-z0-9])(sk|pk|ghp|gho|ghs|ghu|ghr|xox[abprs]|glpat)[-_][A-Za-z0-9_-]{8,}"
-    r"|github_pat_[A-Za-z0-9_]{8,}|AKIA[0-9A-Z]{12,}|AIza[0-9A-Za-z_-]{20,}"
-    r"|eyJ[A-Za-z0-9_-]{8,}[.]|bearer[ ]"
-    r"|(token|secret|passwd|password|api[_-]?key|credential)[=:]"
-    r"|(?<![A-Za-z0-9_+/])(?!(?:[0-9a-f]{40}|[0-9a-f]{64})(?![A-Za-z0-9_+/]))[A-Za-z0-9_+/]{32,}",
-    re.IGNORECASE)
 
 
 parser = argparse.ArgumentParser(description="Append one private dispatch event (best effort).")
@@ -73,8 +72,9 @@ for event in ("decision", "spawn"):
         reason = command.add_mutually_exclusive_group(required=True)
         reason.add_argument("--profile")
         reason.add_argument("--reason")
-        command.add_argument("--quota-summary", default='{"status":"unknown"}')
-command = commands.add_parser("recommendation")
+        command.add_argument("--quota-summary", default=json.dumps({"status": "unknown"}))
+command = commands.add_parser("recommendation", allow_abbrev=False)
+command.add_argument("--stdin", action="store_true")
 command = commands.add_parser("outcome")
 command.add_argument("--source", required=True, choices=("status-notify", "pr-merge", "teardown"))
 command.add_argument("--result", required=True, choices=("done", "failed", "landed", "released"))
@@ -82,12 +82,21 @@ command.add_argument("--failure-class", choices=FAILURE_CLASSES + ("none",))
 args = parser.parse_args(sys.argv[3:])
 if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", args.id):
     raise ValueError("invalid id")
+
+
+def probabilities_field(value, secret):
+    if not isinstance(value, dict) or any(
+            not recordable_probability(k, v, secret) for k, v in value.items()):
+        raise ValueError("invalid recommendation probabilities")
+    return value
+
+
 record = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
           "id": args.id, "event": args.event}
 if args.event in ("decision", "spawn"):
     for field in ("harness", "model", "effort"):
         value = getattr(args, field)
-        if not re.fullmatch(r"[!-~]{1,128}", value) or SECRET_SHAPE.search(value):
+        if not recordable_text(value):
             raise ValueError("invalid choice")
         record[field] = value
 if args.event == "decision":
@@ -108,32 +117,55 @@ if args.event == "decision":
             raise ValueError("invalid quota field")
     record["quota_summary"] = quota
 if args.event == "recommendation":
-    recommendation = json.loads(os.environ.get("SQUAD_RECOMMENDATION_JSON", "{}"))
+    if args.stdin:
+        payload = sys.stdin.buffer.read(MAX_RECOMMENDATION_BYTES + 1)
+        if len(payload) > MAX_RECOMMENDATION_BYTES:
+            raise ValueError("recommendation payload too large")
+    else:
+        payload = os.environ.get("SQUAD_RECOMMENDATION_JSON", "{}")
+    recommendation = json.loads(payload)
     if not isinstance(recommendation, dict) or recommendation.get("label") != "recommendation":
         raise ValueError("invalid recommendation event")
     status = recommendation.get("status")
+    secret = os.environ.get("TYPESAFE_API_KEY")
     if status == "unavailable":
         reason = recommendation.get("reason")
-        if not isinstance(reason, str) or not re.fullmatch(r"[a-z][a-z_]{0,63}", reason):
+        if not recordable_reason(reason, secret):
             raise ValueError("invalid recommendation reason")
         record.update(label="recommendation", status=status, reason=reason)
     elif status == "recommended":
         choice = recommendation.get("choice")
-        if not isinstance(choice, str) or not re.fullmatch(r"[!-~]{1,128}", choice):
+        if not recordable_text(choice, secret):
             raise ValueError("invalid recommendation choice")
         record.update(label="recommendation", status=status, choice=choice)
         confidence = recommendation.get("confidence")
         if confidence is not None:
-            if type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            if not unit_interval(confidence):
                 raise ValueError("invalid recommendation confidence")
             record["confidence"] = confidence
-        probabilities = recommendation.get("probabilities")
-        if probabilities is not None:
-            if not isinstance(probabilities, dict) or any(
-                    not isinstance(k, str) or type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
-                    for k, v in probabilities.items()):
-                raise ValueError("invalid recommendation probabilities")
-            record["probabilities"] = probabilities
+        if "probabilities" in recommendation and recommendation["probabilities"] is not None:
+            record["probabilities"] = probabilities_field(recommendation["probabilities"], secret)
+        if recommendation.get("low_confidence") is not None:
+            if recommendation["low_confidence"] is not True:
+                raise ValueError("invalid recommendation low_confidence")
+            record["low_confidence"] = True
+        if "answers" in recommendation and recommendation["answers"] is not None:
+            answers = recommendation["answers"]
+            if not isinstance(answers, dict) or not answers:
+                raise ValueError("invalid recommendation answers")
+            evidence = {}
+            for question, answer in answers.items():
+                if question not in ANSWER_QUESTIONS:
+                    raise ValueError("invalid recommendation answers")
+                entry = recordable_answer(answer, secret)
+                if not entry or entry != answer:
+                    raise ValueError("invalid recommendation answers")
+                evidence[question] = entry
+            record["answers"] = evidence
+        if "model" in recommendation and recommendation["model"] is not None:
+            model = recommendation["model"]
+            if recordable_text(model, secret):
+                record["model"] = model
     else:
         raise ValueError("invalid recommendation status")
 if args.event == "outcome":
@@ -184,8 +216,10 @@ os.fsync(fd)
 os.close(fd)
 os.close(task_fd)
 os.close(data_fd)
-PY
-then
+' "$DATA" "$STATE" "$@"
+}
+
+if ! append_event "$@" 2>/dev/null; then
   printf '%s\n' 'sq-dispatch-log: could not append dispatch event' >&2
 fi
 exit 0

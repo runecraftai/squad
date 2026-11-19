@@ -122,7 +122,7 @@ PY
 test_recommendation_never_changes_actual_dispatch() {
   local baseline shadow case_base case_shadow home_shadow proj_shadow proj_real
   local out_shadow jev_port status requests
-  local reply='{"type":"choice","choice":"grok/grok-4","confidence":0.9,"probabilities":{"grok/grok-4":0.9,"codex/gpt-5":0.1}}'
+  local reply='{"answers":{"lane":{"type":"choice","choice":"o2","confidence":0.9,"probabilities":{"o2":0.9,"o1":0.08,"other":0.02}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}'
   baseline=$(make_case shadow-off)
   shadow=$(make_case shadow-on)
   IFS='|' read -r case_base _ <<< "$baseline"
@@ -135,8 +135,12 @@ test_recommendation_never_changes_actual_dispatch() {
   status=$?
   expect_code 0 "$status" "baseline explicit spawn should succeed"
   jev_port=$(cat "$case_shadow/port")
-  out_shadow=$(export TYPESAFE_API_KEY=runtime-test-key SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$jev_port/v1/systemone"
-    spawn_explicit "$shadow" "$case_shadow/launch.log")
+  out_shadow=$(
+    unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY
+    export http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 all_proxy=http://127.0.0.1:1 no_proxy=127.0.0.1
+    export TYPESAFE_API_KEY=runtime-test-key SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$jev_port/v1/systemone"
+    spawn_explicit "$shadow" "$case_shadow/launch.log"
+  )
   status=$?
   expect_code 0 "$status" "explicit spawn with Jev shadow should succeed"
 
@@ -156,12 +160,30 @@ import sys
 
 request = json.loads(open(sys.argv[1]).readline())
 assert request["auth"] == "Bearer runtime-test-key"
-assert request["body"]["type"] == "choice"
-assert set(request["body"]) == {"type", "criteria", "instructions"}
-assert request["body"]["criteria"] == {"codex/gpt-5": "codex/gpt-5", "grok/grok-4": "grok/grok-4"}
-projection = json.loads(request["body"]["instructions"].split("Task projection: ", 1)[1])
-assert set(projection) == {"task_type", "title", "description", "file_count"}
-assert "codex/gpt-5" not in json.dumps(projection) and "grok/grok-4" not in json.dumps(projection)
+assert set(request["body"]) == {"state", "model", "questions"}
+assert request["body"]["model"] == "jev-latest"
+state = request["body"]["state"]
+assert set(state) == {"task", "repository"}
+assert state["task"] == {"type": "strike"}
+repository = state["repository"]
+assert set(repository) == {"tracked_files", "extension_counts", "has_tests", "has_docs"}
+assert isinstance(repository["tracked_files"], int) and repository["tracked_files"] >= 1
+assert repository["extension_counts"] == {".md": 1} and repository["has_tests"] is False and repository["has_docs"] is True
+questions = request["body"]["questions"]
+assert set(questions) == {"lane", "needs_design_decision"}
+assert questions["lane"]["type"] == "choice"
+assert questions["needs_design_decision"]["type"] == "noul"
+criteria = questions["lane"]["criteria"]
+assert set(criteria) == {"o1", "o2", "other"}
+for option in ("o1", "o2"):
+    assert set(criteria[option]) == {"fits", "not_for"}
+    assert criteria[option]["fits"] and criteria[option]["fits"] != option
+assert criteria["o1"]["fits"].startswith("a routine change")
+assert criteria["o2"]["fits"].startswith("a demanding or ambiguous change")
+assert criteria["other"]["fits"] == "none of these lanes fits the task"
+assert all(text not in json.dumps(request["body"]) for text in (
+    "codex/gpt-5", "grok/grok-4", "brief for", ".status",
+))
 PY
 
   diff <(dispatch_rows "$case_base/home/data/$ID/dispatch.jsonl") \
@@ -176,6 +198,14 @@ recommendations = [row for row in rows if row.get("label") == "recommendation"]
 assert len(recommendations) == 1
 assert recommendations[0]["choice"] == "grok/grok-4"
 assert recommendations[0]["event"] == "recommendation"
+assert recommendations[0]["confidence"] == 0.9
+assert recommendations[0]["probabilities"] == {"grok/grok-4": 0.9, "codex/gpt-5": 0.08, "other": 0.02}
+assert recommendations[0]["model"] == "jev-2026-05"
+assert set(recommendations[0]["answers"]) == {"lane", "needs_design_decision"}
+assert recommendations[0]["answers"]["lane"]["choice"] == "grok/grok-4"
+assert recommendations[0]["answers"]["lane"]["probabilities"] == recommendations[0]["probabilities"]
+assert recommendations[0]["answers"]["needs_design_decision"] == {"type": "noul", "answer": False}
+assert "low_confidence" not in recommendations[0]
 assert {row.get("event") for row in rows if row.get("label") != "recommendation"} == {"decision", "spawn"}
 PY
   pass "a Jev recommendation for another lane leaves the actual dispatch unchanged and is recorded separately"
