@@ -293,11 +293,11 @@ test_relaunch_resumes_same_conversation() {
 
 # Each refused gate relaunches a fresh conversation with the full brief, with no
 # pin, and names the refusal in its one status line. The transcript is never reopened.
-# refuse_case <name> <reason> <pinned yes|no> <meta-harness> <meta-model> <transcript-bytes|none> [max-bytes]
+# refuse_case <name> <reason> <pinned yes|no> <meta-harness> <meta-model> <transcript-bytes|none> [max-bytes] [window recovered|gone]
 # A transcript is always named for the task's pinned id, so the id gate is the only
 # thing that differs when pinned is no.
 refuse_case() {
-  local name=$1 reason=$2 pinned=$3 harness=$4 model=$5 bytes=$6 max=${7-}
+  local name=$1 reason=$2 pinned=$3 harness=$4 model=$5 bytes=$6 max=${7-} window=${8:-recovered}
   local id label rec out status line session=
   id=pi-resume-$name
   label="sq-$id"
@@ -306,6 +306,7 @@ refuse_case() {
   [ "$pinned" != yes ] || session="sq-$id"
 
   seed_relaunch_meta "$id" "$harness" "$model" "$session"
+  [ "$window" != gone ] || rm -f "$CASE_DIR/window"
   if [ "$bytes" != none ]; then
     write_transcript "$CASE_DIR/pi-agent" "$WT_DIR" "sq-$id" "$bytes"
   fi
@@ -354,8 +355,67 @@ test_refused_model_mismatch() {
   refuse_case model 'model mismatch' yes pi claude-other 200
 }
 
+test_refused_window_not_reused() {
+  refuse_case not-reused 'endpoint was not a recovered agentless window' yes pi default 200 '' gone
+}
+
+test_refused_invalid_max_bytes() {
+  refuse_case invalid-max 'invalid SQUAD_RESUME_MAX_BYTES' yes pi default 200 not-a-number
+}
+
+# expect_unpinned_fresh_launch <id> <why>: the spawn launched a fresh conversation
+# with the full brief, no --session-id pin, and no recorded pi_session_id.
+expect_unpinned_fresh_launch() {
+  local id=$1 why=$2 line
+  line=$(launch_line)
+  assert_contains "$line" 'encode launch-brief < ' "$why: the launch must carry the full brief"
+  if printf '%s' "$line" | grep -qE -- '--session(-id)? sq-'; then
+    fail "$why: the launch must carry no pi session argument"
+  fi
+  if grep -q '^pi_session_id=' "$HOME_DIR/state/$id.meta"; then
+    fail "$why: the meta must record no pi_session_id"
+  fi
+}
+
+# A first spawn whose worktree already holds an sq-<task-id> transcript (meta lost)
+# must not pin that id, because pi's --session-id would silently reopen it.
+test_fresh_spawn_with_stale_transcript_is_unpinned() {
+  local rec id label out status
+  id=pi-resume-stale
+  label="sq-$id"
+  rec=$(make_case stale "$id")
+  read_case "$rec"
+
+  write_transcript "$CASE_DIR/pi-agent" "$WT_DIR" "sq-$id" 200
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  expect_code 0 "$status" "a fresh pi spawn over a stale transcript should succeed: $out"
+  expect_unpinned_fresh_launch "$id" 'a stale sq-<task-id> transcript'
+  pass 'a fresh pi spawn never pins an id whose transcript already exists'
+}
+
+# A valid task id that does not end in a letter or number cannot be a pi session
+# id, so the spawn launches unpinned instead of failing pi's argument check.
+test_fresh_spawn_with_unpinnable_id_is_unpinned() {
+  local rec id label out status
+  id=pi-resume-trailing-
+  label="sq-$id"
+  rec=$(make_case trailing "$id")
+  read_case "$rec"
+
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  expect_code 0 "$status" "a pi spawn with a trailing-dash id should succeed: $out"
+  expect_unpinned_fresh_launch "$id" 'an id outside pi session-id grammar'
+  pass 'a task id outside pi session-id grammar launches unpinned'
+}
+
 test_fresh_pi_spawn_pins_conversation
+test_fresh_spawn_with_stale_transcript_is_unpinned
+test_fresh_spawn_with_unpinnable_id_is_unpinned
 test_relaunch_resumes_same_conversation
+test_refused_window_not_reused
+test_refused_invalid_max_bytes
 test_refused_no_recorded_session
 test_refused_missing_transcript
 test_refused_oversize_transcript

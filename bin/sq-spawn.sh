@@ -1937,9 +1937,24 @@ harness_resume_argument() {  # <harness>
 
 # relaunch_resume_refusal: prints the one-line reason this relaunch must not resume the
 # recorded conversation and returns 1; returns 0 only when every gate holds. The transcript
-# path mirrors pi's store: the cwd without its leading slash, every / replaced by -, wrapped in --.
+# path mirrors pi's store: the cwd without its leading slash, every /, \ and : replaced by -,
+# wrapped in --.
+pi_session_transcript() {
+  local key dir f found=''
+  key=${WT#/}
+  key=${key//\//-}
+  key=${key//\\/-}
+  key=${key//:/-}
+  dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions/--$key--"
+  for f in "$dir"/*_"$1".jsonl; do
+    if [ -f "$f" ]; then found=$f; fi
+  done
+  [ -n "$found" ] || return 1
+  printf '%s\n' "$found"
+}
+
 relaunch_resume_refusal() {
-  local max key dir transcript='' size f
+  local max transcript='' size
   [ -n "${RELAUNCH_WINDOW_REUSED:-}" ] || { echo 'endpoint was not a recovered agentless window'; return 1; }
   harness_resume_argument "$HARNESS" >/dev/null || { echo 'harness has no resume contract'; return 1; }
   [ "$PI_TEMPLATE" = 1 ] || { echo 'raw launch command'; return 1; }
@@ -1948,12 +1963,7 @@ relaunch_resume_refusal() {
   [ "${RELAUNCH_MODEL:-default}" = "${MODEL:-default}" ] || { echo 'model mismatch'; return 1; }
   max=${SQUAD_RESUME_MAX_BYTES:-4194304}
   case "$max" in ''|*[!0-9]*) echo 'invalid SQUAD_RESUME_MAX_BYTES'; return 1 ;; esac
-  key=${WT#/}
-  key=${key//\//-}
-  dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions/--$key--"
-  for f in "$dir"/*_"$RELAUNCH_PI_SESSION_ID".jsonl; do
-    if [ -f "$f" ]; then transcript=$f; fi
-  done
+  transcript=$(pi_session_transcript "$RELAUNCH_PI_SESSION_ID") || transcript=
   if [ -z "$transcript" ] || [ ! -r "$transcript" ]; then echo 'missing or unreadable transcript'; return 1; fi
   size=$(wc -c < "$transcript" | tr -d '[:space:]')
   [ "$size" -le "$max" ] || { echo 'oversize transcript'; return 1; }
@@ -3100,6 +3110,12 @@ case "$HARNESS" in
     esac
     ;;
 esac
+case "$PI_SESSION_ID" in
+  *[!A-Za-z0-9]) PI_SESSION_ID= ;;
+esac
+if [ -n "$PI_SESSION_ID" ] && [ -z "${RELAUNCH_EXISTING_META:-}" ] && pi_session_transcript "$PI_SESSION_ID" >/dev/null; then
+  PI_SESSION_ID=
+fi
 RESUME_SESSION_ID=
 RESUME_NOTE=
 RELAUNCH_REASON=
