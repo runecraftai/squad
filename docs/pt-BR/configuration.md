@@ -371,6 +371,8 @@ Não são enviados título ou descrição da tarefa, texto do brief, nomes de ar
 A lista de campos permitidos no envio só pode crescer por decisão explícita que nomeie um campo por vez, sem jamais permitir o envio de texto livre.
 
 `TYPESAFE_API_KEY` é lida somente do ambiente e enviada somente como credencial bearer; ela nunca é passada em argv, gravada em logs ou armazenada em fixtures.
+Quando o ambiente não a carrega, o `sq-spawn.sh` lê essa única chave do `.env` da base e a entrega ao cliente apenas no ambiente do processo filho; um valor do ambiente sempre prevalece e nenhuma outra entrada desse arquivo é lida.
+Um `.env` ausente ou ilegível, ou um arquivo sem atribuição bem formada para esse nome, mantém o resultado `unavailable`/`missing_key` já existente em vez de gerar erro.
 O cliente recusa redirecionamentos e aplica um prazo de 3 segundos para a requisição; `SQUAD_JEV_URL_OVERRIDE` permite usar um endpoint de loopback em testes.
 
 ### O que o log registra
@@ -561,7 +563,7 @@ SQUAD_CREW_STATE_DRILL_TIMEOUT=10   # segundos permitidos por query de drill den
 SQUAD_TEARDOWN_DRILL_TIMEOUT=10    # segundos permitidos por query de drill ou abort dentro de sq-teardown.sh
 SQUAD_CREW_STATE_RUNS_LIMIT=200  # linhas recentes de execução de drill escaneadas por sq-crew-state.sh e sq-exec-state.sh quando axi status não pode ser atribuído ao código atual
 SQUAD_CREW_STATE_BIN=bin/sq-crew-state.sh   # sobrescrever de teste para o leitor de estado atual usado por triagem de sentry working/paused
-TYPESAFE_API_KEY=       # recomendações Jev em modo sombra; somente ambiente, nunca argv ou logs (ver "Recomendações Jev em modo sombra")
+TYPESAFE_API_KEY=       # recomendações Jev em modo sombra; ambiente ou o fallback do .env da base, nunca argv ou logs (ver "Recomendações Jev em modo sombra")
 TG_BOT_TOKEN=            # espelhamento Telegram: token do bot do @BotFather (config/telegram-bridge.env)
 TG_ALLOWED_CHAT_IDS=     # espelhamento Telegram: ids de usuário Telegram do comandante separados por vírgula; o primeiro é o destino do espelhamento
 SQUAD_LOCK_STALE_AFTER=2   # segundos antes que registros de bloqueio de pid-morto possam ser recuperados; bloqueios no meio da aquisição mantêm pelo menos 2s de graça

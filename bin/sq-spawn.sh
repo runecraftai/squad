@@ -1546,11 +1546,65 @@ if grep -qx '{TASK}' "$BRIEF"; then
   exit 1
 fi
 
+# One key read from a dotenv file, nothing else: a blank line, a comment, an
+# unrelated assignment, or no assignment for this name prints nothing, and an
+# assignment whose value cannot be parsed whole prints nothing rather than a
+# partial key. A later assignment for the same name wins; an unparseable one
+# clears the earlier value instead of resurrecting it. The value goes to stdout
+# and to no other sink.
+dotenv_key() {
+  local file=$1 name=$2
+  [ -f "$file" ] && [ -r "$file" ] || return 0
+  awk -v name="$name" '
+    function trim(text) { sub(/^[[:blank:]]+/, "", text); sub(/[[:blank:]]+$/, "", text); return text }
+    {
+      line = $0
+      sub(/\015$/, "", line)
+      sub(/^[[:blank:]]+/, "", line)
+      if (line == "" || substr(line, 1, 1) == "#") next
+      sub(/^export[[:blank:]]+/, "", line)
+      if (index(line, "=") == 0) next
+      if (trim(substr(line, 1, index(line, "=") - 1)) != name) next
+      found = 0
+      value = ""
+      raw = trim(substr(line, index(line, "=") + 1))
+      if (raw == "") { found = 1; next }
+      quote = substr(raw, 1, 1)
+      if (quote == "\"" || quote == "\047") {
+        rest = substr(raw, 2)
+        end = index(rest, quote)
+        if (end == 0) next
+        inner = substr(rest, 1, end - 1)
+        tail = trim(substr(rest, end + 1))
+        if (tail != "" && substr(tail, 1, 1) != "#") next
+        if (quote == "\"") { gsub(/\\"/, "\"", inner); gsub(/\\\\/, "\\", inner) }
+        value = inner
+      } else {
+        sub(/[[:blank:]]+#.*$/, "", raw)
+        value = trim(raw)
+      }
+      found = 1
+    }
+    END { if (found) printf "%s", value }
+  ' "$file" 2>/dev/null
+}
+
 # Jev is advisory shadow-only: its response is logged separately and never
 # supplies any spawn argument or changes the dispatch decision above.
-python3 "$SCRIPT_DIR/sq-jev-call.py" --id "$ID" --project "$PROJ_ABS" \
-  --task-type "$KIND" --project-config "$CONFIG/crew-dispatch.json" \
-  --config "$CONFIG/jev-dispatch.json" --data "$DATA" >/dev/null 2>&1 || true
+# Its bearer key travels in the child environment only. The ambient value wins;
+# only when the environment does not carry it is that single key read from this
+# base's .env, with no other entry consulted and nothing exported into Squad's
+# own environment. An absent file or key leaves the client's missing_key path.
+JEV_BEARER=
+if [ -z "${TYPESAFE_API_KEY:-}" ]; then
+  JEV_BEARER=$(dotenv_key "$SQUAD_BASE/.env" TYPESAFE_API_KEY) || true
+fi
+(
+  if [ -n "$JEV_BEARER" ]; then export TYPESAFE_API_KEY="$JEV_BEARER"; fi
+  python3 "$SCRIPT_DIR/sq-jev-call.py" --id "$ID" --project "$PROJ_ABS" \
+    --task-type "$KIND" --project-config "$CONFIG/crew-dispatch.json" \
+    --config "$CONFIG/jev-dispatch.json" --data "$DATA"
+) >/dev/null 2>&1 || true
 
 # Optional execution-playbook identity is validated before endpoint creation.
 PLAYBOOK_LINES=$(grep -c '^Execution playbook: ' "$BRIEF" 2>/dev/null || true)
