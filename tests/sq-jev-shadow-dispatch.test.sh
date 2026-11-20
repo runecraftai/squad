@@ -4,6 +4,9 @@
 # endpoint recommends a different lane. The actual dispatch (launch command,
 # spawn metadata, decision and spawn rows) must match the run with Jev off, and
 # the recommendation must be recorded as its own labelled event.
+# The same endpoint then observes where the bearer key comes from: the ambient
+# environment wins, the base .env is the fallback for that single key, and an
+# absent, incomplete, or malformed .env keeps the client's missing_key path.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -119,6 +122,23 @@ for line in open(sys.argv[1]):
 PY
 }
 
+# One spawn against the fake endpoint, with the isolated network and key-source
+# environment it needs. <port|empty> <ambient-key|empty> <command...>
+# A dead proxy port keeps a stray real request on the machine, no_proxy keeps
+# loopback direct, and the key is set only when the case supplies one so an
+# empty ambient key exercises the base .env fallback.
+with_fake_endpoint() {
+  local port=$1 ambient=$2
+  shift 2
+  (
+    unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY
+    export http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 all_proxy=http://127.0.0.1:1 no_proxy=127.0.0.1
+    [ -z "$port" ] || export SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$port/v1/systemone"
+    if [ -n "$ambient" ]; then export TYPESAFE_API_KEY="$ambient"; else unset TYPESAFE_API_KEY; fi
+    "$@"
+  )
+}
+
 test_recommendation_never_changes_actual_dispatch() {
   local baseline shadow case_base case_shadow home_shadow proj_shadow proj_real
   local out_shadow jev_port status requests
@@ -131,16 +151,11 @@ test_recommendation_never_changes_actual_dispatch() {
   start_jev_server "$case_shadow" "$reply"
   printf '{"enabled_projects":["%s"]}\n' "$proj_real" > "$home_shadow/config/jev-dispatch.json"
 
-  (unset TYPESAFE_API_KEY; spawn_explicit "$baseline" "$case_base/launch.log")
+  with_fake_endpoint '' '' spawn_explicit "$baseline" "$case_base/launch.log"
   status=$?
   expect_code 0 "$status" "baseline explicit spawn should succeed"
   jev_port=$(cat "$case_shadow/port")
-  out_shadow=$(
-    unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY
-    export http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 all_proxy=http://127.0.0.1:1 no_proxy=127.0.0.1
-    export TYPESAFE_API_KEY=runtime-test-key SQUAD_JEV_URL_OVERRIDE="http://127.0.0.1:$jev_port/v1/systemone"
-    spawn_explicit "$shadow" "$case_shadow/launch.log"
-  )
+  out_shadow=$(with_fake_endpoint "$jev_port" runtime-test-key spawn_explicit "$shadow" "$case_shadow/launch.log")
   status=$?
   expect_code 0 "$status" "explicit spawn with Jev shadow should succeed"
 
@@ -212,5 +227,178 @@ PY
 }
 
 test_recommendation_never_changes_actual_dispatch
+
+# The bearer key normally arrives in the environment; when it does not, the
+# spawn reads exactly that one key from the base .env and hands it to the
+# client child only. Each case below runs the real spawn against the same fake
+# endpoint and changes nothing but where the key comes from.
+OK_REPLY='{"answers":{"lane":{"type":"choice","choice":"o2","confidence":0.9,"probabilities":{"o2":0.9,"o1":0.08,"other":0.02}},"needs_design_decision":{"type":"noul","answer":false}},"model":"jev-2026-05"}'
+
+retire_jev_server() {
+  [ -z "${JEV_SERVER_PID:-}" ] || kill "$JEV_SERVER_PID" 2>/dev/null || true
+  JEV_SERVER_PID=
+}
+
+# One spawn whose only variable is where the key comes from. Runs in the
+# calling shell because the fake endpoint's EXIT trap owns this test's temp
+# root. Usage: key_case <case-name> <dotenv-body> <ambient-key>
+# Leaves the case under $TMP_ROOT/<case-name>, the endpoint's Authorization
+# header (or "no-request") in <case>/auth, and the spawn output in
+# <case>/spawn.out.
+key_case() {
+  local name=$1 body=$2 ambient=$3 rec case_dir home proj wt fakebin port auth
+  rec=$(make_case "$name")
+  IFS='|' read -r case_dir home proj wt fakebin <<< "$rec"
+  printf '{"enabled_projects":["%s"]}\n' "$(cd "$proj" && pwd -P)" > "$home/config/jev-dispatch.json"
+  [ -z "$body" ] || printf '%s\n' "$body" > "$home/.env"
+  retire_jev_server
+  rm -f "$case_dir/requests.jsonl" "$case_dir/launch.log"
+  start_jev_server "$case_dir" "$OK_REPLY"
+  port=$(cat "$case_dir/port")
+  local spawn_out status
+  spawn_out=$(with_fake_endpoint "$port" "$ambient" spawn_explicit "$rec" "$case_dir/launch.log")
+  status=$?
+  printf '%s\n' "$spawn_out" > "$case_dir/spawn.out"
+  printf '%s\n' "$status" > "$case_dir/spawn.code"
+  if [ -s "$case_dir/requests.jsonl" ]; then
+    auth=$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).readline())["auth"])' \
+      "$case_dir/requests.jsonl")
+  else
+    auth=no-request
+  fi
+  printf '%s\n' "$auth" > "$case_dir/auth"
+}
+
+case_auth() {  # <case-name>
+  cat "$TMP_ROOT/$1/auth"
+}
+
+# The single labelled recommendation row, as "<status> <reason> <choice>".
+recorded_recommendation() {  # <dispatch.jsonl>
+  python3 - "$1" <<'PY'
+import json
+import sys
+
+rows = [json.loads(line) for line in open(sys.argv[1])]
+recorded = [row for row in rows if row.get("label") == "recommendation"]
+assert len(recorded) == 1, recorded
+row = recorded[0]
+print(row.get("status", "-"), row.get("reason", "-"), row.get("choice", "-"))
+PY
+}
+
+# No value may reach the spawn output, the launch command, a status line, a
+# meta record, or the dispatch log. The fixture .env is the one place it is
+# allowed to live; the fake endpoint's own request log is the observation, not a
+# product surface.
+assert_secret_absent() {  # <value> <case-name>
+  local root hit
+  root="$TMP_ROOT/$2"
+  hit=$(grep -rIl --exclude=.env -- "$1" "$root/home" "$root/spawn.out" "$root/launch.log" 2>/dev/null || true)
+  [ -z "$hit" ] || fail "$2: bearer value reached $hit"
+}
+
+assert_case_exit() {  # <case-name>
+  local code
+  code=$(cat "$TMP_ROOT/$1/spawn.code")
+  [ "$code" = 0 ] || fail "$1: spawn exited $code"
+}
+
+test_ambient_key_wins_over_dotenv() {
+  key_case ambient-wins "TYPESAFE_API_KEY=dotenv-value-ignored-88" "ambient-value-11"
+  local auth
+  auth=$(case_auth ambient-wins)
+  [ "$auth" = "Bearer ambient-value-11" ] || fail "ambient key did not win: $auth"
+  [ "$(recorded_recommendation "$TMP_ROOT/ambient-wins/home/data/$ID/dispatch.jsonl")" = "recommended - grok/grok-4" ] \
+    || fail "ambient run did not record the stub recommendation"
+  assert_case_exit ambient-wins
+  assert_secret_absent "ambient-value-11" ambient-wins
+  pass "an ambient TYPESAFE_API_KEY wins and the base .env is ignored"
+}
+
+test_dotenv_key_reaches_the_client_only() {
+  key_case dotenv-fallback "TYPESAFE_API_KEY=dotenv-value-22" ""
+  local auth
+  auth=$(case_auth dotenv-fallback)
+  [ "$auth" = "Bearer dotenv-value-22" ] || fail "the base .env key did not reach the client: $auth"
+  [ "$(recorded_recommendation "$TMP_ROOT/dotenv-fallback/home/data/$ID/dispatch.jsonl")" = "recommended - grok/grok-4" ] \
+    || fail "the stub recommendation was not recorded"
+  assert_case_exit dotenv-fallback
+  assert_secret_absent "dotenv-value-22" dotenv-fallback
+  pass "a base .env key reaches the client without appearing in output or the log"
+}
+
+test_absent_or_incomplete_dotenv_keeps_missing_key() {
+  local name body auth
+  name=no-dotenv
+  key_case "$name" "" ""
+  auth=$(case_auth "$name")
+  [ "$auth" = no-request ] || fail "$name: a request was sent without a key: $auth"
+  [ "$(recorded_recommendation "$TMP_ROOT/$name/home/data/$ID/dispatch.jsonl")" = "unavailable missing_key -" ] \
+    || fail "$name: expected unavailable missing_key"
+  assert_case_exit "$name"
+
+  name=dotenv-without-key
+  body='OTHER_KEY=1
+#TYPESAFE_API_KEY=commented-out
+TYPESAFE_API_KEY_SUFFIX="nope"'
+  key_case "$name" "$body" ""
+  auth=$(case_auth "$name")
+  [ "$auth" = no-request ] || fail "$name: a request was sent without a key: $auth"
+  [ "$(recorded_recommendation "$TMP_ROOT/$name/home/data/$ID/dispatch.jsonl")" = "unavailable missing_key -" ] \
+    || fail "$name: expected unavailable missing_key"
+  assert_case_exit "$name"
+  pass "an absent or incomplete base .env keeps the missing_key path unchanged"
+}
+
+test_dotenv_values_parse_predictably() {
+  local auth
+  key_case parse-double $'TYPESAFE_API_KEY="double-quoted-value"   # trailing comment' ""
+  auth=$(case_auth parse-double)
+  [ "$auth" = "Bearer double-quoted-value" ] || fail "double-quoted value parsed as '$auth'"
+  assert_secret_absent double-quoted-value parse-double
+
+  key_case parse-single "TYPESAFE_API_KEY='single-quoted-value'" ""
+  auth=$(case_auth parse-single)
+  [ "$auth" = "Bearer single-quoted-value" ] || fail "single-quoted value parsed as '$auth'"
+  assert_secret_absent single-quoted-value parse-single
+
+  key_case parse-spaced $'TYPESAFE_API_KEY=plain-value   ' ""
+  auth=$(case_auth parse-spaced)
+  [ "$auth" = "Bearer plain-value" ] || fail "value with trailing whitespace parsed as '$auth'"
+
+  key_case parse-comment 'TYPESAFE_API_KEY=inline-comment-value  # note' ""
+  auth=$(case_auth parse-comment)
+  [ "$auth" = "Bearer inline-comment-value" ] || fail "value with a comment parsed as '$auth'"
+
+  key_case parse-crlf $'export TYPESAFE_API_KEY="crlf-value"\r' ""
+  auth=$(case_auth parse-crlf)
+  [ "$auth" = "Bearer crlf-value" ] || fail "CRLF line parsed as '$auth'"
+  assert_secret_absent crlf-value parse-crlf
+  pass "quoted, spaced, commented, exported, and CRLF base .env lines parse predictably"
+}
+
+test_malformed_dotenv_never_yields_a_partial_key() {
+  local name body auth
+  for pair in 'unterminated|TYPESAFE_API_KEY="half-a-key' 'trailing-junk|TYPESAFE_API_KEY="half-a-key"junk'; do
+    name=${pair%%|*}
+    body=${pair#*|}
+    key_case "malformed-$name" "$body" ""
+    auth=$(case_auth "malformed-$name")
+    [ "$auth" = no-request ] || fail "$name: a partial key was sent: $auth"
+    [ "$(recorded_recommendation "$TMP_ROOT/malformed-$name/home/data/$ID/dispatch.jsonl")" = "unavailable missing_key -" ] \
+      || fail "$name: expected unavailable missing_key"
+    assert_case_exit "malformed-$name"
+    assert_secret_absent half-a-key "malformed-$name"
+  done
+  pass "a malformed base .env line never yields a partial key"
+}
+
+test_ambient_key_wins_over_dotenv
+test_dotenv_key_reaches_the_client_only
+test_absent_or_incomplete_dotenv_keeps_missing_key
+test_dotenv_values_parse_predictably
+test_malformed_dotenv_never_yields_a_partial_key
+retire_jev_server
 
 echo "# all sq-jev-shadow-dispatch tests passed"

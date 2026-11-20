@@ -436,7 +436,9 @@ The client assigns opaque IDs in sorted lane order and keeps the mapping local; 
 No task title, description, brief text, file or directory name, path, login, account label, harness or lane ID, or caller-supplied prose is sent.
 The outbound allowlist may grow only by an explicit decision naming one field at a time, never by allowing free-form passthrough.
 
-`TYPESAFE_API_KEY` is read only from the environment and sent only as the bearer credential; it is never passed in argv, written to logs, or stored in fixtures.
+The client reads `TYPESAFE_API_KEY` only from its process environment and sends it only as the bearer credential; it is never passed in argv, written to logs, or stored in fixtures.
+When the environment does not carry it, `sq-spawn.sh` reads that one key from the base `.env` and passes it to the client in the child environment only; an ambient value always wins and no other entry from that file is read.
+An absent or unreadable `.env`, or one without a well-formed assignment for that name, leaves the existing `unavailable`/`missing_key` result instead of raising an error.
 The client refuses redirects and enforces a 3-second request deadline; `SQUAD_JEV_URL_OVERRIDE` permits a loopback endpoint for tests.
 
 ### What the log records
@@ -669,7 +671,7 @@ SQUAD_CREW_STATE_DRILL_TIMEOUT=10   # seconds allowed per drill query inside sq-
 SQUAD_TEARDOWN_DRILL_TIMEOUT=10    # seconds allowed per drill query or abort inside sq-teardown.sh
 SQUAD_CREW_STATE_RUNS_LIMIT=200  # recent drill run rows scanned by sq-crew-state.sh and sq-exec-state.sh when axi status cannot be attributed to the current code
 SQUAD_CREW_STATE_BIN=bin/sq-crew-state.sh   # test override for the current-state reader used by working/paused sentry triage
-TYPESAFE_API_KEY=       # Jev shadow recommendations; environment only, never argv or logs (see "Jev shadow recommendations")
+TYPESAFE_API_KEY=       # Jev shadow recommendations; environment, or the base .env fallback, never argv or logs (see "Jev shadow recommendations")
 TG_BOT_TOKEN=            # Telegram mirror: bot token from @BotFather (config/telegram-bridge.env)
 TG_ALLOWED_CHAT_IDS=     # Telegram mirror: comma-separated commander Telegram user ids; the first is the mirror destination
 SQUAD_LOCK_STALE_AFTER=2   # seconds before dead-pid lock records can be reclaimed; mid-acquire locks keep at least 2s grace
