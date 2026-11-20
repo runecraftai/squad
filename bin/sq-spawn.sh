@@ -1577,7 +1577,6 @@ dotenv_key() {
         inner = substr(rest, 1, end - 1)
         tail = trim(substr(rest, end + 1))
         if (tail != "" && substr(tail, 1, 1) != "#") next
-        if (quote == "\"") { gsub(/\\"/, "\"", inner); gsub(/\\\\/, "\\", inner) }
         value = inner
       } else {
         sub(/[[:blank:]]+#.*$/, "", raw)
@@ -1605,6 +1604,7 @@ fi
     --task-type "$KIND" --project-config "$CONFIG/crew-dispatch.json" \
     --config "$CONFIG/jev-dispatch.json" --data "$DATA"
 ) >/dev/null 2>&1 || true
+unset JEV_BEARER
 
 # Optional execution-playbook identity is validated before endpoint creation.
 PLAYBOOK_LINES=$(grep -c '^Execution playbook: ' "$BRIEF" 2>/dev/null || true)
