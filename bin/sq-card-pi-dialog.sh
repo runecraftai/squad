@@ -198,6 +198,8 @@ def result_answer(payload, number):
     """Read one dialog's whole tool result; nothing else can prove it was not cancelled."""
     if not isinstance(payload, dict):
         raise Unusable("--result must be the whole tool result object with details.answers, not a bare answers array")
+    if "toolName" in payload and payload["toolName"] != "ask_user_question":
+        raise Unusable("the result toolName is not ask_user_question")
     if payload.get("isError") is True:
         raise Unusable("the tool result is marked as an error; use the canonical prose path")
     details = payload.get("details")
@@ -232,7 +234,9 @@ def saved_arguments(call, payload, number):
         raise Invalid("--call for dialog %d has too many nested JSON levels" % number)
     except ValueError:
         raise Invalid("--call for dialog %d is not valid JSON" % number)
-    call_id = entry.get("id") if isinstance(entry, dict) else None
+    if not isinstance(entry, dict) or entry.get("type") != "toolCall" or entry.get("name") != "ask_user_question":
+        raise Invalid("--call for dialog %d needs a saved entry of type toolCall named ask_user_question" % number)
+    call_id = entry.get("id")
     if not isinstance(call_id, str) or not call_id.strip() or not isinstance(entry.get("arguments"), dict):
         raise Invalid("--call for dialog %d needs a saved entry with id and arguments" % number)
     result_id = payload.get("toolCallId")

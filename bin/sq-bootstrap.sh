@@ -1117,13 +1117,14 @@ pi_ask_user_offer() {
       if (!Array.isArray(packages)) process.exit(1);
       const sources = packages.map(entry => typeof entry === "string" ? entry : entry?.source);
       if (sources.some(source => typeof source !== "string" || !source.trim())) process.exit(1);
-      const target = "npm:" + extension;
+      const npmPrefix = "npm:";
       const number = "(?:0|[1-9][0-9]*)";
       const preId = `(?:${number}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`;
       const ids = id => String.raw`${id}(?:\.${id})*`;
       const exactVersion = new RegExp(String.raw`^(${number})\.(${number})\.(${number})(?:-${ids(preId)})?(?:\+${ids("[0-9A-Za-z-]+")})?$`);
       const part = "(?:[0-9]+|[xX])";
-      const rangeLike = new RegExp(String.raw`^v*${part}(?:\.${part}){0,2}$|^v*${part}(?:\.${part}){2}-${ids("[0-9A-Za-z-]+")}$`);
+      const loosePrerelease = ids("[0-9A-Za-z-]+");
+      const rangeLike = new RegExp(String.raw`^v*${part}(?:\.${part}(?:\.${part}(?:-?${loosePrerelease})?)?)?$`);
       const validSuffix = suffix => {
         if (/[^A-Za-z0-9._+-]/.test(suffix)) return false;
         const version = exactVersion.exec(suffix);
@@ -1132,8 +1133,10 @@ pi_ask_user_offer() {
       };
       let configured = false;
       for (const source of sources) {
-        if (source !== target && !source.startsWith(target + "@")) continue;
-        if (source !== target && !validSuffix(source.slice(target.length + 1))) process.exit(1);
+        if (!source.startsWith(npmPrefix)) continue;
+        const spec = source.slice(npmPrefix.length).trim();
+        if (spec !== extension && !spec.startsWith(extension + "@")) continue;
+        if (spec !== extension && !validSuffix(spec.slice(extension.length + 1))) process.exit(1);
         configured = true;
       }
       const installed = configured && fs.statSync(join(agentDir, "npm", "node_modules", extension), statOptions)?.isDirectory();

@@ -1552,6 +1552,9 @@ test_pi_ask_user_offer() {
       installed)
         printf '{"packages":["npm:%s"]}\n' "$extension" > "$agent_dir/settings.json"
         mkdir -p "$modules/$extension" ;;
+      spaced-spec)
+        printf '{"packages":["npm: %s "]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
       bom)
         printf '\357\273\277{"packages":["npm:%s"]}\n' "$extension" > "$agent_dir/settings.json"
         mkdir -p "$modules/$extension" ;;
@@ -1575,10 +1578,16 @@ test_pi_ask_user_offer() {
           range-empty-alternative-*) suffix='^2.0.0 ||' ;;
           range-oversized-*) suffix='>9007199254740992.0.0' ;;
           range-wildcard-*) suffix='2.X' ;;
+          range-loose-wildcard-*) suffix='2.15.xbeta' ;;
           range-repeated-v-*) suffix='vv2.x' ;;
           range-partial-*) suffix='2.0' ;;
+          range-spaced-spec-*) suffix='^2.15.0' ;;
         esac
-        printf '{"packages":["npm:%s@%s"]}\n' "$extension" "$suffix" > "$agent_dir/settings.json"
+        if [[ "$fixture" = range-spaced-spec-* ]]; then
+          printf '{"packages":["npm: %s@%s "]}\n' "$extension" "$suffix" > "$agent_dir/settings.json"
+        else
+          printf '{"packages":["npm:%s@%s"]}\n' "$extension" "$suffix" > "$agent_dir/settings.json"
+        fi
         if [[ "$fixture" = *-installed ]]; then mkdir -p "$modules/$extension"; fi ;;
       bad-suffix-installed|bad-suffix-uninstalled)
         printf '{"packages":["npm:%s@2.15.0?"]}\n' "$extension" > "$agent_dir/settings.json"
@@ -1642,6 +1651,7 @@ SH
   done <<'ROWS'
 pi primary is offered the exact install command^pi^missing^absent
 an installed extension is one no-action fact^pi^installed^installed
+whitespace around the npm package spec does not hide an installed extension^pi^spaced-spec^installed
 settings starting with a UTF-8 BOM still detect the extension^pi^bom^installed
 settings containing invalid UTF-8 stay silent^pi^invalid-utf8^silent
 a versioned object source is found in the override beside a local sibling^pi^versioned^installed
@@ -1655,6 +1665,9 @@ a range with an empty alternative and no module directory stays silent^pi^range-
 a range with an oversized major and a module directory stays silent^pi^range-oversized-installed^silent
 a range with an oversized major and no module directory stays silent^pi^range-oversized-uninstalled^silent
 a wildcard range stays silent^pi^range-wildcard-installed^silent
+a loose wildcard patch with a module directory stays silent^pi^range-loose-wildcard-installed^silent
+a loose wildcard patch without a module directory stays silent^pi^range-loose-wildcard-uninstalled^silent
+a caret range with whitespace around the npm package spec stays silent^pi^range-spaced-spec-installed^silent
 a repeated-v wildcard with a module directory stays silent^pi^range-repeated-v-installed^silent
 a repeated-v wildcard without a module directory stays silent^pi^range-repeated-v-uninstalled^silent
 a partial version range stays silent^pi^range-partial-installed^silent

@@ -540,6 +540,19 @@ assert any(reason in refused.stderr for reason in (
     b"--call for dialog 1 has too many nested JSON levels", b"--call for dialog 1 needs a saved entry"
 )), refused
 
+for field, value in [("type", "text"), ("name", "different_tool")]:
+    entry = json.loads(call_args[1])
+    entry[field] = value
+    refused = run(dialog, *resolve_args, "--call", json.dumps(entry), data=reformatted)
+    assert refused.returncode == 2 and not refused.stdout, refused
+    assert b"needs a saved entry of type toolCall named ask_user_question" in refused.stderr, refused
+
+returned = json.loads(accept_result)
+returned["toolName"] = "different_tool"
+for mode, extra in [("--answer", []), ("--resolve", call_args)]:
+    refused = run(dialog, mode, *resolve_args[1:-1], json.dumps(returned), *extra, data=reformatted)
+    assert refused.returncode == 4 and not refused.stdout and b"toolName is not ask_user_question" in refused.stderr, refused
+
 for result_id, reason in [("other-call", b"toolCallId does not match"), (None, b"missing toolCallId")]:
     returned = json.loads(accept_result)
     if result_id is None:
