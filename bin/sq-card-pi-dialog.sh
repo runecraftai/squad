@@ -200,7 +200,7 @@ def result_answer(payload, number):
         raise Unusable("--result must be the whole tool result object with details.answers, not a bare answers array")
     if "toolName" in payload and payload["toolName"] != "ask_user_question":
         raise Unusable("the result toolName is not ask_user_question")
-    if payload.get("isError") is True:
+    if payload.get("isError"):
         raise Unusable("the tool result is marked as an error; use the canonical prose path")
     details = payload.get("details")
     if not isinstance(details, dict):
@@ -239,6 +239,10 @@ def saved_arguments(call, payload, number):
     call_id = entry.get("id")
     if not isinstance(call_id, str) or not call_id.strip() or not isinstance(entry.get("arguments"), dict):
         raise Invalid("--call for dialog %d needs a saved entry with id and arguments" % number)
+    if "toolName" not in payload:
+        raise Unusable("the result for dialog %d is missing toolName" % number)
+    if payload["toolName"] != "ask_user_question":
+        raise Unusable("the result toolName is not ask_user_question")
     result_id = payload.get("toolCallId")
     if not isinstance(result_id, str) or not result_id.strip():
         raise Unusable("the result for dialog %d is missing toolCallId" % number)

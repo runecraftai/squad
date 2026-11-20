@@ -553,6 +553,11 @@ for mode, extra in [("--answer", []), ("--resolve", call_args)]:
     refused = run(dialog, mode, *resolve_args[1:-1], json.dumps(returned), *extra, data=reformatted)
     assert refused.returncode == 4 and not refused.stdout and b"toolName is not ask_user_question" in refused.stderr, refused
 
+returned = json.loads(accept_result)
+del returned["toolName"]
+refused = run(dialog, *resolve_args[:-1], json.dumps(returned), *call_args, data=reformatted)
+assert refused.returncode == 4 and not refused.stdout and b"missing toolName" in refused.stderr, refused
+
 for result_id, reason in [("other-call", b"toolCallId does not match"), (None, b"missing toolCallId")]:
     returned = json.loads(accept_result)
     if result_id is None:
@@ -569,6 +574,25 @@ for failure in (failed_result, json.dumps(structured_failure)):
     for mode, extra in [("--answer", []), ("--resolve", call_args)]:
         refused = run(dialog, mode, *resolve_args[1:-1], failure, *extra, data=reformatted)
         assert refused.returncode == 4 and not refused.stdout and b"tool result is marked as an error" in refused.stderr, refused
+
+for flag in ("true", 1):
+    flagged = json.loads(accept_result)
+    flagged["isError"] = flag
+    for mode, extra in [("--answer", []), ("--resolve", call_args)]:
+        refused = run(dialog, mode, *resolve_args[1:-1], json.dumps(flagged), *extra, data=reformatted)
+        assert refused.returncode == 4 and not refused.stdout and b"tool result is marked as an error" in refused.stderr, refused
+
+canonical = run(ask, "--answer", "d1 o2", data=reformatted)
+for flag in (False, 0, None, "absent"):
+    ordinary = json.loads(accept_result)
+    if flag == "absent":
+        del ordinary["isError"]
+    else:
+        ordinary["isError"] = flag
+    answered = run(dialog, "--answer", *resolve_args[1:-1], json.dumps(ordinary), data=reformatted)
+    assert answered.returncode == 0 and answered.stdout.strip() == b"d1 o2", answered
+    resolved = run(dialog, *resolve_args[:-1], json.dumps(ordinary), *call_args, data=reformatted)
+    assert resolved.returncode == 0 and resolved.stdout == canonical.stdout, resolved
 
 for field in ("notes", "globalNote"):
     returned = json.loads(accept_result)
