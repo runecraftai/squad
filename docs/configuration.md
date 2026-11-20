@@ -436,7 +436,7 @@ The client assigns opaque IDs in sorted lane order and keeps the mapping local; 
 No task title, description, brief text, file or directory name, path, login, account label, harness or lane ID, or caller-supplied prose is sent.
 The outbound allowlist may grow only by an explicit decision naming one field at a time, never by allowing free-form passthrough.
 
-`TYPESAFE_API_KEY` is read only from the environment and sent only as the bearer credential; it is never passed in argv, written to logs, or stored in fixtures.
+The client reads `TYPESAFE_API_KEY` only from its process environment and sends it only as the bearer credential; it is never passed in argv, written to logs, or stored in fixtures.
 When the environment does not carry it, `sq-spawn.sh` reads that one key from the base `.env` and passes it to the client in the child environment only; an ambient value always wins and no other entry from that file is read.
 An absent or unreadable `.env`, or one without a well-formed assignment for that name, leaves the existing `unavailable`/`missing_key` result instead of raising an error.
 The client refuses redirects and enforces a 3-second request deadline; `SQUAD_JEV_URL_OVERRIDE` permits a loopback endpoint for tests.

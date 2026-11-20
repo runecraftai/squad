@@ -370,7 +370,7 @@ O cliente atribui IDs opacos na ordem lexicográfica das lanes e mantém o mapea
 Não são enviados título ou descrição da tarefa, texto do brief, nomes de arquivos ou diretórios, caminhos, logins, rótulos de contas, IDs de harness ou de lane, nem texto fornecido pelo chamador.
 A lista de campos permitidos no envio só pode crescer por decisão explícita que nomeie um campo por vez, sem jamais permitir o envio de texto livre.
 
-`TYPESAFE_API_KEY` é lida somente do ambiente e enviada somente como credencial bearer; ela nunca é passada em argv, gravada em logs ou armazenada em fixtures.
+O cliente lê `TYPESAFE_API_KEY` somente do ambiente do seu processo e a envia somente como credencial bearer; ela nunca é passada em argv, gravada em logs ou armazenada em fixtures.
 Quando o ambiente não a carrega, o `sq-spawn.sh` lê essa única chave do `.env` da base e a entrega ao cliente apenas no ambiente do processo filho; um valor do ambiente sempre prevalece e nenhuma outra entrada desse arquivo é lida.
 Um `.env` ausente ou ilegível, ou um arquivo sem atribuição bem formada para esse nome, mantém o resultado `unavailable`/`missing_key` já existente em vez de gerar erro.
 O cliente recusa redirecionamentos e aplica um prazo de 3 segundos para a requisição; `SQUAD_JEV_URL_OVERRIDE` permite usar um endpoint de loopback em testes.
