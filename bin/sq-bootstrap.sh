@@ -1092,7 +1092,8 @@ pi_ask_user_offer() {
     *) return 0 ;;
   esac
   command -v pi >/dev/null 2>&1 || return 0
-  state=$(NODE_OPTIONS= fm_run_timed 2 node -e '
+  # shellcheck disable=SC2016 # node program is single-quoted on purpose; its contents must not expand in the shell
+  state=$(NODE_OPTIONS='' fm_run_timed 2 node -e '
     const fs = require("node:fs");
     const { join } = require("node:path");
     const { homedir } = require("node:os");

@@ -1532,7 +1532,7 @@ test_pi_ask_user_offer() {
   local label harness fixture result case_dir fakebin log out n real_node agent_dir override modules expect suffix
   local extension='@juicesharp/rpiv-ask-user-question'
   local -a marker=()
-  real_node=$(NODE_OPTIONS= node -p 'process.execPath') || fail "Node is required for Pi settings fixtures"
+  real_node=$(NODE_OPTIONS='' node -p 'process.execPath') || fail "Node is required for Pi settings fixtures"
   n=0
   while IFS='^' read -r label harness fixture result; do
     n=$((n + 1))
@@ -1542,6 +1542,7 @@ test_pi_ask_user_offer() {
     if [ "$fixture" = versioned ]; then
       mkdir -p "$agent_dir"
       printf '%s\n' '{"packages":[]}' > "$agent_dir/settings.json"
+      # shellcheck disable=SC2088 # literal tilde is deliberate: this case proves a quoted tilde is treated literally
       override='~/custom pi agent'
       agent_dir="$case_dir/home/custom pi agent"
     fi
