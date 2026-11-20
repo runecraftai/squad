@@ -66,8 +66,12 @@
 #          installs anything itself, and it is skipped when pi is not on PATH.
 #          Detection reads only the user settings in PI_CODING_AGENT_DIR (default
 #          ~/.pi/agent) and checks for the managed npm module directory. It never
-#          starts Pi or reads project settings. Unreadable or malformed user
-#          settings make no claim at all. Non-Pi harnesses normally stay silent,
+#          starts Pi or reads project settings. The source may have an exact
+#          version triple (with optional prerelease/build metadata) or a plain
+#          dist-tag (letters/digits/dots/dashes/underscores, starting with a
+#          letter or digit). Ranges stay silent even if installed; follow the
+#          install line in the recipe. Unreadable or malformed user settings
+#          also make no claim. Non-Pi harnesses normally stay silent,
 #          but an inherited PI_CODING_AGENT=true marker can expose the offer.
 #          docs/decision-card-pi-recipe.md owns the mapping it enables.
 #          Set SQUAD_PI_ASK_USER_OFFER=0 to silence it.
@@ -1115,16 +1119,16 @@ pi_ask_user_offer() {
       if (sources.some(source => typeof source !== "string" || !source.trim())) process.exit(1);
       const target = "npm:" + extension;
       const number = "(?:0|[1-9][0-9]*)";
-      const part = `(?:${number}|[xX*])`;
       const preId = `(?:${number}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`;
       const ids = id => String.raw`${id}(?:\.${id})*`;
-      const version = String.raw`v?(?:${part}(?:\.${part}(?:\.${part})?)?|${number}\.${number}\.${number}(?:-${ids(preId)})?(?:\+${ids("[0-9A-Za-z-]+")})?)`;
-      const comparator = String.raw`(?:(?:[<>]=?|=|\^|~>?)\s*)?${version}`;
-      const rangeSet = new RegExp(String.raw`^(?:${version}\s+-\s+${version}|${comparator}(?:\s+${comparator})*)$`);
+      const exactVersion = new RegExp(String.raw`^(${number})\.(${number})\.(${number})(?:-${ids(preId)})?(?:\+${ids("[0-9A-Za-z-]+")})?$`);
+      const part = "(?:[0-9]+|[xX])";
+      const rangeLike = new RegExp(String.raw`^v?${part}(?:\.${part}){0,2}$|^v?${part}(?:\.${part}){2}-${ids("[0-9A-Za-z-]+")}$`);
       const validSuffix = suffix => {
-        if (/[^\t\x20-\x7e]/.test(suffix)) return false;
-        return /^[A-Za-z0-9.~\-]+$/.test(suffix) ||
-          suffix.split("||").every(set => rangeSet.test(set.trim()));
+        if (/[^A-Za-z0-9._+-]/.test(suffix)) return false;
+        const version = exactVersion.exec(suffix);
+        if (version) return version.slice(1).every(part => Number.isSafeInteger(Number(part)));
+        return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(suffix) && !rangeLike.test(suffix);
       };
       let configured = false;
       for (const source of sources) {

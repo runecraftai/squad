@@ -1529,7 +1529,7 @@ test_sandbox_gc_skipped_without_lock
 
 # --- the optional Pi ask-user dialog extension offer -------------------------
 test_pi_ask_user_offer() {
-  local label harness fixture result case_dir fakebin log out n real_node agent_dir override modules expect
+  local label harness fixture result case_dir fakebin log out n real_node agent_dir override modules expect suffix
   local extension='@juicesharp/rpiv-ask-user-question'
   local -a marker=()
   real_node=$(NODE_OPTIONS= node -p 'process.execPath') || fail "Node is required for Pi settings fixtures"
@@ -1557,11 +1557,22 @@ test_pi_ask_user_offer() {
         mkdir -p "$modules/$extension"
         printf '%s\n' '{invalid project settings' > "$case_dir/project/.pi/settings.json" ;;
       tagged)
-        printf '{"packages":["npm:%s@release-candidate.1"]}\n' "$extension" > "$agent_dir/settings.json"
+        printf '{"packages":["npm:%s@release_candidate-1.0"]}\n' "$extension" > "$agent_dir/settings.json"
         mkdir -p "$modules/$extension" ;;
-      ranged)
-        printf '{"packages":["npm:%s@>=2.0.0 <3.0.0 || ^4.0.0-beta.1"]}\n' "$extension" > "$agent_dir/settings.json"
+      version-metadata)
+        printf '{"packages":["npm:%s@2.15.0-rc.1+build.2"]}\n' "$extension" > "$agent_dir/settings.json"
         mkdir -p "$modules/$extension" ;;
+      range-*)
+        case "$fixture" in
+          range-compound-*) suffix='>=2.0.0 <3.0.0 || ^4.0.0-beta.1' ;;
+          range-caret-*) suffix='^2.0.0' ;;
+          range-empty-alternative-*) suffix='^2.0.0 ||' ;;
+          range-oversized-*) suffix='>9007199254740992.0.0' ;;
+          range-wildcard-*) suffix='2.X' ;;
+          range-partial-*) suffix='2.0' ;;
+        esac
+        printf '{"packages":["npm:%s@%s"]}\n' "$extension" "$suffix" > "$agent_dir/settings.json"
+        if [[ "$fixture" = *-installed ]]; then mkdir -p "$modules/$extension"; fi ;;
       bad-suffix-installed|bad-suffix-uninstalled)
         printf '{"packages":["npm:%s@2.15.0?"]}\n' "$extension" > "$agent_dir/settings.json"
         if [ "$fixture" = bad-suffix-installed ]; then mkdir -p "$modules/$extension"; fi ;;
@@ -1625,8 +1636,17 @@ SH
 pi primary is offered the exact install command^pi^missing^absent
 an installed extension is one no-action fact^pi^installed^installed
 a versioned object source is found in the override beside a local sibling^pi^versioned^installed
-a dist-tagged source is recognized^pi^tagged^installed
-a semver range source is recognized^pi^ranged^installed
+a plain dist-tagged source is recognized^pi^tagged^installed
+an exact version with prerelease and build metadata is recognized^pi^version-metadata^installed
+a compound range stays silent^pi^range-compound-installed^silent
+a caret range with a module directory stays silent^pi^range-caret-installed^silent
+a caret range without a module directory stays silent^pi^range-caret-uninstalled^silent
+a range with an empty alternative and a module directory stays silent^pi^range-empty-alternative-installed^silent
+a range with an empty alternative and no module directory stays silent^pi^range-empty-alternative-uninstalled^silent
+a range with an oversized major and a module directory stays silent^pi^range-oversized-installed^silent
+a range with an oversized major and no module directory stays silent^pi^range-oversized-uninstalled^silent
+a wildcard range stays silent^pi^range-wildcard-installed^silent
+a partial version range stays silent^pi^range-partial-installed^silent
 a malformed suffix with a module directory stays silent^pi^bad-suffix-installed^silent
 a malformed suffix without a module directory stays silent^pi^bad-suffix-uninstalled^silent
 a malformed range stays silent even beside a valid source^pi^bad-range^silent
