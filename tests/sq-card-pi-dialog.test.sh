@@ -401,7 +401,9 @@ def result(question, kind, answer, call_id="call-1", is_error=False):
     })
 
 def saved_call(arguments, call_id="call-1"):
-    return json.dumps({"toolCallId": call_id, "arguments": arguments}, sort_keys=True, indent=2)
+    return json.dumps({
+        "type": "toolCall", "id": call_id, "name": "ask_user_question", "arguments": arguments,
+    }, sort_keys=True, indent=2)
 
 def check_heading(candidate, eligible):
     data = json.dumps(candidate).encode()
@@ -548,9 +550,12 @@ for result_id, reason in [("other-call", b"toolCallId does not match"), (None, b
     assert refused.returncode == 4 and not refused.stdout and reason in refused.stderr, refused
 
 failed_result = result(gate_question, "option", gate["options"][1]["label"], is_error=True)
-for mode, extra in [("--answer", []), ("--resolve", call_args)]:
-    refused = run(dialog, mode, *resolve_args[1:-1], failed_result, *extra, data=reformatted)
-    assert refused.returncode == 4 and not refused.stdout and b"tool result is marked as an error" in refused.stderr, refused
+structured_failure = json.loads(accept_result)
+structured_failure["details"]["error"] = "Tool failed"
+for failure in (failed_result, json.dumps(structured_failure)):
+    for mode, extra in [("--answer", []), ("--resolve", call_args)]:
+        refused = run(dialog, mode, *resolve_args[1:-1], failure, *extra, data=reformatted)
+        assert refused.returncode == 4 and not refused.stdout and b"tool result is marked as an error" in refused.stderr, refused
 
 for field in ("notes", "globalNote"):
     returned = json.loads(accept_result)

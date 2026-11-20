@@ -20,8 +20,8 @@
 #   --payload      Print the ask_user_question payload(s) as a JSON array, one entry
 #                  per dialog, in card order; each entry is one tool call. The default.
 #   --resolve      Use this mode to record a dialog decision. It checks the echoed
-#                  question against the card snapshot. Each --call takes a saved entry
-#                  {"toolCallId":"<id>","arguments":{...}} for ask_user_question.
+#                  question against the card snapshot. Each --call takes Pi's saved
+#                  toolCall entry for ask_user_question, including id and arguments.
 #                  The ID must match the whole result's toolCallId (exit 4 if missing
 #                  from the result or different), and the saved arguments must match
 #                  the regenerated payload (exit 2 on mismatch).
@@ -203,6 +203,8 @@ def result_answer(payload, number):
     details = payload.get("details")
     if not isinstance(details, dict):
         raise Unusable("--result must be the whole tool result: details is missing, so cancellation cannot be ruled out")
+    if "error" in details:
+        raise Unusable("the tool result is marked as an error; use the canonical prose path")
     cancelled = details.get("cancelled")
     if not isinstance(cancelled, bool):
         raise Unusable("--result must be the whole tool result: details.cancelled is missing, so cancellation cannot be ruled out")
@@ -230,9 +232,9 @@ def saved_arguments(call, payload, number):
         raise Invalid("--call for dialog %d has too many nested JSON levels" % number)
     except ValueError:
         raise Invalid("--call for dialog %d is not valid JSON" % number)
-    call_id = entry.get("toolCallId") if isinstance(entry, dict) else None
+    call_id = entry.get("id") if isinstance(entry, dict) else None
     if not isinstance(call_id, str) or not call_id.strip() or not isinstance(entry.get("arguments"), dict):
-        raise Invalid("--call for dialog %d needs a saved entry with toolCallId and arguments" % number)
+        raise Invalid("--call for dialog %d needs a saved entry with id and arguments" % number)
     result_id = payload.get("toolCallId")
     if not isinstance(result_id, str) or not result_id.strip():
         raise Unusable("the result for dialog %d is missing toolCallId" % number)

@@ -1111,7 +1111,7 @@ pi_ask_user_offer() {
       console.log("absent");
     } else {
       if (!metadata?.isFile()) process.exit(1);
-      const settings = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fs.readFileSync(path)));
+      const settings = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(path)));
       if (!settings || typeof settings !== "object" || Array.isArray(settings)) process.exit(1);
       const packages = Object.hasOwn(settings, "packages") ? settings.packages : [];
       if (!Array.isArray(packages)) process.exit(1);
@@ -1123,7 +1123,7 @@ pi_ask_user_offer() {
       const ids = id => String.raw`${id}(?:\.${id})*`;
       const exactVersion = new RegExp(String.raw`^(${number})\.(${number})\.(${number})(?:-${ids(preId)})?(?:\+${ids("[0-9A-Za-z-]+")})?$`);
       const part = "(?:[0-9]+|[xX])";
-      const rangeLike = new RegExp(String.raw`^v?${part}(?:\.${part}){0,2}$|^v?${part}(?:\.${part}){2}-${ids("[0-9A-Za-z-]+")}$`);
+      const rangeLike = new RegExp(String.raw`^v*${part}(?:\.${part}){0,2}$|^v*${part}(?:\.${part}){2}-${ids("[0-9A-Za-z-]+")}$`);
       const validSuffix = suffix => {
         if (/[^A-Za-z0-9._+-]/.test(suffix)) return false;
         const version = exactVersion.exec(suffix);
