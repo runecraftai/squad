@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "storage-choice",
+  "title": "Storage Choice",
+  "question": "Which storage layer should the new service use?",
+  "options": [
+    {
+      "id": "postgres",
+      "label": "Postgres",
+      "description": "Reuse the shared cluster"
+    },
+    {
+      "id": "sqlite",
+      "label": "SQLite",
+      "description": "Local file, no operations cost"
+    },
+    {
+      "id": "object",
+      "label": "Object Store",
+      "description": "S3-compatible bucket"
+    },
+    {
+      "id": "memory",
+      "label": "In Memory",
+      "description": "Rebuild state on every start"
+    }
+  ],
+  "default_option_id": "postgres",
+  "allow_free_text": true,
+  "metadata": {
+    "key": "storage-choice"
+  }
+}

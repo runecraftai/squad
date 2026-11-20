@@ -132,7 +132,7 @@ Veja o Exemplo 2 em [Exemplos](decision-card-examples.md).
 ## Agnosticismo de harness
 
 Todo harness mostra o mesmo bloco de prosa no chat e recebe a resposta como texto.
-Um diálogo nativo de perguntas é opcional; veja a [receita pi](decision-card-pi-recipe.md).
+Um diálogo nativo de perguntas é opcional e apenas de apresentação: veja a [receita pi](decision-card-pi-recipe.md), cujo executável também entrega suas respostas de volta a `bin/sq-ask.sh --answer`.
 O picker degrada de fzf para whiptail, dialog, leitura bash e por fim a opção recomendada.
 
 ## Arquivos de implementação
@@ -140,9 +140,11 @@ O picker degrada de fzf para whiptail, dialog, leitura bash e por fim a opção 
 | Arquivo | Propósito |
 |---------|-----------|
 | `bin/sq-ask.sh` | Renderizador, parser de prosa, parser de resposta, validador, picker |
+| `bin/sq-card-pi-dialog.sh` | Cartão para payload de diálogo Pi e de volta; a [receita pi](decision-card-pi-recipe.md) define o mapeamento e as regras de recusa |
 | `bin/sq-card-lint.sh` | Verificação somente de aviso para desvio de gramática em relatórios e registros de decisão; o cabeçalho define os códigos |
 | `docs/decision-card-examples.md` | Três exemplos com prosa de referência |
 | `tests/sq-ask.test.sh` | Testes de renderizador, parser, validador, picker e deriva de docs |
+| `tests/sq-card-pi-dialog.test.sh` | Testes de mapeamento de diálogo, payload de uma pergunta, recusa, ida e volta e fallback |
 | `tests/sq-card-lint.test.sh` | Códigos de lint, pulo de exemplos em cercas e o contrato de saída sempre zero |
 | `tests/fixtures/decision-prose/` | Cartões e prosa de referência |
 

@@ -28,6 +28,7 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-remote-job-reap-orphans.sh` | Parar workers de jobs remotos deixados por uma raiz de código podada, nunca um cujo checkout ainda existe |
 | `sq-remote-doctor.sh`    | Conferir e, com `--fix`, reparar a prontidão de segundo-imediato de uma conta remota (worker de jobs remotos, Herdr, launch agents Aqua, PATH e ferramentas exigidas) |
 | `sq-ask.sh`              | Renderiza e interpreta prosa de decisão a partir de um payload de cartão; picker de terminal opcional | 
+| `sq-card-pi-dialog.sh`   | Mapeia um decision card para o payload opcional de diálogo `ask_user_question` do Pi e suas respostas de volta para a gramática de resposta em prosa |
 | `sq-backlog-handoff.sh`  | Validar e delegar movimentos enfileirados de itens de backlog para uma base XO               |
 | `sq-backlog-receive.sh`  | Ingerir idempotentemente um outbox confinado de handoff remoto através do sq-tasks             |
 | `sq-board-github.sh`     | Monitor opt-in de issues GitHub: listar issues elegíveis, pollar mudanças, reportar status agregado, aprovar sugestões de dispatch (requer tracker.kind: github no WORKFLOW.md) |

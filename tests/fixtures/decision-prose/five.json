@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "cache-strategy",
+  "title": "Cache Strategy",
+  "question": "Which cache should the read path use first?",
+  "options": [
+    {
+      "id": "none",
+      "label": "No Cache",
+      "description": "Read the primary every time"
+    },
+    {
+      "id": "process",
+      "label": "Process Memory",
+      "description": "Fastest, per-instance only"
+    },
+    {
+      "id": "redis",
+      "label": "Shared Redis",
+      "description": "One hop, needs eviction policy"
+    },
+    {
+      "id": "cdn",
+      "label": "Edge CDN",
+      "description": "Public reads only"
+    },
+    {
+      "id": "materialized",
+      "label": "Materialized View",
+      "description": "Batch refresh, stale by design"
+    }
+  ],
+  "default_option_id": "redis",
+  "allow_free_text": true,
+  "metadata": {
+    "key": "cache-strategy"
+  }
+}

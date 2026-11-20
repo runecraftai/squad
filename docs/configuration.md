@@ -643,6 +643,7 @@ SQUAD_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session
 SQUAD_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 SQUAD_BOOTSTRAP_LOCKED=0   # internal session-start flag declaring that this session already holds the unit lock: it switches the detect-only TANGLE wording to self-repair and is the only value that runs the retired-mission record sweep and the detached drill-sandbox sweep (bin/sq-bootstrap.sh)
 SQUAD_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/sq-bootstrap.sh
+SQUAD_PI_ASK_USER_OFFER=1   # Pi-only optional ask-user dialog offer in bootstrap detection: 0 silences it; the default is on (bin/sq-bootstrap.sh)
 SQUAD_DRILL_SANDBOX_GC=1   # locked session-start detached sweep of stale /tmp/drill-execution-policy-* drill sandboxes; 0 opts out (bin/sq-bootstrap.sh)
 SQUAD_DRILL_SANDBOX_GRACE_MINUTES=360   # grace window before an unreferenced drill sandbox is swept; six hours because live runs park idle at approval gates and long CI polls, where neither age nor /proc references show them as alive (bin/sq-drill-sandbox-gc.sh)
 SQUAD_DRILL_SANDBOX_ROOT=/tmp   # directory scanned for drill sandboxes; a test seam (bin/sq-drill-sandbox-gc.sh)

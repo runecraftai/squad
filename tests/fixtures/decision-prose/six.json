@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "migration-order",
+  "title": "Migration Cutover Order",
+  "question": "Which slice should the cutover start with?",
+  "options": [
+    {
+      "id": "billing",
+      "label": "Billing",
+      "description": "Highest revenue risk"
+    },
+    {
+      "id": "accounts",
+      "label": "Accounts",
+      "description": "Everything depends on it"
+    },
+    {
+      "id": "invoices",
+      "label": "Invoices",
+      "description": "Read-mostly, low risk"
+    },
+    {
+      "id": "reports",
+      "label": "Reports",
+      "description": "Batch only, no live traffic"
+    },
+    {
+      "id": "webhooks",
+      "label": "Webhooks",
+      "description": "External callers, hardest rollback"
+    },
+    {
+      "id": "admin",
+      "label": "Admin Tools",
+      "description": "Internal users only"
+    }
+  ],
+  "default_option_id": "invoices",
+  "allow_free_text": true,
+  "metadata": {
+    "key": "migration-order"
+  }
+}

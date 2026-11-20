@@ -20,6 +20,7 @@
 #                 "XO_SYNC: XO <id>: skipped: <reason>",
 #                 "NUDGE_XOS: XO <id>: send failed: <reason>",
 #                 "BOOTSTRAP_INFO: nudged sq-<id> with '<message>'",
+#                 "OPTIONAL: <what> (offer: <command>)",
 #                 "XO_LIVENESS: XO <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
 #                 "XO_HANDOFF: XO <id>: pending delivery: <n> item(s)".
 #          When a RUNNING local XO worktree is fast-forwarded to
@@ -55,6 +56,25 @@
 #          "fob get --lease" support.
 #          workmux-sidebar is MISSING on tmux backends while the vendored
 #          sidebar binary (packages/operation-board/sidebar) is not built.
+#          The optional Pi ask-user dialog extension is offered only to a Pi
+#          primary (pi, pi-signed): installed reports one BOOTSTRAP_INFO fact and
+#          absent reports one OPTIONAL offer naming the exact
+#          "pi install npm:@juicesharp/rpiv-ask-user-question" command and the fresh
+#          Pi session it needs. OPTIONAL is an offer, not a missing required tool:
+#          it never routes through the install consent path
+#          (.agents/skills/bootstrap-diagnostics owns that response), it never
+#          installs anything itself, and it is skipped when pi is not on PATH.
+#          Detection reads only the user settings in PI_CODING_AGENT_DIR (default
+#          ~/.pi/agent) and checks for the managed npm module directory. It never
+#          starts Pi or reads project settings. The source may have an exact
+#          version triple (with optional prerelease/build metadata) or a plain
+#          dist-tag (letters/digits/dots/dashes/underscores, starting with a
+#          letter or digit). Ranges stay silent even if installed; follow the
+#          install line in the recipe. Unreadable or malformed user settings
+#          also make no claim. Non-Pi harnesses normally stay silent,
+#          but an inherited PI_CODING_AGENT=true marker can expose the offer.
+#          docs/decision-card-pi-recipe.md owns the mapping it enables.
+#          Set SQUAD_PI_ASK_USER_OFFER=0 to silence it.
 #          The AXI-family floor policy is owned beside GH_AXI_MIN and
 #          SQ_REPORT_MIN below; the per-tool owners point there. An installed
 #          build below its floor reports MISSING, so the operator
@@ -812,6 +832,12 @@ TOOLS="$BACKEND_TOOLS $COMMON_TOOLS"
 GH_AXI_MIN=0.1.0
 SQ_REPORT_MIN=0.1.0
 
+# The optional Pi ask-user dialog extension offered to a Pi primary. Squad's prose
+# block stays the only canonical decision shape; this extension only presents a card
+# as a native dialog (docs/decision-card-pi-recipe.md), so it is offered, never
+# required, and never installed by this script.
+PI_ASK_USER_EXTENSION="@juicesharp/rpiv-ask-user-question"
+
 fob_supports_lease() {
   fob get --help 2>&1 | grep -Eq '(^|[^[:alnum:]_-])--lease([^[:alnum:]_-]|$)'
 }
@@ -1053,6 +1079,77 @@ fi
 
 # Local detection: presence, version floors, and configuration. Nothing here
 # leaves this machine, so it stays on the session-start critical path.
+# Offer the optional Pi ask-user dialog extension to a Pi primary only. This is a
+# user-scope settings read and module-directory check only; project-scope installs
+# are out of scope. An absent extension is an offer, never a required tool: it uses
+# the OPTIONAL line shape so no consent path routes it to sq-bootstrap.sh install.
+pi_ask_user_offer() {
+  local harness state
+  [ "${SQUAD_PI_ASK_USER_OFFER:-1}" != 0 ] || return 0
+  harness=$("$SCRIPT_DIR/sq-harness.sh" 2>/dev/null || true)
+  case "$harness" in
+    pi|pi-signed) ;;
+    *) return 0 ;;
+  esac
+  command -v pi >/dev/null 2>&1 || return 0
+  # shellcheck disable=SC2016 # node program is single-quoted on purpose; its contents must not expand in the shell
+  state=$(NODE_OPTIONS='' fm_run_timed 2 node -e '
+    const fs = require("node:fs");
+    const { join } = require("node:path");
+    const { homedir } = require("node:os");
+    const { fileURLToPath } = require("node:url");
+    const extension = process.argv[1];
+    const home = homedir();
+    let agentDir = process.env.PI_CODING_AGENT_DIR || join(home, ".pi", "agent");
+    if (agentDir === "~") agentDir = home;
+    else if (agentDir.startsWith("~/")) agentDir = join(home, agentDir.slice(2));
+    else if (agentDir.startsWith("file://")) agentDir = fileURLToPath(agentDir);
+
+    const path = join(agentDir, "settings.json");
+    const statOptions = { throwIfNoEntry: false };
+    const metadata = fs.statSync(path, statOptions);
+    if (!metadata && !fs.lstatSync(path, statOptions)) {
+      console.log("absent");
+    } else {
+      if (!metadata?.isFile()) process.exit(1);
+      const settings = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(path)));
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) process.exit(1);
+      const packages = Object.hasOwn(settings, "packages") ? settings.packages : [];
+      if (!Array.isArray(packages)) process.exit(1);
+      const sources = packages.map(entry => typeof entry === "string" ? entry : entry?.source);
+      if (sources.some(source => typeof source !== "string" || !source.trim())) process.exit(1);
+      const npmPrefix = "npm:";
+      const number = "(?:0|[1-9][0-9]*)";
+      const preId = `(?:${number}|[0-9]*[A-Za-z-][0-9A-Za-z-]*)`;
+      const ids = id => String.raw`${id}(?:\.${id})*`;
+      const exactVersion = new RegExp(String.raw`^(${number})\.(${number})\.(${number})(?:-${ids(preId)})?(?:\+${ids("[0-9A-Za-z-]+")})?$`);
+      const part = "(?:[0-9]+|[xX])";
+      const loosePrerelease = ids("[0-9A-Za-z-]+");
+      const rangeLike = new RegExp(String.raw`^v*${part}(?:\.${part}(?:\.${part}(?:-?${loosePrerelease})?)?)?$`);
+      const validSuffix = suffix => {
+        if (/[^A-Za-z0-9._+-]/.test(suffix)) return false;
+        const version = exactVersion.exec(suffix);
+        if (version) return version.slice(1).every(part => Number.isSafeInteger(Number(part)));
+        return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(suffix) && !rangeLike.test(suffix);
+      };
+      let configured = false;
+      for (const source of sources) {
+        if (!source.startsWith(npmPrefix)) continue;
+        const spec = source.slice(npmPrefix.length).trim();
+        if (spec !== extension && !spec.startsWith(extension + "@")) continue;
+        if (spec !== extension && !validSuffix(spec.slice(extension.length + 1))) process.exit(1);
+        configured = true;
+      }
+      const installed = configured && fs.statSync(join(agentDir, "npm", "node_modules", extension), statOptions)?.isDirectory();
+      console.log(installed ? "installed" : "absent");
+    }
+  ' -- "$PI_ASK_USER_EXTENSION" </dev/null 2>/dev/null) || return 0
+  case "$state" in
+    installed) echo "BOOTSTRAP_INFO: pi extension $PI_ASK_USER_EXTENSION installed" ;;
+    absent) echo "OPTIONAL: pi extension $PI_ASK_USER_EXTENSION not installed (offer: pi install npm:$PI_ASK_USER_EXTENSION, then start a fresh pi session)" ;;
+  esac
+}
+
 detect_local_tools() {
   if [ "$BACKEND_VALID" -eq 0 ]; then
     echo "BACKEND_INVALID: $BACKEND (known: $SQUAD_BACKEND_KNOWN)"
@@ -1099,6 +1196,7 @@ detect_local_tools() {
   if command -v sq-tasks >/dev/null 2>&1 && ! fm_tasks_axi_compatible; then
     echo "MISSING: sq-tasks (install: $(install_cmd sq-tasks))"
   fi
+  pi_ask_user_offer
 }
 
 detect_local_config() {

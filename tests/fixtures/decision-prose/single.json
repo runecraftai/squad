@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "single-option",
+  "title": "Single Option",
+  "question": "Proceed with the only choice?",
+  "options": [
+    {
+      "id": "only",
+      "label": "Proceed",
+      "description": "There is nothing else to pick"
+    }
+  ],
+  "default_option_id": "only"
+}

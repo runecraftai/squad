@@ -50,7 +50,12 @@ export SQUAD_BACKEND_CMUX_BUNDLE_BIN="$TMP_ROOT/no-bundled-cmux"
 # /usr/bin), so the probed tools are hidden from the base and each case supplies
 # the ones it means to be present through its own fakebin.
 BASE_PATH=$(path_farm_without "$TMP_ROOT/base-path" "${SQUAD_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" \
-  node gh jq tmux herdr zellij cmux tuios orca fob drill sq-gh sq-browser sq-report sq-quota sq-tasks)
+  node gh jq tmux herdr zellij cmux tuios orca fob drill sq-gh sq-browser sq-report sq-quota sq-tasks pi)
+
+# The optional Pi ask-user dialog offer is pinned by its own case below; every other
+# case here compares exact bootstrap output, so the offer stays silenced by default
+# instead of being neutralized in each case's environment.
+export SQUAD_PI_ASK_USER_OFFER=0
 
 # Hermetic runtime-backend detection. These cases pin the backend per-home via
 # config/backend; the dev shell's ambient runtime markers ($TMUX inside tmux,
@@ -1521,3 +1526,171 @@ test_sandbox_gc_skipped_without_lock() {
 }
 
 test_sandbox_gc_skipped_without_lock
+
+# --- the optional Pi ask-user dialog extension offer -------------------------
+test_pi_ask_user_offer() {
+  local label harness fixture result case_dir fakebin log out n real_node agent_dir override modules expect suffix
+  local extension='@juicesharp/rpiv-ask-user-question'
+  local -a marker=()
+  real_node=$(NODE_OPTIONS='' node -p 'process.execPath') || fail "Node is required for Pi settings fixtures"
+  n=0
+  while IFS='^' read -r label harness fixture result; do
+    n=$((n + 1))
+    case_dir="$TMP_ROOT/offer-$n"
+    agent_dir="$case_dir/home/.pi/agent"
+    override=
+    if [ "$fixture" = versioned ]; then
+      mkdir -p "$agent_dir"
+      printf '%s\n' '{"packages":[]}' > "$agent_dir/settings.json"
+      # shellcheck disable=SC2088 # literal tilde is deliberate: this case proves a quoted tilde is treated literally
+      override='~/custom pi agent'
+      agent_dir="$case_dir/home/custom pi agent"
+    fi
+    modules="$agent_dir/npm/node_modules"
+    mkdir -p "$case_dir/home/config" "$case_dir/project/.pi" "$modules"
+    printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+    case "$fixture" in
+      installed)
+        printf '{"packages":["npm:%s"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      spaced-spec)
+        printf '{"packages":["npm: %s "]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      bom)
+        printf '\357\273\277{"packages":["npm:%s"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      invalid-utf8)
+        printf '{"packages":["npm:%s"],"theme":"\377"}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      versioned)
+        printf '{"packages":[{"source":"npm:%s@2.15.0"}," ./my-extension"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension"
+        printf '%s\n' '{invalid project settings' > "$case_dir/project/.pi/settings.json" ;;
+      tagged)
+        printf '{"packages":["npm:%s@release_candidate-1.0"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      version-metadata)
+        printf '{"packages":["npm:%s@2.15.0-rc.1+build.2"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      range-*)
+        case "$fixture" in
+          range-compound-*) suffix='>=2.0.0 <3.0.0 || ^4.0.0-beta.1' ;;
+          range-caret-*) suffix='^2.0.0' ;;
+          range-empty-alternative-*) suffix='^2.0.0 ||' ;;
+          range-oversized-*) suffix='>9007199254740992.0.0' ;;
+          range-wildcard-*) suffix='2.X' ;;
+          range-loose-wildcard-*) suffix='2.15.xbeta' ;;
+          range-repeated-v-*) suffix='vv2.x' ;;
+          range-partial-*) suffix='2.0' ;;
+          range-spaced-spec-*) suffix='^2.15.0' ;;
+        esac
+        if [[ "$fixture" = range-spaced-spec-* ]]; then
+          printf '{"packages":["npm: %s@%s "]}\n' "$extension" "$suffix" > "$agent_dir/settings.json"
+        else
+          printf '{"packages":["npm:%s@%s"]}\n' "$extension" "$suffix" > "$agent_dir/settings.json"
+        fi
+        if [[ "$fixture" = *-installed ]]; then mkdir -p "$modules/$extension"; fi ;;
+      bad-suffix-installed|bad-suffix-uninstalled)
+        printf '{"packages":["npm:%s@2.15.0?"]}\n' "$extension" > "$agent_dir/settings.json"
+        if [ "$fixture" = bad-suffix-installed ]; then mkdir -p "$modules/$extension"; fi ;;
+      bad-range)
+        printf '{"packages":["npm:%s","npm:%s@^2..15"]}\n' "$extension" "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      empty-suffix)
+        printf '{"packages":["npm:%s@"]}\n' "$extension" > "$agent_dir/settings.json" ;;
+      lookalike)
+        printf '{"packages":["npm:%s-extra","npm:%s-extra@2.15.0?"]}\n' "$extension" "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" "$modules/$extension-extra" ;;
+      unconfigured)
+        printf '%s\n' '{}' > "$agent_dir/settings.json"
+        mkdir -p "$modules/$extension" ;;
+      uninstalled)
+        printf '{"packages":["npm:%s"],"npmCommand":["npx","--yes","pnpm"]}\n' "$extension" > "$agent_dir/settings.json" ;;
+      not-directory)
+        printf '{"packages":["npm:%s"]}\n' "$extension" > "$agent_dir/settings.json"
+        mkdir -p "$modules/${extension%/*}"
+        : > "$modules/$extension" ;;
+      project)
+        printf '%s\n' '{"packages":[]}' > "$agent_dir/settings.json"
+        printf '{"packages":["npm:%s"]}\n' "$extension" > "$case_dir/project/.pi/settings.json"
+        mkdir -p "$case_dir/project/.pi/npm/node_modules/$extension" "$modules/$extension" ;;
+      unreadable) mkdir "$agent_dir/settings.json" ;;
+      fifo) mkfifo "$agent_dir/settings.json" ;;
+      malformed) printf '%s\n' '{"packages":[' > "$agent_dir/settings.json" ;;
+      blank) : > "$agent_dir/settings.json" ;;
+      wrong-shape) printf '%s\n' '{"packages":[{}]}' > "$agent_dir/settings.json" ;;
+      missing) ;;
+    esac
+    fakebin=$(make_fake_toolchain "$case_dir")
+    rm "$fakebin/node"
+    ln -s "$real_node" "$fakebin/node"
+    log="$case_dir/pi.log"
+    cat > "$fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+printf 'unexpected pi argv: %s\n' "$*" >> "$PI_INVOCATION_LOG"
+exit 9
+SH
+    chmod +x "$fakebin/pi"
+    case "$harness" in
+      pi) marker=(PI_CODING_AGENT=true) ;;
+      pi-signed) marker=(PI_CODING_AGENT=true SQUAD_PI_HARNESS=pi-signed) ;;
+      claude) marker=(CLAUDECODE=1) ;;
+      no-pi) marker=(PI_CODING_AGENT=true); rm -f "$fakebin/pi" ;;
+    esac
+    case "$result" in
+      absent) expect="OPTIONAL: pi extension $extension not installed (offer: pi install npm:$extension, then start a fresh pi session)" ;;
+      installed) expect="BOOTSTRAP_INFO: pi extension $extension installed" ;;
+      silent) expect= ;;
+    esac
+    out=$(cd "$case_dir/project" && env -u CLAUDECODE -u PI_CODING_AGENT -u SQUAD_PI_HARNESS -u GROK_AGENT \
+      "${marker[@]}" SQUAD_PI_ASK_USER_OFFER=1 SQUAD_FAKE_FOB_LEASE_HELP=1 \
+      PATH="$fakebin:$BASE_PATH" HOME="$case_dir/home" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
+      PI_CODING_AGENT_DIR="$override" PI_INVOCATION_LOG="$log" \
+      "$ROOT/bin/sq-bootstrap.sh" 2> "$case_dir/bootstrap.stderr") || fail "$label: bootstrap failed"
+    [ ! -e "$log" ] || fail "$label: unexpected Pi invocation: $(< "$log")"
+    [ "$out" = "$expect" ] || fail "$label: expected '$expect', got: $out"
+  done <<'ROWS'
+pi primary is offered the exact install command^pi^missing^absent
+an installed extension is one no-action fact^pi^installed^installed
+whitespace around the npm package spec does not hide an installed extension^pi^spaced-spec^installed
+settings starting with a UTF-8 BOM still detect the extension^pi^bom^installed
+settings containing invalid UTF-8 stay silent^pi^invalid-utf8^silent
+a versioned object source is found in the override beside a local sibling^pi^versioned^installed
+a plain dist-tagged source is recognized^pi^tagged^installed
+an exact version with prerelease and build metadata is recognized^pi^version-metadata^installed
+a compound range stays silent^pi^range-compound-installed^silent
+a caret range with a module directory stays silent^pi^range-caret-installed^silent
+a caret range without a module directory stays silent^pi^range-caret-uninstalled^silent
+a range with an empty alternative and a module directory stays silent^pi^range-empty-alternative-installed^silent
+a range with an empty alternative and no module directory stays silent^pi^range-empty-alternative-uninstalled^silent
+a range with an oversized major and a module directory stays silent^pi^range-oversized-installed^silent
+a range with an oversized major and no module directory stays silent^pi^range-oversized-uninstalled^silent
+a wildcard range stays silent^pi^range-wildcard-installed^silent
+a loose wildcard patch with a module directory stays silent^pi^range-loose-wildcard-installed^silent
+a loose wildcard patch without a module directory stays silent^pi^range-loose-wildcard-uninstalled^silent
+a caret range with whitespace around the npm package spec stays silent^pi^range-spaced-spec-installed^silent
+a repeated-v wildcard with a module directory stays silent^pi^range-repeated-v-installed^silent
+a repeated-v wildcard without a module directory stays silent^pi^range-repeated-v-uninstalled^silent
+a partial version range stays silent^pi^range-partial-installed^silent
+a malformed suffix with a module directory stays silent^pi^bad-suffix-installed^silent
+a malformed suffix without a module directory stays silent^pi^bad-suffix-uninstalled^silent
+a malformed range stays silent even beside a valid source^pi^bad-range^silent
+an empty suffix stays silent^pi^empty-suffix^silent
+lookalikes do not match even with a managed module directory^pi^lookalike^absent
+a module without a configured source reads as absent^pi^unconfigured^absent
+a configured source without its module reads as absent^pi^uninstalled^absent
+a regular file is not an installed module directory^pi^not-directory^absent
+pi-signed is offered too^pi-signed^missing^absent
+another harness is never offered it^claude^missing^silent
+a pi primary without a pi binary stays silent^no-pi^missing^silent
+settings that cannot be read as a file stay silent^pi^unreadable^silent
+a settings pipe is not read^pi^fifo^silent
+malformed settings stay silent^pi^malformed^silent
+empty settings stay silent^pi^blank^silent
+invalid package entries stay silent^pi^wrong-shape^silent
+an extension configured only in project settings reads as absent^pi^project^absent
+ROWS
+  pass "bootstrap offers the optional Pi ask-user dialog extension to a Pi primary only"
+}
+
+test_pi_ask_user_offer

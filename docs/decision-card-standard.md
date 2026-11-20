@@ -130,7 +130,7 @@ See Example 2 in [Examples](decision-card-examples.md).
 ## Harness agnosticism
 
 Every harness shows the same prose block in chat and receives the answer as text.
-A native question dialog is optional; see the [pi recipe](decision-card-pi-recipe.md).
+A native question dialog is optional and presentation-only: see the [pi recipe](decision-card-pi-recipe.md), whose executable also hands its answers back to `bin/sq-ask.sh --answer`.
 The picker degrades fzf, then whiptail, then dialog, then bash read, then the recommended option.
 
 ## Implementation files
@@ -138,9 +138,11 @@ The picker degrades fzf, then whiptail, then dialog, then bash read, then the re
 | File | Purpose |
 |------|---------|
 | `bin/sq-ask.sh` | Renderer, prose parser, answer parser, validator, picker |
+| `bin/sq-card-pi-dialog.sh` | Card to Pi dialog payload and back; the [pi recipe](decision-card-pi-recipe.md) owns the mapping and refusal rules |
 | `bin/sq-card-lint.sh` | Warning-only grammar drift check for report and decision records; its header owns the codes |
 | `docs/decision-card-examples.md` | Three worked examples with golden prose |
 | `tests/sq-ask.test.sh` | Renderer, parser, validator, picker, and doc-drift tests |
+| `tests/sq-card-pi-dialog.test.sh` | Dialog mapping, single-question payload, refusal, round-trip, and fallback tests |
 | `tests/sq-card-lint.test.sh` | Lint codes, fenced-example skipping, and the always-zero exit contract |
 | `tests/fixtures/decision-prose/` | Golden cards and prose |
 

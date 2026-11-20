@@ -26,6 +26,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-remote-job-reap-orphans.sh` | Stop remote job workers left running by a pruned code root, never one whose checkout still exists |
 | `sq-remote-doctor.sh`    | Check, and with `--fix` repair, one remote account's second-mate readiness (remote job worker, Herdr, Aqua launch agents, PATH, and required tools) |
 | `sq-ask.sh`              | Renders and parses decision prose from a card payload; opt-in terminal picker | 
+| `sq-card-pi-dialog.sh`   | Maps a decision card to the optional Pi `ask_user_question` dialog payload and its answers back to the prose answer grammar |
 | `sq-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into an XO base               |
 | `sq-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through sq-tasks             |
 | `sq-decision-hold.sh`    | Create, verify, complete, and resolve durable commander-held decisions                 |

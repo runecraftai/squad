@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "id": "release-plan",
+  "title": "Release Plan",
+  "question": "When should we release?",
+  "options": [
+    {"id": "now", "label": "Release now", "description": "Skip the next release window"},
+    {"id": "wait", "label": "Wait", "description": "   "}
+  ],
+  "default_option_id": "wait"
+}

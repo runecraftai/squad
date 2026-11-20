@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "id": "rollout-order",
+  "title": "Rollout Order",
+  "question": "Which service should the rollout cover first?",
+  "options": [
+    {
+      "id": "alpha",
+      "label": "Alpha",
+      "description": "Internal only, no traffic"
+    },
+    {
+      "id": "bravo",
+      "label": "Bravo",
+      "description": "Small pilot cohort"
+    },
+    {
+      "id": "charlie",
+      "label": "Charlie",
+      "description": "Staff accounts"
+    },
+    {
+      "id": "delta",
+      "label": "Delta",
+      "description": "One region, low volume"
+    },
+    {
+      "id": "echo",
+      "label": "Echo",
+      "description": "Steady read traffic"
+    },
+    {
+      "id": "foxtrot",
+      "label": "Foxtrot",
+      "description": "Write heavy, needs a rollback plan"
+    },
+    {
+      "id": "golf",
+      "label": "Golf",
+      "description": "Batch jobs only"
+    },
+    {
+      "id": "hotel",
+      "label": "Hotel",
+      "description": "Partner integrations"
+    },
+    {
+      "id": "india",
+      "label": "India",
+      "description": "Everything else"
+    }
+  ],
+  "default_option_id": "echo",
+  "allow_free_text": true,
+  "metadata": {
+    "key": "rollout-order"
+  }
+}

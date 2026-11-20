@@ -1,80 +1,119 @@
 # Decision Card Pi Recipe (Optional)
 
-This document describes how pi sessions could optionally use the rpiv extension for richer interactive decision dialogs while everything else stays harness-agnostic.
+How a Pi session can present a decision card as a native dialog without changing the decision format Squad owns.
+The card schema has one owner, [decision-card-standard.md](decision-card-standard.md), and the prose block stays the canonical shape the commander reads and answers.
+A native dialog is a presentation surface: it is optional, it never becomes the owner of the format, and every path here degrades to today's prose block when the extension is absent.
 
-## Overview
+## The extension
 
-The `@juicesharp/rpiv-ask-user-question` pi extension provides native terminal dialogs with:
-- Up to 4 questions per dialog
-- 2-4 authored options with descriptions
-- Typed free-text row
-- Markdown previews
-- Submit tab summary
+`@juicesharp/rpiv-ask-user-question` is a Pi extension that exposes one tool, `ask_user_question`, and renders its payload as a native terminal dialog.
+It is never a runtime dependency of Squad: nothing in `bin/`, the tests, or CI imports it, requires it, or installs it.
 
-This is richer than the basic `sq-ask.sh` picker, so pi sessions may want to use it when available.
+Its published payload (`docs/tool-schema.md` in the package, verified against version 2.15.0) is:
 
-## Integration Approach
-
-### Option 1: Skill-Based Approach (Recommended)
-
-Create a pi skill that wraps decision card presentation:
-
-```markdown
----
-name: decision-card
-description: Present decision cards using rpiv extension when available
----
-
-When presenting a decision card to the commander:
-1. Check if rpiv extension is available
-2. If yes, transform card JSON to rpiv format and use ask_user_question
-3. If no, show the prose block from `sq-ask.sh --render` and resolve the typed reply with `sq-ask.sh --answer`
+```ts
+ask_user_question({
+  questions: [{
+    question: string,        // full question text
+    header: string,          // chip label, max 16 characters
+    options: [{ label: string, description: string, preview?: string }], // 2-4 options
+    multiSelect?: boolean,   // default false
+  }],                        // 1-4 questions per dialog
+})
 ```
 
-### Option 2: Transparent Fallback
+Two facts drive the mapping:
 
-The simplest approach: always use sq-ask.sh, but document that pi users can install rpiv for richer UX.
+- There is no per-question `notes` field, so card context and findings travel inside the question text rather than being dropped.
+- The dialog appends its own free-text row (`Type something.`), so `O0 - Your own words` stays reachable without authoring an option for it.
+  The labels `Other`, `Type something.`, and `Next` are reserved and rejected, which is why a card using one of them keeps the prose block.
+  The built-in row cannot be hidden, so `--payload` refuses a card with `allow_free_text: false` with exit 2 and a named reason, without emitting a payload; use the canonical prose block instead.
 
-## rpiv Extension Format Reference
+## The offer
 
-The rpiv extension expects:
+`bin/sq-bootstrap.sh` offers the extension to a Pi primary (`pi`, `pi-signed`) only, as one line in the session-start digest:
 
-```json
-{
-  "questions": [
-    {
-      "question": "How should we merge?",
-      "options": [
-        {"label": "Squash", "description": "Combine commits"},
-        {"label": "Rebase", "description": "Preserve history"}
-      ],
-      "notes": "Choose carefully",
-      "required": true
-    }
-  ]
-}
+- installed: `BOOTSTRAP_INFO: pi extension @juicesharp/rpiv-ask-user-question installed`.
+- absent: `OPTIONAL: pi extension @juicesharp/rpiv-ask-user-question not installed (offer: pi install npm:@juicesharp/rpiv-ask-user-question, then start a fresh pi session)`.
+
+`OPTIONAL` is an offer, not a missing required tool: it never routes through the required-tool install consent path, and it never blocks dispatch.
+`.agents/skills/bootstrap-diagnostics` owns how that line is handled.
+Installing is the commander's explicit action.
+Bootstrap reads the user-scope `settings.json` in `PI_CODING_AGENT_DIR` (default `~/.pi/agent`) without starting Pi or invoking a package manager. It decodes the file as strict UTF-8, tolerating a leading BOM as Pi does, and checks for the npm source (whitespace after `npm:` trimmed, as Pi normalizes it) and its module directory under that same agent directory's `npm/node_modules`. It never reads project settings. A missing source or missing module directory produces the offer; unreadable, non-UTF-8, or malformed settings leave it silent.
+The source can be unsuffixed or use an `@` suffix with an exact version triple (such as `2.15.0`, with optional prerelease and build metadata) or a plain dist-tag (letters, digits, dots, dashes, and underscores, starting with a letter or digit). Any npm range expression, including `v`-prefixed and wildcard forms such as `vv2.x` or `2.15.x`, is a range, and range suffixes are inconclusive: bootstrap stays silent even if the extension is installed, so follow the install line above when setting up the extension.
+Bootstrap also stays silent when `pi` is not on `PATH` or the harness is detected as non-Pi. An inherited `PI_CODING_AGENT=true` marker can cause a non-Pi session to be detected as Pi and see the offer.
+The shared timeout helper's Perl fallback can lose the child's signal status, but a probe that does not emit a recognized result stays silent.
+`SQUAD_PI_ASK_USER_OFFER=0` silences the offer for a base that does not want it.
+
+## The mapping
+
+`bin/sq-card-pi-dialog.sh` converts a card payload (one card object or an array) into the dialog payload and back.
+It validates the card through `bin/sq-ask.sh --validate` first, so the schema keeps exactly one owner, and it needs neither `pi` nor the extension at runtime.
+
+| Card | Dialog |
+|------|--------|
+| `question` | `questions[].question`, then one `F<n> - <id> <text>` line per finding and finally one `Context: <context>` line when the card has context |
+| `title` | `questions[].header`, with leading whitespace removed before cutting to the 16-character limit at a word boundary when possible |
+| `options[].label` | `options[].label`, unchanged |
+| `options[].description` | `options[].description`; the recommended option gains a trailing ` (recommended)` so the recommendation is visible on its own row |
+| `allow_free_text` | not authored: the dialog's own free-text row is the `O0` escape |
+| `payload`, option ids, metadata | not shown |
+
+One card is one dialog question, because a question holds 2-4 options:
+
+- an eligible card with 2-4 options becomes exactly one `ask_user_question` question, with every option on its own row and the recommended one marked;
+- several cards in one reply become one dialog per card, in card order, each rendered as its own `ask_user_question` call;
+- a card with more than four options keeps the prose block: the mapping exits 2 naming the reason, so no option is ever dropped, folded, or truncated.
+
+A split mapping is not used for the payload path: the extension answers one entry per question, so a card spread over two or more questions would come back as several answers for the same decision and could only be recorded by guessing a pick.
+Refusing the card keeps the prose block authoritative for exactly the cards that need more than one question, instead of leaving them with a dialog whose answer cannot be merged.
+
+A card the dialog cannot represent without dropping or misrepresenting an option keeps the prose block instead, and the mapping exits 2 naming the reason: a reserved dialog label, a label shared by two options of the card, a card with a single option, a card with more than four options, any missing, null, or blank option description, or any option label or description ending in `(recommended)` after trimming trailing whitespace, including on the recommended option itself. The marker check is lowercase-only; a lookalike such as `(Recommended)` still renders and is not rejected.
+
+The dialog heading (question, findings, context, and snapshot line) is limited to 6 lines and 600 characters including line breaks. A heading over either limit is refused with exit 2 (`dialog heading exceeds`); use the prose block instead.
+
+## Answers
+
+The dialog result is the published version 2.15.0 shape, whose field names are owned by the package's `docs/tool-schema.md` "Result" section: `details.answers[]` entries carry `questionIndex`, `question`, `kind`, and `answer`, with the optional `notes`, `selected`, and `preview`, and the result carries `details.cancelled`.
+The mapping checks `questionIndex` and the returned `question` against the dialog addressed by `--dialog` before resolving `kind` and `answer`. Every question ends with the card ID and a deterministic fingerprint of the full validated card. A returned question that does not match that snapshot exits 4, even if the card ID and chosen label are unchanged.
+
+To recover a result, use Pi's `/session` command to find the current session's JSONL file. In the current conversation branch, pass the assistant's entire saved `toolCall` content entry for the corresponding `ask_user_question` call as `--call`, keeping its `type`, `name`, `id`, and `arguments` unchanged; an entry that is not `type: "toolCall"` named `ask_user_question` exits 2, and a result whose `toolName` is missing or is not `ask_user_question` exits 4. Find the session entry with `type: "message"`, `message.role: "toolResult"`, `message.toolName: "ask_user_question"`, and `message.toolCallId` equal to that ID. Pass the entire `message` object, including `details`, as `--result`; do not pass the enclosing session entry. The model-facing `content` alone is not sufficient and must not be used to reconstruct `details`. If the saved call or matching structured result is unavailable (for example, the session was not saved), use the canonical prose path below.
+
+Use `--resolve` to record the decision in one command. After checking the echoed question against the card snapshot, it matches the result's `toolCallId` against the saved call's ID. A missing or different result ID exits 4 with a named reason; use the canonical prose path instead. Once the IDs match, it regenerates the dialog payload and compares it to the saved arguments as JSON: key order and formatting do not matter, but all fields and array entries must match. A mismatch exits 2 with `--call arguments do not match`; use the canonical prose path instead. On a match, it runs `bin/sq-ask.sh --answer` with the exact card bytes that passed the checks, returning the parser's output and exit code unchanged:
+
+```bash
+bin/sq-card-pi-dialog.sh --payload < card.json
+# one ask_user_question call per element of the printed array
+bin/sq-card-pi-dialog.sh --resolve --dialog 1 --call '<saved tool-call JSON>' --result '<tool result>' < card.json
+# several cards answered in one call:
+bin/sq-card-pi-dialog.sh --resolve \
+  --dialog 1 --call '<first saved tool-call JSON>' --result '<first result>' \
+  --dialog 2 --call '<second saved tool-call JSON>' --result '<second result>' < card.json
 ```
 
-Mapping from decision card:
-- `card.question` → `questions[0].question`
-- `card.options[].label` → `questions[0].options[].label`
-- `card.options[].description` → `questions[0].options[].description`
-- `card.context` → `questions[0].notes`
-- `card.allow_free_text` → rpiv always allows free text
+`--answer` on the mapping script only prints the code fragment (such as `d1 o2`); do not resolve that fragment against a separately read card file.
+Both modes take the whole tool result, never a bare answers array: only `details.cancelled` proves the dialog was not cancelled, so `Esc` can never become a recorded decision.
+Either mode rejects a result carrying `details.answers[].notes` or `details.globalNote` with exit 4 (`dialog notes cannot be recorded`). It also rejects with exit 4 a result whose top-level `isError` is truthy (including the string `"true"`; the `false` Pi writes on success is an ordinary answer), a result with a `details.error` field, and a result whose `toolName` names another tool. Keep the decision open and confirm it through the canonical prose path rather than recording the selection without its note.
+Answering several cards in one call merges their dialogs into exactly one fragment per decision, mechanically - no fold, no renumbering, no guessed pick.
+Each submitted result must contain exactly one answer. An empty result or two answers for the same decision exit 4 without emitting a fragment, and a multi-select answer also exits 4 because this mapping never authors a multi-select question.
+A malformed answer, such as a non-string chosen label or typed text, exits 4 with a named error and never a traceback.
+The extension cannot pre-validate its built-in text row against the prose grammar. Typed text containing a double quote, backslash, or newline exits 4 with the `free text must be …` error; use the canonical prose block to answer instead. Cards with `allow_free_text: false` are refused before presentation.
+If the canonical parser rejects a batch for exceeding the answer length limit, retry with fewer dialogs per call against the same card array so the `D` codes stay the same.
+A whole tool result that exceeds the system's per-argument limit fails with `Argument list too long` (`E2BIG`) before it reaches the parser. Use the canonical prose path; do not truncate the result or reconstruct it from model-facing text.
 
-## Implementation Notes
+## Fallback
 
-This is an optional enhancement. The core decision card standard works without it:
+When the extension is absent, a card is refused, or a matching structured result cannot be recovered or used, use the unchanged prose path:
 
-- `sq-ask.sh` works from any shell
-- The text format works in any chat
-- The JSON format enables future tooling
+- `bin/sq-ask.sh --render` prints the same prose block it always printed;
+- `bin/sq-ask.sh --answer` resolves the typed answer exactly as before;
+- the mapping script is never invoked by any existing decision path and has no runtime dependency of its own.
 
-The pi recipe is documented here for completeness but should not be built unless:
-1. The commander explicitly requests it
-2. The rpiv extension is already installed in target environments
-3. A native dialog adds clear value over text-based answers
+## Files
 
-## Recommendation
-
-Start with the harness-agnostic approach (sq-ask.sh prose rendering and `--answer`). Monitor whether pi users frequently want richer interactive dialogs. If demand emerges, scope a native dialog integration as a separate task.
+| File | Purpose |
+|------|---------|
+| `bin/sq-card-pi-dialog.sh` | Card to dialog payload, and dialog answers back through the canonical parser |
+| `bin/sq-bootstrap.sh` | The Pi-only offer, including the exact install command |
+| `tests/sq-card-pi-dialog.test.sh` | Mapping, refusal, round-trip, and fallback cases |
+| `tests/sq-bootstrap.test.sh` | The offer: Pi only, exact command, never installs, silent elsewhere |
