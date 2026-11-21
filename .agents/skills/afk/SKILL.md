@@ -1,8 +1,9 @@
 ---
 name: afk
 description: >-
-  Enter away-mode supervision when the commander invokes /afk, says they are going afk, `state/.afk` exists, an incoming message starts with `SQUAD_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
-  It sets a durable away-mode flag so the sub-supervisor daemon can self-handle routine wakes and escalate commander-relevant events plus bounded declared-external-wait rechecks as batched digests during walk-away stretches, then exits automatically when any real unmarked message returns Squad to full per-wake responsiveness.
+  Arm the absence routine and start the away-mode daemon when the commander invokes /afk or says he is going afk: a strong-model judge decides in-scope gates, delivery continues, the daemon absorbs routine wakes without deciding, and his questions are parked for his return in a dated absence record.
+  The daemon also runs when `state/.afk` exists, an incoming message starts with `SQUAD_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
+  The daemon sets a durable away-mode flag so the sub-supervisor can self-handle routine wakes and escalate commander-relevant events as batched digests, then exits automatically when any real unmarked message returns Squad to full per-wake responsiveness.
 user-invocable: true
 metadata:
   internal: true
@@ -10,13 +11,50 @@ metadata:
 
 # afk
 
-Away-mode supervision. When invoked, `/afk` makes the daemon's token-saving
-tradeoff **consented** and **explicit**: the commander is stepping away, so the
+When the commander invokes `/afk` or says he is going afk, run the judge-delegation routine below and start the away-mode daemon in the same move.
+The two compose as follows: the daemon decides nothing, absorbs routine wakes, and delivers bounded digests; the judge decides inside the accepted scope; the commander decides everything outside it.
+
+## Judge-delegation routine (default)
+
+Going afk means a strong judge decides and the work keeps going to delivery, with the daemon absorbing routine wakes underneath.
+Run these steps without asking the commander first.
+
+1. **Arm the judge.** Resolve the strongest lane from current evidence.
+   Use `anthropic/claude-opus-5-5` when the Claude lane is usable: authenticated, and no current `sq-quota --json` evidence shows it exhausted.
+   Otherwise use the Pi harness with `--model openai-codex/<model>`, the strongest commander-approved openai-codex model the catalog lists.
+   The broken part is the Codex CLI harness, not the model, so do not use the `codex` harness.
+   Resolve through `harness-adapters` and `quota-array-dispatch`; a missing quota figure keeps a lane eligible and is disclosed as uncertainty.
+   Record the resolved lane in the absence record.
+2. **Write the authority record** at `data/absence-<YYYY-MM-DD-HHMM>.md`; never open a second record while one is open.
+   It states:
+   - what the judge may decide: gate findings inside the accepted scope of the task, product questions already bounded by an approved plan, and merge of a PR whose checks are all green and readable, with the merge reason and diff summary written in the record so he can read it in the morning;
+   - what always escalates and is parked: contract expansion, discard, any irreversible or destructive action, security-sensitive choices, a credential or login, and a conflict between two of his own decisions;
+   - the parallelism ceiling: his own if he set one, otherwise 2 concurrent workers, stated in the record;
+   - the memory check before each dispatch: `bin/sq-startup-memory-budget.sh report` must fit the `read` budget, otherwise the dispatch waits;
+   - the delivery mode and yolo posture of each project in force, copied from `data/projects.md` at absence start;
+   - the resolved judge lane;
+   - the daemon state, and which wake classes it absorbs and which it escalates to Squad.
+3. **Park his questions instead of asking.** Each question that belongs to him goes into the record and becomes its own backlog item held with `sq-tasks hold <id> --reason "<reason>" --kind commander`, per `AGENTS.md` section 10.
+   Do not re-ask it in chat while he is away.
+4. **Keep delivering.** Dispatch, supervise, and merge through `AGENTS.md` sections 7 and 8, with merges only through `bin/sq-pr-merge.sh` and only within step 2.
+   Supervision is the daemon's sentry, as its section describes; do not arm a second sentry.
+   Wakes the daemon escalates reach Squad, which applies the judge under the record from step 2.
+   The judge returns one verdict per decision: decide or park, the reason, and the reservations he should read.
+   Record every verdict in the record next to the work it decided.
+   A judge verdict is a delegated Squad decision recorded as such, not his approval.
+   Never merge a red PR, and never widen a merge beyond step 2.
+5. **Acknowledge once**, in `AGENTS.md` section 9 language: "Comandante, juiz forte armado e modo ausente ativo; o trabalho segue até a entrega e as suas perguntas ficam guardadas para o seu retorno."
+6. **Return.** An absence record without a `Retorno:` line is open.
+   When an unmarked message arrives while it is open, the commander is back: run the daemon return owner (`bin/sq-afk-return.sh`) first, then read the record, present the parked questions as decision blocks anchored to their backlog items, batch every verdict and merge, and append `Retorno: <time>` to the record.
+   A message beginning `/afk` while the record is open refreshes it with a new line and does not open another record.
+   It checks `bin/sq-afk-launch.sh status`, leaves a live daemon alone, and restarts the daemon through the daemon procedure's step 2 when it is not live, recording the restart in the record.
+
+## Away-mode daemon: what it does (started by /afk)
+
+Away-mode supervision. The daemon decides nothing; it makes the token-saving tradeoff **consented** and **explicit**: the commander is stepping away, so the
 sub-supervisor may triage routine wakes in bash instead of waking Squad's
 LLM for each one. Escalations still reach the commander, but as one pre-read,
 batched digest rather than per-wake injections.
-
-## What it does
 
 1. **Enter the lifecycle through `bin/sq-afk-launch.sh`.**
    This owns the durable state write, session-scoped stale-artifact clearing,
@@ -57,9 +95,11 @@ batched digest rather than per-wake injections.
 3. **Do not separately arm `sq-sentry.sh`.** The daemon manages the sentry as
    its child; the singleton lock no-ops a stray arm harmlessly.
 
-4. **Acknowledge** in `AGENTS.md` section 9 language: "Comandante, o modo ausente está ativo; vou agrupar as atualizações de rotina e apresentar apenas decisões, falhas, credenciais ou trabalho pronto para revisão até o seu retorno."
+4. **Acknowledge** unless the routine started the daemon, in which case the routine's step 5 acknowledgement replaces this one; otherwise acknowledge in `AGENTS.md` section 9 language: "Comandante, o modo ausente está ativo; vou agrupar as atualizações de rotina e apresentar apenas decisões, falhas, credenciais ou trabalho pronto para revisão até o seu retorno."
 
-## How to exit afk
+## How to exit the daemon
+
+This is the daemon's return owner; for an absence opened by `/afk`, step 6 of the routine runs it first.
 
 No `/back` is needed. The first genuine message is the return signal:
 
@@ -78,9 +118,10 @@ a false exit is self-correcting (the commander re-runs `/afk`).
 
 ## Orthogonal to approval authority
 
-afk changes how aggressively Squad surfaces things, **not who approves what**.
-"Away" never means "approves more" or "approves less."
-A PR ready for merge or a needs-decision finding keeps the same configured authority and exceptions from `AGENTS.md` section 7, while anything requiring the commander still waits for the commander's explicit word.
+The daemon changes how aggressively Squad surfaces things, **not who approves what**; it decides nothing.
+The daemon alone never means "approves more" or "approves less."
+Under `/afk`, the judge's authority is exactly the authority record from routine step 2: gate findings inside the accepted scope, product questions already bounded by an approved plan, and merge of a PR whose checks are all green and readable, never more.
+Everything outside that record, including the escalations it parks, keeps the configured authority and exceptions from `AGENTS.md` section 7 and still waits for the commander's explicit word.
 The daemon only batches the notification.
 
 ## Operational prefix contract
