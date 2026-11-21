@@ -168,7 +168,8 @@ EOF
     printf 'decision-task [key=api-shape] needs-decision: commander must choose the synthetic API shape\n'
   } > "$dir/home/state/.fake-drain"
   out=$(run_return "$dir" begin) || fail "approval decision should not be treated as a Squad blocker: $out"
-  assert_contains "$out" 'queued-wake-records=1' "approval decision wake record was not counted in the summary"
+  assert_contains "$out" 'queued wake records drained: 1' "approval decision wake record was not listed as an open item"
+  assert_not_contains "$out" 'catch-up summary' "queued wake records alone presented an away-mode summary"
   assert_contains "$out" 'OPEN DECISIONS' "approval decision was not surfaced as an open item in the summary"
   [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "approval decision incorrectly opened a Squad blocker gate"
   pass "needs-decision remains reportable without masquerading as a Squad-actionable blocker"
@@ -251,7 +252,39 @@ test_away_ledger_while_blocked_presents_only_a_count() {
   pass "blocked catch-up holds the away-mode events as a count until the blockers clear"
 }
 
+test_undeliverable_ledger_item_reaches_the_summary() {
+  local dir out
+  dir="$TMP_ROOT/ledger-undeliverable"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  printf 'away-mode ledger undeliverable as of now: escalation: fake-c2: done: PR https://example.test/pr/77\n' \
+    > "$dir/home/state/.subsuper-inject-wedged"
+  {
+    printf '1784074290\t5\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: escalation: fake-c2: done: PR https://example.test/pr/77\n'
+    printf '1784074295\t6\tsignal\tfake-c2.status\tsignal: fake-c2.status\n'
+  } > "$dir/home/state/.fake-drain"
+  out=$(run_return "$dir" begin) || fail "undeliverable return should clear: $out"
+  assert_contains "$out" 'catch-up summary' "undeliverable ledger item did not open the away-mode summary"
+  assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: escalation: fake-c2: done: PR https://example.test/pr/77' \
+    "undeliverable ledger item was not presented as an event"
+  assert_contains "$out" '    https://example.test/pr/77' "undeliverable ledger item link was not listed"
+  assert_not_contains "$out" 'away-mode ledger undeliverable as of' "wedge marker duplicated the queued undeliverable record"
+  assert_contains "$out" 'queued wake records drained: 1' "other queued wake records were not listed as open items"
+
+  dir="$TMP_ROOT/ledger-wedge-only"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  printf 'away-mode ledger undeliverable as of now: escalation: fake-c3: failed: build\n' > "$dir/home/state/.subsuper-inject-wedged"
+  out=$(run_return "$dir" begin) || fail "wedge-only return should clear: $out"
+  assert_contains "$out" '[daemon-notice] away-mode ledger undeliverable as of now: escalation: fake-c3: failed: build' \
+    "wedge marker was not presented when no queued record survived"
+  out=$(run_return "$dir" begin) || fail "wedge-only re-run failed: $out"
+  assert_not_contains "$out" 'catch-up summary' "re-run duplicated the wedge notice summary"
+  pass "an item the ledger could not record reaches the return summary once"
+}
+
 test_return_gate_orders_catchup_before_bearings
+test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
 test_away_ledger_is_presented_once_and_never_repeated
 test_away_ledger_while_blocked_presents_only_a_count

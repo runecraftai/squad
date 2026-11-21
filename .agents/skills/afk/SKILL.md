@@ -280,7 +280,7 @@ Nothing is typed into the commander's pane while away; `bin/sq-afk-return.sh` me
 
 ## Stale-artifact lifecycle
 
-Treat `state/.subsuper-escalations`, its `.since` sidecar, `state/.subsuper-routine`, and `state/.subsuper-inject-wedged` as session-scoped ledger artifacts, not as the durable work record.
+Treat `state/.subsuper-escalations`, its `.since` sidecar, `state/.subsuper-routine`, `state/.subsuper-parked-notified`, and `state/.subsuper-inject-wedged` as session-scoped ledger artifacts, not as the durable work record.
 Always enter through `bin/sq-afk-launch.sh`, which clears prior-session artifacts only for a fresh entry and preserves the current session's buffer on refresh.
 Always exit through `bin/sq-afk-launch.sh stop`, which keeps `state/.afk` present through the daemon's shutdown flush and clears it last.
 `docs/herdr-backend.md` "Away-mode supervisor support" owns the current mechanism, and `docs/verification/runtime-backends.md` "Away-mode transport" owns active evidence.

@@ -112,13 +112,17 @@ fmt_epoch() {  # <epoch> -> local "MM-DD HH:MM" (GNU date, then BSD date)
 
 # print_summary: the one away-mode presentation. Escalation evidence is the away
 # ledger, one "<epoch>|<class>|<text>" per entry; a bare line from before the ledger
-# format is presented as an unclassed escalation. Queued wake records are counted,
-# and the other drain sections (open decisions, pending teardown, guard notices)
-# are listed as open items. Prints nothing when there is nothing to present.
+# format is presented as an unclassed escalation. A drained afk-* check record is the
+# daemon's own durable notice (a parked ledger or an item the ledger could not
+# record) and is presented as an event; the wedge marker is presented only when no
+# such record survived. Other queued wake records and drain sections (open
+# decisions, pending teardown, guard notices) are open items, not away-mode events.
+# Prints nothing when there is nothing to present.
 print_summary() {  # <evidence-file>
-  local file=$1 tag kind text ts cls item label when re seq=0 absence locators
-  local escalated=0 routine=0 queued=0 events='' notices='' urls='' statuses=''
+  local file=$1 tag kind text ts cls item label when re afk_re seq=0 absence locators
+  local escalated=0 routine=0 notice=0 queued=0 rows='' wedges='' notices='' urls='' statuses='' events=''
   re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
+  afk_re='^([0-9]+) [0-9]+ check afk-[A-Za-z0-9._-]+ (.*)$'
   while IFS="$(printf '\t')" read -r tag kind text; do
     [ "$tag" = evidence ] || continue
     case "$kind" in
@@ -133,30 +137,48 @@ print_summary() {  # <evidence-file>
         else
           escalated=$((escalated + 1)); label=escalation
         fi
-        seq=$((seq + 1))
-        when=''
-        [ -z "$ts" ] || when="$(fmt_epoch "$ts") "
-        events="${events}  ${seq}. ${when}[${label}] ${item}"$'\n'
-        urls="${urls}$(printf '%s\n' "$item" | grep -Eo 'https://[^[:space:]]+' || true)"$'\n'
-        statuses="${statuses}$(printf '%s\n' "$item" | grep -Eo '[A-Za-z0-9._-]+\.status' || true)"$'\n'
+        rows="${rows}${ts:-0}"$'\t'"${label}"$'\t'"${item}"$'\n'
         ;;
       wake)
-        if [[ $text =~ $re ]]; then
+        if [[ $text =~ $afk_re ]]; then
+          notice=$((notice + 1))
+          rows="${rows}${BASH_REMATCH[1]}"$'\t'"daemon-notice"$'\t'"${BASH_REMATCH[2]}"$'\n'
+        elif [[ $text =~ $re ]]; then
           queued=$((queued + 1))
         else
           case "$text" in 'wake annotation:'*|'') ;; *) notices="${notices}  ${text}"$'\n' ;; esac
         fi
         ;;
+      wedge)
+        wedges="${wedges}${text}"$'\n'
+        ;;
     esac
   done < "$file"
-  if [ $((escalated + routine + queued)) -eq 0 ]; then
+  if [ "$notice" -eq 0 ] && [ -n "$wedges" ]; then
+    while IFS= read -r item; do
+      [ -n "$item" ] || continue
+      notice=$((notice + 1))
+      rows="${rows}0"$'\t'"daemon-notice"$'\t'"${item}"$'\n'
+    done <<< "$wedges"
+  fi
+  [ "$queued" -eq 0 ] || notices="  queued wake records drained: ${queued}"$'\n'"${notices}"
+  if [ $((escalated + routine + notice)) -eq 0 ]; then
     # No away-mode events: only live open items remain, shown without the absence
     # summary header so a re-run never presents the summary again.
     [ -z "$notices" ] || printf 'catch-up open items (still open at return):\n%s' "$notices"
     return 0
   fi
+  while IFS="$(printf '\t')" read -r ts label item; do
+    [ -n "$label" ] || continue
+    seq=$((seq + 1))
+    when=''
+    [ "$ts" = 0 ] || when="$(fmt_epoch "$ts") "
+    events="${events}  ${seq}. ${when}[${label}] ${item}"$'\n'
+    urls="${urls}$(printf '%s\n' "$item" | grep -Eo 'https://[^[:space:]]+' || true)"$'\n'
+    statuses="${statuses}$(printf '%s\n' "$item" | grep -Eo '[A-Za-z0-9._-]+\.status' || true)"$'\n'
+  done <<< "$(printf '%s' "$rows" | sort -s -t "$(printf '\t')" -k1,1n)"
   printf 'catch-up summary (one presentation for this absence)\n'
-  printf '  counts: escalation=%d routine=%d queued-wake-records=%d\n' "$escalated" "$routine" "$queued"
+  printf '  counts: escalation=%d routine=%d daemon-notice=%d\n' "$escalated" "$routine" "$notice"
   [ -z "$events" ] || printf '  events in order:\n%s' "$events"
   locators=$(printf '%s\n' "$urls" | sed '/^$/d' | sort -u | sed 's/^/    /')
   statuses=$(printf '%s\n' "$statuses" | sed '/^$/d' | sort -u | sed 's#^#    state/#')
@@ -184,6 +206,7 @@ clear_delivery_artifacts() {
     "$STATE/.subsuper-escalations" \
     "$STATE/.subsuper-escalations.since" \
     "$STATE/.subsuper-routine" \
+    "$STATE/.subsuper-parked-notified" \
     "$STATE/.subsuper-inject-wedged"
 }
 

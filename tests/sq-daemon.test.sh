@@ -1307,6 +1307,8 @@ test_inject_skip_forces_self() {
   printf 'done: PR 1\n' > "$state/s1.status"
   SQUAD_STATE_OVERRIDE="$state" SQUAD_INJECT_SKIP="signal" handle_wake "signal: $state/s1.status" "$state"
   [ -s "$state/.subsuper-escalations" ] && fail "INJECT_SKIP=signal did not force self-handle"
+  grep -F "|routine|signal: $state/s1.status -> force-self" "$state/.subsuper-routine" >/dev/null \
+    || fail "INJECT_SKIP force-self wake was not ledgered as routine"
   pass "INJECT_SKIP forces self-handle, bypassing commander-relevant classification"
 }
 
@@ -1790,6 +1792,15 @@ test_max_defer_notice_is_durable_and_never_types() {
     || fail "ledger entry lost after the max-defer notice (must be preserved)"
   grep -F $'\tcheck\tafk-parked-escalations\t' "$queue" >/dev/null \
     || fail "max-defer notice did not reach the durable stand-to queue as a check"
+  rm -f "$state/.subsuper-inject-wedged"
+  (
+    SQUAD_STATE_OVERRIDE="$state" . "$ROOT/bin/sq-stand-to-lib.sh"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
+      SQUAD_INJECT_CONFIRM_SLEEP=0.05 SQUAD_ESCALATE_BATCH_SECS=99999 SQUAD_MAX_DEFER_SECS=60 \
+      SQUAD_STATE_OVERRIDE="$state" housekeeping "$state"
+  ) || fail "second max-defer housekeeping failed"
+  [ "$(grep -c afk-parked-escalations "$queue" || true)" -eq 1 ] \
+    || fail "clearing the wedge marker re-armed the once-per-absence parked notice"
   pass "max-defer notice is durable, types nothing, and preserves the ledger"
 }
 
