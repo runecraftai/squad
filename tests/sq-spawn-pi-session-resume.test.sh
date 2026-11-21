@@ -471,7 +471,34 @@ test_fresh_spawn_with_session_dir_setting_is_unpinned() {
   pass 'a fresh pi spawn launches unpinned when a sessionDir setting moves the store'
 }
 
+# Only a pi operator relaunch records its path; a codex relaunch into the same
+# recovered window keeps its prior behaviour and appends no status line.
+test_codex_relaunch_appends_no_status_line() {
+  local rec id label out status
+  id=pi-resume-codex
+  label="sq-$id"
+  rec=$(make_case codex "$id")
+  read_case "$rec"
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+
+  seed_relaunch_meta "$id" codex default
+  finished_agentless
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  unset SQUAD_FAKE_TUIOS_AGENTS_JSON
+  expect_code 0 "$status" "a codex relaunch into a recovered window should succeed: $out"
+  assert_contains "$out" "reusing the recorded agentless task window owned:$WINDOW_ID" \
+    'the codex relaunch must reuse the recovered window'
+  [ -z "$(status_lines "$id")" ] \
+    || fail "a codex relaunch must append no status line, got: $(status_lines "$id")"
+  if grep -q '^pi_session_id=' "$HOME_DIR/state/$id.meta"; then
+    fail 'a codex relaunch must record no pi_session_id'
+  fi
+  pass 'a codex relaunch into a recovered window appends no status line'
+}
+
 test_fresh_pi_spawn_pins_conversation
+test_codex_relaunch_appends_no_status_line
 test_fresh_spawn_with_stale_transcript_is_unpinned
 test_fresh_spawn_with_stale_transcript_in_session_dir_is_unpinned
 test_fresh_spawn_with_session_dir_setting_is_unpinned

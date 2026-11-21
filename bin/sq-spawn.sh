@@ -166,8 +166,9 @@
 # harness and model match the recorded ones, the transcript in pi's cwd-keyed session store is
 # readable, and it is at most SQUAD_RESUME_MAX_BYTES (default 4194304). Any refused gate relaunches
 # a fresh conversation with the full brief and no pin, exactly as before the pin existed, so a
-# refused transcript is never reopened. Every relaunch of existing metadata appends exactly one
-# status line: resumed: same conversation (session <id>), or relaunched: fresh brief (<reason>).
+# refused transcript is never reopened. Every pi operator relaunch of existing metadata appends
+# exactly one status line: resumed: same conversation (session <id>), or relaunched: fresh brief
+# (<reason>). XO relaunches and every non-pi relaunch append no status line.
 # The backend's own resume-agent verb is attempted by the recovery procedure before a relaunch,
 # never by this script.
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
@@ -3371,7 +3372,7 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
 fi
 spawn_send_key "$T" Enter
 "$SCRIPT_DIR/sq-exec-state.sh" running "$ID" >/dev/null
-if [ -n "${RELAUNCH_EXISTING_META:-}" ]; then
+if [ -n "${RELAUNCH_EXISTING_META:-}" ] && [ "$PI_TEMPLATE" = 1 ]; then
   if [ -n "$RESUME_SESSION_ID" ]; then
     relaunch_status="resumed: same conversation (session $RESUME_SESSION_ID)"
   else
