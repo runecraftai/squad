@@ -122,6 +122,7 @@ a false exit is self-correcting (the commander re-runs `/afk`).
 The daemon changes how aggressively Squad surfaces things, **not who approves what**; it decides nothing.
 Away mode alone changes no approval authority, and the daemon alone never means "approves more" or "approves less."
 A merge is delegated only by the commander's explicit instruction for that absence, which must be copied into the authority record; without it, no merge is delegated and the PR waits for him, as hard rule 2 of `AGENTS.md` requires.
+On a project whose posture is yolo on, the standing merge authority from `AGENTS.md` section 7 continues to apply during an absence; the absence adds only the judge delegation, which matters for a project where yolo is off.
 Under `/afk`, the judge's authority is exactly the authority record from routine step 2: gate findings inside the accepted scope, product questions already bounded by an approved plan, and any merge the record quotes from his instruction, never more.
 Everything outside that record, including the escalations it parks, keeps the configured authority and exceptions from `AGENTS.md` section 7 and still waits for the commander's explicit word.
 The daemon only batches the notification.
