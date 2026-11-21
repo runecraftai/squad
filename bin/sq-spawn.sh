@@ -1947,7 +1947,11 @@ pi_session_transcript() {
   key=${key//\//-}
   key=${key//\\/-}
   key=${key//:/-}
-  agent=${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}
+  # An unset HOME leaves pi's session store unlocatable: refuse (2) so no pin is made.
+  if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then agent=$PI_CODING_AGENT_DIR
+  elif [ -n "${HOME:-}" ]; then agent=$HOME/.pi/agent
+  else return 2
+  fi
   if [ -n "${PI_CODING_AGENT_SESSION_DIR:-}" ]; then
     store=$PI_CODING_AGENT_SESSION_DIR
     case "$store" in /*) ;; *) store="$wt_real/$store" ;; esac

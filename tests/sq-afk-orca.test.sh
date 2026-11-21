@@ -422,7 +422,7 @@ try {
   const duplicate={...pendingTerminal};
   model.terms.push(duplicate);save();
   for (const action of ['start','stop','reconcile']) {
-    r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/identity matches multiple terminal candidates/);
+    await tick();r=cli(action);assert.notEqual(r.status,0);assert.match(r.stderr,/identity matches multiple terminal candidates/);
     assert.equal(count('create'),n);assert.equal(count('close'),closesBeforeAdopt);
     assert.equal(readFileSync(`${state}/.afk-daemon-terminal`,'utf8'),pendingBytes);
   }
