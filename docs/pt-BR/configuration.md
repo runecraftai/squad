@@ -148,7 +148,7 @@ TUIOS usa a `SQUAD_TUIOS_SESSION` explicitamente configurada; cada tarefa recebe
 
 ## Backend de supervisor de away-mode (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET / SQUAD_SUPERVISOR_HARNESS)
 
-O sub-supervisor `/afk` injeta resumos de escalação no próprio painel do Squad independentemente de onde novos endpoints de tarefa são criados.
+O sub-supervisor `/afk` resolve o próprio painel do Squad independentemente de onde novos endpoints de tarefa são criados; durante a ausência não escreve nada nesse painel e guarda cada wake para o resumo do retorno.
 Suporta painéis de supervisor `tmux`, `herdr`, `tuios` e `orca` native-only.
 Defina `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios|orca` e `SQUAD_SUPERVISOR_TARGET=<alvo>` para sobrescrever explicitamente ambos os eixos; o alvo de herdr é `"<session>:<pane-id>"` e o de TUIOS é `"<session>:<window-id>"`.
 Sem sobrescrever, a detecção de backend usa `$TMUX_PANE` primeiro, depois `HERDR_ENV=1` com `HERDR_PANE_ID`, depois `TUIOS_ENV=1` com `TUIOS_SESSION` e `TUIOS_PANE_ID`, depois recua para `tmux`.
@@ -166,12 +166,12 @@ Selecionar qualquer outro backend de supervisor, incluindo `zellij` ou `cmux`, r
 
 ## Canais de alarme wedge de away-mode (config/wedge-alarm)
 
-Quando a injeção de away-mode trava além de `SQUAD_MAX_DEFER_SECS`, o sub-supervisor dispara um alarme alto e com taxa limitada.
-Além do marcador durável `state/.subsuper-inject-wedged` e do flash na linha de status do tmux, tenta um alerta ativo configurado e independente do backend que pode alcançar o comandante mesmo quando cada painel e sua linha de status do backend estão ilegíveis.
+Quando uma escrita no ledger de away-mode falha, o sub-supervisor enfileira o item no caminho durável de stand-to e dispara um alarme alto e com taxa limitada; uma entrada do ledger parada além de `SQUAD_MAX_DEFER_SECS` gera apenas um aviso durável de stand-to.
+Além do marcador durável `state/.subsuper-inject-wedged`, o alarme tenta um alerta ativo configurado e independente do backend que pode alcançar o comandante mesmo quando cada painel e sua linha de status do backend estão ilegíveis.
 `config/wedge-alarm` (local, gitignored) lista diretrizes de canal, uma por linha não vazia e não-comentário; cada canal listado que não é `dispara, melhor esforço.
 `SQUAD_WEDGE_ALARM_CHANNEL` sobrescreve o arquivo com uma única diretriz.
 As diretrizes são `off` (um interruptor de desligamento independente de posição que desativa todo alerta ativo), `auto`/`default`, `osascript` (banner do Notification Center do macOS), `herdr` (notificação da UI do herdr) e `command:<cmd>` (executa `<cmd>` via `sh -c`, resumo em `$1` e stdin).
-Um arquivo ausente significa `auto`, ou seja, ligado por padrão no macOS: o alarme existe precisamente para que um primário com away-mode travado nunca fique silencioso, e dispara no máximo uma vez por janela de max-defer após um travamento genuíno.
+Um arquivo ausente significa `auto`, ou seja, ligado por padrão no macOS: o alarme existe precisamente para que um ledger de away-mode não entregável nunca fique silencioso, e dispara no máximo uma vez por janela de max-defer.
 Um canal ausente ou que falha registra e passa para o próximo, nunca crashando o daemon.
 Veja [`wedge-alarm.md`](wedge-alarm.md) para a referência atual de canais, [`verification/supervision.md`](../verification/supervision.md#wedge-alarm-channels) para evidência ativa e [`examples/wedge-alarm`](../examples/wedge-alarm) para uma configuração copiável.
 
@@ -624,8 +624,8 @@ SQUAD_SUPERVISOR_BACKEND=             # sobrescrever backend de painel de superv
 SQUAD_SUPERVISOR_TARGET=              # sobrescrever alvo de painel de supervisor opcional; alvo tmux, herdr <session>:<pane-id>, tuios <session>:<window-id>, ou um handle exato de terminal Orca, caso contrário auto-detectado
 SQUAD_SUPERVISOR_HARNESS=             # seletor opcional de adaptador receptor Orca; pi é o único valor comprovado, caso contrário a ancestralidade de processos do bin/sq-harness.sh precisa resolver o primário Pi exato como pi antes de qualquer mutação de away-mode
 SQUAD_INJECT_SKIP=heartbeat           # prefixos |-forçam auto-tratamento ignorando classificação; vazio desativa
-SQUAD_ESCALATE_BATCH_SECS=90          # janela de buffer para resumos de escalação em lote; 0 = esvaziar imediatamente
-SQUAD_MAX_DEFER_SECS=300              # idade máxima de escalação em buffer antes de retentativa mais alarme wedge; 0 desativa
+SQUAD_ESCALATE_BATCH_SECS=90          # idade do ledger antes de a manutenção aposentar um handoff nativo confirmado; 0 = a cada passagem; nada é entregue ao painel durante a ausência
+SQUAD_MAX_DEFER_SECS=300              # idade máxima do ledger parado antes de um aviso durável de stand-to por ausência, e janela de limite do alerta ativo; 0 desativa o aviso
 SQUAD_WEDGE_ALARM_CHANNEL=            # sobrescrever config/wedge-alarm com uma diretriz de alerta ativo para o alarme wedge; off|auto|osascript|herdr|command:<cmd>; ausente = auto (macOS -> uma notificação do SO)
 SQUAD_WEDGE_ALARM_EXEC=              # costura de notificador: rota todos os canais (osascript, herdr, command:) através deste comando como `<cmd> <canal> <resumo>`; "discard" não dispara nada; não definido em produção; o daemon o define como "discard" quando fonte para que nenhum teste envie uma notificação real (docs/wedge-alarm.md)
 SQUAD_WEDGE_ALARM_TIMEOUT_SECS=10    # segundos máximos para cada notificador osascript, herdr, override ou command: antes de seu watchdog terminá-lo e continuar para o próximo canal; valores inválidos ou zero usam 10

@@ -12,10 +12,9 @@
 # PATH redirection is needed for the happy path - the daemon is simply pointed
 # at SQUAD_SUPERVISOR_BACKEND=herdr, SQUAD_SUPERVISOR_TARGET="<session>:<pane-id>",
 # and HERDR_SESSION="<the isolated session>". A thin herdr SHIM is still used,
-# but only to simulate a swallowed Enter (Scenario B) - herdr's real CLI has no
-# built-in way to drop a keystroke, so the shim intercepts exactly one
-# `pane send-keys <pane> enter` call and forwards everything else to the real
-# binary untouched.
+# and it only forwards to the real binary; the away-mode contract needs no
+# swallowed-Enter simulation, because the daemon never types into the pane while
+# away (Scenario A and B prove the pane stays untouched).
 #
 # The "supervisor pane" is a tiny deterministic bash loop (not a real harness
 # binary): it draws a bordered composer row ("│ > <buf> │") that exercises the
@@ -270,7 +269,7 @@ wait_daemon_started() {
   fail "$label did not record backend=herdr after 6s: $new_log"
 }
 
-start_daemon() {
+start_daemon() {  # [max-defer-secs]
   local log_start=0
   [ ! -f "$STATE_DIR/.supervise-daemon.log" ] || log_start=$(wc -l < "$STATE_DIR/.supervise-daemon.log")
   PATH="$HERDR_SHIM_DIR:$PATH" \
@@ -287,6 +286,7 @@ start_daemon() {
   SQUAD_INJECT_CONFIRM_SLEEP=0.5 \
   SQUAD_INJECT_CONFIRM_RETRIES=6 \
   SQUAD_STALE_ESCALATE_SECS=999999 \
+  SQUAD_MAX_DEFER_SECS="${1:-300}" \
   nohup "$DAEMON" >"$STATE_DIR/daemon.out" 2>"$STATE_DIR/daemon.err" &
   DAEMON_PID=$!
   wait_daemon_started daemon "$log_start"
@@ -345,194 +345,97 @@ selfcheck_pane_input_pending() {
 
 selfcheck_pane_input_pending
 
-# --- Scenario A: human-partial-input ----------------------------------------
+# wait_ledger <file> <class> <count>: poll until the ledger file holds <count>
+# entries of that class, bounded at about 30 seconds.
+wait_ledger() {
+  local i=0 n
+  while [ "$i" -lt 150 ]; do
+    n=$(grep -c "|$2|" "$1" 2>/dev/null || true)
+    [ "${n:-0}" -ge "$3" ] && return 0
+    sleep 0.2
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# --- Scenario A: silent routine wake and escalation -------------------------
+# While away mode is on, a routine wake and a commander-relevant escalation each
+# leave the real herdr supervisor pane untouched: nothing is submitted and no
+# digest text appears. Each lands as one ledger entry of its class for the return
+# summary (.subsuper-routine for routine, .subsuper-escalations for escalation).
 
 test_scenario_a() {
   reset_state
   afk_enter "$STATE_DIR"
   start_daemon
 
+  echo "working: step one" > "$STATE_DIR/fake-c1.status"
+  wait_ledger "$STATE_DIR/.subsuper-routine" routine 1 \
+    || fail "Scenario A: routine wake was not ledgered"
+
+  echo "done: PR https://example.test/pr/100" > "$STATE_DIR/fake-c1.status"
+  wait_ledger "$STATE_DIR/.subsuper-escalations" escalation 1 \
+    || fail "Scenario A: escalation was not ledgered"
+  sleep 3
+
+  [ ! -s "$LOG_FILE" ] \
+    || fail "Scenario A: away mode submitted into the herdr pane: $(cat "$LOG_FILE")"
+  local screen
+  screen=$(fm_backend_herdr_capture "$SUPERVISOR_TARGET" 40 2>/dev/null || true)
+  case "$screen" in
+    *'Supervisor escalate'*|*'SQUAD_OP'*) fail "Scenario A: digest text appeared in the herdr pane" ;;
+  esac
+
+  stop_daemon
+  pass "real herdr Scenario A: a routine wake and an escalation leave the pane silent and each lands as one ledger entry"
+}
+
+# --- Scenario B: human draft and max-defer notice ---------------------------
+# A human's pending draft in the real herdr composer must not be merged with, or
+# displaced by, anything the daemon holds. An escalation parked past max-defer
+# raises one durable stand-to escalation and still writes nothing to the pane.
+
+test_scenario_b() {
+  local i=0
+  reset_state
+  afk_enter "$STATE_DIR"
+  start_daemon 2
+
   fm_backend_herdr_send_literal "$SUPERVISOR_TARGET" "human draft text"
   sleep 0.5
 
-  echo "done: PR https://example.test/pr/100" > "$STATE_DIR/fake-c1.status"
-
-  sleep 8
-
-  if grep -q 'Supervisor escalate' "$LOG_FILE"; then
-    fail "Scenario A: daemon injected while the herdr pane had pending input"
-  fi
-  if grep -q 'human draft text.*Supervisor escalate' "$LOG_FILE" 2>/dev/null || \
-     grep -q 'Supervisor escalate.*human draft text' "$LOG_FILE" 2>/dev/null; then
-    fail "Scenario A: human text and digest were merged into one line"
-  fi
-
-  fm_backend_herdr_send_key "$SUPERVISOR_TARGET" Enter
-  sleep 0.5
-
-  sleep 8
-
-  grep -q 'human draft text' "$LOG_FILE" \
-    || fail "Scenario A: human text not in log after submit"
-  grep -q 'Supervisor escalate' "$LOG_FILE" \
-    || fail "Scenario A: digest not injected after the pane went idle"
-  if grep -q 'human draft text.*Supervisor escalate' "$LOG_FILE" || \
-     grep -q 'Supervisor escalate.*human draft text' "$LOG_FILE"; then
-    fail "Scenario A: human text and digest merged into one line (after idle)"
-  fi
-
-  local human_line
-  human_line=$(grep 'human draft text' "$LOG_FILE" | head -1)
-  case "$human_line" in
-    *user) ;;
-    *) fail "Scenario A: human text misclassified (expected user): $human_line" ;;
-  esac
-
-  local digest_line
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  case "$digest_line" in
-    *injection) ;;
-    *) fail "Scenario A: digest misclassified (expected injection): $digest_line" ;;
-  esac
-
-  stop_daemon
-  pass "real herdr Scenario A: partial input defers injection; digest arrives clean after idle"
-}
-
-# --- Scenario B: swallowed-Enter --------------------------------------------
-
-test_scenario_b() {
-  reset_state
-  afk_enter "$STATE_DIR"
-
-  touch "$STATE_DIR/.swallow-enter"
-
-  start_daemon
-
   echo "done: PR https://example.test/pr/200" > "$STATE_DIR/fake-c1.status"
+  wait_ledger "$STATE_DIR/.subsuper-escalations" escalation 1 \
+    || fail "Scenario B: escalation was not ledgered"
 
-  sleep 10
+  while [ "$i" -lt 150 ]; do
+    grep -q 'afk-parked-escalations' "$STATE_DIR/.stand-to-queue" 2>/dev/null && break
+    sleep 0.2
+    i=$((i + 1))
+  done
+  grep -q 'afk-parked-escalations' "$STATE_DIR/.stand-to-queue" 2>/dev/null \
+    || fail "Scenario B: parked escalation did not reach the durable stand-to queue"
+  [ ! -s "$LOG_FILE" ] \
+    || fail "Scenario B: away mode submitted while the human draft was pending: $(cat "$LOG_FILE")"
 
-  local marker_count
-  marker_count=$(awk -F '\t' '{ hex=$1; count += gsub(/e281a3/, "", hex) } END { print count + 0 }' "$LOG_FILE")
-  [ "$marker_count" -eq 1 ] \
-    || fail "Scenario B: expected exactly 1 U+2063 marker, got $marker_count (duplicate or lost)"
-
-  local digest_line digest_hex
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  digest_hex=$(printf '%s' "$digest_line" | cut -f1)
-  case "$digest_hex" in
-    e281a3*) ;;
-    *) fail "Scenario B: digest does not start with the terminal-safe sentinel marker (hex: $digest_hex)" ;;
+  local screen
+  screen=$(fm_backend_herdr_capture "$SUPERVISOR_TARGET" 40 2>/dev/null || true)
+  case "$screen" in
+    *'human draft text'*) ;;
+    *) fail "Scenario B: the human's pending draft was disturbed" ;;
+  esac
+  case "$screen" in
+    *'Supervisor escalate'*) fail "Scenario B: the digest was merged into the human's draft" ;;
   esac
 
-  local user_count
-  user_count=$(grep -c $'\tuser$' "$LOG_FILE" || true)
-  [ "$user_count" -eq 0 ] \
-    || fail "Scenario B: expected 0 user lines, got $user_count (spurious Enter submitted an empty line?)"
-
   stop_daemon
-  pass "real herdr Scenario B: swallowed Enter (via the herdr shim) produces exactly one clean digest"
-}
-
-# --- Scenario C: normal digest -----------------------------------------------
-
-test_scenario_c() {
-  reset_state
-  afk_enter "$STATE_DIR"
-  start_daemon
-
-  echo "done: PR https://example.test/pr/300" > "$STATE_DIR/fake-c1.status"
-  sleep 8
-
-  local marker_count
-  marker_count=$(awk -F '\t' '{ hex=$1; count += gsub(/e281a3/, "", hex) } END { print count + 0 }' "$LOG_FILE")
-  [ "$marker_count" -eq 1 ] \
-    || fail "Scenario C: expected exactly 1 U+2063 marker, got $marker_count"
-
-  local digest_line digest_hex
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  case "$digest_line" in
-    *injection) ;;
-    *) fail "Scenario C: digest misclassified (expected injection): $digest_line" ;;
-  esac
-  digest_hex=$(printf '%s' "$digest_line" | cut -f1)
-  case "$digest_hex" in
-    e281a3*) ;;
-    *) fail "Scenario C: digest does not start with the terminal-safe sentinel marker (hex: $digest_hex)" ;;
-  esac
-
-  local user_count
-  user_count=$(grep -c $'\tuser$' "$LOG_FILE" || true)
-  [ "$user_count" -eq 0 ] \
-    || fail "Scenario C: expected 0 user lines, got $user_count (spurious submission?)"
-
-  stop_daemon
-  pass "real herdr Scenario C: a normal commander status injects exactly one clean single-line sentinel digest"
-}
-
-# --- Scenario D: max-defer alarm on a persistently non-clearing composer -----
-# A pending composer that NEVER clears (every Enter attempt leaves real text
-# behind) must never be silently swallowed: the daemon must alarm (write
-# state/.subsuper-inject-wedged) while preserving the buffered escalation, and
-# must never crash or hot-loop. Exercises fm_backend_composer_state(herdr, ...)
-# reporting "pending" indefinitely through the REAL structural border reader.
-
-test_scenario_d_max_defer() {
-  reset_state
-  afk_enter "$STATE_DIR"
-  local log_start=0
-  [ ! -f "$STATE_DIR/.supervise-daemon.log" ] || log_start=$(wc -l < "$STATE_DIR/.supervise-daemon.log")
-  # Persistent-pending composer: type real text and never submit it, so every
-  # composer read is genuinely "pending" against the real herdr binary.
-  fm_backend_herdr_send_literal "$SUPERVISOR_TARGET" "stuck-in-the-box"
-  sleep 0.5
-
-  PATH="$HERDR_SHIM_DIR:$PATH" \
-  HERDR_SESSION="$SESSION" \
-  SQUAD_STATE_OVERRIDE="$STATE_DIR" \
-  SQUAD_SUPERVISOR_BACKEND=herdr \
-  SQUAD_SUPERVISOR_TARGET="$SUPERVISOR_TARGET" \
-  SQUAD_ESCALATE_BATCH_SECS=99999 \
-  SQUAD_HOUSEKEEPING_TICK=1 \
-  SQUAD_POLL=1 \
-  SQUAD_SIGNAL_GRACE=1 \
-  SQUAD_HEARTBEAT=999999 \
-  SQUAD_CHECK_INTERVAL=999999 \
-  SQUAD_MAX_DEFER_SECS=3 \
-  SQUAD_INJECT_CONFIRM_SLEEP=0.3 \
-  SQUAD_INJECT_CONFIRM_RETRIES=2 \
-  SQUAD_STALE_ESCALATE_SECS=999999 \
-  nohup "$DAEMON" >"$STATE_DIR/daemon.out" 2>"$STATE_DIR/daemon.err" &
-  DAEMON_PID=$!
-  wait_daemon_started "Scenario D daemon" "$log_start"
-
-  echo "needs-decision: pick A or B" > "$STATE_DIR/fake-c1.status"
-
-  sleep 12
-
-  [ -s "$STATE_DIR/.subsuper-inject-wedged" ] \
-    || fail "Scenario D: a persistently pending real herdr composer never raised the max-defer wedge alarm"
-  [ -s "$STATE_DIR/.subsuper-escalations" ] \
-    || fail "Scenario D: the buffered escalation was lost instead of preserved during the wedge"
-  if grep -q 'Supervisor escalate' "$LOG_FILE" 2>/dev/null; then
-    fail "Scenario D: a digest was somehow logged as submitted despite the composer never clearing"
-  fi
-  kill -0 "$DAEMON_PID" 2>/dev/null || fail "Scenario D: the daemon process died instead of alarming and continuing"
-  grep -F 'stuck-in-the-box' "$STATE_DIR/daemon.err" >/dev/null 2>&1 && : # not fatal either way
-
-  stop_daemon
-  # Clean up the stuck composer text for a tidy teardown (best-effort).
-  fm_backend_herdr_send_key "$SUPERVISOR_TARGET" C-c >/dev/null 2>&1 || true
-  pass "real herdr Scenario D: a persistently pending composer raises the max-defer wedge alarm, preserves the buffer, and never crashes the daemon"
+  pass "real herdr Scenario B: the human draft is untouched and a parked escalation raises one durable notice with zero pane output"
 }
 
 test_scenario_a
 test_scenario_b
-test_scenario_c
-test_scenario_d_max_defer
 
-echo "all real-herdr afk injection e2e tests passed"
+echo "all real-herdr afk silent-absence e2e tests passed"
 
 fm_backend_herdr_kill "$SUPERVISOR_TARGET" 2>/dev/null || true
 fm_backend_herdr_kill "$SESSION:$FAKE_CREW_PANE_ID" 2>/dev/null || true

@@ -79,7 +79,10 @@ const publishedReadiness = () => {
 // only the runtime identity can resolve a supervisor.
 const noDetectedPane = { PATH:`${fake}/nomux:${process.env.PATH}`, TMUX_PANE:'', TMUX:'', HERDR_ENV:'', HERDR_PANE_ID:'', TUIOS_ENV:'', TUIOS_SESSION:'', TUIOS_PANE_ID:'' };
 const clearDetectedPane = () => { for (const key of ['TMUX_PANE','TMUX','HERDR_ENV','HERDR_PANE_ID','TUIOS_ENV','TUIOS_SESSION','TUIOS_PANE_ID']) delete process.env[key]; };
-const flush = (item = '') => script(`. '${root}/bin/sq-supervise-daemon.sh'; ${item ? `escalate_add '${state}' '${item}';` : ''} escalate_flush '${state}'`);
+// The daemon never delivers while away, so this helper plays the delivery side
+// directly: retire any consumed acknowledgement, then submit the ledger through
+// the native submit primitive (inject_msg), exactly as an explicit delivery would.
+const flush = (item = '') => script(`. '${root}/bin/sq-supervise-daemon.sh'; ${item ? `escalate_add '${state}' '${item}';` : ''} escalate_flush '${state}'; n=$(cat '${state}/.subsuper-escalations' 2>/dev/null | wc -l | tr -d ' '); if [ "$n" -gt 0 ]; then inject_msg "$(fm_escalation_digest '${state}' "$n")" '${state}' "$n"; fi`);
 try {
   // Every non-Pi adapter is refused by name before creating even its state dir.
   for(const harness of ['claude','codex','opencode','grok','kimi','muse','pi-signed','unknown']) {

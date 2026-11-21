@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # tests/sq-afk-inject-e2e.test.sh - private-socket end-to-end test for the afk
-# daemon's injection path. It covers three operator-visible injection contracts:
+# daemon's silent-absence contract. While away mode is on, nothing the daemon
+# handles reaches the commander's pane; it is held in the away-mode ledger and
+# presented once, as one summary, by bin/sq-afk-return.sh on return.
 #
-#   Scenario A (human-partial-input): a partial line is typed into the
-#     supervisor pane with NO Enter, then an escalation fires. The daemon must
-#     DEFER (not merge the digest into the human's text). After the pane goes
-#     idle, the digest arrives as a separate, clean submission.
+#   Scenario A (silent routine and escalation): a routine wake and a
+#     commander-relevant escalation each produce ZERO submitted lines in the
+#     supervisor pane and exactly one ledger entry of their class. The return
+#     prints one summary carrying both, and a re-run never repeats it.
 #
-#   Scenario B (swallowed-Enter): the first Enter the daemon sends is dropped.
-#     The daemon must retry Enter (NOT retype the digest) and deliver exactly
-#     ONE clean submission: no concatenation, no duplicate.
-#
-#   Scenario C (normal digest): no human input and no swallowed Enter.
-#     A commander-relevant status must deliver exactly ONE sentinel-prefixed,
-#     single-line digest with no duplicate or spurious user submission.
+#   Scenario B (max-defer notice): an escalation parked past SQUAD_MAX_DEFER_SECS
+#     raises exactly one durable supervision escalation on the stand-to queue,
+#     still with ZERO pane output, and does not repeat within the absence.
 #
 # Isolation: all test tmux runs on a dedicated socket (tmux -L afk-e2e-<pid>).
 # A tmux shim first on PATH redirects the daemon's bare `tmux` calls to the
@@ -31,6 +29,7 @@ set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DAEMON="$ROOT/bin/sq-supervise-daemon.sh"
+RETURN="$ROOT/bin/sq-afk-return.sh"
 
 # Skip gracefully if tmux is not installed.
 command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found"; exit 0; }
@@ -77,9 +76,8 @@ LOG_FILE="$STATE_DIR/submitted.log"
 SUPERVISOR_PANE=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t supervisor '#{pane_id}')
 
 # Supervisor pane loop: a small deterministic composer that logs each submitted
-# line verbatim (hex + text + classification). It draws the in-progress input
-# itself instead of relying on the terminal driver's canonical-mode echo, because
-# tmux cursor placement for that echo varies across CI environments.
+# line verbatim (hex + text + classification). Any line in the log is pane output
+# the commander would have seen, so Scenario A requires the log to stay empty.
 LOOP_SCRIPT="$STATE_DIR/supervisor-loop.sh"
 cat > "$LOOP_SCRIPT" <<'LOOP'
 #!/usr/bin/env bash
@@ -130,23 +128,10 @@ chmod +x "$LOOP_SCRIPT"
   "bash '$LOOP_SCRIPT' '$LOG_FILE'" Enter
 sleep 1  # let the loop start and settle
 
-# tmux shim: redirects bare `tmux` to the private socket. Optionally swallows
-# the first Enter (file-based flag) for Scenario B.
+# tmux shim: redirects bare `tmux` to the private socket.
 TMUX_SHIM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sq-shim.XXXXXX")
 cat > "$TMUX_SHIM_DIR/tmux" <<SHIM
 #!/usr/bin/env bash
-if [ "\${1:-}" = "send-keys" ] && [ -f "$STATE_DIR/.swallow-enter" ]; then
-  shift
-  _args=()
-  for _arg in "\$@"; do
-    if [ "\$_arg" = "Enter" ] && [ -f "$STATE_DIR/.swallow-enter" ]; then
-      rm -f "$STATE_DIR/.swallow-enter"
-      continue
-    fi
-    _args+=("\$_arg")
-  done
-  exec "$REAL_TMUX" -L "$SOCKET" send-keys "\${_args[@]}"
-fi
 exec "$REAL_TMUX" -L "$SOCKET" "\$@"
 SHIM
 chmod +x "$TMUX_SHIM_DIR/tmux"
@@ -155,7 +140,7 @@ chmod +x "$TMUX_SHIM_DIR/tmux"
 # detection). The pane is an inert shell - it just needs to exist.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -n sq-fake-c1 -t supervisor
 
-start_daemon() {
+start_daemon() {  # <max-defer-secs>
   PATH="$TMUX_SHIM_DIR:$PATH" \
   SQUAD_STATE_OVERRIDE="$STATE_DIR" \
   SQUAD_SUPERVISOR_TARGET="$SUPERVISOR_PANE" \
@@ -166,9 +151,8 @@ start_daemon() {
   SQUAD_SIGNAL_GRACE=1 \
   SQUAD_HEARTBEAT=999999 \
   SQUAD_CHECK_INTERVAL=999999 \
-  SQUAD_INJECT_CONFIRM_SLEEP=0.3 \
-  SQUAD_INJECT_CONFIRM_RETRIES=5 \
   SQUAD_STALE_ESCALATE_SECS=999999 \
+  SQUAD_MAX_DEFER_SECS="$1" \
   nohup "$DAEMON" >"$STATE_DIR/daemon.out" 2>"$STATE_DIR/daemon.err" &
   DAEMON_PID=$!
   # Wait for the daemon to start and acquire the lock.
@@ -206,7 +190,7 @@ reset_state() {
          "$STATE_DIR"/.stale-* \
          "$STATE_DIR"/.seen-* \
          "$STATE_DIR"/.heartbeat-streak \
-         "$STATE_DIR"/.swallow-enter \
+         "$STATE_DIR"/.afk-return-catchup* \
          2>/dev/null || true
   # The scenarios model a live operator task: its status signals only reach the
   # sentry when the task record exists. A meta without window= adds no stale
@@ -215,211 +199,100 @@ reset_state() {
   : > "$LOG_FILE"
 }
 
-# --- pane_input_pending environment self-check ------------------------------
-# Verify that pane_input_pending (which uses cursor_y + capture-pane) can detect
-# typed text in this tmux environment. If it can't, the e2e cannot prove the
-# operator-visible injection contracts it owns.
-
-selfcheck_pane_input_pending() {
-  local check_text="selfcheck-marker-12345"
-  "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" -l "$check_text"
-  if wait_for_pane_input_pending; then
-    # Detected - clean up the text and proceed.
-    "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" Enter
-    sleep 0.3
-    return 0
-  fi
-  # Not detected - print diagnostics and fail.
-  echo "pane_input_pending cannot detect typed text in this tmux environment" >&2
-  local _cy _line
-  _cy=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$SUPERVISOR_PANE" '#{cursor_y}' 2>/dev/null)
-  echo "  cursor_y=$_cy" >&2
-  echo "  pane capture (first 10 lines):" >&2
-  "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SUPERVISOR_PANE" 2>/dev/null | head -10 | sed 's/^/    /' >&2
-  _line=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SUPERVISOR_PANE" 2>/dev/null | sed -n "$((_cy + 1))p")
-  echo "  cursor line: '$_line'" >&2
-  "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" Enter
-  fail "pane_input_pending self-check failed"
-}
-
-wait_for_pane_input_pending() {
-  local i=0
-  while [ "$i" -lt 30 ]; do
-    if PATH="$TMUX_SHIM_DIR:$PATH" pane_input_pending "$SUPERVISOR_PANE"; then
-      return 0
-    fi
-    sleep 0.1
+# wait_for_ledger <class> <count>: poll until the ledger holds <count> entries of
+# that class, bounded at about 30 seconds.
+wait_for_ledger() {
+  local i=0 n
+  while [ "$i" -lt 150 ]; do
+    n=$(cat "$STATE_DIR/.subsuper-escalations" "$STATE_DIR/.subsuper-routine" 2>/dev/null | grep -c "|$1|" || true)
+    [ "${n:-0}" -ge "$2" ] && return 0
+    sleep 0.2
     i=$((i + 1))
   done
   return 1
 }
 
-selfcheck_pane_input_pending
-
-# --- Scenario A: human-partial-input ----------------------------------------
+# --- Scenario A: silent routine wake and escalation, one summary on return ---
 
 test_scenario_a() {
+  local out count
   reset_state
   afk_enter "$STATE_DIR"
-  start_daemon
+  start_daemon 300
 
-  # Type partial text into the supervisor pane with NO Enter. This simulates the
-  # commander returning and starting to type before afk has been cleared.
-  "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" -l "human draft text"
-  wait_for_pane_input_pending \
-    || fail "Scenario A: human draft text did not become detectable as pending input"
-
-  # Write a commander-relevant status to trigger a real escalation through the
-  # real sentry child.
-  echo "done: PR https://example.test/pr/100" > "$STATE_DIR/fake-c1.status"
-
-  # Wait for the sentry to detect the change and the daemon to attempt inject.
-  sleep 6
-
-  # Assert: the digest was NOT injected while the pane had pending input.
-  if grep -q 'Supervisor escalate' "$LOG_FILE"; then
-    fail "Scenario A: daemon injected while pane had pending input (merged with human text?)"
-  fi
-
-  # Assert: no merged line (human text + digest) was submitted.
-  if grep -q 'human draft text.*Supervisor escalate' "$LOG_FILE" 2>/dev/null || \
-     grep -q 'Supervisor escalate.*human draft text' "$LOG_FILE" 2>/dev/null; then
-    fail "Scenario A: human text and digest were merged into one line"
-  fi
-
-  # Now submit the human's text (Enter). The pane goes idle.
-  "$REAL_TMUX" -L "$SOCKET" send-keys -t "$SUPERVISOR_PANE" Enter
-  sleep 0.5
-
-  # Wait for the daemon to retry injection (housekeeping tick = 1s).
-  sleep 6
-
-  # Assert: human text was submitted alone (as a user message).
-  grep -q 'human draft text' "$LOG_FILE" \
-    || fail "Scenario A: human text not in log after submit"
-
-  # Assert: digest arrived after the pane went idle.
-  grep -q 'Supervisor escalate' "$LOG_FILE" \
-    || fail "Scenario A: digest not injected after pane went idle"
-
-  # Assert: human text and digest are on SEPARATE lines (never merged).
-  if grep -q 'human draft text.*Supervisor escalate' "$LOG_FILE" || \
-     grep -q 'Supervisor escalate.*human draft text' "$LOG_FILE"; then
-    fail "Scenario A: human text and digest merged into one line (after idle)"
-  fi
-
-  # Assert: the human text line is classified as "user", not "injection".
-  local human_line
-  human_line=$(grep 'human draft text' "$LOG_FILE" | head -1)
-  case "$human_line" in
-    *user) ;;  # correct
-    *) fail "Scenario A: human text misclassified (expected user): $human_line" ;;
-  esac
-
-  # Assert: the digest line is classified as "injection".
-  local digest_line
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  case "$digest_line" in
-    *injection) ;;  # correct
-    *) fail "Scenario A: digest misclassified (expected injection): $digest_line" ;;
-  esac
-
-  stop_daemon
-  pass "Scenario A: partial input defers injection; digest arrives clean after idle"
-}
-
-# --- Scenario B: swallowed-Enter --------------------------------------------
-
-test_scenario_b() {
-  reset_state
-  afk_enter "$STATE_DIR"
-
-  # Arm the swallow: the daemon's first Enter will be dropped by the shim.
-  touch "$STATE_DIR/.swallow-enter"
-
-  start_daemon
-
-  # Write a commander-relevant status to trigger a real escalation.
-  echo "done: PR https://example.test/pr/200" > "$STATE_DIR/fake-c1.status"
-
-  # Wait for the daemon to process the escalation and attempt inject (with the
-  # swallowed Enter, the retry path fires).
-  sleep 8
-
-  # Assert: exactly ONE terminal-safe marker in the log (no duplicate, no loss).
-  local marker_count
-  marker_count=$(awk -F '\t' '{ hex=$1; count += gsub(/e281a3/, "", hex) } END { print count + 0 }' "$LOG_FILE")
-  [ "$marker_count" -eq 1 ] \
-    || fail "Scenario B: expected exactly 1 U+2063 marker, got $marker_count (duplicate or lost)"
-
-  # Assert: the digest line is classified as "injection" and starts with the
-  # terminal-safe sentinel marker (hex starts with e281a3).
-  local digest_line digest_hex
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  digest_hex=$(printf '%s' "$digest_line" | cut -f1)
-  case "$digest_hex" in
-    e281a3*) ;;  # correct: starts with the terminal-safe sentinel marker
-    *) fail "Scenario B: digest does not start with sentinel marker (hex: $digest_hex)" ;;
-  esac
-
-  # Assert: exactly ONE user-message line was submitted (no spurious empty lines
-  # from extra Enters). The log should have exactly 1 injection line and 0 user
-  # lines.
-  local user_count
-  user_count=$(grep -c $'\tuser$' "$LOG_FILE" || true)
-  [ "$user_count" -eq 0 ] \
-    || fail "Scenario B: expected 0 user lines, got $user_count (spurious Enter submitted empty line?)"
-
-  stop_daemon
-  pass "Scenario B: swallowed Enter produces exactly one clean digest"
-}
-
-# --- Scenario C: normal status, single clean digest -------------------------
-# No human input, no swallowed Enter: a commander-relevant status must produce
-# exactly ONE sentinel-prefixed, single-line digest, submitted once. This owns
-# the marker + single-line + no-duplicate operator contract that the deleted
-# fake-tmux units used to assert via internal send-keys counts.
-
-test_scenario_c() {
-  reset_state
-  afk_enter "$STATE_DIR"
-  start_daemon
+  echo "working: step one" > "$STATE_DIR/fake-c1.status"
+  wait_for_ledger routine 1 || fail "Scenario A: routine wake was not ledgered"
 
   echo "done: PR https://example.test/pr/300" > "$STATE_DIR/fake-c1.status"
-  sleep 6
+  wait_for_ledger escalation 1 || fail "Scenario A: escalation was not ledgered"
+  sleep 3  # let housekeeping and any late wake land before judging silence
 
-  # Exactly one terminal-safe marker in the submitted log (no duplicate, no loss).
-  local marker_count
-  marker_count=$(awk -F '\t' '{ hex=$1; count += gsub(/e281a3/, "", hex) } END { print count + 0 }' "$LOG_FILE")
-  [ "$marker_count" -eq 1 ] \
-    || fail "Scenario C: expected exactly 1 U+2063 marker, got $marker_count"
+  [ ! -s "$LOG_FILE" ] \
+    || fail "Scenario A: away mode wrote to the supervisor pane: $(cat "$LOG_FILE")"
 
-  # The digest is classified as an injection and starts with the sentinel byte.
-  local digest_line digest_hex
-  digest_line=$(grep 'Supervisor escalate' "$LOG_FILE" | head -1)
-  case "$digest_line" in
-    *injection) ;;
-    *) fail "Scenario C: digest misclassified (expected injection): $digest_line" ;;
-  esac
-  digest_hex=$(printf '%s' "$digest_line" | cut -f1)
-  case "$digest_hex" in
-    e281a3*) ;;
-    *) fail "Scenario C: digest does not start with sentinel marker (hex: $digest_hex)" ;;
-  esac
-
-  # The digest was submitted as ONE line (a multi-line digest would log >1 line),
-  # and no spurious user-classified lines were submitted.
-  local user_count
-  user_count=$(grep -c $'\tuser$' "$LOG_FILE" || true)
-  [ "$user_count" -eq 0 ] \
-    || fail "Scenario C: expected 0 user lines, got $user_count (spurious submission?)"
+  count=$(grep -c '|routine|' "$STATE_DIR/.subsuper-routine")
+  [ "$count" -eq 1 ] || fail "Scenario A: expected exactly one routine entry, got $count"
+  count=$(grep -c '|escalation|' "$STATE_DIR/.subsuper-escalations")
+  [ "$count" -eq 1 ] || fail "Scenario A: expected exactly one escalation entry, got $count"
 
   stop_daemon
-  pass "Scenario C: a normal commander status injects exactly one clean single-line sentinel digest"
+  afk_exit "$STATE_DIR"
+
+  out=$(PATH="$TMUX_SHIM_DIR:$PATH" SQUAD_BASE="$STATE_DIR" SQUAD_STATE_OVERRIDE="$STATE_DIR" \
+    "$RETURN" 2>&1) || fail "Scenario A: return catch-up failed: $out"
+  count=$(printf '%s\n' "$out" | grep -c 'catch-up summary' || true)
+  [ "$count" -eq 1 ] || fail "Scenario A: return printed the summary $count times: $out"
+  printf '%s\n' "$out" | grep -F 'counts: escalation=1 routine=1' >/dev/null \
+    || fail "Scenario A: summary did not count one escalation and one routine: $out"
+  printf '%s\n' "$out" | grep -F 'https://example.test/pr/300' >/dev/null \
+    || fail "Scenario A: summary did not carry the PR link: $out"
+  printf '%s\n' "$out" | grep -F 'fake-c1.status' >/dev/null \
+    || fail "Scenario A: summary did not list the routine wake in order: $out"
+
+  out=$(PATH="$TMUX_SHIM_DIR:$PATH" SQUAD_BASE="$STATE_DIR" SQUAD_STATE_OVERRIDE="$STATE_DIR" \
+    "$RETURN" 2>&1) || fail "Scenario A: re-run of the catch-up failed: $out"
+  count=$(printf '%s\n' "$out" | grep -c 'catch-up summary' || true)
+  [ "$count" -eq 0 ] || fail "Scenario A: re-run duplicated the summary: $out"
+
+  [ ! -s "$LOG_FILE" ] || fail "Scenario A: return or re-run wrote to the supervisor pane"
+  pass "Scenario A: a routine wake and an escalation are silent in the pane, one ledger entry each, and the return presents one summary that a re-run never repeats"
+}
+
+# --- Scenario B: max-defer notice is durable and silent ----------------------
+
+test_scenario_b() {
+  local count i=0
+  reset_state
+  afk_enter "$STATE_DIR"
+  start_daemon 2
+
+  echo "done: PR https://example.test/pr/301" > "$STATE_DIR/fake-c1.status"
+  wait_for_ledger escalation 1 || fail "Scenario B: escalation was not ledgered"
+
+  while [ "$i" -lt 150 ]; do
+    grep -q 'afk-parked-escalations' "$STATE_DIR/.stand-to-queue" 2>/dev/null && break
+    sleep 0.2
+    i=$((i + 1))
+  done
+  grep -q 'afk-parked-escalations' "$STATE_DIR/.stand-to-queue" 2>/dev/null \
+    || fail "Scenario B: parked escalation did not reach the durable stand-to queue"
+  [ -e "$STATE_DIR/.subsuper-inject-wedged" ] \
+    || fail "Scenario B: max-defer notice left no marker"
+  grep -F $'\tcheck\tafk-parked-escalations\t' "$STATE_DIR/.stand-to-queue" >/dev/null \
+    || fail "Scenario B: the durable record is not a check escalation"
+
+  sleep 3  # the notice must not repeat within the same absence
+  count=$(grep -c 'afk-parked-escalations' "$STATE_DIR/.stand-to-queue" || true)
+  [ "$count" -eq 1 ] || fail "Scenario B: max-defer notice repeated ($count records)"
+
+  [ ! -s "$LOG_FILE" ] \
+    || fail "Scenario B: max-defer path wrote to the supervisor pane: $(cat "$LOG_FILE")"
+
+  stop_daemon
+  pass "Scenario B: a parked escalation raises one durable stand-to escalation with zero pane output"
 }
 
 test_scenario_a
 test_scenario_b
-test_scenario_c
 
-echo "all e2e injection tests passed"
+echo "all afk silent-absence e2e tests passed"

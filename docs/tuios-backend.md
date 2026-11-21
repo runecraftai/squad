@@ -192,9 +192,17 @@ Cleanup never deletes a session and never touches the daemon.
 
 ## Away-mode supervision
 
-A TUIOS-hosted Squad primary can be supervised in away mode without any terminal typing: the preferred path delivers through Pi's own message queue via `.pi/extensions/sq-primary-away-handoff.ts` and `bin/sq-afk-pi-handoff.sh`, and the daemon never types while that path is available.
-When the native path refuses, delivery falls back to the guarded composer path, which queues the digest through the supervisor pane's own agent (TUIOS delivery is queue-only) only after that composer is positively read as empty for a daemon-attributed live agent, as described in "Composer state" and "Limits and verification" below.
+Away mode is silent for a TUIOS-hosted Squad primary: while `state/.afk` exists the daemon writes nothing to the commander's pane, through either the native handoff or the composer.
+Every wake it handles goes to the durable away-mode ledger instead, as one `epoch|class|description` line: commander-relevant escalations go to `state/.subsuper-escalations` and self-handled wakes go to `state/.subsuper-routine`.
+On return, `bin/sq-afk-return.sh` presents one consolidated summary of both files once; the [afk skill](../.agents/skills/afk/SKILL.md) owns that contract, including the max-defer notice and the undeliverable-write alert.
+
+The Pi-native handoff (`.pi/extensions/sq-primary-away-handoff.ts` and `bin/sq-afk-pi-handoff.sh`) and the guarded composer path behind `inject_msg` remain for two uses only.
+The daemon's housekeeping and shutdown pass retires a native handoff that Pi acknowledged under an earlier daemon, so an old acknowledgement can never replay; it publishes no new request.
+The guarded lab `bin/sq-afk-tuios-lab.sh` drives `inject_msg` directly to keep the native submit, composer, and readiness contracts below verified live.
+On that path the composer fallback queues the message through the supervisor pane's own agent (TUIOS delivery is queue-only) only after that composer is positively read as empty for a daemon-attributed live agent, as described in "Composer state" and "Limits and verification" below.
 A pane TUIOS cannot attribute a live agent to is refused as `no_agent` and nothing is typed into its terminal.
+
+The rest of this section describes that retained handoff contract.
 
 - The extension binds to the exact `TUIOS_SESSION` and `TUIOS_PANE_ID`, publishes its own `state/.pi-away-handoff/ready.<session>.<window>.json` with its process identity and a one-second heartbeat, and accepts a request only when it names that exact target.
 - Only the Pi that holds the base's session lock publishes or accepts anything, and only the exact lock owner counts: `bin/sq-lock.sh` records the innermost harness pid, so a Pi started from the primary's own shell - which inherits `SQUAD_BASE` and the TUIOS pane variables - is a worker even though the lock holder is its ancestor.
@@ -207,20 +215,20 @@ Delivery is gated by three positive conditions: Pi must be idle, the editor must
 The last one is a native signal: Pi emits `ui_prompt_start` and `ui_prompt_end` around every built-in dialog (`select`, `confirm`, `input`, `editor`, `custom`), and the extension defers while that count is non-zero.
 A queued escalation stays durable while it waits, so a busy Pi, a typed draft, or an open approval prompt delays delivery instead of losing or duplicating it.
 
-Each readiness record is a version-3 delivery-state record carrying `idle`, `draft`, `prompts`, and `sending`; the daemon refuses an older record and falls back to the composer path rather than trusting a handoff that cannot describe its state.
+Each readiness record is a version-3 delivery-state record carrying `idle`, `draft`, `prompts`, and `sending`; `inject_msg` refuses an older record and falls back to the composer path rather than trusting a handoff that cannot describe its state.
 A legacy shared `ready.json` is still honoured when it names the exact target, so a primary that started before the per-target layout keeps working until it restarts.
-When the daemon uses the composer path it logs why once per distinct reason, and every reason the handoff can report is named here so a silent fallback is never invisible.
+When `inject_msg` uses the composer path it logs why once per distinct reason, and every reason the handoff can report is named here so a silent fallback is never invisible.
 The preconditions, checked before any record is read, are `not-tuios` (the supervisor is not the TUIOS backend), `backend-unavailable` (the TUIOS adapter could not be sourced), `target-gone` (the exact supervisor target no longer exists), and `no-handoff-dir` (no Pi has published readiness in this state directory yet).
 The record reasons are `no-record` (no per-target record for this target, and no legacy `ready.json` naming it), `other-target` (the per-target record exists but names a different session or window, which only a sanitized-name collision or a copied record produces), `unreadable-record` (the file is not a JSON object), `schema` (the record predates version 3 or is malformed), `other-session` (the base's session lock names a different pid that is still alive, so another session really owns the base), `dead-process` (the recorded pid is gone), `identity-unavailable` (the recorded pid's identity could not be computed for comparison), `identity-mismatch` (that pid was recycled by a different process), and `stale-heartbeat` (no heartbeat for more than five seconds, so Pi's event loop is blocked).
 A lock naming a dead process counts as absent, on both the extension side and the daemon side, so a crash-relaunched primary engages again without anyone reclaiming the lock first; a lock that exists but cannot be read, or that is empty or non-numeric, still refuses as `other-session` because a competing session may own it.
 `bin/sq-afk-pi-handoff.sh` owns this enumeration, so a new refusal token there belongs here too.
 `no-record` after a restart-free upgrade means the primary Pi has not loaded the extension yet and must be restarted, and an `other-session`, `dead-process`, `identity-mismatch`, or `stale-heartbeat` verdict right after a crash or restart means the primary must be relaunched or its stale lock reclaimed before native delivery resumes.
 
-Delivery is idempotent across batches.
+Handoff delivery is idempotent across batches.
 A published request records how many buffered escalations it covers, and once Pi acknowledges consuming it the daemon retires exactly that buffer prefix, so a later digest that also carries a newer escalation never re-sends the one Pi already handled.
 A request is republished only when replacing it cannot duplicate delivery: Pi consumed it, or the extension's send never reached Pi (`uncertain`), or a `submitting` record has aged past the bound while the live, identity-verified extension reports no in-flight send, or a `queued` record was written by a process that is no longer the live extension - that followUp queue died with its writer, so republishing it under a new id is the only way the digest is ever delivered.
-A `submitting` or `queued` record owned by the live extension is never replaced, because that send or queue can still deliver, and the wedge alarm still covers a request that stays undelivered.
-When the native verdict is transiently refused while that live, identity-verified extension still holds an unresolved request for the exact target, the daemon defers instead of delivering the digest again through the composer path, so an escalation Pi already holds is not delivered twice once its event loop unblocks.
+A `submitting` or `queued` record owned by the live extension is never replaced, because that send or queue can still deliver.
+When the native verdict is transiently refused while that live, identity-verified extension still holds an unresolved request for the exact target, `inject_msg` defers instead of delivering the digest again through the composer path, so an escalation Pi already holds is not delivered twice once its event loop unblocks.
 The deferral is bounded: a request whose result entry is older than `SQUAD_PI_HANDOFF_STALE_SECS`, names another target, or was written by a dead or foreign process does not block the composer path, so a stuck request can never wedge delivery.
 
 `bin/sq-afk-launch.sh` starts the away daemon in its own exact, newly created, detached TUIOS session.
@@ -242,11 +250,12 @@ A frame whose rows are all blank is `empty`, any content is `pending`, and every
 A dead, missing, ambiguous, or unreadable agent report therefore turns an otherwise empty frame into `unknown`, so the composer fallback is never handed a pane whose agent is gone.
 The frame read is tunable for a harness or theme that draws it differently: `SQUAD_BACKEND_TUIOS_COMPOSER_LINES` sets the pane tail captured, `SQUAD_BACKEND_TUIOS_COMPOSER_FOOTER_MAX` how many footer rows are tolerated below the frame, `SQUAD_BACKEND_TUIOS_COMPOSER_ROWS_MAX` how many editor rows are admitted between the two borders, and `SQUAD_BACKEND_TUIOS_IDLE_RE` matches an empty-composer placeholder; their defaults are listed in [`configuration.md`](configuration.md).
 This is a rendered-surface signal, so it is a harness-dependent check: `tests/sq-backend-tuios.test.sh` pins the portable logic against the captured frame shapes and the dead-agent case, and the guarded live lab (`bin/sq-afk-tuios-lab.sh lifecycle`, reachable from the `live-harness-optin` lane through `tests/sq-afk-tuios-live-optin.test.sh`) proves it against a real Pi, reading `empty` when idle and `pending` once a draft is typed.
-Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redraws the frame would otherwise degrade quietly to `unknown` and defer every escalation.
+Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redraws the frame would otherwise degrade quietly to `unknown` and defer every `inject_msg` delivery.
 
 ## Limits and verification
 
-- Native away-mode delivery to a TUIOS supervisor pane requires the shipped Pi extension on the primary, loaded at Pi startup; a primary started before the extension existed keeps using the composer path until restarted.
+- The away daemon delivers nothing to a TUIOS supervisor pane; the limits below apply to the retained handoff and composer paths that `inject_msg` and the lab exercise.
+  Native handoff requires the shipped Pi extension on the primary, loaded at Pi startup; a primary started before the extension existed keeps using the composer path until restarted.
   The composer path delivers only into a composer positively read as empty, and defers on a draft, a busy or blocked pane, or any frame it cannot identify.
 - The open-prompt guard depends on Pi's `ui_prompt_start`/`ui_prompt_end` events, which were verified live on Pi 0.99.0 by opening a real dialog while the primary was idle and confirming the escalation was held until it closed.
   A future Pi release that stopped emitting those events would silently reduce the guard to idle plus draft, so that event contract must be re-verified on a Pi upgrade.
@@ -256,7 +265,7 @@ Rerun the lab after every Pi or TUIOS upgrade, because a theme change that redra
 - `not_ready` and `prompt_stalled` mappings exist and are tested against the daemon's documented codes, but the asynchronous queue path does not raise them, so they were not observed live.
 - The durable lease on a failed spawn is returned by the adapter; a lease whose spawn succeeded is returned by Squad teardown.
 - The away-mode extension, the sender, and the launcher each have portable regression coverage, but the live TUIOS/Pi path is exercised only by the guarded lab above; there is no CI coverage of a real TUIOS daemon or a real Pi TUI.
-- An accepted-but-never-consumed request (`queued` while Pi never starts the turn) is preserved while the extension that accepted it is still the live, identity-verified one, because republishing could duplicate a delivery it still holds; once that writer is gone its followUp queue died with it and the request is republished instead, so a restart can no longer wedge every later digest. The wedge alarm covers a request that stays undelivered for any other reason.
+- An accepted-but-never-consumed request (`queued` while Pi never starts the turn) is preserved while the extension that accepted it is still the live, identity-verified one, because republishing could duplicate a delivery it still holds; once that writer is gone its followUp queue died with it and the request is republished instead, so a restart can no longer wedge every later digest.
 - The fake-CLI suite covers preferred-workspace selection, occupied/named/leased exclusions, exact-ID placement verification, abort cleanup, and guarded workspace release, including a release whose workspace is shared with a neighbouring window. A focused check on the existing isolated nine-workspace private TUIOS session created two tasks in distinct non-current workspaces, confirmed the original focused window and current workspace were unchanged, then closed both probe windows and restored both names to empty. The shared daemon and every non-lab session were untouched.
 
 [`verification/runtime-backends.md`](verification/runtime-backends.md#tuios) owns the commands and output behind each claim above, and the honest list of what is not yet established. The portable contract is covered by `tests/sq-backend-tuios.test.sh` and `tests/sq-spawn-tuios-worktree.test.sh` using fake CLIs; those tests never contact or change a live TUIOS session.

@@ -3,7 +3,7 @@ name: afk
 description: >-
   Arm the absence routine and start the away-mode daemon when the commander invokes /afk or says he is going afk: a strong-model judge decides in-scope gates, delivery continues, the daemon absorbs routine wakes without deciding, and his questions are parked for his return in a dated absence record.
   The daemon also runs when `state/.afk` exists, an incoming message starts with `SQUAD_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
-  The daemon sets a durable away-mode flag so the sub-supervisor can self-handle routine wakes and escalate commander-relevant events as batched digests, then exits automatically when any real unmarked message returns Squad to full per-wake responsiveness.
+  The daemon sets a durable away-mode flag so the sub-supervisor can self-handle routine wakes and hold commander-relevant events silently for one summary on return, then exits automatically when any real unmarked message returns Squad to full per-wake responsiveness.
 user-invocable: true
 metadata:
   internal: true
@@ -12,7 +12,7 @@ metadata:
 # afk
 
 When the commander invokes `/afk` or says he is going afk, run the judge-delegation routine below and start the away-mode daemon in the same move.
-The two compose as follows: the daemon decides nothing, absorbs routine wakes, and delivers bounded digests; the judge decides inside the accepted scope; the commander decides everything outside it.
+The two compose as follows: the daemon decides nothing, absorbs routine wakes, and writes nothing to the commander's pane while he is away; the judge decides inside the accepted scope; the commander decides everything outside it and reads one summary on return.
 
 ## Judge-delegation routine (default)
 
@@ -39,7 +39,7 @@ Run these steps without asking the commander first.
    Do not re-ask it in chat while he is away.
 4. **Keep delivering.** Dispatch, supervise, and merge through `AGENTS.md` sections 7 and 8, with merges only through `bin/sq-pr-merge.sh`; on a project where yolo is off, only a merge the record grants under step 2, and on a yolo-on project the standing merge authority of `AGENTS.md` section 7 still applies during the absence.
    Supervision is the daemon's sentry, as its section describes; do not arm a second sentry.
-   Wakes the daemon escalates reach Squad, which applies the judge under the record from step 2.
+   Wakes the daemon holds reach Squad's durable queue and the away-mode ledger, not the commander; they are presented to him on return, and Squad applies the judge under the record from step 2 meanwhile.
    The judge returns one verdict per decision: decide or park, the reason, and the reservations he should read.
    Record every verdict in the record next to the work it decided.
    A judge verdict is a delegated Squad decision recorded as such, not his approval.
@@ -54,8 +54,7 @@ Run these steps without asking the commander first.
 
 Away-mode supervision. The daemon decides nothing; it makes the token-saving tradeoff **consented** and **explicit**: the commander is stepping away, so the
 sub-supervisor may triage routine wakes in bash instead of waking Squad's
-LLM for each one. Escalations still reach the commander, but as one pre-read,
-batched digest rather than per-wake injections.
+LLM for each one. Nothing reaches the commander while he is away: escalations and routine wakes are held in the away-mode ledger and presented as one summary when he returns.
 
 1. **Enter the lifecycle through `bin/sq-afk-launch.sh`.**
    This owns the durable state write, session-scoped stale-artifact clearing,
@@ -90,8 +89,7 @@ batched digest rather than per-wake injections.
    Both paths share `bin/sq-afk-start.sh` as the daemon entry.
    The native path tells it that the launcher already prepared lifecycle state; the terminal-backed path lets the entry perform its existing state setup inside the new terminal.
    It exits immediately if the identity-backed daemon lock already names a live process, otherwise it execs `bin/sq-supervise-daemon.sh` in the foreground.
-   The daemon is **presence-gated**: it injects escalations only while
-   `state/.afk` exists, and stays quiet otherwise.
+   The daemon is **presence-gated**: it runs only while `state/.afk` exists, writes nothing to the commander's pane, and holds its ledger for the return summary.
 
 3. **Do not separately arm `sq-sentry.sh`.** The daemon manages the sentry as
    its child; the singleton lock no-ops a stray arm harmlessly.
@@ -106,7 +104,7 @@ No `/back` is needed. The first genuine message is the return signal:
 
 - A message **without** the current operational prefix or a legacy bare marker, and **not** starting with `/afk` -> the commander is back.
   Run `bin/sq-afk-return.sh` before acting on the message that brought the commander back.
-  That script owns correct-ordered daemon shutdown, durable wake draining, escalation and wedge evidence, and the return-catch-up gate.
+  That script owns correct-ordered daemon shutdown, durable wake draining, the return-catch-up gate, and the one consolidated summary of everything the away-mode ledger held (counts per class, the events in order, the links and paths to act on, and what was never executed while he was away).
   If it reports a Squad-actionable `blocked:` event, remediate it immediately through the normal lifecycle, or explicitly reclassify it with a durable reason and close its decision key with `resolved [key=...]`, then run `bin/sq-afk-return.sh check`.
   Once the daemon stops, resume full per-wake responsiveness through the emitted primary-harness supervision protocol while blocker handling proceeds, so the gate never creates a blind wait.
   Do not answer a Sitrep request or perform any other ordinary commander work until the check exits successfully.
@@ -151,19 +149,14 @@ Two checks run before every such injection, dispatched through `bin/sq-backend.s
   It preserves idle bordered composers such as claude's `│ > … │` and bare agent glyphs as empty, but a bare shell glyph is unknown unless inside a genuine bordered composer box; see `docs/herdr-backend.md` "Composer and injection safety" for the complete contract.
   `pane_input_pending` remains the tested predicate for callers that only need to know whether real unsubmitted text is present, but it is insufficient for an injection-safety decision because it cannot distinguish `empty` from `unknown`.
 
-A busy primary pane, or any composer verdict other than `empty`, defers the injection; the buffered escalation survives in `state/.subsuper-escalations` and is retried on the next housekeeping tick.
+The away-mode daemon never injects, so the busy and composer guards below govern only the retained pane-injection primitive used by the lab path (`bin/sq-afk-tuios-lab.sh`); a ledger entry is never retried into a pane.
 In afk mode the composer guard is belt-and-suspenders (no human is typing), but it protects against the race window between the commander returning and their message landing, a dead shell, and the daemon's own previous injection sitting unsent.
 
-**Max-defer escape (the daemon must never silently wedge).**
-If anything stays buffered past `SQUAD_MAX_DEFER_SECS` (default 300), the daemon
-attempts one normal flush, which still requires an idle pane and an affirmatively empty composer.
-The alarm is defense in depth rather than a substitute for keeping every genuinely idle supported composer injectable.
-If that submit cannot be confirmed, it raises a loud, rate-limited wedge alarm:
-an ERROR in the daemon log, a durable
-`state/.subsuper-inject-wedged` marker (surface it on the "while you were out"
-catch-up if present), a tmux status-line flash when applicable, and a configurable backend-independent active alert.
-`docs/wedge-alarm.md` owns the alert channel setup, and `docs/verification/supervision.md` "Wedge-alarm channels" owns active evidence.
-So a guard false-positive becomes a visible stall, never an unbounded silent no-op.
+**Max-defer notice (the daemon must never silently wedge).**
+While away, a ledger entry parked past `SQUAD_MAX_DEFER_SECS` (default 300) is expected, because nothing reaches the pane.
+The daemon raises one durable escalation per absence on Squad's stand-to queue (a `check:` record keyed `afk-parked-escalations`) and writes `state/.subsuper-inject-wedged` as its marker, so a stalled absence stays visible to Squad without touching the commander's pane.
+A ledger write that fails is undeliverable: the item goes to the same durable queue, and the configurable active alert (`docs/wedge-alarm.md` owns the channel setup) fires, rate-limited to one per max-defer window.
+The marker is cleared by the return catch-up.
 
 ## Submit model
 
@@ -200,7 +193,7 @@ behavior but needs a separate fix; the gap is recorded in
 The daemon wraps `sq-sentry.sh`, runs the sentry as a child, classifies each
 wake reason in bash, and self-handles the routine majority without consuming a
 Squad turn.
-Commander-relevant events, plus a bounded recheck of a declared external wait that remains idle, escalate to Squad's context as one pre-read, single-line, batched digest.
+Commander-relevant events, plus a bounded recheck of a declared external wait that remains idle, are held in the away-mode ledger described below rather than delivered.
 The classification predicates (the commander-relevant verb set, declared-pause vocabulary, signal/stale tests, and unit-scan) live in the shared `bin/sq-classify-lib.sh`, the same library the always-on sentry uses for its own triage when afk is off, so the two modes apply one identical policy.
 While `state/.afk` exists the daemon owns the sentry, so the sentry reverts to one-shot and lets the daemon do the triage - the two never run their triage at the same time.
 
@@ -227,11 +220,9 @@ Classify each wake this way:
   commander-relevant status line the per-wake classifier might miss.
 - Unknown reason, or any uncertainty -> escalate fail-safe.
 
-Escalations are buffered up to `SQUAD_ESCALATE_BATCH_SECS` (default 90s; 0 =
-immediate) and flushed as one single-line digest prefixed with the current
-operational prefix, carrying pre-read status summaries and a recommended action.
-The single-line format makes the submission unambiguous across harnesses, and
-the operational prefix lets Squad distinguish it from a real commander message.
+Every wake the daemon handles is written to the away-mode ledger as `<epoch>|<class>|<one-line description>`.
+Commander-relevant events go to `state/.subsuper-escalations` (class `escalation`), and self-handled wakes go to `state/.subsuper-routine` (class `routine`), except bare heartbeat ticks, which are not events.
+Nothing is typed into the commander's pane while away; `bin/sq-afk-return.sh` merges both files by time and presents them once, as one summary, on return.
 
 ## Injection hardening
 
@@ -246,14 +237,7 @@ the operational prefix lets Squad distinguish it from a real commander message.
   They read the composer shape from a separately ANSI-stripped plain row because a dark TRUECOLOR border can be stripped with ghost content.
   A ghost-only or idle bordered composer such as claude's `│ > ... │` therefore reads empty without allowing an unbordered shell prompt to do the same.
   `SQUAD_COMPOSER_IDLE_RE` still overrides tmux empty-composer matching after shared ghost and border stripping, and `SQUAD_BUSY_REGEX` overrides the rendered delivery guards plus Grok's isolated task-state fallback.
-- **Max-defer escape** - the daemon must never silently wedge. If anything stays
-  buffered past `SQUAD_MAX_DEFER_SECS` (default 300s), the daemon attempts one
-  normal flush, which still requires an idle pane and an affirmatively empty composer. If that
-  cannot confirm a submit, it raises a loud, rate-limited wedge alarm: ERROR log,
-  durable `state/.subsuper-inject-wedged` marker, a tmux status-line flash when
-  applicable, and a backend-independent active alert. A
-  composer false-positive surfaces as a visible stall, never an unbounded silent
-  no-op.
+- **Max-defer notice** - the daemon must never silently wedge. A ledger entry parked past `SQUAD_MAX_DEFER_SECS` (default 300s) raises one durable stand-to escalation per absence, and a failed ledger write raises the durable escalation plus the active alert. Nothing is written to the commander's pane either way.
 - **Verified type-once submit model** - the digest is typed once (`send-keys -l`
   on tmux, `pane send-text` on herdr), then submitted with Enter and verified.
   Enter is retried, Enter only and never a retype, until the backend submit
@@ -296,7 +280,7 @@ the operational prefix lets Squad distinguish it from a real commander message.
 
 ## Stale-artifact lifecycle
 
-Treat `state/.subsuper-escalations`, its `.since` sidecar, and `state/.subsuper-inject-wedged` as session-scoped delivery artifacts, not as the durable work record.
+Treat `state/.subsuper-escalations`, its `.since` sidecar, `state/.subsuper-routine`, `state/.subsuper-parked-notified`, and `state/.subsuper-inject-wedged` as session-scoped ledger artifacts, not as the durable work record.
 Always enter through `bin/sq-afk-launch.sh`, which clears prior-session artifacts only for a fresh entry and preserves the current session's buffer on refresh.
 Always exit through `bin/sq-afk-launch.sh stop`, which keeps `state/.afk` present through the daemon's shutdown flush and clears it last.
 `docs/herdr-backend.md` "Away-mode supervisor support" owns the current mechanism, and `docs/verification/runtime-backends.md` "Away-mode transport" owns active evidence.
@@ -305,8 +289,7 @@ Always exit through `bin/sq-afk-launch.sh stop`, which keeps `state/.afk` presen
 
 These properties must hold:
 
-- Nothing is lost. The durable queue plus `sq-stand-to-drain.sh` recover any missed
-  or crashed injection.
+- Nothing is lost. The durable queue, the away-mode ledger, and `sq-stand-to-drain.sh` recover every wake, and the return summary presents the ledger exactly once.
 - Wedge detection is bounded-latency, not lossy.
 - Declared external waits are rechecked on a separate, bounded cadence rather than being mislabeled as wedges.
   Objective pause-era evidence (idle dirty worktree, aged-out declared pause, stuck pane signature, quiet pipeline step) still escalates in away mode instead of being swallowed by that cadence.

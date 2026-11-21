@@ -19,7 +19,9 @@
 # retains the drained wake, buffered-escalation, and wedge-marker evidence until
 # every live open blocker is closed and `check` succeeds. Repeated begin/check
 # calls are idempotent. `guard` never mutates state and is suitable for ordinary
-# read entrypoints such as sq-sitrep-snapshot.sh.
+# read entrypoints such as sq-sitrep-snapshot.sh. The away-mode ledger is presented
+# once, as one summary, on the run that clears the gate; a re-run after a clean
+# return finds nothing left to present and prints no summary again.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -104,12 +106,111 @@ write_gate() {  # <evidence-file> <blockers-file>
   mv "$pending" "$GATE"
 }
 
-print_evidence() {  # <file>
-  local file=$1 kind text
+fmt_epoch() {  # <epoch> -> local "MM-DD HH:MM" (GNU date, then BSD date)
+  date -d "@$1" '+%m-%d %H:%M' 2>/dev/null || date -r "$1" '+%m-%d %H:%M' 2>/dev/null || printf '%s' "$1"
+}
+
+# print_summary: the one away-mode presentation. Escalation evidence is the away
+# ledger, one "<epoch>|<class>|<text>" per entry; a bare line from before the ledger
+# format is presented as an unclassed escalation. A drained afk-* check record is the
+# daemon's own durable notice (a parked ledger or an item the ledger could not
+# record) and is presented as an event; each wedge marker line is presented unless
+# a drained record already carries the same notice. Other queued wake records and drain sections (open
+# decisions, pending teardown, guard notices) are open items, not away-mode events.
+# Prints nothing when there is nothing to present.
+notice_key() {  # <notice text> -> identity shared by a queued afk-* record and its marker line
+  local text=$1 rest
+  case "$text" in
+    'check: away-mode ledger could not record: '*)
+      printf 'u:%s' "${text#check: away-mode ledger could not record: }" ;;
+    'away-mode ledger undeliverable as of '*': '*)
+      rest=${text#away-mode ledger undeliverable as of }
+      printf 'u:%s' "${rest#*: }" ;;
+    'check: away-mode escalations held '*'s past max-defer'*)
+      rest=${text#check: away-mode escalations held }
+      printf 'p:%s' "${rest%%s past max-defer*}" ;;
+    'away-mode ledger held '*'s past max-defer'*)
+      rest=${text#away-mode ledger held }
+      printf 'p:%s' "${rest%%s past max-defer*}" ;;
+    *) printf 'x:%s' "$text" ;;
+  esac
+}
+
+print_summary() {  # <evidence-file>
+  local file=$1 tag kind text ts cls item label when re afk_re seq=0 absence locators
+  local escalated=0 routine=0 notice=0 queued=0 rows='' afk_keys='' wedges='' notices='' urls='' statuses='' events=''
+  re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
+  afk_re='^([0-9]+) [0-9]+ check afk-[A-Za-z0-9._-]+ (.*)$'
   while IFS="$(printf '\t')" read -r tag kind text; do
     [ "$tag" = evidence ] || continue
-    printf 'catch-up %s: %s\n' "$kind" "$text"
+    case "$kind" in
+      escalation)
+        ts='' cls='' item=$text
+        if [[ $text == *'|'* ]]; then
+          IFS='|' read -r ts cls item <<< "$text"
+        fi
+        case "$ts" in ''|*[!0-9]*) ts='' cls=escalation item=$text ;; esac
+        if [ "$cls" = routine ]; then
+          routine=$((routine + 1)); label=routine
+        else
+          escalated=$((escalated + 1)); label=escalation
+        fi
+        rows="${rows}${ts:-0}"$'\t'"${label}"$'\t'"${item}"$'\n'
+        ;;
+      wake)
+        if [[ $text =~ $afk_re ]]; then
+          notice=$((notice + 1))
+          rows="${rows}${BASH_REMATCH[1]}"$'\t'"daemon-notice"$'\t'"${BASH_REMATCH[2]}"$'\n'
+          afk_keys="${afk_keys}$(notice_key "${BASH_REMATCH[2]}")"$'\n'
+        elif [[ $text =~ $re ]]; then
+          queued=$((queued + 1))
+        else
+          case "$text" in 'wake annotation:'*|'') ;; *) notices="${notices}  ${text}"$'\n' ;; esac
+        fi
+        ;;
+      wedge)
+        wedges="${wedges}${text}"$'\n'
+        ;;
+    esac
   done < "$file"
+  if [ -n "$wedges" ]; then
+    while IFS= read -r item; do
+      [ -n "$item" ] || continue
+      printf '%s' "$afk_keys" | grep -Fqx -- "$(notice_key "$item")" && continue
+      notice=$((notice + 1))
+      rows="${rows}0"$'\t'"daemon-notice"$'\t'"${item}"$'\n'
+    done <<< "$wedges"
+  fi
+  [ "$queued" -eq 0 ] || notices="  queued wake records drained: ${queued}"$'\n'"${notices}"
+  if [ $((escalated + routine + notice)) -eq 0 ]; then
+    # No away-mode events: only live open items remain, shown without the absence
+    # summary header so a re-run never presents the summary again.
+    [ -z "$notices" ] || printf 'catch-up open items (still open at return):\n%s' "$notices"
+    return 0
+  fi
+  while IFS="$(printf '\t')" read -r ts label item; do
+    [ -n "$label" ] || continue
+    seq=$((seq + 1))
+    when=''
+    [ "$ts" = 0 ] || when="$(fmt_epoch "$ts") "
+    events="${events}  ${seq}. ${when}[${label}] ${item}"$'\n'
+    urls="${urls}$(printf '%s\n' "$item" | grep -Eo 'https://[^[:space:]]+' || true)"$'\n'
+    statuses="${statuses}$(printf '%s\n' "$item" | grep -Eo '[A-Za-z0-9._-]+\.status' || true)"$'\n'
+  done <<< "$(printf '%s' "$rows" | sort -s -t "$(printf '\t')" -k1,1n)"
+  printf 'catch-up summary (one presentation for this absence)\n'
+  printf '  counts: escalation=%d routine=%d daemon-notice=%d\n' "$escalated" "$routine" "$notice"
+  [ -z "$events" ] || printf '  events in order:\n%s' "$events"
+  locators=$(printf '%s\n' "$urls" | sed '/^$/d' | sort -u | sed 's/^/    /')
+  statuses=$(printf '%s\n' "$statuses" | sed '/^$/d' | sort -u | sed 's#^#    state/#')
+  absence=$(find "$SQUAD_BASE/data" -maxdepth 1 -name 'absence-*.md' 2>/dev/null | sort | tail -1 || true)
+  if [ -n "$locators$statuses$absence" ]; then
+    printf '  links and paths:\n'
+    [ -z "$locators" ] || printf '%s\n' "$locators"
+    [ -z "$statuses" ] || printf '%s\n' "$statuses"
+    [ -z "$absence" ] || printf '    %s\n' "$absence"
+  fi
+  printf '  never executed while you were away: any merge outside the grant quoted in the absence record, destructive or irreversible actions, security-sensitive choices, and anything outside the accepted scope of the judge; each waits for you.\n'
+  [ -z "$notices" ] || printf '  open items at return:\n%s' "$notices"
 }
 
 print_blockers() {  # <file>
@@ -124,6 +225,8 @@ clear_delivery_artifacts() {
   rm -f \
     "$STATE/.subsuper-escalations" \
     "$STATE/.subsuper-escalations.since" \
+    "$STATE/.subsuper-routine" \
+    "$STATE/.subsuper-parked-notified" \
     "$STATE/.subsuper-inject-wedged"
 }
 
@@ -161,11 +264,11 @@ return_reconcile() {
   append_evidence wake "$drained" "$evidence"
 
   if [ -s "$STATE/.subsuper-inject-wedged" ]; then
-    wedge=$(head -1 "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
+    wedge=$(cat "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
     append_evidence wedge "$wedge" "$evidence"
   fi
-  if [ -s "$STATE/.subsuper-escalations" ]; then
-    escalations=$(cat "$STATE/.subsuper-escalations" 2>/dev/null || true)
+  if [ -s "$STATE/.subsuper-escalations" ] || [ -s "$STATE/.subsuper-routine" ]; then
+    escalations=$(cat "$STATE/.subsuper-routine" "$STATE/.subsuper-escalations" 2>/dev/null | sort -s -t'|' -k1,1n || true)
     append_evidence escalation "$escalations" "$evidence"
   fi
 
@@ -173,14 +276,14 @@ return_reconcile() {
   if [ "$lifecycle_ok" -ne 1 ] || [ -s "$blockers" ]; then
     write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers"; return 1; }
     printf 'sq-afk-return: catch-up must finish before the commander request\n' >&2
-    print_evidence "$GATE" >&2
+    printf 'sq-afk-return: %s away-mode event(s) are held in the catch-up record; one summary is presented once the blockers clear\n' "$(grep -c "^evidence"$'\t'"escalation"$'\t' "$GATE" 2>/dev/null || true)" >&2
     print_blockers "$GATE" >&2
     printf 'sq-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/sq-afk-return.sh check\n' >&2
     rm -f "$evidence" "$blockers"
     return 3
   fi
 
-  print_evidence "$evidence"
+  print_summary "$evidence"
   rm -f "$GATE"
   clear_delivery_artifacts
   rm -f "$evidence" "$blockers"

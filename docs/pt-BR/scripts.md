@@ -100,7 +100,7 @@ Fora do toolbelt, o alvo manual `make mutation` do pacote drill roda gremlins so
 | `sq-afk-return.sh`       | Controlar shutdown determinístico de retorno, evidência de catch-up e o gate de bloqueador acionável pelo Squad |
 | `sq-supervisor-native.sh` | Contrato de entrega nativa neutro de backend do supervisor: vínculo de endpoint, prontidão, submissão de requisição e aposentadoria por reconhecimento consumido |
 | `sq-supervisor-target-lib.sh` | Resolver e validar o alvo e backend compartilhados do supervisor para o daemon e launcher |
-| `sq-supervise-daemon.sh` | Sub-supervisor do modo ausente controlado por presença: auto-trata acordos rotineiros, protege a injeção pelo harness primário detectado, escala digests em lote, alerta sobre entrega falha |
+| `sq-supervise-daemon.sh` | Sub-supervisor do modo ausente controlado por presença: auto-trata acordos rotineiros, guarda cada wake no ledger de away-mode sem tocar o painel do comandante, alerta sobre escrita de ledger não entregável |
 | `sq-crew-state.sh`       | Imprimir uma linha determinística de estado atual para um operador                                |
 | `sq-breaker.sh`        | Avaliar os sinais de circuit-breaker de uma tarefa num veredito healthy/steering/constrained/stopped com ação e motivos |
 | `sq-breaker-lib.sh`    | Política compartilhada de escada de circuit-breaker sem efeitos colaterais usada por `sq-breaker.sh` |

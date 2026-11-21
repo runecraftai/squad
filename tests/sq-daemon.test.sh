@@ -136,7 +136,7 @@ test_classify_signal_compaction_without_status_escalates() {
     handle_wake "signal:$state/$id.turn-ended" "$state" >/dev/null 2>&1
   SQUAD_STATE_OVERRIDE="$state" SQUAD_COMPACTION_SILENT_MIN_AGE_SECS=0 \
     handle_wake "signal:$state/$id.turn-ended" "$state" >/dev/null 2>&1
-  n=$(awk 'END{print NR}' "$state/.subsuper-escalations" 2>/dev/null)
+  n=$(grep -c '|escalation|' "$state/.subsuper-escalations" 2>/dev/null || true)
   [ "$n" = "1" ] || fail "handle_wake did not bound the compacted task to exactly one durable escalation (got ${n:-0})"
   pass "classify_signal stays a pure read that escalates a compacted, status-silent task through the shared compaction override, and handle_wake marks it notified only after the escalation is durably recorded"
 }
@@ -207,6 +207,7 @@ test_stale_diagnostic_wedge_survives_busy_housekeeping() {
 
     (
       kill() { printf 'kill %s\n' "$*" >> "$action_log"; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { printf 'interrupt %s\n' "$*" >> "$action_log"; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
       PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
@@ -641,6 +642,7 @@ afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition
 
   (
     kill() { :; }
+    # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
     fm_backend_send_text_submit() { :; }
     LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
   )
@@ -725,6 +727,7 @@ SH
     [ ! -e "$state/.subsuper-stale-$key" ] || fail "real progress kept the handed-off busy episode's daemon tracking"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -757,6 +760,7 @@ SH
     reason=$(grep -m1 "stale: $win" "$out") || fail "repeated frozen hash emitted no stale handoff"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -786,6 +790,7 @@ SH
     reason=$(grep -m1 "stale: $win" "$out") || fail "second static episode was not handed off"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -797,6 +802,7 @@ SH
     [ ! -s "$state/.subsuper-escalations" ] || fail "second static episode escalated before its full window"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -833,6 +839,7 @@ SH
     [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "successful capture inherited unreadable time"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -926,6 +933,7 @@ busy_wedge_daemon_case() {  # <first|repeat>
   date '+%s' > "$state/.afk"
   (
     kill() { :; }
+    # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
     fm_backend_send_text_submit() { :; }
     LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
   )
@@ -1091,9 +1099,9 @@ test_housekeeping_orca_persistent_stale_resolves_terminal() {
   pass "persistent Orca stale resolves the terminal from metadata"
 }
 
-test_escalate_batches_into_one_digest() {
+test_escalate_stays_out_of_the_pane_while_away() {
   local dir state fakebin sent capture n
-  dir=$(make_supercase batch)
+  dir=$(make_supercase silent-away)
   state="$dir/state"
   fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
@@ -1104,21 +1112,15 @@ test_escalate_batches_into_one_digest() {
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_PANE_ALIVE=1 SQUAD_FAKE_TMUX_SENT="$sent" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture" SQUAD_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
     || fail "escalate_flush failed"
-  grep -F 'SQUAD_OP: v1 away-supervisor: ' "$sent" >/dev/null \
-    || fail "batch digest lacks the exact current away-supervisor kind"
-  grep -F "event A" "$sent" >/dev/null || fail "batch digest missing event A"
-  grep -F "event B" "$sent" >/dev/null || fail "batch digest missing event B"
-  grep -F 'event A: done: PR 1 | event B: done: PR 2' "$sent" >/dev/null \
-    || fail "batch digest did not join events with literal ' | '"
-  [ -s "$state/.subsuper-escalations" ] && fail "escalation buffer not cleared after flush"
-  [ -e "$state/.subsuper-escalations.since" ] && fail "first-append sidecar not cleared after flush"
-  n=$(grep -c '\[ENTER\]' "$sent")
-  [ "$n" -eq 1 ] || fail "expected one injected digest, got $n send-keys submits"
-  pass "multiple escalations flush as a single batched digest"
+  [ -s "$sent" ] && fail "away mode typed into the supervisor pane"
+  n=$(grep -c '^[0-9]*|escalation|event [AB]: done: PR [12]$' "$state/.subsuper-escalations")
+  [ "$n" -eq 2 ] || fail "ledger did not keep both escalations as escalation entries ($n)"
+  [ -e "$state/.subsuper-escalations.since" ] || fail "ledger sidecar removed before the return summary"
+  pass "away mode writes no escalation to the pane and keeps every entry in the ledger"
 }
 
 test_escalate_batch_age_uses_first_append() {
-  local dir state fakebin sent capture
+  local dir state fakebin sent capture since
   dir=$(make_supercase batch-age)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -1126,16 +1128,17 @@ test_escalate_batch_age_uses_first_append() {
   capture="$dir/pane.txt"; : > "$capture"
   escalate_add "$state" "event A: done: PR 1"
   escalate_add "$state" "event B: done: PR 2"
-  echo $(( $(date +%s) - 100 )) > "$state/.subsuper-escalations.since"
+  since=$(( $(date +%s) - 100 ))
+  echo "$since" > "$state/.subsuper-escalations.since"
   afk_enter "$state"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_PANE_ALIVE=1 SQUAD_FAKE_TMUX_SENT="$sent" \
     SQUAD_FAKE_TMUX_CAPTURE="$capture" SQUAD_ESCALATE_BATCH_SECS=90 SQUAD_HOUSEKEEPING_TICK=0 \
     housekeeping "$state"
-  grep -F 'event A: done: PR 1 | event B: done: PR 2' "$sent" >/dev/null \
-    || fail "backdated batch did not flush as a joined digest (max-delay measured from last append)"
-  [ -s "$state/.subsuper-escalations" ] && fail "escalation buffer not cleared after backdated flush"
-  [ -e "$state/.subsuper-escalations.since" ] && fail "first-append sidecar not cleared after flush"
-  pass "batch flush measures max-delay from the first append, not the last"
+  [ -s "$sent" ] && fail "away mode typed the backdated batch into the supervisor pane"
+  [ "$(wc -l < "$state/.subsuper-escalations" | tr -d ' ')" -eq 2 ] || fail "backdated batch was dropped from the ledger"
+  [ "$(cat "$state/.subsuper-escalations.since")" = "$since" ] \
+    || fail "first-append age was reset instead of kept for the max-defer notice"
+  pass "away mode keeps a backdated batch in the ledger and keeps its first-append age"
 }
 
 test_heartbeat_scan_dedup() {
@@ -1312,6 +1315,8 @@ test_inject_skip_forces_self() {
   printf 'done: PR 1\n' > "$state/s1.status"
   SQUAD_STATE_OVERRIDE="$state" SQUAD_INJECT_SKIP="signal" handle_wake "signal: $state/s1.status" "$state"
   [ -s "$state/.subsuper-escalations" ] && fail "INJECT_SKIP=signal did not force self-handle"
+  grep -F "|routine|signal: $state/s1.status -> force-self" "$state/.subsuper-routine" >/dev/null \
+    || fail "INJECT_SKIP force-self wake was not ledgered as routine"
   pass "INJECT_SKIP forces self-handle, bypassing commander-relevant classification"
 }
 
@@ -1383,13 +1388,12 @@ test_afk_absent_daemon_does_not_inject() {
   capture="$dir/pane.txt"; : > "$capture"
   escalate_add "$state" "done: PR 1"
   # afk flag deliberately NOT set
-  if PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_PANE_ALIVE=1 SQUAD_FAKE_TMUX_SENT="$sent" \
-    SQUAD_FAKE_TMUX_CAPTURE="$capture" SQUAD_ESCALATE_BATCH_SECS=0 escalate_flush "$state"; then
-    fail "escalate_flush succeeded while afk inactive"
-  fi
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_PANE_ALIVE=1 SQUAD_FAKE_TMUX_SENT="$sent" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture" SQUAD_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
+    || fail "escalate_flush failed while afk inactive"
   [ -s "$sent" ] && fail "daemon injected while afk inactive"
-  [ -s "$state/.subsuper-escalations" ] || fail "buffer not preserved when afk inactive"
-  pass "afk flag absent: daemon does not inject, buffer preserved"
+  [ -s "$state/.subsuper-escalations" ] || fail "ledger not preserved when afk inactive"
+  pass "afk flag absent: daemon does not inject, ledger preserved"
 }
 
 test_busy_guard_defers_when_supervisor_busy() {
@@ -1402,13 +1406,12 @@ test_busy_guard_defers_when_supervisor_busy() {
   printf 'esc to interrupt\n' > "$capture"
   escalate_add "$state" "done: PR 1"
   afk_enter "$state"
-  if PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_PANE_ALIVE=1 SQUAD_FAKE_TMUX_SENT="$sent" \
-    SQUAD_FAKE_TMUX_CAPTURE="$capture" SQUAD_ESCALATE_BATCH_SECS=0 escalate_flush "$state"; then
-    fail "escalate_flush should defer when supervisor pane busy"
-  fi
-  [ -s "$sent" ] && fail "daemon injected into a busy pane"
-  [ -s "$state/.subsuper-escalations" ] || fail "buffer not preserved when deferred"
-  pass "busy-guard defers injection when supervisor pane is busy"
+  PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_PANE_ALIVE=1 SQUAD_FAKE_TMUX_SENT="$sent" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture" SQUAD_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
+    || fail "escalate_flush failed on a busy pane"
+  [ -s "$sent" ] && fail "daemon typed into a busy pane"
+  [ -s "$state/.subsuper-escalations" ] || fail "ledger not preserved while the pane was busy"
+  pass "away mode leaves a busy supervisor pane untouched and keeps the ledger"
 }
 
 test_marker_detection() {
@@ -1772,43 +1775,45 @@ test_submit_ack_reports_pending_on_persistent_swallow() {
   pass "submit-ACK reports pending on a persistently swallowed Enter (type-once)"
 }
 
-test_max_defer_empty_swallow_types_once_and_alarms() {
-  local dir state fakebin sent
-  dir=$(make_bordered_case maxdefer-stuck)
+test_max_defer_notice_is_durable_and_never_types() {
+  local dir state fakebin sent queue
+  dir=$(make_bordered_case maxdefer-notice)
   state="$dir/state"; fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
+  queue="$state/.stand-to-queue"
   printf '╭─────╮\n│ >   │\n╰─────╯\n' > "$dir/composer"
-  touch "$dir/.swallow"
   escalate_add "$state" "needs-decision: pick A"
   echo $(( $(date +%s) - 600 )) > "$state/.subsuper-escalations.since"
   afk_enter "$state"
-  PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
-    SQUAD_FAKE_SWALLOW="$dir/.swallow" SQUAD_FAKE_PERSIST_SWALLOW=1 SQUAD_INJECT_CONFIRM_SLEEP=0.05 \
-    SQUAD_ESCALATE_BATCH_SECS=99999 SQUAD_MAX_DEFER_SECS=60 housekeeping "$state"
-  [ "$(grep -c 'Supervisor escalate' "$sent" 2>/dev/null || true)" -eq 1 ] \
-    || fail "max-defer typed the digest more than once"
+  (
+    # Load the stand-to library the way the daemon does, so the notice reaches
+    # the same durable queue Squad drains on return.
+    # shellcheck source=/dev/null
+    SQUAD_STATE_OVERRIDE="$state" . "$ROOT/bin/sq-stand-to-lib.sh"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
+      SQUAD_INJECT_CONFIRM_SLEEP=0.05 SQUAD_ESCALATE_BATCH_SECS=99999 SQUAD_MAX_DEFER_SECS=60 \
+      SQUAD_STATE_OVERRIDE="$state" housekeeping "$state"
+  ) || fail "max-defer housekeeping failed"
+  [ ! -s "$sent" ] || fail "max-defer typed into the supervisor pane while away"
   [ -s "$state/.subsuper-inject-wedged" ] \
-    || fail "stuck max-defer inject did not raise a wedge alarm marker"
+    || fail "max-defer notice left no marker"
   [ -s "$state/.subsuper-escalations" ] \
-    || fail "buffer lost after a failed max-defer inject (must be preserved)"
-  pass "max-defer on an empty stuck pane types once, alarms, and preserves the buffer"
-}
-
-test_max_defer_flushes_empty_idle_pane() {
-  local dir state fakebin sent
-  dir=$(make_bordered_case maxdefer-recover)
-  state="$dir/state"; fakebin="$dir/fakebin"
-  sent="$dir/sent.log"; : > "$sent"
-  printf '╭─────╮\n│ >   │\n╰─────╯\n' > "$dir/composer"
-  escalate_add "$state" "done: PR https://x/y/pull/1"
-  echo $(( $(date +%s) - 600 )) > "$state/.subsuper-escalations.since"
-  afk_enter "$state"
-  PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
-    SQUAD_ESCALATE_BATCH_SECS=99999 SQUAD_MAX_DEFER_SECS=60 SQUAD_INJECT_CONFIRM_SLEEP=0.05 \
-    housekeeping "$state"
-  [ ! -s "$state/.subsuper-escalations" ] || fail "buffer not cleared after a recovered max-defer flush"
-  [ ! -e "$state/.subsuper-inject-wedged" ] || fail "wedge alarm left behind after a successful max-defer flush"
-  pass "max-defer flushes and clears the buffer on an empty bordered pane"
+    || fail "ledger entry lost after the max-defer notice (must be preserved)"
+  [ "$(wc -l < "$state/.subsuper-escalations" | tr -d ' ')" -eq 1 ] \
+    || fail "max-defer notice was also ledgered as an escalation (duplicate on return)"
+  grep -F $'\tcheck\tafk-parked-escalations\t' "$queue" >/dev/null \
+    || fail "max-defer notice did not reach the durable stand-to queue as a check"
+  rm -f "$state/.subsuper-inject-wedged"
+  (
+    # shellcheck source=/dev/null
+    SQUAD_STATE_OVERRIDE="$state" . "$ROOT/bin/sq-stand-to-lib.sh"
+    PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
+      SQUAD_INJECT_CONFIRM_SLEEP=0.05 SQUAD_ESCALATE_BATCH_SECS=99999 SQUAD_MAX_DEFER_SECS=60 \
+      SQUAD_STATE_OVERRIDE="$state" housekeeping "$state"
+  ) || fail "second max-defer housekeeping failed"
+  [ "$(grep -c afk-parked-escalations "$queue" || true)" -eq 1 ] \
+    || fail "clearing the wedge marker re-armed the once-per-absence parked notice"
+  pass "max-defer notice is durable, types nothing, and preserves the ledger"
 }
 
 test_max_defer_pending_composer_alarms_without_typing() {
@@ -1830,9 +1835,9 @@ test_max_defer_pending_composer_alarms_without_typing() {
   pass "max-defer on a pending composer alarms without typing"
 }
 
-test_normal_flush_clears_stale_wedge_marker() {
+test_flush_leaves_marker_and_ledger_for_return() {
   local dir state fakebin sent
-  dir=$(make_bordered_case normal-clears-wedge)
+  dir=$(make_bordered_case flush-silent)
   state="$dir/state"; fakebin="$dir/fakebin"
   sent="$dir/sent.log"; : > "$sent"
   printf 'old wedge\n' > "$state/.subsuper-inject-wedged"
@@ -1840,10 +1845,11 @@ test_normal_flush_clears_stale_wedge_marker() {
   afk_enter "$state"
   PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
     SQUAD_INJECT_CONFIRM_SLEEP=0.05 escalate_flush "$state" \
-    || fail "normal escalate_flush failed"
-  [ ! -s "$state/.subsuper-escalations" ] || fail "buffer not cleared after normal flush"
-  [ ! -e "$state/.subsuper-inject-wedged" ] || fail "wedge marker survived successful normal flush"
-  pass "normal flush clears a stale wedge marker"
+    || fail "escalate_flush failed while away"
+  [ ! -s "$sent" ] || fail "escalate_flush typed into the pane while away"
+  [ -s "$state/.subsuper-escalations" ] || fail "escalate_flush consumed the ledger while away"
+  [ -e "$state/.subsuper-inject-wedged" ] || fail "escalate_flush cleared the notice marker before the return"
+  pass "escalate_flush leaves the ledger and notice marker for the return summary"
 }
 
 test_below_max_defer_does_nothing() {
@@ -2175,43 +2181,46 @@ test_wedge_alarm_shutdown_stops_active_notifier_group() {
   pass "daemon shutdown stops and reaps the active notifier process group"
 }
 
-test_inject_wedge_alarm_fires_active_alert_on_non_tmux_backend() {
-  # The whole incident: a non-tmux (herdr) primary gets NO tmux status-line
-  # flash, so inject_wedge_alarm must still emit the backend-independent alert
-  # alongside the durable marker.
+test_ledger_undeliverable_fires_active_alert_on_non_tmux_backend() {
+  # A ledger write that cannot be recorded is undeliverable: the marker is written
+  # and the backend-independent active alert fires on a non-tmux (herdr) primary.
+  # The supervisor pane is never touched, so there is no tmux status-line flash.
   local dir state log
   dir=$(make_wedge_case wedge-integration); state="$dir/state"; log="$dir/alert.log"
-  escalate_add "$state" "needs-decision: pick A"
   WEDGE_ALARM_LAST_EPOCH=0
   SQUAD_WEDGE_ALARM_LOG="$log" SQUAD_STATE_OVERRIDE="$state" \
     SQUAD_WEDGE_ALARM_CHANNEL=osascript SQUAD_SUPERVISOR_BACKEND=herdr \
-    inject_wedge_alarm "$state" 30600
-  [ -s "$state/.subsuper-inject-wedged" ] || fail "inject_wedge_alarm did not write the durable marker"
-  grep -F 'osascript' "$log" >/dev/null || fail "inject_wedge_alarm did not emit the active alert on a non-tmux backend: $(cat "$log")"
-  grep -F 'WEDGED 30600s' "$log" >/dev/null || fail "active alert missing the age and summary"
-  pass "inject_wedge_alarm writes the marker AND emits the active alert even with no tmux status-line (herdr backend)"
+    ledger_undeliverable "$state" "escalation: needs-decision: pick A"
+  [ -s "$state/.subsuper-inject-wedged" ] || fail "ledger_undeliverable did not write the durable marker"
+  grep -F 'osascript' "$log" >/dev/null || fail "ledger_undeliverable did not emit the active alert on a non-tmux backend: $(cat "$log")"
+  grep -F 'ledger undeliverable' "$log" >/dev/null || fail "active alert did not name the undeliverable ledger: $(cat "$log")"
+  SQUAD_WEDGE_ALARM_LOG="$log" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_WEDGE_ALARM_CHANNEL=osascript SQUAD_SUPERVISOR_BACKEND=herdr \
+    ledger_undeliverable "$state" "escalation: needs-decision: pick B"
+  grep -F 'pick A' "$state/.subsuper-inject-wedged" >/dev/null || fail "a later undeliverable item overwrote an earlier one in the marker"
+  grep -F 'pick B' "$state/.subsuper-inject-wedged" >/dev/null || fail "the later undeliverable item was not recorded in the marker"
+  pass "ledger_undeliverable writes the marker AND emits the active alert with no tmux status-line (herdr backend)"
 }
 
-test_inject_wedge_alarm_throttles_when_marker_cannot_be_written() {
+test_ledger_undeliverable_throttles_when_marker_cannot_be_written() {
   local dir state log daemon_log alerts errors
   dir=$(make_wedge_case wedge-unwritable-marker)
   state="$dir/state"; log="$dir/alert.log"; daemon_log="$dir/daemon.log"
-  escalate_add "$state" "needs-decision: pick A"
   chmod u-w "$state"
   WEDGE_ALARM_LAST_EPOCH=0
   LOG="$daemon_log" SQUAD_WEDGE_ALARM_LOG="$log" SQUAD_MAX_DEFER_SECS=600 \
     SQUAD_WEDGE_ALARM_CHANNEL=osascript SQUAD_SUPERVISOR_BACKEND=herdr \
-    inject_wedge_alarm "$state" 30600
+    ledger_undeliverable "$state" "escalation: needs-decision: pick A"
   LOG="$daemon_log" SQUAD_WEDGE_ALARM_LOG="$log" SQUAD_MAX_DEFER_SECS=600 \
     SQUAD_WEDGE_ALARM_CHANNEL=osascript SQUAD_SUPERVISOR_BACKEND=herdr \
-    inject_wedge_alarm "$state" 30615
+    ledger_undeliverable "$state" "escalation: needs-decision: pick A"
   chmod u+w "$state"
   [ ! -e "$state/.subsuper-inject-wedged" ] || fail "wedge marker unexpectedly persisted in an unwritable state directory"
   alerts=$(grep -c 'osascript' "$log" 2>/dev/null || true)
   [ "$alerts" -eq 1 ] || fail "unwritable marker emitted $alerts active alerts instead of one"
-  errors=$(grep -c 'ERROR: away-mode escalation undelivered' "$daemon_log" 2>/dev/null || true)
-  [ "$errors" -eq 1 ] || fail "unwritable marker logged $errors wedge errors instead of one"
-  pass "in-process wedge throttle prevents alert spam when the marker cannot persist"
+  errors=$(grep -c 'ERROR: away-mode ledger write failed' "$daemon_log" 2>/dev/null || true)
+  [ "$errors" -eq 1 ] || fail "unwritable marker logged $errors ledger errors instead of one"
+  pass "in-process undeliverable-ledger throttle prevents alert spam when the marker cannot persist"
 }
 
 test_fm_send_exits_nonzero_on_confirmed_swallow() {
@@ -2662,8 +2671,8 @@ test_pi_handoff_retires_only_the_acknowledged_prefix() {
   pass "Pi handoff: a consumed request retires exactly the buffer prefix it covered"
 }
 
-# The flush must rebuild its digest from the post-retirement buffer, so an
-# acknowledged escalation is never re-sent when a newer one arrives.
+# Away mode never types the ledger, but a native handoff acknowledged before that
+# policy must still retire its exact prefix, so it is never replayed.
 test_escalate_flush_skips_the_retired_prefix() {
   local dir state id
   dir=$(make_supercase escalate-retired-prefix)
@@ -2680,17 +2689,13 @@ test_escalate_flush_skips_the_retired_prefix() {
     fm_afk_pi_handoff_submit "$state" "primary:window-1" "$encoded" 1 || true
     id=$(jq -r '.id' "$state/.pi-away-handoff/request.json")
     jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
     inject_msg() { printf '%s' "$1" > "$dir/digest"; return 0; }
     escalate_flush "$state" || fail "flush failed after retiring an acknowledged prefix"
-    case "$(<"$dir/digest")" in
-      *'still pending'*) : ;;
-      *) fail "flush digest did not carry the pending escalation" ;;
-    esac
-    case "$(<"$dir/digest")" in
-      *'already handled'*) fail "flush re-sent an escalation the primary had already handled" ;;
-    esac
+    [ ! -e "$dir/digest" ] || fail "away mode typed the ledger into the pane during flush"
+    [ "$(cat "$buf")" = 'still pending' ] || fail "flush did not retire exactly the acknowledged prefix (buffer=$(cat "$buf"))"
   ) || fail "escalate_flush retirement subshell failed"
-  pass "escalate_flush: an acknowledged escalation is retired and never re-sent"
+  pass "escalate_flush: an acknowledged escalation is retired, never re-sent, and nothing is typed"
 }
 
 # A request Pi definitively never accepted, or one abandoned by a restarted
@@ -3441,7 +3446,7 @@ test_housekeeping_herdr_persistent_stale_resolves_meta
 test_housekeeping_herdr_idle_busy_record_clears_stale
 test_housekeeping_herdr_resumed_stale_cleared
 test_housekeeping_orca_persistent_stale_resolves_terminal
-test_escalate_batches_into_one_digest
+test_escalate_stays_out_of_the_pane_while_away
 test_escalate_batch_age_uses_first_append
 test_heartbeat_scan_dedup
 test_heartbeat_scan_and_pause_migration_skip_terminal_agentless_task
@@ -3474,10 +3479,9 @@ test_pane_input_pending_bordered_idle_not_pending
 test_pane_input_pending_bordered_with_text_is_pending
 test_submit_ack_confirms_on_bordered_empty_composer
 test_submit_ack_reports_pending_on_persistent_swallow
-test_max_defer_empty_swallow_types_once_and_alarms
-test_max_defer_flushes_empty_idle_pane
+test_max_defer_notice_is_durable_and_never_types
 test_max_defer_pending_composer_alarms_without_typing
-test_normal_flush_clears_stale_wedge_marker
+test_flush_leaves_marker_and_ledger_for_return
 test_below_max_defer_does_nothing
 test_max_defer_afk_inactive_does_not_flush_or_alarm
 test_wedge_alarm_library_mode_defaults_to_discard
@@ -3498,8 +3502,8 @@ test_wedge_alarm_hung_channel_times_out_and_falls_through
 test_wedge_alarm_backgrounded_command_times_out_and_reaps_descendant
 test_wedge_alarm_hung_override_times_out_and_falls_through
 test_wedge_alarm_shutdown_stops_active_notifier_group
-test_inject_wedge_alarm_fires_active_alert_on_non_tmux_backend
-test_inject_wedge_alarm_throttles_when_marker_cannot_be_written
+test_ledger_undeliverable_fires_active_alert_on_non_tmux_backend
+test_ledger_undeliverable_throttles_when_marker_cannot_be_written
 test_fm_send_exits_nonzero_on_confirmed_swallow
 test_fm_send_exits_nonzero_on_initial_send_failure
 test_fm_send_exits_nonzero_on_unproven_submit

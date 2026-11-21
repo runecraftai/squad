@@ -6,7 +6,7 @@
 #   terminal status written while the sentry is DOWN -> caught on restart (catch-up)
 #   drain queued records -> exactly ONE commander-relevant digest is buffered
 #   housekeeping catch-all scan -> NO duplicate digest
-#   buffered digest flushes to the supervisor pane as exactly ONE submission
+#   buffered escalation stays silent in the supervisor pane (ledger only)
 #   stale working-pane: transient (self + marker) -> persistent (escalates once,
 #     clears its marker) -> resumed/busy (clears without escalating)
 #
@@ -92,18 +92,19 @@ test_routine_then_terminal_after_restart() {
   [ "$(wc -l < "$state/.subsuper-escalations" | tr -d ' ')" -eq 1 ] \
     || fail "catch-all scan duplicated the already-buffered digest"
 
-  # With afk active, the buffered digest flushes to the supervisor pane as ONE
-  # submission (one typed line + one Enter), then the buffer clears.
+  # With afk active, the buffered escalation is NOT typed into the supervisor
+  # pane: away mode is silent, and the entry waits in the ledger for the return
+  # summary (bin/sq-afk-return.sh).
   local sent
   sent="$dir/sent.log"; : > "$sent"
   : > "$dir/pane.txt"
   afk_enter "$state"
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_PANE_ALIVE=1 SQUAD_FAKE_TMUX_SENT="$sent" \
     SQUAD_FAKE_TMUX_CAPTURE="$dir/pane.txt" SQUAD_ESCALATE_BATCH_SECS=0 escalate_flush "$state" \
-    || fail "escalate_flush failed for the buffered digest"
-  [ "$(grep -c '\[ENTER\]' "$sent")" -eq 1 ] || fail "buffered digest was not submitted exactly once"
-  [ ! -s "$state/.subsuper-escalations" ] || fail "buffer not cleared after a successful flush"
-  pass "lifecycle: routine self-handles, terminal survives a sentry restart, buffers once, no dup, injects once"
+    || fail "escalate_flush failed for the buffered escalation"
+  [ ! -s "$sent" ] || fail "away mode typed the buffered escalation into the supervisor pane"
+  [ "$(wc -l < "$state/.subsuper-escalations" | tr -d ' ')" -eq 1 ] || fail "ledger lost the escalation while away"
+  pass "lifecycle: routine self-handles, terminal survives a sentry restart, buffers once, no dup, and stays silent in the pane"
 }
 
 # --- Phase 2: stale working-pane transient -> persistent -> resumed ----------
