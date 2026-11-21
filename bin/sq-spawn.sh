@@ -156,6 +156,21 @@
 #                  default $HOME/.config/orca/omp-managed-status-extension/orca-agent-status.ts;
 #                  an absent file leaves that launch unchanged
 #     __OPINPUT__   absolute path to the canonical operational-input encoder
+#     __PISESSION__ / __PIPROMPT__ pi operator template only: the conversation flag and the
+#                  prompt argument, resolved after the relaunch decision below.
+# Pi operator conversation (pi and pi-signed; operators and recon, never XO or a raw launch
+# command): a first spawn pins the conversation to sq-<task-id> with --session-id and records
+# pi_session_id= in the meta. A relaunch into a recovered agentless TUIOS window (the window the
+# backend reused) resumes that conversation with --session and one short continuation note,
+# instead of re-sending the brief, only when every gate holds: a pi_session_id is recorded, the
+# harness and model match the recorded ones, the transcript in pi's cwd-keyed session store is
+# readable, and it is at most SQUAD_RESUME_MAX_BYTES (default 4194304). Any refused gate relaunches
+# a fresh conversation with the full brief and no pin, exactly as before the pin existed, so a
+# refused transcript is never reopened. Every pi operator relaunch of existing metadata appends
+# exactly one status line: resumed: same conversation (session <id>), or relaunched: fresh brief
+# (<reason>). XO relaunches and every non-pi relaunch append no status line.
+# The backend's own resume-agent verb is attempted by the recovery procedure before a relaunch,
+# never by this script.
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
 # Kimi uses one surgically installed Squad region in $HOME/.kimi-code/config.toml,
 # a Squad-owned global hook and registry, and a gitignored per-task pointer.
@@ -967,7 +982,7 @@ launch_template() {
       if [ "$kind" = xo ]; then
         printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PITURNEND__ -e __PIWATCH__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
-        printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PIEXT__ __ORCASTATUS__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s%s' "$harness" ' __MODELFLAG____EFFORTFLAG__-e __PIEXT__ __ORCASTATUS____PISESSION____PIPROMPT__'
       fi
       ;;
     # grok (Grok Build TUI): a positional prompt starts the supervised interactive
@@ -1832,6 +1847,10 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
 prepare_relaunch_execution() {
   local meta="$STATE/$ID.meta" old_backend old_target endpoint_state previous
   RELAUNCH_EXISTING_META=
+  RELAUNCH_PI_SESSION_ID=
+  RELAUNCH_HARNESS=
+  RELAUNCH_MODEL=
+  RELAUNCH_WINDOW_REUSED=
   if [ ! -e "$meta" ] && [ ! -L "$meta" ]; then
     # A missing metadata record is the recovery signal used after a process
     # died between attempts. There is no recorded endpoint to probe, so reuse
@@ -1856,6 +1875,9 @@ prepare_relaunch_execution() {
     return 1
   }
   RELAUNCH_EXISTING_META=1
+  RELAUNCH_PI_SESSION_ID=$(fm_backend_meta_exact_value "$meta" pi_session_id 2>/dev/null) || RELAUNCH_PI_SESSION_ID=
+  RELAUNCH_HARNESS=$(fm_backend_meta_exact_value "$meta" harness 2>/dev/null) || RELAUNCH_HARNESS=
+  RELAUNCH_MODEL=$(fm_backend_meta_exact_value "$meta" model 2>/dev/null) || RELAUNCH_MODEL=
   old_backend=$(fm_backend_of_meta "$meta")
   old_target=$(fm_backend_target_of_meta "$meta")
   # Recorded daemon-boot evidence and worktree for a TUIOS relaunch (see the
@@ -1901,6 +1923,69 @@ prepare_relaunch_execution() {
       return 1
       ;;
   esac
+}
+
+# Harness resume contract (see the header): the argument that reopens a recorded
+# conversation by its pinned id. pi and pi-signed share the Pi application and its session
+# store; every other harness resumes through the backend's own verb or has no proven resume
+# path here, so it relaunches fresh.
+harness_resume_argument() {  # <harness>
+  case "$1" in
+    pi|pi-signed) printf '%s' '--session' ;;
+    *) return 1 ;;
+  esac
+}
+
+# relaunch_resume_refusal: prints the one-line reason this relaunch must not resume the
+# recorded conversation and returns 1; returns 0 only when every gate holds. The transcript
+# path mirrors pi's store: the cwd without its leading slash, every /, \ and : replaced by -,
+# wrapped in --.
+pi_session_transcript() {
+  local id=$1 key dir f found='' wt_real agent settings store=''
+  wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || wt_real=$WT
+  key=${wt_real#/}
+  key=${key//\//-}
+  key=${key//\\/-}
+  key=${key//:/-}
+  # An unset HOME leaves pi's session store unlocatable: refuse (2) so no pin is made.
+  if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then agent=$PI_CODING_AGENT_DIR
+  elif [ -n "${HOME:-}" ]; then agent=$HOME/.pi/agent
+  else return 2
+  fi
+  if [ -n "${PI_CODING_AGENT_SESSION_DIR:-}" ]; then
+    store=$PI_CODING_AGENT_SESSION_DIR
+    case "$store" in /*) ;; *) store="$wt_real/$store" ;; esac
+    set -- "$store" "$store/--$key--"
+  else
+    for settings in "$agent/settings.json" "$wt_real/.pi/settings.json"; do
+      if [ -f "$settings" ] && grep -q '"sessionDir"' "$settings" 2>/dev/null; then return 2; fi
+    done
+    set -- "$agent/sessions/--$key--"
+  fi
+  for dir in "$@"; do
+    for f in "$dir"/*_"$id".jsonl; do
+      if [ -f "$f" ]; then found=$f; fi
+    done
+  done
+  [ -n "$found" ] || return 1
+  printf '%s\n' "$found"
+}
+
+relaunch_resume_refusal() {
+  local max transcript='' size
+  [ -n "${RELAUNCH_WINDOW_REUSED:-}" ] || { echo 'endpoint was not a recovered agentless window'; return 1; }
+  harness_resume_argument "$HARNESS" >/dev/null || { echo 'harness has no resume contract'; return 1; }
+  [ "$PI_TEMPLATE" = 1 ] || { echo 'raw launch command'; return 1; }
+  [ -n "$RELAUNCH_PI_SESSION_ID" ] || { echo 'no recorded session id'; return 1; }
+  [ "$RELAUNCH_HARNESS" = "$HARNESS" ] || { echo 'harness mismatch'; return 1; }
+  [ "${RELAUNCH_MODEL:-default}" = "${MODEL:-default}" ] || { echo 'model mismatch'; return 1; }
+  max=${SQUAD_RESUME_MAX_BYTES:-4194304}
+  case "$max" in ''|*[!0-9]*) echo 'invalid SQUAD_RESUME_MAX_BYTES'; return 1 ;; esac
+  transcript=$(pi_session_transcript "$RELAUNCH_PI_SESSION_ID") || transcript=
+  if [ -z "$transcript" ] || [ ! -r "$transcript" ]; then echo 'missing or unreadable transcript'; return 1; fi
+  size=$(wc -c < "$transcript" | tr -d '[:space:]')
+  [ "$size" -le "$max" ] || { echo 'oversize transcript'; return 1; }
+  return 0
 }
 
 prepare_relaunch_execution || exit 1
@@ -2115,6 +2200,7 @@ EOF
     fi
     if [ -n "$TUIOS_WINDOW_ID" ]; then
       echo "tuios: reusing the recorded agentless task window $TUIOS_SES:$TUIOS_WINDOW_ID" >&2
+      RELAUNCH_WINDOW_REUSED=1
       TUIOS_WORKSPACE_ID=$(fm_backend_tuios_workspace_for_window "$TUIOS_SES" "$TUIOS_WINDOW_ID") || {
         echo 'error: TUIOS task workspace provenance could not be read' >&2
         exit 1
@@ -3029,6 +3115,40 @@ else
   fi
 fi
 
+# Pi conversation decision (see the header), taken before the meta is published so the
+# recorded pi_session_id matches the launch that happens. PI_TEMPLATE marks a pi operator
+# launch from the template; a raw launch command carries no template and no pin.
+PI_TEMPLATE=0
+PI_SESSION_ID=
+case "$HARNESS" in
+  pi|pi-signed)
+    case "$ARG3" in
+      *' '*) ;;
+      *) if [ "$KIND" != xo ]; then PI_TEMPLATE=1; PI_SESSION_ID=sq-$ID; fi ;;
+    esac
+    ;;
+esac
+case "$PI_SESSION_ID" in
+  *[!A-Za-z0-9]) PI_SESSION_ID= ;;
+esac
+if [ -n "$PI_SESSION_ID" ] && [ -z "${RELAUNCH_EXISTING_META:-}" ]; then
+  pi_transcript_rc=0
+  pi_session_transcript "$PI_SESSION_ID" >/dev/null || pi_transcript_rc=$?
+  [ "$pi_transcript_rc" -eq 1 ] || PI_SESSION_ID=
+fi
+RESUME_SESSION_ID=
+RESUME_NOTE=
+RELAUNCH_REASON=
+if [ -n "${RELAUNCH_EXISTING_META:-}" ]; then
+  if RELAUNCH_REASON=$(relaunch_resume_refusal); then
+    RESUME_SESSION_ID=$RELAUNCH_PI_SESSION_ID
+    PI_SESSION_ID=$RELAUNCH_PI_SESSION_ID
+    RESUME_NOTE="Resumed after the agent of this task died (machine or daemon restart): this is the same conversation, not a fresh start. Read your own status record and the worktree diff before editing. The full brief stays authoritative at $BRIEF_REAL and is not re-sent."
+  else
+    PI_SESSION_ID=
+  fi
+fi
+
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 {
@@ -3050,6 +3170,7 @@ META_WINDOW=$T
   # byte-identical to before this axis existed.
   [ "$ACCOUNT_SET" -eq 0 ] || echo "account=$ACCOUNT_ARG"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
+  [ -z "$PI_SESSION_ID" ] || echo "pi_session_id=$PI_SESSION_ID"
   # Default-off writes no traceparent= line (meta stays byte-identical).
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;
@@ -3135,6 +3256,20 @@ LAUNCH=${LAUNCH//__TURNEND__/$sq_turnend}
 LAUNCH=${LAUNCH//__PIEXT__/$sq_piext}
 LAUNCH=${LAUNCH//__PITURNEND__/$sq_piturnend}
 LAUNCH=${LAUNCH//__PIWATCH__/$sq_piwatch}
+if [ "$PI_TEMPLATE" = 1 ]; then
+  # A fresh conversation takes the full brief; a resumed one takes only the continuation
+  # note, and the brief stays on disk as the authority.
+  if [ -n "$RESUME_SESSION_ID" ]; then
+    pi_session_arg="--session $RESUME_SESSION_ID "
+    pi_prompt="\"\$(printf '%s' $(shell_quote "$RESUME_NOTE") | $sq_opinput encode launch-brief)\""
+  else
+    pi_session_arg=
+    [ -z "$PI_SESSION_ID" ] || pi_session_arg="--session-id $PI_SESSION_ID "
+    pi_prompt="\"\$($sq_opinput encode launch-brief < $sq_brief)\""
+  fi
+  LAUNCH=${LAUNCH//__PISESSION__/$pi_session_arg}
+  LAUNCH=${LAUNCH//__PIPROMPT__/$pi_prompt}
+fi
 if [ "$BACKEND" = orca ] && { [ "$HARNESS" = pi ] || [ "$HARNESS" = pi-signed ]; }; then
   orca_status_extension=${ORCA_OMP_STATUS_EXTENSION:-${HOME:-}/.config/orca/omp-managed-status-extension/orca-agent-status.ts}
   if [ -f "$orca_status_extension" ]; then
@@ -3241,6 +3376,14 @@ if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
 fi
 spawn_send_key "$T" Enter
 "$SCRIPT_DIR/sq-exec-state.sh" running "$ID" >/dev/null
+if [ -n "${RELAUNCH_EXISTING_META:-}" ] && [ "$PI_TEMPLATE" = 1 ]; then
+  if [ -n "$RESUME_SESSION_ID" ]; then
+    relaunch_status="resumed: same conversation (session $RESUME_SESSION_ID)"
+  else
+    relaunch_status="relaunched: fresh brief ($RELAUNCH_REASON)"
+  fi
+  status_line_append "$STATE/$ID.status" "$relaunch_status" || echo "warning: could not record the relaunch of $ID in its status file" >&2
+fi
 if [ "$HARNESS" = kimi ]; then
   if ! kimi_wait_for_ready; then
     kimi_spawn_fail "kimi did not show a verified ready signal before brief delivery"

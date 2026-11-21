@@ -275,6 +275,7 @@ The follow-up was verified in the interactive TUI; `opencode run` can exit befor
 | Busy state | The Squad-owned extension's `agent_start` (busy) and `agent_settled` confirmed by `ctx.isIdle()` (idle), which covers retries, tool loops, and queued continuations, plus one `session_before_compact` write per compaction (`busy` with `event=compaction`, never per inner turn boundary) so a compaction is visible on the same record instead of looking like ordinary busy churn; an overflow/length compaction that will retry holds that write across its own fresh `agent_start` until the run settles or `session_compact_failed` clears it. |
 | Exit command | `/quit` |
 | Interrupt | single Escape |
+| Resume | `pi --session sq-<task-id>` reopens the conversation pinned at spawn; Squad uses it only through the gated relaunch in `docs/tuios-backend.md` "Restart recovery". |
 
 Pi has no permission system, so operators are always autonomous.
 `pi-signed` is the signed wrapper identity verified on version 0.82.0 and exposes the same CLI and TUI behavior as Pi.

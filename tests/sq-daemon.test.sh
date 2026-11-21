@@ -574,6 +574,27 @@ test_housekeeping_persistent_stale_escalates() {
 # as one wake, handle_wake records the daemon's stale marker from that wake, and
 # housekeeping's persistence recheck must act on it. The still-busy pane must
 # escalate once frozen, but progress or an active drill run-step must not.
+# Let a real sentry run <iterations> beacon observations, then stop it. The
+# sentry touches .last-sentry-beat at the start of every poll iteration, so
+# removing it and waiting for its return proves an iteration began; k
+# observations prove at least k-1 complete iterations ran. A fixed sleep raced
+# slow CI runners whose first poll had not yet finished when the sentry was
+# killed. Bounded so a wedged sentry still fails the caller's assertions.
+run_sentry_iterations() {  # <pid> <state> <iterations>
+  local pid=$1 state=$2 n=$3 i
+  while [ "$n" -gt 0 ]; do
+    rm -f "$state/.last-sentry-beat"
+    i=0
+    while [ ! -e "$state/.last-sentry-beat" ] && [ "$i" -lt 300 ] && is_live_non_zombie "$pid"; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    n=$((n - 1))
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
 afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition coverage
   local case_name=$1 dir state fakebin win pane out reason key sentry_pid gen episode i
   dir=$(make_supercase "afk-busy-e2e-$case_name")
@@ -647,9 +668,7 @@ SH
       SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 \
       SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
     sentry_pid=$!
-    sleep 3
-    kill "$sentry_pid" 2>/dev/null || true
-    wait "$sentry_pid" 2>/dev/null || true
+    run_sentry_iterations "$sentry_pid" "$state" 3
     if grep -F "stale: $win" "$out" >/dev/null; then fail "producer capture failure woke the commander: $(cat "$out")"; fi
     case "$(cat "$state/.stale-$(_stale_key "$win")" 2>/dev/null || true)" in
       busy-afk:*) ;;
@@ -666,9 +685,7 @@ SH
       SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 \
       SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
     sentry_pid=$!
-    sleep 3
-    kill "$sentry_pid" 2>/dev/null || true
-    wait "$sentry_pid" 2>/dev/null || true
+    run_sentry_iterations "$sentry_pid" "$state" 3
     if grep -F "stale: $win" "$out" >/dev/null; then fail "recovered static read woke before a daemon window: $(cat "$out")"; fi
     PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
       SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
@@ -692,9 +709,7 @@ SH
       SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" SQUAD_STALE_ESCALATE_SECS=240 \
       SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
     sentry_pid=$!
-    sleep 3
-    kill "$sentry_pid" 2>/dev/null || true
-    wait "$sentry_pid" 2>/dev/null || true
+    run_sentry_iterations "$sentry_pid" "$state" 3
     if grep -F "stale: $win" "$out" >/dev/null; then fail "escalated busy episode was re-handed to the daemon"; fi
     return 0
   fi
@@ -706,9 +721,7 @@ SH
       SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
       SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
     sentry_pid=$!
-    sleep 1.5
-    kill "$sentry_pid" 2>/dev/null || true
-    wait "$sentry_pid" 2>/dev/null || true
+    run_sentry_iterations "$sentry_pid" "$state" 2
     [ ! -e "$state/.subsuper-stale-$key" ] || fail "real progress kept the handed-off busy episode's daemon tracking"
     (
       kill() { :; }
@@ -732,9 +745,7 @@ SH
       SQUAD_STALE_ESCALATE_SECS=240 SQUAD_POLL=1 SQUAD_SIGNAL_GRACE=1 SQUAD_CHECK_INTERVAL=999999 \
       SQUAD_HEARTBEAT=999999 "$ROOT/bin/sq-sentry.sh" > "$out" 2>&1 &
     sentry_pid=$!
-    sleep 3
-    kill "$sentry_pid" 2>/dev/null || true
-    wait "$sentry_pid" 2>/dev/null || true
+    run_sentry_iterations "$sentry_pid" "$state" 3
     printf 'Working...\n12k tokens USD 0.42' > "$pane"
     : > "$out"
     PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \

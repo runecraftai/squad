@@ -45,6 +45,7 @@ SQUAD_TUIOS_SESSION=<session> bash -c 'source "$SQUAD_ROOT/bin/sq-backend.sh"; f
 
 `resumed` means the conversation is back and the pane is the same task endpoint, so keep it and send the same brief plus a progress note.
 `unsupported` means the installed harness manifest has no resume command (Pi is one), and every other result falls through to the normal safe relaunch path, which reuses the restored window and the task's recorded worktree instead of allocating a second copy.
+For a Pi operator that relaunch itself may reopen the pinned conversation instead of re-sending the brief, and it records which happened in the status file; the gates are in `docs/tuios-backend.md` "Restart recovery".
 
 ## False stall notifications
 

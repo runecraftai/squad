@@ -1016,7 +1016,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   arglog="$CASE_DIR/pi-argv"
   SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
     || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
-  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" -e "$status_extension" \
+  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" -e "$status_extension" --session-id "sq-$id" \
     "$(expected_launch_brief "$data/$id/brief.md")"
   mv "$wt" "$wt.guard-check"
   rm -f "$arglog"
@@ -1065,7 +1065,7 @@ test_spawn_pi_launch_omits_status_extension_when_absent() {
   arglog="$CASE_DIR/pi-argv"
   SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
     || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
-  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" \
+  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" --session-id "sq-$id" \
     "$(expected_launch_brief "$data/$id/brief.md")"
   rm -rf "/tmp/sq-$id"
   pass "sq-spawn.sh --backend orca: absent managed status extension leaves the Pi launch exactly as before"
@@ -1107,7 +1107,7 @@ test_spawn_pi_resolves_status_extension_from_default_home_path() {
   arglog="$CASE_DIR/pi-argv"
   SQUAD_FAKE_PI_ARGV_LOG="$arglog" PATH="$FB:$PATH" bash -c "$launch" \
     || fail "the Orca Pi launch command Squad sent could not be run"$'\n'"launch: $launch"
-  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" -e "$status_extension" \
+  assert_pi_argv "$arglog" -e "$state/$id.pi-ext.ts" -e "$status_extension" --session-id "sq-$id" \
     "$(expected_launch_brief "$data/$id/brief.md")"
   rm -rf "/tmp/sq-$id"
   pass "sq-spawn.sh --backend orca: resolves the managed status extension from its documented default HOME path"

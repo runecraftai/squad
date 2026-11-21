@@ -148,6 +148,22 @@ A daemon restart destroys every running program. The restored session keeps its 
 - Reconciliation is inventory-based. A restored pane has an exact window id, no attributable agent, and `state=none`, so it classifies as `dead` (endpoint present, no agent) instead of the silent `ambiguous` that never licensed recovery. Recovery is not achieved by an event subscription.
 - Conversation resume uses the product's own verb. `tuios resume-agent` builds its command from the harness manifest and the conversation id the daemon recorded for the pane, so nothing caller-chosen is typed. The adapter first confirms the conversation id exists and refuses with `unsupported` when the installed manifest has no resume command for that harness (Pi is one such harness).
 - Otherwise the task routes back into Squad's existing safe relaunch path. Because a restored window still holds the task's label, a relaunch reuses that exact window - only when the recorded boot id differs from the daemon's current boot id and the window is confirmed agentless - and resumes into the task's recorded worktree instead of leasing a second copy.
+- Pi operators resume their conversation instead of re-sending the brief.
+  A Pi operator spawn pins its conversation to `sq-<task-id>` with `--session-id` and records `pi_session_id=` in the task meta.
+  A relaunch into the reused window launches `pi --session sq-<task-id>` with one short continuation note, but only when every gate holds.
+  The gates are: the window was reused, a `pi_session_id=` is recorded, the harness and model match the recorded ones, the transcript is readable, and it is at most `SQUAD_RESUME_MAX_BYTES` (default `4194304`).
+  The transcript is `*_sq-<task-id>.jsonl` in `~/.pi/agent/sessions/--<key>--/` (or `$PI_CODING_AGENT_DIR/sessions/--<key>--/`), where `<key>` is the worktree's physical path (symlinks resolved) without its leading slash and with every `/`, `\` and `:` replaced by `-`.
+  When `PI_CODING_AGENT_SESSION_DIR` is set, the transcript is looked up in that directory and its `--<key>--/` subdirectory instead.
+  When the agent or project `settings.json` sets `sessionDir`, the transcript is not looked up, so the relaunch is refused as `missing or unreadable transcript` and the spawn does not pin a conversation id.
+  The full brief stays on disk as the authority and is never re-sent on this path.
+- Any refused gate relaunches a fresh conversation with the full brief and no pin, exactly as before.
+  The refusal reasons a Pi operator relaunch records are `endpoint was not a recovered agentless window`, `no recorded session id`, `harness mismatch`, `model mismatch`, `missing or unreadable transcript`, `oversize transcript`, and `invalid SQUAD_RESUME_MAX_BYTES`.
+  A non-Pi harness or a raw launch command is also refused, but such a relaunch writes no status line.
+  A fresh-conversation relaunch carries no pin, so a later restart of that same task re-briefs too.
+- Every Pi operator relaunch of existing task metadata appends exactly one status line: `resumed: same conversation (session <id>)` or `relaunched: fresh brief (<reason>)`.
+  An XO relaunch and every non-Pi relaunch append no status line.
+- The backend's own `resume-agent` verb still runs first from the recovery procedure.
+  It reports `unsupported` for Pi, which is why the spawn-level path exists.
 
 ## Finished-agent recovery
 
