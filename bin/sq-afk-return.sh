@@ -114,13 +114,31 @@ fmt_epoch() {  # <epoch> -> local "MM-DD HH:MM" (GNU date, then BSD date)
 # ledger, one "<epoch>|<class>|<text>" per entry; a bare line from before the ledger
 # format is presented as an unclassed escalation. A drained afk-* check record is the
 # daemon's own durable notice (a parked ledger or an item the ledger could not
-# record) and is presented as an event; the wedge marker is presented only when no
-# such record survived. Other queued wake records and drain sections (open
+# record) and is presented as an event; each wedge marker line is presented unless
+# a drained record already carries the same notice. Other queued wake records and drain sections (open
 # decisions, pending teardown, guard notices) are open items, not away-mode events.
 # Prints nothing when there is nothing to present.
+notice_key() {  # <notice text> -> identity shared by a queued afk-* record and its marker line
+  local text=$1 rest
+  case "$text" in
+    'check: away-mode ledger could not record: '*)
+      printf 'u:%s' "${text#check: away-mode ledger could not record: }" ;;
+    'away-mode ledger undeliverable as of '*': '*)
+      rest=${text#away-mode ledger undeliverable as of }
+      printf 'u:%s' "${rest#*: }" ;;
+    'check: away-mode escalations held '*'s past max-defer'*)
+      rest=${text#check: away-mode escalations held }
+      printf 'p:%s' "${rest%%s past max-defer*}" ;;
+    'away-mode ledger held '*'s past max-defer'*)
+      rest=${text#away-mode ledger held }
+      printf 'p:%s' "${rest%%s past max-defer*}" ;;
+    *) printf 'x:%s' "$text" ;;
+  esac
+}
+
 print_summary() {  # <evidence-file>
   local file=$1 tag kind text ts cls item label when re afk_re seq=0 absence locators
-  local escalated=0 routine=0 notice=0 queued=0 rows='' wedges='' notices='' urls='' statuses='' events=''
+  local escalated=0 routine=0 notice=0 queued=0 rows='' afk_keys='' wedges='' notices='' urls='' statuses='' events=''
   re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
   afk_re='^([0-9]+) [0-9]+ check afk-[A-Za-z0-9._-]+ (.*)$'
   while IFS="$(printf '\t')" read -r tag kind text; do
@@ -143,6 +161,7 @@ print_summary() {  # <evidence-file>
         if [[ $text =~ $afk_re ]]; then
           notice=$((notice + 1))
           rows="${rows}${BASH_REMATCH[1]}"$'\t'"daemon-notice"$'\t'"${BASH_REMATCH[2]}"$'\n'
+          afk_keys="${afk_keys}$(notice_key "${BASH_REMATCH[2]}")"$'\n'
         elif [[ $text =~ $re ]]; then
           queued=$((queued + 1))
         else
@@ -154,9 +173,10 @@ print_summary() {  # <evidence-file>
         ;;
     esac
   done < "$file"
-  if [ "$notice" -eq 0 ] && [ -n "$wedges" ]; then
+  if [ -n "$wedges" ]; then
     while IFS= read -r item; do
       [ -n "$item" ] || continue
+      printf '%s' "$afk_keys" | grep -Fqx -- "$(notice_key "$item")" && continue
       notice=$((notice + 1))
       rows="${rows}0"$'\t'"daemon-notice"$'\t'"${item}"$'\n'
     done <<< "$wedges"
@@ -244,7 +264,7 @@ return_reconcile() {
   append_evidence wake "$drained" "$evidence"
 
   if [ -s "$STATE/.subsuper-inject-wedged" ]; then
-    wedge=$(head -1 "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
+    wedge=$(cat "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
     append_evidence wedge "$wedge" "$evidence"
   fi
   if [ -s "$STATE/.subsuper-escalations" ] || [ -s "$STATE/.subsuper-routine" ]; then

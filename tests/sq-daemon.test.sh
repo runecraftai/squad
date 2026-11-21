@@ -2184,6 +2184,11 @@ test_ledger_undeliverable_fires_active_alert_on_non_tmux_backend() {
   [ -s "$state/.subsuper-inject-wedged" ] || fail "ledger_undeliverable did not write the durable marker"
   grep -F 'osascript' "$log" >/dev/null || fail "ledger_undeliverable did not emit the active alert on a non-tmux backend: $(cat "$log")"
   grep -F 'ledger undeliverable' "$log" >/dev/null || fail "active alert did not name the undeliverable ledger: $(cat "$log")"
+  SQUAD_WEDGE_ALARM_LOG="$log" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_WEDGE_ALARM_CHANNEL=osascript SQUAD_SUPERVISOR_BACKEND=herdr \
+    ledger_undeliverable "$state" "escalation: needs-decision: pick B"
+  grep -F 'pick A' "$state/.subsuper-inject-wedged" >/dev/null || fail "a later undeliverable item overwrote an earlier one in the marker"
+  grep -F 'pick B' "$state/.subsuper-inject-wedged" >/dev/null || fail "the later undeliverable item was not recorded in the marker"
   pass "ledger_undeliverable writes the marker AND emits the active alert with no tmux status-line (herdr backend)"
 }
 

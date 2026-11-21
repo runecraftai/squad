@@ -1199,7 +1199,7 @@ ledger_undeliverable() {  # <state> <item>
     WEDGE_ALARM_LAST_EPOCH=$now
     log "ERROR: away-mode ledger write failed; queued on the stand-to path: $item"
   fi
-  printf 'away-mode ledger undeliverable as of %s: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$item" > "$marker" 2>/dev/null || true
+  printf 'away-mode ledger undeliverable as of %s: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$item" >> "$marker" 2>/dev/null || true
   fm_wake_append check afk-ledger-undeliverable "check: away-mode ledger could not record: $item" 2>/dev/null \
     || log 'ERROR: away-mode ledger undeliverable and the stand-to queue append also failed'
   if [ "$notify" -eq 1 ]; then
@@ -1216,7 +1216,7 @@ ledger_parked_notice() {  # <state> <age-seconds>
   local state=$1 age=$2 marker
   marker="$state/.subsuper-inject-wedged"
   _now > "$state/.subsuper-parked-notified" 2>/dev/null || true
-  printf 'away-mode ledger held %ss past max-defer; queued for supervision, not delivered to the pane\n' "$age" > "$marker" 2>/dev/null || true
+  printf 'away-mode ledger held %ss past max-defer; queued for supervision, not delivered to the pane\n' "$age" >> "$marker" 2>/dev/null || true
   fm_wake_append check afk-parked-escalations "check: away-mode escalations held ${age}s past max-defer; the return summary presents them" 2>/dev/null \
     || log 'ERROR: parked away-mode escalations could not be queued on the stand-to path'
 }

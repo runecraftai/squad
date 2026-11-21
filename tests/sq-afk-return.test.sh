@@ -280,6 +280,23 @@ test_undeliverable_ledger_item_reaches_the_summary() {
     "wedge marker was not presented when no queued record survived"
   out=$(run_return "$dir" begin) || fail "wedge-only re-run failed: $out"
   assert_not_contains "$out" 'catch-up summary' "re-run duplicated the wedge notice summary"
+
+  dir="$TMP_ROOT/ledger-undeliverable-partial-drain"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  {
+    printf 'away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000: escalation: fake-c4: failed: lint\n'
+    printf 'away-mode ledger undeliverable as of 2026-01-01T10:05:00+0000: escalation: fake-c5: done: PR https://example.test/pr/88\n'
+  } > "$dir/home/state/.subsuper-inject-wedged"
+  printf '1784074300\t7\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: escalation: fake-c5: done: PR https://example.test/pr/88\n' \
+    > "$dir/home/state/.fake-drain"
+  out=$(run_return "$dir" begin) || fail "partially drained undeliverable return should clear: $out"
+  assert_contains "$out" 'daemon-notice=2' "partially drained undeliverable items were not both counted"
+  assert_contains "$out" '[daemon-notice] away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000: escalation: fake-c4: failed: lint' \
+    "undeliverable item drained during the absence was lost from the summary"
+  assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: escalation: fake-c5: done: PR https://example.test/pr/88' \
+    "surviving undeliverable record was not presented"
+  assert_not_contains "$out" 'as of 2026-01-01T10:05:00+0000' "marker line duplicated the surviving queued record"
   pass "an item the ledger could not record reaches the return summary once"
 }
 
