@@ -1217,7 +1217,6 @@ ledger_parked_notice() {  # <state> <age-seconds>
   marker="$state/.subsuper-inject-wedged"
   _now > "$state/.subsuper-parked-notified" 2>/dev/null || true
   printf 'away-mode ledger held %ss past max-defer; queued for supervision, not delivered to the pane\n' "$age" > "$marker" 2>/dev/null || true
-  ledger_add "$state" escalation "held ${age}s past max-defer; the return summary presents the ledger"
   fm_wake_append check afk-parked-escalations "check: away-mode escalations held ${age}s past max-defer; the return summary presents them" 2>/dev/null \
     || log 'ERROR: parked away-mode escalations could not be queued on the stand-to path'
 }

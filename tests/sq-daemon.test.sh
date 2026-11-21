@@ -1790,6 +1790,8 @@ test_max_defer_notice_is_durable_and_never_types() {
     || fail "max-defer notice left no marker"
   [ -s "$state/.subsuper-escalations" ] \
     || fail "ledger entry lost after the max-defer notice (must be preserved)"
+  [ "$(wc -l < "$state/.subsuper-escalations" | tr -d ' ')" -eq 1 ] \
+    || fail "max-defer notice was also ledgered as an escalation (duplicate on return)"
   grep -F $'\tcheck\tafk-parked-escalations\t' "$queue" >/dev/null \
     || fail "max-defer notice did not reach the durable stand-to queue as a check"
   rm -f "$state/.subsuper-inject-wedged"
