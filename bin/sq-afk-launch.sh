@@ -556,7 +556,7 @@ fm_afk_launch_snapshot_artifacts() {  # <backup-dir>
   if [ -f "$SQUAD_AFK_LAUNCH_STATE/.afk" ]; then
     cp "$SQUAD_AFK_LAUNCH_STATE/.afk" "$backup/.afk" || return 1
   fi
-  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
+  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-routine .subsuper-inject-wedged; do
     if [ -e "$SQUAD_AFK_LAUNCH_STATE/$artifact" ]; then
       cp -p "$SQUAD_AFK_LAUNCH_STATE/$artifact" "$backup/$artifact" || return 1
     fi
@@ -568,11 +568,12 @@ fm_afk_launch_restore_backup() {  # <backup> <had-afk>
   rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk" \
     "$SQUAD_AFK_LAUNCH_STATE/.subsuper-escalations" \
     "$SQUAD_AFK_LAUNCH_STATE/.subsuper-escalations.since" \
+    "$SQUAD_AFK_LAUNCH_STATE/.subsuper-routine" \
     "$SQUAD_AFK_LAUNCH_STATE/.subsuper-inject-wedged" || result=1
   if [ "$had_afk" -eq 1 ]; then
     cp "$backup/.afk" "$SQUAD_AFK_LAUNCH_STATE/.afk" || result=1
   fi
-  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-inject-wedged; do
+  for artifact in .subsuper-escalations .subsuper-escalations.since .subsuper-routine .subsuper-inject-wedged; do
     if [ -e "$backup/$artifact" ]; then
       cp -p "$backup/$artifact" "$SQUAD_AFK_LAUNCH_STATE/$artifact" || result=1
     fi

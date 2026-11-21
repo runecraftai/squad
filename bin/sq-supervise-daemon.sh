@@ -2,9 +2,12 @@
 # sq-supervise-daemon.sh — presence-gated sub-supervisor (closes #27's P2).
 #
 # Wraps bin/sq-sentry.sh: runs it as a child, classifies each wake reason, and
-# either SELF-HANDLES the routine majority in bash (no Squad turn) or
-# ESCALATES a batched, distilled digest to the supervisor pane on
-# commander-relevant events plus bounded declared-pause rechecks. Routine
+# either SELF-HANDLES the routine majority in bash (no Squad turn) or HOLDS the
+# commander-relevant ones. While away mode is on the daemon writes NOTHING to the
+# supervisor pane: every wake it handles, routine or escalated, is appended to the
+# away-mode ledger (state/.subsuper-escalations) as "<epoch>|<class>|<line>", and
+# bin/sq-afk-return.sh presents that ledger once, as one summary, on return.
+# Routine
 # reasons are prefixed with a `routine:` envelope by the sentry's wake
 # function (via afk_wake_is_routine) so the Pi extension suppresses the
 # wake prompt while the daemon still triages the original reason. This is
@@ -12,17 +15,15 @@
 # routine signal/stale/heartbeat wakes cost zero Squad context; only done/
 # needs-decision/blocked/failed/persistent-wedge/check-output events, a
 # declared-pause recheck, and the sentry's named objective evidence (pause-era or
-# quiet pipeline step) reach the LLM, and even then as one pre-read digest per
-# batch window.
+# quiet pipeline step) are held in the ledger for the return summary.
 #
 # PRESENCE-GATING (the /afk contract). The daemon is the away-mode engine: it
-# injects ONLY when the durable away-mode flag state/.afk is present. Invoking
+# runs ONLY while the durable away-mode flag state/.afk is present. Invoking
 # the /afk skill sets that flag and starts this daemon; any real (unmarked)
 # user message clears it and Squad resumes full responsiveness.
 # When afk is off, normal sq-sentry.sh always-on triage is the active mechanism.
-# Any buffered daemon escalations that remain while afk is off survive in
-# state/.subsuper-escalations and are flushed on the next "while you were out"
-# catch-up or when afk is re-entered.
+# Ledger entries survive in state/.subsuper-escalations until the return summary
+# presents them once.
 #
 # IN-BAND OPERATIONAL INPUT. bin/sq-operational-input.sh constructs every
 # current daemon injection as the typed away-supervisor kind after the stable
@@ -59,10 +60,11 @@
 #     applies to it.
 #     Operators are autonomous, so a delayed stale response does not stall a
 #     healthy operator's own progress.
-#     Buffered escalation delivery also has a max-defer alarm: if a digest stays
-#     undelivered past SQUAD_MAX_DEFER_SECS, the daemon retries a normal flush and
-#     writes state/.subsuper-inject-wedged and attempts a configurable active
-#     alert if submit still cannot be confirmed.
+#     The away-mode ledger has a max-defer notice: an entry parked past
+#     SQUAD_MAX_DEFER_SECS raises one durable escalation on the stand-to queue
+#     (never the supervisor pane) and writes state/.subsuper-inject-wedged once per
+#     absence. A ledger write that fails is undeliverable: it goes to the same
+#     durable queue and the configurable active alert.
 #   - Cheap heartbeat catch-all: every HEARTBEAT_SCAN_SECS the daemon greps all
 #     state/*.status for a commander-relevant line the per-wake classifier might
 #     have missed (e.g. a status verb outside COMMANDER_RE) and escalates it,
@@ -124,10 +126,9 @@
 #          SQUAD_COMPOSER_IDLE_RE      empty-composer regex applied after dim-ghost
 #                                   and structural border stripping (default:
 #                                   bare prompt glyphs plus busy footers)
-#          SQUAD_MAX_DEFER_SECS        max seconds a buffered escalation may sit
-#                                   undelivered before one normal flush attempt;
-#                                   if that cannot confirm a submit, a wedge
-#                                   alarm fires (default 300; 0 disables)
+#          SQUAD_MAX_DEFER_SECS        max seconds a ledger entry may sit parked before
+#                                   one durable notice is queued for supervision
+#                                   (default 300; 0 disables)
 #          SQUAD_WEDGE_ALARM_CHANNEL   override config/wedge-alarm with a single
 #                                   active-alert directive for that wedge alarm
 #                                   (off|auto|osascript|herdr|command:<cmd>). An
@@ -227,9 +228,10 @@ STALE_ESCALATE_SECS_DEFAULT=240
 ESCALATE_BATCH_SECS_DEFAULT=90
 HEARTBEAT_SCAN_SECS_DEFAULT=300
 HOUSEKEEPING_TICK_DEFAULT=15
-# Max time a buffered escalation may sit undelivered before the daemon retries
-# the normal flush path and, if that cannot confirm a submit, raises a loud wedge
-# alarm. The escape hatch makes a guard false-positive visible instead of silent.
+# Max time an away-mode ledger entry may sit parked before the daemon queues one
+# durable supervision notice (ledger_parked_notice). Nothing is written to the
+# supervisor pane while away, so a parked entry is expected; the notice keeps a
+# stalled absence visible to Squad's stand-to queue.
 MAX_DEFER_SECS_DEFAULT=300
 WEDGE_ALARM_TIMEOUT_SECS_DEFAULT=10
 WEDGE_ALARM_LAST_EPOCH=0
@@ -831,11 +833,34 @@ busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
   stale_marker_remove "$win" "$state"
 }
 
+# Away-mode ledger. Every line is "<epoch>|<class>|<one-line description>". Class
+# escalation is commander-relevant and lives in state/.subsuper-escalations, the
+# buffer whose age drives the max-defer notice; class routine was self-handled and
+# lives in state/.subsuper-routine, so the escalation buffer keeps meaning only
+# "held for the commander". Nothing reaches the supervisor pane from here;
+# bin/sq-afk-return.sh merges both files by time and presents them once on return.
+# An append that fails is undeliverable, so the item goes to the durable stand-to
+# queue instead.
+ledger_add() {  # <state> <class> <distilled-item>
+  local state=$1 cls=$2 item buf
+  item=$(printf '%s' "$3" | LC_ALL=C tr '\t\r\n' '   ')
+  if [ "$cls" = routine ]; then
+    buf="$state/.subsuper-routine"
+  else
+    buf="$state/.subsuper-escalations"
+    [ -s "$buf" ] || _now > "${buf}.since"
+  fi
+  if ! printf '%s|%s|%s\n' "$(_now)" "$cls" "$item" >> "$buf"; then
+    ledger_undeliverable "$state" "$cls: $item"
+  fi
+}
+
 escalate_add() {  # <state> <distilled-item>
-  local state=$1 item=$2 buf
-  buf="$state/.subsuper-escalations"
-  [ -s "$buf" ] || _now > "${buf}.since"
-  printf '%s\n' "$item" >> "$buf"
+  ledger_add "$1" escalation "$2"
+}
+
+routine_add() {  # <state> <distilled-item>
+  ledger_add "$1" routine "$2"
 }
 
 # Canonical single-line digest of the first <lines> buffered escalations. It is
@@ -911,14 +936,12 @@ fm_pi_handoff_retire() {  # <state>
   return 1
 }
 
-# Flush the escalation buffer as ONE batched, single-line digest to the
-# supervisor pane. Returns 0 on successful inject (or empty buffer), non-zero on
-# inject failure (buffer preserved for retry / catch-up).
+# Away mode is silent, so this never types into the supervisor pane: the ledger
+# waits for the return summary. It still retires a native handoff acknowledged
+# before this policy, whose digest must match the exact ledger prefix, so an old
+# acknowledgement can never replay.
 escalate_flush() {  # <state>
-  local state=$1 buf n msg
-  buf="$state/.subsuper-escalations"
-  # Retire the exact prefix a consumed native handoff covered before rebuilding
-  # the digest, so an acknowledged escalation is never sent a second time.
+  local state=$1
   fm_pi_handoff_retire "$state" || true
   if [ "${SQUAD_SUPERVISOR_BACKEND:-}" = orca ]; then
     if fm_supervisor_native_retire "$state" "${SQUAD_SUPERVISOR_TARGET:-}"; then
@@ -927,15 +950,11 @@ escalate_flush() {  # <state>
       log "Orca native buffer retirement refused (${SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON:-unknown reason}); preserving the request and buffer"
     fi
   fi
-  [ -s "$buf" ] || return 0
-  n=$(wc -l < "$buf" 2>/dev/null || echo 0)
-  msg=$(fm_escalation_digest "$state" "$n")
-  if inject_msg "$msg" "$state" "$n"; then : > "$buf"; rm -f "${buf}.since" "$state/.subsuper-inject-wedged"; return 0; fi
-  return 1
+  return 0
 }
 
 # --- backend-independent active wedge alert ---------------------------------
-# The tmux status-line flash in inject_wedge_alarm below is a cosmetic,
+# The tmux status-line flash that used to accompany a wedge alarm was a cosmetic,
 # client-side OSD with no cross-backend equivalent, so a wedged non-tmux primary
 # (the 2026-07-10 overnight incident: a claude-on-herdr primary) got NO active
 # signal - only the passive state/.subsuper-inject-wedged marker, which nothing
@@ -1138,7 +1157,7 @@ wedge_alarm_emit() {  # <channel> <summary>
 }
 
 # Fire every configured active-alert channel, best-effort. Always returns 0: a
-# channel failure can never abort inject_wedge_alarm or the daemon loop. Any
+# channel failure can never abort ledger_undeliverable or the daemon loop. Any
 # `off` directive disables the alert, regardless of position; an unresolvable
 # `auto` (no OS channel on this platform) logs that the durable marker is the
 # only signal. Every notifier routes through the test-forced recorder seam.
@@ -1164,51 +1183,42 @@ wedge_alarm_notify() {  # <summary> <marker>
   return 0
 }
 
-# Raise a loud, rate-limited alarm when escalations cannot be delivered after
-# max-defer (the supervisor pane is genuinely busy/wedged, or the submit's Enter
-# is swallowed). The daemon must NEVER silently wedge: this logs
-# an ERROR, drops a durable marker Squad/recovery can surface, flashes
-# the tmux supervisor client's status line when applicable, and attempts a
-# configurable backend-independent active alert (wedge_alarm_notify). Nothing
-# is lost - the buffer and the
-# stand-to queue both survive - but the stall stops being invisible.
-inject_wedge_alarm() {  # <state> <age-seconds>
-  local state=$1 age=$2 marker target backend max_defer now notify=1
+# A ledger write that fails is undeliverable. The item is queued on Squad's durable
+# stand-to path instead, and the marker plus the configurable backend-independent
+# active alert (wedge_alarm_notify) fire, rate-limited to one notify per max-defer
+# window. The supervisor pane is never touched here, so the commander is not
+# interrupted by a daemon fault.
+ledger_undeliverable() {  # <state> <item>
+  local state=$1 item=$2 marker max_defer now notify=1
   marker="$state/.subsuper-inject-wedged"
   max_defer="${SQUAD_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}"
-  # Re-alarm at most once per max-defer window so a long wedge does not spam.
-  if [ "$(_file_age "$marker")" -lt "$max_defer" ]; then
-    return 0
-  fi
   now=$(_now)
   if [ "$WEDGE_ALARM_LAST_EPOCH" -gt 0 ] && [ $((now - WEDGE_ALARM_LAST_EPOCH)) -lt "$max_defer" ]; then
     notify=0
   else
     WEDGE_ALARM_LAST_EPOCH=$now
-    log "ERROR: away-mode escalation undelivered ${age}s; inject could not confirm a submit (supervisor pane busy or wedged). Buffer + stand-to queue preserved; alarm marker written."
+    log "ERROR: away-mode ledger write failed; queued on the stand-to path: $item"
   fi
-  {
-    printf 'fm away-mode inject WEDGED: %ss undelivered as of %s\n' "$age" "$(date '+%Y-%m-%dT%H:%M:%S%z')"
-    printf 'The supervisor pane could not accept an escalation. Buffered items:\n'
-    cat "$state/.subsuper-escalations" 2>/dev/null
-  } 2>/dev/null > "$marker" || true
-  target="${SQUAD_SUPERVISOR_TARGET:-$SQUAD_SUPERVISOR_TARGET_DEFAULT}"
-  backend="${SQUAD_SUPERVISOR_BACKEND:-$SQUAD_SUPERVISOR_BACKEND_DEFAULT}"
-  # Best-effort status-line flash. tmux's display-message is a client-side OSD
-  # with no herdr equivalent; the log line + durable marker above are already
-  # the primary, backend-independent signal, so a non-tmux backend just skips
-  # this cosmetic extra rather than attempting an unsupported call.
-  if [ "$backend" = tmux ]; then
-    tmux display-message -t "$target" "fm: away-mode escalations WEDGED ${age}s — see $marker" 2>/dev/null || true
-  fi
-  # Backend-independent active alert. Unlike the tmux flash above (skipped on
-  # every non-tmux backend), this can reach the commander even when every pane and
-  # its backend status-line is unreadable - the gap the 2026-07-10 overnight
-  # incident fell through. Configurable and best-effort; the marker above stays
-  # the durable record whether or not any channel fires.
+  printf 'away-mode ledger undeliverable as of %s: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$item" > "$marker" 2>/dev/null || true
+  fm_wake_append check afk-ledger-undeliverable "check: away-mode ledger could not record: $item" 2>/dev/null \
+    || log 'ERROR: away-mode ledger undeliverable and the stand-to queue append also failed'
   if [ "$notify" -eq 1 ]; then
-    wedge_alarm_notify "away-mode escalations WEDGED ${age}s undelivered - see $marker" "$marker"
+    wedge_alarm_notify "away-mode ledger undeliverable - see $marker" "$marker"
   fi
+}
+
+# Max-defer path for the away-mode ledger. Nothing is written to the supervisor
+# pane while away, so an entry aging past max-defer is expected rather than a
+# failure. The notice is one durable escalation on the stand-to queue (the same
+# path a wedged or undeliverable daemon must use), recorded once per absence by the
+# marker, and the return summary presents it with the rest of the ledger.
+ledger_parked_notice() {  # <state> <age-seconds>
+  local state=$1 age=$2 marker
+  marker="$state/.subsuper-inject-wedged"
+  printf 'away-mode ledger held %ss past max-defer; queued for supervision, not delivered to the pane\n' "$age" > "$marker" 2>/dev/null || true
+  ledger_add "$state" escalation "held ${age}s past max-defer; the return summary presents the ledger"
+  fm_wake_append check afk-parked-escalations "check: away-mode escalations held ${age}s past max-defer; the return summary presents them" 2>/dev/null \
+    || log 'ERROR: parked away-mode escalations could not be queued on the stand-to path'
 }
 
 _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first arrived (sidecar epoch)
@@ -1224,11 +1234,10 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
 
 # --- housekeeping (runs every tick while the sentry is mid-cycle) ----------
 # Four cheap jobs, each guarded so an empty/quiet unit costs near zero:
-#  1) batch flush: if the escalation buffer's oldest content is older than
-#     ESCALATE_BATCH_SECS (or batching is disabled), inject one digest.
-#  1b) max-defer escape: if the buffer is STILL undelivered past MAX_DEFER_SECS,
-#     attempt one normal delivery; if it cannot confirm, raise the wedge alarm.
-#     Never silently defer forever.
+#  1) batch flush: retires an acknowledged native handoff only; the ledger itself
+#     is never delivered to the pane while away (escalate_flush).
+#  1b) max-defer notice: if the ledger is parked past MAX_DEFER_SECS, raise one
+#     durable stand-to escalation per absence (ledger_parked_notice).
 #  2) stale recheck: for each pending stale marker past STALE_ESCALATE_SECS,
 #     re-peek the pane; still idle -> escalate (wedge); resumed -> clear marker.
 #  2b) pause re-surface: for each declared-pause marker past PAUSE_RESURFACE_SECS,
@@ -1253,23 +1262,14 @@ housekeeping() {  # <state>
     fi
   fi
 
-  # (1b) max-defer escape. If anything is still buffered past MAX_DEFER_SECS,
-  # retry the normal delivery path. If that still cannot confirm, raise a loud
-  # wedge alarm while preserving the buffer.
+  # (1b) max-defer notice. Entries parked past MAX_DEFER_SECS are expected while
+  # away (nothing reaches the pane); raise one durable supervision notice per
+  # absence, never a pane injection.
   max_defer=${SQUAD_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}
   if afk_active "$state" && [ "$max_defer" -gt 0 ] && [ -s "$state/.subsuper-escalations" ]; then
     oldest=$(_oldest_line_age "$state/.subsuper-escalations")
-    # Throttle the alarm to once per max-defer window (the wedge marker doubles
-    # as the throttle). A successful flush clears the buffer; a failed one alarms
-    # and waits.
-    if [ "$oldest" -ge "$max_defer" ] \
-       && [ "$(_file_age "$state/.subsuper-inject-wedged")" -ge "$max_defer" ]; then
-      if escalate_flush "$state"; then
-        log "inject recovered: max-defer flush succeeded after ${oldest}s undelivered"
-        rm -f "$state/.subsuper-inject-wedged"
-      else
-        inject_wedge_alarm "$state" "$oldest"
-      fi
+    if [ "$oldest" -ge "$max_defer" ] && [ ! -e "$state/.subsuper-inject-wedged" ]; then
+      ledger_parked_notice "$state" "$oldest"
     fi
   fi
 
@@ -1596,6 +1596,11 @@ handle_wake() {  # <reason> <state>
   action=${decision%%|*}
   distilled=${decision#*|}
   [ "$kind" = signal ] && sync_pause_markers_from_signal "$state" "$arg"
+  # Every self-handled wake is ledgered for the return summary, except a bare
+  # heartbeat tick, which is not an event. Escalations are ledgered below.
+  if [ "$action" != escalate ] && [ "${reason%%:*}" != heartbeat ]; then
+    routine_add "$state" "$reason -> $distilled"
+  fi
   case "$action" in
     escalate)
       log "escalate: $reason -> $distilled"

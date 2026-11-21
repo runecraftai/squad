@@ -19,7 +19,9 @@
 # retains the drained wake, buffered-escalation, and wedge-marker evidence until
 # every live open blocker is closed and `check` succeeds. Repeated begin/check
 # calls are idempotent. `guard` never mutates state and is suitable for ordinary
-# read entrypoints such as sq-sitrep-snapshot.sh.
+# read entrypoints such as sq-sitrep-snapshot.sh. The away-mode ledger is presented
+# once, as one summary, on the run that clears the gate; a re-run after a clean
+# return finds nothing left to present and prints no summary again.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -104,12 +106,69 @@ write_gate() {  # <evidence-file> <blockers-file>
   mv "$pending" "$GATE"
 }
 
-print_evidence() {  # <file>
-  local file=$1 kind text
+fmt_epoch() {  # <epoch> -> local "MM-DD HH:MM" (GNU date, then BSD date)
+  date -d "@$1" '+%m-%d %H:%M' 2>/dev/null || date -r "$1" '+%m-%d %H:%M' 2>/dev/null || printf '%s' "$1"
+}
+
+# print_summary: the one away-mode presentation. Escalation evidence is the away
+# ledger, one "<epoch>|<class>|<text>" per entry; a bare line from before the ledger
+# format is presented as an unclassed escalation. Queued wake records are counted,
+# and the other drain sections (open decisions, pending teardown, guard notices)
+# are listed as open items. Prints nothing when there is nothing to present.
+print_summary() {  # <evidence-file>
+  local file=$1 tag kind text ts cls item label when re seq=0 absence locators
+  local escalated=0 routine=0 queued=0 events='' notices='' urls='' statuses=''
+  re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
   while IFS="$(printf '\t')" read -r tag kind text; do
     [ "$tag" = evidence ] || continue
-    printf 'catch-up %s: %s\n' "$kind" "$text"
+    case "$kind" in
+      escalation)
+        ts='' cls='' item=$text
+        if [[ $text == *'|'* ]]; then
+          IFS='|' read -r ts cls item <<< "$text"
+        fi
+        case "$ts" in ''|*[!0-9]*) ts='' cls=escalation item=$text ;; esac
+        if [ "$cls" = routine ]; then
+          routine=$((routine + 1)); label=routine
+        else
+          escalated=$((escalated + 1)); label=escalation
+        fi
+        seq=$((seq + 1))
+        when=''
+        [ -z "$ts" ] || when="$(fmt_epoch "$ts") "
+        events="${events}  ${seq}. ${when}[${label}] ${item}"$'\n'
+        urls="${urls}$(printf '%s\n' "$item" | grep -Eo 'https://[^[:space:]]+' || true)"$'\n'
+        statuses="${statuses}$(printf '%s\n' "$item" | grep -Eo '[A-Za-z0-9._-]+\.status' || true)"$'\n'
+        ;;
+      wake)
+        if [[ $text =~ $re ]]; then
+          queued=$((queued + 1))
+        else
+          case "$text" in 'wake annotation:'*|'') ;; *) notices="${notices}  ${text}"$'\n' ;; esac
+        fi
+        ;;
+    esac
   done < "$file"
+  if [ $((escalated + routine + queued)) -eq 0 ]; then
+    # No away-mode events: only live open items remain, shown without the absence
+    # summary header so a re-run never presents the summary again.
+    [ -z "$notices" ] || printf 'catch-up open items (still open at return):\n%s' "$notices"
+    return 0
+  fi
+  printf 'catch-up summary (one presentation for this absence)\n'
+  printf '  counts: escalation=%d routine=%d queued-wake-records=%d\n' "$escalated" "$routine" "$queued"
+  [ -z "$events" ] || printf '  events in order:\n%s' "$events"
+  locators=$(printf '%s\n' "$urls" | sed '/^$/d' | sort -u | sed 's/^/    /')
+  statuses=$(printf '%s\n' "$statuses" | sed '/^$/d' | sort -u | sed 's#^#    state/#')
+  absence=$(ls -t "$SQUAD_BASE"/data/absence-*.md 2>/dev/null | head -1 || true)
+  if [ -n "$locators$statuses$absence" ]; then
+    printf '  links and paths:\n'
+    [ -z "$locators" ] || printf '%s\n' "$locators"
+    [ -z "$statuses" ] || printf '%s\n' "$statuses"
+    [ -z "$absence" ] || printf '    %s\n' "$absence"
+  fi
+  printf '  never executed while you were away: any merge outside the grant quoted in the absence record, destructive or irreversible actions, security-sensitive choices, and anything outside the accepted scope of the judge; each waits for you.\n'
+  [ -z "$notices" ] || printf '  open items at return:\n%s' "$notices"
 }
 
 print_blockers() {  # <file>
@@ -124,6 +183,7 @@ clear_delivery_artifacts() {
   rm -f \
     "$STATE/.subsuper-escalations" \
     "$STATE/.subsuper-escalations.since" \
+    "$STATE/.subsuper-routine" \
     "$STATE/.subsuper-inject-wedged"
 }
 
@@ -164,8 +224,8 @@ return_reconcile() {
     wedge=$(head -1 "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
     append_evidence wedge "$wedge" "$evidence"
   fi
-  if [ -s "$STATE/.subsuper-escalations" ]; then
-    escalations=$(cat "$STATE/.subsuper-escalations" 2>/dev/null || true)
+  if [ -s "$STATE/.subsuper-escalations" ] || [ -s "$STATE/.subsuper-routine" ]; then
+    escalations=$(cat "$STATE/.subsuper-routine" "$STATE/.subsuper-escalations" 2>/dev/null | sort -s -t'|' -k1,1n || true)
     append_evidence escalation "$escalations" "$evidence"
   fi
 
@@ -173,14 +233,14 @@ return_reconcile() {
   if [ "$lifecycle_ok" -ne 1 ] || [ -s "$blockers" ]; then
     write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers"; return 1; }
     printf 'sq-afk-return: catch-up must finish before the commander request\n' >&2
-    print_evidence "$GATE" >&2
+    printf 'sq-afk-return: %s away-mode event(s) are held in the catch-up record; one summary is presented once the blockers clear\n' "$(grep -c "^evidence"$'\t'"escalation"$'\t' "$GATE" 2>/dev/null || true)" >&2
     print_blockers "$GATE" >&2
     printf 'sq-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/sq-afk-return.sh check\n' >&2
     rm -f "$evidence" "$blockers"
     return 3
   fi
 
-  print_evidence "$evidence"
+  print_summary "$evidence"
   rm -f "$GATE"
   clear_delivery_artifacts
   rm -f "$evidence" "$blockers"

@@ -1,9 +1,10 @@
 # Away-mode injection wedge alarm
 
-The away-mode sub-supervisor (`bin/sq-supervise-daemon.sh`) buffers escalations and injects them into Squad's own pane.
-When injection cannot confirm a submit past `SQUAD_MAX_DEFER_SECS`, `inject_wedge_alarm` raises a loud, rate-limited alarm so the stall never stays invisible.
+The away-mode sub-supervisor (`bin/sq-supervise-daemon.sh`) writes nothing to the commander's pane while away; it holds every wake in its away-mode ledger for the return summary.
+A ledger write that fails is undeliverable, so `ledger_undeliverable` queues it on the durable stand-to path and raises a loud, rate-limited active alert.
+An entry parked past `SQUAD_MAX_DEFER_SECS` raises one durable stand-to notice per absence, with no alert.
 The active alert is pane-independent because a tmux status-line flash has no cross-backend equivalent and cannot reach an unattended commander reliably.
-The durable marker and tmux flash remain as additional signals.
+The durable marker remains as an additional signal.
 
 ## Channels
 

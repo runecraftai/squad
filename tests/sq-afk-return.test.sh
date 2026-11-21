@@ -162,9 +162,14 @@ kind=strike
 EOF
   printf 'needs-decision [key=api-shape]: commander must choose the synthetic API shape\n' > "$dir/home/state/decision-task.status"
   date +%s > "$dir/home/state/.afk"
-  printf '1784074271\t1\tsignal\tdecision-task.status\tsignal: synthetic decision\n' > "$dir/home/state/.fake-drain"
+  {
+    printf '1784074271\t1\tsignal\tdecision-task.status\tsignal: synthetic decision\n'
+    printf 'OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):\n'
+    printf 'decision-task [key=api-shape] needs-decision: commander must choose the synthetic API shape\n'
+  } > "$dir/home/state/.fake-drain"
   out=$(run_return "$dir" begin) || fail "approval decision should not be treated as a Squad blocker: $out"
-  assert_contains "$out" 'catch-up wake:' "approval decision notification was not surfaced in catch-up"
+  assert_contains "$out" 'queued-wake-records=1' "approval decision wake record was not counted in the summary"
+  assert_contains "$out" 'OPEN DECISIONS' "approval decision was not surfaced as an open item in the summary"
   [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "approval decision incorrectly opened a Squad blocker gate"
   pass "needs-decision remains reportable without masquerading as a Squad-actionable blocker"
 }
@@ -209,8 +214,47 @@ test_check_retries_recorded_terminal_teardown() {
   pass "check retries recorded terminal teardown and keeps catch-up gated until success"
 }
 
+test_away_ledger_is_presented_once_and_never_repeated() {
+  local dir out count
+  dir="$TMP_ROOT/ledger-summary"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  printf '1784074271|routine|fake-c1.status -> working: step one\n' > "$dir/home/state/.subsuper-routine"
+  printf '1784074280|escalation|fake-c1: done: PR https://example.test/pr/300\n' >> "$dir/home/state/.subsuper-escalations"
+  out=$(run_return "$dir" begin) || fail "ledger return should clear without a Squad blocker: $out"
+  assert_contains "$out" 'catch-up summary' "ledger return did not present one summary"
+  assert_contains "$out" 'counts: escalation=1 routine=1' "summary did not count each class"
+  assert_contains "$out" 'https://example.test/pr/300' "summary did not carry the link to act on"
+  assert_contains "$out" 'never executed while you were away' "summary did not state what was never executed"
+  count=$(printf '%s' "$out" | grep -c 'catch-up summary' || true)
+  [ "$count" -eq 1 ] || fail "summary presented $count times in one return"
+  [ ! -e "$dir/home/state/.subsuper-escalations" ] && [ ! -e "$dir/home/state/.subsuper-routine" ] || fail "clear left the ledger behind"
+  out=$(run_return "$dir" begin) || fail "re-run of a cleared catch-up failed: $out"
+  assert_not_contains "$out" 'catch-up summary' "re-run duplicated the away-mode summary"
+  out=$(run_return "$dir" check) || fail "check after a cleared catch-up failed: $out"
+  assert_not_contains "$out" 'catch-up summary' "check duplicated the away-mode summary"
+  pass "away-mode ledger is presented once as one summary and a re-run never repeats it"
+}
+
+test_away_ledger_while_blocked_presents_only_a_count() {
+  local dir out
+  dir="$TMP_ROOT/ledger-blocked"
+  install_runner "$dir"
+  seed_live_blocker "$dir" herdr blocked-ledger
+  date +%s > "$dir/home/state/.afk"
+  printf '1784074280|escalation|repair-task: done: PR https://example.test/pr/9\n' > "$dir/home/state/.subsuper-escalations"
+  set +e
+  out=$(run_return "$dir" begin)
+  set -e
+  assert_not_contains "$out" 'catch-up summary' "blocked return presented the summary before the blockers cleared"
+  assert_contains "$out" '1 away-mode event(s) are held' "blocked return did not count the held events"
+  pass "blocked catch-up holds the away-mode events as a count until the blockers clear"
+}
+
 test_return_gate_orders_catchup_before_bearings
 test_explicit_reclassification_requires_durable_reason
+test_away_ledger_is_presented_once_and_never_repeated
+test_away_ledger_while_blocked_presents_only_a_count
 test_commander_decision_does_not_masquerade_as_Squad_blocker
 test_away_reentry_refuses_pending_return_gate
 test_check_retries_recorded_terminal_teardown
