@@ -1880,7 +1880,7 @@ prepare_relaunch_execution() {
   # The recorded value is only ever a pin this feature wrote: sq-<task-id>, lowercase
   # letters, digits and hyphens, ending in a letter or digit as pi's session-id grammar
   # requires. Anything else is refused whole, before any endpoint probe or retry.
-  if [ -n "$RELAUNCH_PI_SESSION_ID" ] && ! [[ "$RELAUNCH_PI_SESSION_ID" =~ ^sq-[a-z0-9-]*[a-z0-9]$ ]]; then
+  if [ -n "$RELAUNCH_PI_SESSION_ID" ] && ! pi_pin_id_valid "$RELAUNCH_PI_SESSION_ID"; then
     echo "error: recorded pi session id for $ID is not a pinned sq-<task-id> value; refusing relaunch" >&2
     return 1
   fi
@@ -1948,6 +1948,10 @@ harness_resume_argument() {  # <harness>
 # recorded conversation and returns 1; returns 0 only when every gate holds. The transcript
 # path mirrors pi's store: the cwd without its leading slash, every /, \ and : replaced by -,
 # wrapped in --.
+pi_pin_id_valid() {
+  [[ "$1" =~ ^sq-[a-z0-9-]*[a-z0-9]$ ]]
+}
+
 pi_session_transcript() {
   local id=$1 key dir f found='' wt_real agent settings store=''
   wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || wt_real=$WT
@@ -3136,9 +3140,9 @@ case "$HARNESS" in
     esac
     ;;
 esac
-case "$PI_SESSION_ID" in
-  *[!A-Za-z0-9]) PI_SESSION_ID= ;;
-esac
+if [ -n "$PI_SESSION_ID" ] && ! pi_pin_id_valid "$PI_SESSION_ID"; then
+  PI_SESSION_ID=
+fi
 if [ -n "$PI_SESSION_ID" ] && [ -z "${RELAUNCH_EXISTING_META:-}" ]; then
   pi_transcript_rc=0
   pi_session_transcript "$PI_SESSION_ID" >/dev/null || pi_transcript_rc=$?
@@ -3272,7 +3276,7 @@ if [ "$PI_TEMPLATE" = 1 ]; then
     pi_prompt="\"\$(printf '%s' $(shell_quote "$RESUME_NOTE") | $sq_opinput encode launch-brief)\""
   else
     pi_session_arg=
-    [ -z "$PI_SESSION_ID" ] || pi_session_arg="--session-id $PI_SESSION_ID "
+    [ -z "$PI_SESSION_ID" ] || pi_session_arg="--session-id $(shell_quote "$PI_SESSION_ID") "
     pi_prompt="\"\$($sq_opinput encode launch-brief < $sq_brief)\""
   fi
   LAUNCH=${LAUNCH//__PISESSION__/$pi_session_arg}

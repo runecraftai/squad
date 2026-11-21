@@ -252,7 +252,7 @@ test_fresh_pi_spawn_pins_conversation() {
   expect_code 0 "$status" "a fresh pi spawn should succeed: $out"
   assert_grep "pi_session_id=sq-$id" "$HOME_DIR/state/$id.meta" 'meta did not record the pinned pi session id'
   line=$(launch_line)
-  assert_contains "$line" "--session-id sq-$id " 'the fresh pi launch must pin the conversation with --session-id'
+  assert_contains "$line" "--session-id 'sq-$id' " 'the fresh pi launch must pin the conversation with --session-id'
   assert_contains "$line" 'encode launch-brief < ' 'a fresh pi launch must carry the full brief'
   [ -z "$(status_lines "$id")" ] || fail 'a fresh spawn is not a relaunch and must append no status line'
   pass 'a fresh pi operator spawn pins sq-<task-id> and records pi_session_id'
@@ -323,7 +323,7 @@ refuse_case() {
   if printf '%s' "$line" | grep -qF -- "--session 'sq-$id' "; then
     fail "a refused resume ($reason) must never reopen the recorded conversation"
   fi
-  if printf '%s' "$line" | grep -qF -- "--session-id sq-$id "; then
+  if printf '%s' "$line" | grep -qF -- "--session-id 'sq-$id' "; then
     fail "a refused resume ($reason) must not pin the old conversation id"
   fi
   assert_contains "$line" 'encode launch-brief < ' "a refused resume ($reason) must re-send the full brief"
@@ -408,6 +408,23 @@ test_fresh_spawn_with_unpinnable_id_is_unpinned() {
   expect_code 0 "$status" "a pi spawn with a trailing-dash id should succeed: $out"
   expect_unpinned_fresh_launch "$id" 'an id outside pi session-id grammar'
   pass 'a task id outside pi session-id grammar launches unpinned'
+}
+
+# A valid task id with uppercase, dot or underscore is outside the pinned sq-<task-id>
+# shape, so the spawn launches unpinned and records nothing a relaunch would refuse.
+test_fresh_spawn_with_mixed_case_id_is_unpinned() {
+  local rec id label out status
+  id=Pi-Resume.Mixed_Case
+  label="sq-$id"
+  rec=$(make_case mixed-case "$id")
+  read_case "$rec"
+
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  expect_code 0 "$status" "a pi spawn with a mixed-case id should succeed: $out"
+  expect_unpinned_fresh_launch "$id" 'an id with uppercase, dot or underscore'
+  [ -z "$(status_lines "$id")" ] || fail 'a fresh unpinned spawn must append no status line'
+  pass 'a task id with uppercase, dot or underscore launches unpinned'
 }
 
 # Pi keys its store by the physical cwd, so a worktree reached through a symlink
@@ -549,6 +566,7 @@ test_fresh_spawn_with_stale_transcript_in_session_dir_is_unpinned
 test_fresh_spawn_with_session_dir_setting_is_unpinned
 test_symlinked_worktree_resumes_physical_transcript
 test_fresh_spawn_with_unpinnable_id_is_unpinned
+test_fresh_spawn_with_mixed_case_id_is_unpinned
 test_relaunch_resumes_same_conversation
 test_recorded_session_id_with_metacharacter_is_refused
 test_well_formed_session_id_is_quoted_and_unchanged
