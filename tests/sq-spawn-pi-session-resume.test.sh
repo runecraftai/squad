@@ -277,7 +277,7 @@ test_relaunch_resumes_same_conversation() {
   assert_contains "$out" "reusing the recorded agentless task window owned:$WINDOW_ID" \
     'the relaunch must reuse the recovered window'
   line=$(launch_line)
-  assert_contains "$line" "--session sq-$id " 'a resumed relaunch must reopen the pinned conversation with --session'
+  assert_contains "$line" "--session 'sq-$id' " 'a resumed relaunch must reopen the pinned conversation with --session'
   assert_contains "$line" 'same conversation' 'a resumed relaunch must carry the continuation note'
   if printf '%s' "$line" | grep -qF -- '--session-id'; then
     fail 'a resumed relaunch must not start a new pinned conversation'
@@ -320,7 +320,7 @@ refuse_case() {
   unset SQUAD_FAKE_TUIOS_AGENTS_JSON SQUAD_RESUME_MAX_BYTES
   expect_code 0 "$status" "a refused resume must still relaunch ($reason): $out"
   line=$(launch_line)
-  if printf '%s' "$line" | grep -qF -- "--session sq-$id "; then
+  if printf '%s' "$line" | grep -qF -- "--session 'sq-$id' "; then
     fail "a refused resume ($reason) must never reopen the recorded conversation"
   fi
   if printf '%s' "$line" | grep -qF -- "--session-id sq-$id "; then
@@ -369,7 +369,7 @@ expect_unpinned_fresh_launch() {
   local id=$1 why=$2 line
   line=$(launch_line)
   assert_contains "$line" 'encode launch-brief < ' "$why: the launch must carry the full brief"
-  if printf '%s' "$line" | grep -qE -- '--session(-id)? sq-'; then
+  if printf '%s' "$line" | grep -qE -- "--session(-id)? '?sq-"; then
     fail "$why: the launch must carry no pi session argument"
   fi
   if grep -q '^pi_session_id=' "$HOME_DIR/state/$id.meta"; then
@@ -430,7 +430,7 @@ test_symlinked_worktree_resumes_physical_transcript() {
   unset SQUAD_FAKE_TUIOS_AGENTS_JSON
   expect_code 0 "$status" "a resumable relaunch through a symlinked worktree should succeed: $out"
   line=$(launch_line)
-  assert_contains "$line" "--session sq-$id " 'a symlinked worktree must resume from the physical-path transcript'
+  assert_contains "$line" "--session 'sq-$id' " 'a symlinked worktree must resume from the physical-path transcript'
   [ "$(status_lines "$id")" = "resumed: same conversation (session sq-$id)" ] \
     || fail "a symlinked worktree resume must append the resumed status line, got: $(status_lines "$id")"
   pass 'a symlinked worktree resumes from the transcript keyed by its physical path'
@@ -497,6 +497,51 @@ test_codex_relaunch_appends_no_status_line() {
   pass 'a codex relaunch into a recovered window appends no status line'
 }
 
+# A recorded pi_session_id carrying a shell metacharacter is refused whole, before any
+# launch, endpoint probe, or status line, and the embedded command never runs.
+test_recorded_session_id_with_metacharacter_is_refused() {
+  local rec id label out status marker
+  id=pi-resume-meta
+  label="sq-$id"
+  rec=$(make_case metachar "$id")
+  read_case "$rec"
+  marker="$CASE_DIR/pwned"
+
+  seed_relaunch_meta "$id" pi default "sq-$id';touch $marker;'"
+  write_transcript "$CASE_DIR/pi-agent" "$WT_DIR" "sq-$id" 200
+  finished_agentless
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  unset SQUAD_FAKE_TUIOS_AGENTS_JSON
+  [ "$status" -ne 0 ] || fail "a metacharacter session id must refuse the spawn: $out"
+  assert_contains "$out" 'not a pinned sq-<task-id> value' 'the refusal must name the recorded id problem'
+  [ -z "$(launch_line)" ] || fail 'a refused session id must launch nothing'
+  [ ! -e "$marker" ] || fail 'a recorded session id must never execute its embedded command'
+  [ -z "$(status_lines "$id")" ] || fail 'a refused session id must append no status line'
+  pass 'a recorded session id with a shell metacharacter is refused before any launch'
+}
+
+# A well-formed recorded id with digits and hyphens reaches the launch quoted and unchanged.
+test_well_formed_session_id_is_quoted_and_unchanged() {
+  local rec id label out status line
+  id=pi-resume-quoted-2
+  label="sq-$id"
+  rec=$(make_case quoted "$id")
+  read_case "$rec"
+
+  seed_relaunch_meta "$id" pi default "sq-$id"
+  write_transcript "$CASE_DIR/pi-agent" "$WT_DIR" "sq-$id" 200
+  finished_agentless
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  unset SQUAD_FAKE_TUIOS_AGENTS_JSON
+  expect_code 0 "$status" "a well-formed recorded id relaunch should succeed: $out"
+  line=$(launch_line)
+  assert_contains "$line" "--session 'sq-$id' " 'the recorded id must reach the launch quoted and unchanged'
+  assert_grep "pi_session_id=sq-$id" "$HOME_DIR/state/$id.meta" 'the recorded id must stay unchanged in the meta'
+  pass 'a well-formed recorded session id is passed through quoted and unchanged'
+}
+
 test_fresh_pi_spawn_pins_conversation
 test_codex_relaunch_appends_no_status_line
 test_fresh_spawn_with_stale_transcript_is_unpinned
@@ -505,6 +550,8 @@ test_fresh_spawn_with_session_dir_setting_is_unpinned
 test_symlinked_worktree_resumes_physical_transcript
 test_fresh_spawn_with_unpinnable_id_is_unpinned
 test_relaunch_resumes_same_conversation
+test_recorded_session_id_with_metacharacter_is_refused
+test_well_formed_session_id_is_quoted_and_unchanged
 test_refused_window_not_reused
 test_refused_invalid_max_bytes
 test_refused_no_recorded_session
