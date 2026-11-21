@@ -1940,14 +1940,27 @@ harness_resume_argument() {  # <harness>
 # path mirrors pi's store: the cwd without its leading slash, every /, \ and : replaced by -,
 # wrapped in --.
 pi_session_transcript() {
-  local key dir f found=''
-  key=${WT#/}
+  local id=$1 key dir f found='' wt_real agent settings store=''
+  wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || wt_real=$WT
+  key=${wt_real#/}
   key=${key//\//-}
   key=${key//\\/-}
   key=${key//:/-}
-  dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions/--$key--"
-  for f in "$dir"/*_"$1".jsonl; do
-    if [ -f "$f" ]; then found=$f; fi
+  agent=${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}
+  if [ -n "${PI_CODING_AGENT_SESSION_DIR:-}" ]; then
+    store=$PI_CODING_AGENT_SESSION_DIR
+    case "$store" in /*) ;; *) store="$wt_real/$store" ;; esac
+    set -- "$store" "$store/--$key--"
+  else
+    for settings in "$agent/settings.json" "$wt_real/.pi/settings.json"; do
+      if [ -f "$settings" ] && grep -q '"sessionDir"' "$settings" 2>/dev/null; then return 2; fi
+    done
+    set -- "$agent/sessions/--$key--"
+  fi
+  for dir in "$@"; do
+    for f in "$dir"/*_"$id".jsonl; do
+      if [ -f "$f" ]; then found=$f; fi
+    done
   done
   [ -n "$found" ] || return 1
   printf '%s\n' "$found"
@@ -3113,8 +3126,10 @@ esac
 case "$PI_SESSION_ID" in
   *[!A-Za-z0-9]) PI_SESSION_ID= ;;
 esac
-if [ -n "$PI_SESSION_ID" ] && [ -z "${RELAUNCH_EXISTING_META:-}" ] && pi_session_transcript "$PI_SESSION_ID" >/dev/null; then
-  PI_SESSION_ID=
+if [ -n "$PI_SESSION_ID" ] && [ -z "${RELAUNCH_EXISTING_META:-}" ]; then
+  pi_transcript_rc=0
+  pi_session_transcript "$PI_SESSION_ID" >/dev/null || pi_transcript_rc=$?
+  [ "$pi_transcript_rc" -eq 1 ] || PI_SESSION_ID=
 fi
 RESUME_SESSION_ID=
 RESUME_NOTE=

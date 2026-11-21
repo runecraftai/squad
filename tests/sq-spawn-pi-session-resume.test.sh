@@ -410,8 +410,72 @@ test_fresh_spawn_with_unpinnable_id_is_unpinned() {
   pass 'a task id outside pi session-id grammar launches unpinned'
 }
 
+# Pi keys its store by the physical cwd, so a worktree reached through a symlink
+# must still find the transcript stored under the resolved path.
+test_symlinked_worktree_resumes_physical_transcript() {
+  local rec id label out status line real
+  id=pi-resume-symlink
+  label="sq-$id"
+  rec=$(make_case symlink "$id")
+  read_case "$rec"
+  real=$(cd "$WT_DIR" && pwd -P)
+  ln -s "$real" "$CASE_DIR/wt-link"
+  WT_DIR="$CASE_DIR/wt-link"
+
+  seed_relaunch_meta "$id" pi default "sq-$id"
+  write_transcript "$CASE_DIR/pi-agent" "$real" "sq-$id" 200
+  finished_agentless
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  unset SQUAD_FAKE_TUIOS_AGENTS_JSON
+  expect_code 0 "$status" "a resumable relaunch through a symlinked worktree should succeed: $out"
+  line=$(launch_line)
+  assert_contains "$line" "--session sq-$id " 'a symlinked worktree must resume from the physical-path transcript'
+  [ "$(status_lines "$id")" = "resumed: same conversation (session sq-$id)" ] \
+    || fail "a symlinked worktree resume must append the resumed status line, got: $(status_lines "$id")"
+  pass 'a symlinked worktree resumes from the transcript keyed by its physical path'
+}
+
+# PI_CODING_AGENT_SESSION_DIR moves pi's store; a stale transcript there must still
+# keep a first spawn from pinning the id.
+test_fresh_spawn_with_stale_transcript_in_session_dir_is_unpinned() {
+  local rec id label out status
+  id=pi-resume-sessiondir
+  label="sq-$id"
+  rec=$(make_case sessiondir "$id")
+  read_case "$rec"
+  mkdir -p "$CASE_DIR/sessions"
+  printf 'x\n' > "$CASE_DIR/sessions/2026-11-20T00-00-00-000Z_sq-$id.jsonl"
+
+  out=$(PI_CODING_AGENT_SESSION_DIR="$CASE_DIR/sessions" run_spawn "$id" "$label")
+  status=$?
+  expect_code 0 "$status" "a fresh pi spawn over a stale session-dir transcript should succeed: $out"
+  expect_unpinned_fresh_launch "$id" 'a stale transcript in PI_CODING_AGENT_SESSION_DIR'
+  pass 'a fresh pi spawn honours PI_CODING_AGENT_SESSION_DIR for the stale-transcript guard'
+}
+
+# A sessionDir setting moves pi's store to a location this script does not resolve,
+# so a first spawn must not risk pinning an existing conversation.
+test_fresh_spawn_with_session_dir_setting_is_unpinned() {
+  local rec id label out status
+  id=pi-resume-sessionsetting
+  label="sq-$id"
+  rec=$(make_case sessionsetting "$id")
+  read_case "$rec"
+  printf '{"sessionDir": "%s"}\n' "$CASE_DIR/elsewhere" > "$CASE_DIR/pi-agent/settings.json"
+
+  out=$(run_spawn "$id" "$label")
+  status=$?
+  expect_code 0 "$status" "a fresh pi spawn with a sessionDir setting should succeed: $out"
+  expect_unpinned_fresh_launch "$id" 'a sessionDir setting'
+  pass 'a fresh pi spawn launches unpinned when a sessionDir setting moves the store'
+}
+
 test_fresh_pi_spawn_pins_conversation
 test_fresh_spawn_with_stale_transcript_is_unpinned
+test_fresh_spawn_with_stale_transcript_in_session_dir_is_unpinned
+test_fresh_spawn_with_session_dir_setting_is_unpinned
+test_symlinked_worktree_resumes_physical_transcript
 test_fresh_spawn_with_unpinnable_id_is_unpinned
 test_relaunch_resumes_same_conversation
 test_refused_window_not_reused
