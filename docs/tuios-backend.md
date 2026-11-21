@@ -160,6 +160,7 @@ A daemon restart destroys every running program. The restored session keeps its 
   The refusal reasons a Pi operator relaunch records are `endpoint was not a recovered agentless window`, `no recorded session id`, `harness mismatch`, `model mismatch`, `missing or unreadable transcript`, `oversize transcript`, and `invalid SQUAD_RESUME_MAX_BYTES`.
   A non-Pi harness or a raw launch command is also refused, but such a relaunch writes no status line.
   A fresh-conversation relaunch carries no pin, so a later restart of that same task re-briefs too.
+- A recorded `pi_session_id=` that is not exactly `sq-` followed by lowercase letters, digits and hyphens ending in a letter or digit refuses the relaunch with an error before any endpoint probe, retry, or launch; it is never silently re-briefed.
 - Every Pi operator relaunch of existing task metadata appends exactly one status line: `resumed: same conversation (session <id>)` or `relaunched: fresh brief (<reason>)`.
   An XO relaunch and every non-Pi relaunch append no status line.
 - The backend's own `resume-agent` verb still runs first from the recovery procedure.

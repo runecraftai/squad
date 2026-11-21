@@ -78,10 +78,12 @@ pass "real tmux: fm_backend_tmux_create_task creates a window and refuses a dupl
 # A newly-created interactive shell can exist before its startup files and line
 # editor are ready to accept Enter. Prove command execution with an output token
 # that does not appear contiguously in the command, retrying the harmless probe
-# until the shell acknowledges it.
+# until the shell acknowledges it. Clear any partial line with C-u (the tty
+# line-kill character), never C-c: a SIGINT delivered before the shell installs
+# its handlers kills the pane and closes the window.
 SHELL_READY=false
 for _ in $(seq 1 100); do
-  tmux send-keys -t "$TARGET" C-c
+  tmux send-keys -t "$TARGET" C-u
   tmux send-keys -t "$TARGET" -l "printf 'shell-%s\\n' ready"
   tmux send-keys -t "$TARGET" Enter
   if wait_for_capture_text "$TARGET" "shell-ready" 10; then

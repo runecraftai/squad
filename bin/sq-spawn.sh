@@ -166,9 +166,10 @@
 # harness and model match the recorded ones, the transcript in pi's cwd-keyed session store is
 # readable, and it is at most SQUAD_RESUME_MAX_BYTES (default 4194304). Any refused gate relaunches
 # a fresh conversation with the full brief and no pin, exactly as before the pin existed, so a
-# refused transcript is never reopened. Every pi operator relaunch of existing metadata appends
-# exactly one status line: resumed: same conversation (session <id>), or relaunched: fresh brief
-# (<reason>). XO relaunches and every non-pi relaunch append no status line.
+# refused transcript is never reopened. A recorded pi_session_id that is not sq-<task-id> refuses
+# the spawn with an error before any launch rather than silently re-briefing. Every pi operator
+# relaunch of existing metadata appends exactly one status line: resumed: same conversation
+# (session <id>), or relaunched: fresh brief (<reason>). XO relaunches and every non-pi relaunch append no status line.
 # The backend's own resume-agent verb is attempted by the recovery procedure before a relaunch,
 # never by this script.
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
@@ -1876,6 +1877,13 @@ prepare_relaunch_execution() {
   }
   RELAUNCH_EXISTING_META=1
   RELAUNCH_PI_SESSION_ID=$(fm_backend_meta_exact_value "$meta" pi_session_id 2>/dev/null) || RELAUNCH_PI_SESSION_ID=
+  # The recorded value is only ever a pin this feature wrote: sq-<task-id>, lowercase
+  # letters, digits and hyphens, ending in a letter or digit as pi's session-id grammar
+  # requires. Anything else is refused whole, before any endpoint probe or retry.
+  if [ -n "$RELAUNCH_PI_SESSION_ID" ] && ! pi_pin_id_valid "$RELAUNCH_PI_SESSION_ID"; then
+    echo "error: recorded pi session id for $ID is not a pinned sq-<task-id> value; refusing relaunch" >&2
+    return 1
+  fi
   RELAUNCH_HARNESS=$(fm_backend_meta_exact_value "$meta" harness 2>/dev/null) || RELAUNCH_HARNESS=
   RELAUNCH_MODEL=$(fm_backend_meta_exact_value "$meta" model 2>/dev/null) || RELAUNCH_MODEL=
   old_backend=$(fm_backend_of_meta "$meta")
@@ -1934,6 +1942,10 @@ harness_resume_argument() {  # <harness>
     pi|pi-signed) printf '%s' '--session' ;;
     *) return 1 ;;
   esac
+}
+
+pi_pin_id_valid() {
+  [[ "$1" =~ ^sq-[a-z0-9-]*[a-z0-9]$ ]]
 }
 
 # relaunch_resume_refusal: prints the one-line reason this relaunch must not resume the
@@ -3128,9 +3140,9 @@ case "$HARNESS" in
     esac
     ;;
 esac
-case "$PI_SESSION_ID" in
-  *[!A-Za-z0-9]) PI_SESSION_ID= ;;
-esac
+if [ -n "$PI_SESSION_ID" ] && ! pi_pin_id_valid "$PI_SESSION_ID"; then
+  PI_SESSION_ID=
+fi
 if [ -n "$PI_SESSION_ID" ] && [ -z "${RELAUNCH_EXISTING_META:-}" ]; then
   pi_transcript_rc=0
   pi_session_transcript "$PI_SESSION_ID" >/dev/null || pi_transcript_rc=$?
@@ -3260,11 +3272,11 @@ if [ "$PI_TEMPLATE" = 1 ]; then
   # A fresh conversation takes the full brief; a resumed one takes only the continuation
   # note, and the brief stays on disk as the authority.
   if [ -n "$RESUME_SESSION_ID" ]; then
-    pi_session_arg="--session $RESUME_SESSION_ID "
+    pi_session_arg="--session $(shell_quote "$RESUME_SESSION_ID") "
     pi_prompt="\"\$(printf '%s' $(shell_quote "$RESUME_NOTE") | $sq_opinput encode launch-brief)\""
   else
     pi_session_arg=
-    [ -z "$PI_SESSION_ID" ] || pi_session_arg="--session-id $PI_SESSION_ID "
+    [ -z "$PI_SESSION_ID" ] || pi_session_arg="--session-id $(shell_quote "$PI_SESSION_ID") "
     pi_prompt="\"\$($sq_opinput encode launch-brief < $sq_brief)\""
   fi
   LAUNCH=${LAUNCH//__PISESSION__/$pi_session_arg}
