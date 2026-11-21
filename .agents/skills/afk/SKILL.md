@@ -193,7 +193,7 @@ behavior but needs a separate fix; the gap is recorded in
 The daemon wraps `sq-sentry.sh`, runs the sentry as a child, classifies each
 wake reason in bash, and self-handles the routine majority without consuming a
 Squad turn.
-Commander-relevant events, plus a bounded recheck of a declared external wait that remains idle, escalate to Squad's context as one pre-read, single-line, batched digest.
+Commander-relevant events, plus a bounded recheck of a declared external wait that remains idle, are held in the away-mode ledger described below rather than delivered.
 The classification predicates (the commander-relevant verb set, declared-pause vocabulary, signal/stale tests, and unit-scan) live in the shared `bin/sq-classify-lib.sh`, the same library the always-on sentry uses for its own triage when afk is off, so the two modes apply one identical policy.
 While `state/.afk` exists the daemon owns the sentry, so the sentry reverts to one-shot and lets the daemon do the triage - the two never run their triage at the same time.
 

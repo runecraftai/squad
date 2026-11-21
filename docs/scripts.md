@@ -90,7 +90,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
 | `sq-supervisor-native.sh` | Backend-neutral native supervisor delivery contract: endpoint binding, readiness, request submission, and consumed-ack retirement |
 | `sq-supervisor-target-lib.sh` | Resolve and validate the shared supervisor target and backend for the daemon and launcher |
-| `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
+| `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, hold every wake in the away-mode ledger without touching the commander's pane, alert on an undeliverable ledger write |
 | `sq-crew-state.sh`       | Print one deterministic current-state line for an operator                                |
 | `sq-breaker.sh`        | Evaluate a task's circuit-breaker signals to a healthy/steering/constrained/stopped verdict with action and reasons |
 | `sq-breaker-lib.sh`    | Side-effect-free circuit-breaker ladder policy shared by `sq-breaker.sh` |

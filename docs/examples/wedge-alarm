@@ -1,11 +1,11 @@
-# config/wedge-alarm - active alert channels for the away-mode injection wedge
-# alarm (bin/sq-supervise-daemon.sh's inject_wedge_alarm). Copy this into a
+# config/wedge-alarm - active alert channels for the away-mode undeliverable-ledger
+# alarm (bin/sq-supervise-daemon.sh's ledger_undeliverable). Copy this into a
 # local, gitignored config/wedge-alarm and edit. One channel directive per
 # non-empty, non-comment line; every listed non-off channel fires, best-effort.
 #
 # Directives:
 #   off              position-independent kill switch: disable every active
-#                    alert (the durable marker and tmux status-line flash remain)
+#                    alert (the durable marker remains)
 #   auto | default   platform default: macOS -> osascript; other platforms have
 #                    no built-in OS channel (configure a command: line instead)
 #   osascript        macOS Notification Center banner (backend-independent)

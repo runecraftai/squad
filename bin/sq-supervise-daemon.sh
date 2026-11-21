@@ -5,7 +5,8 @@
 # either SELF-HANDLES the routine majority in bash (no Squad turn) or HOLDS the
 # commander-relevant ones. While away mode is on the daemon writes NOTHING to the
 # supervisor pane: every wake it handles, routine or escalated, is appended to the
-# away-mode ledger (state/.subsuper-escalations) as "<epoch>|<class>|<line>", and
+# away-mode ledger (state/.subsuper-escalations for escalations,
+# state/.subsuper-routine for routine) as "<epoch>|<class>|<line>", and
 # bin/sq-afk-return.sh presents that ledger once, as one summary, on return.
 # Routine
 # reasons are prefixed with a `routine:` envelope by the sentry's wake
@@ -115,8 +116,9 @@
 #                                   as a possible wedge (default 240)
 #          SQUAD_PAUSE_RESURFACE_SECS  idle seconds before a declared external wait
 #                                   re-surfaces as a recheck (default 3600)
-#          SQUAD_ESCALATE_BATCH_SECS   buffer window for batched escalation
-#                                   digests; 0 = flush immediately (default 90)
+#          SQUAD_ESCALATE_BATCH_SECS   ledger age before housekeeping retires an
+#                                   acknowledged native handoff; 0 = every pass
+#                                   (default 90); nothing is delivered while away
 #          SQUAD_HEARTBEAT_SCAN_SECS   cadence for the catch-all status scan
 #                                   (default 300)
 #          SQUAD_HOUSEKEEPING_TICK     seconds between housekeeping passes while
@@ -954,7 +956,7 @@ escalate_flush() {  # <state>
 }
 
 # --- backend-independent active wedge alert ---------------------------------
-# The tmux status-line flash that used to accompany a wedge alarm was a cosmetic,
+# The tmux status-line flash that once accompanied a wedge alarm was a cosmetic,
 # client-side OSD with no cross-backend equivalent, so a wedged non-tmux primary
 # (the 2026-07-10 overnight incident: a claude-on-herdr primary) got NO active
 # signal - only the passive state/.subsuper-inject-wedged marker, which nothing
@@ -963,14 +965,14 @@ escalate_flush() {  # <state>
 # on any pane or its backend status-line: an OS-level macOS notification, a
 # herdr notification, or a commander-supplied command (push to a phone, etc.).
 # Every channel is best-effort - a missing or failing channel logs and is
-# skipped, never crashing the daemon loop - and the durable marker plus the tmux
-# flash stay exactly as before.
+# skipped, never crashing the daemon loop - and the durable marker stays as an
+# additional signal.
 #
 # Config: config/wedge-alarm (local, gitignored), one channel directive per
 # non-empty, non-comment line. SQUAD_WEDGE_ALARM_CHANNEL overrides the file with a
 # single directive. Directives:
 #   off              disable the active alert entirely, regardless of position
-#                    (marker + flash remain)
+#                    (the marker remains)
 #   auto | default   platform default: macOS -> osascript; otherwise none
 #   osascript        macOS Notification Center banner (backend-independent)
 #   herdr            herdr UI notification (herdr notification show)

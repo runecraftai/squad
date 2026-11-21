@@ -209,7 +209,7 @@ Test cleanup must use the guarded path in [`docs/cmux-backend.md`](cmux-backend.
 
 ## Away-mode supervisor backend (SQUAD_SUPERVISOR_BACKEND / SQUAD_SUPERVISOR_TARGET / SQUAD_SUPERVISOR_HARNESS)
 
-The `/afk` sub-supervisor injects escalation digests into Squad's own pane independently of where new task endpoints are spawned.
+The `/afk` sub-supervisor resolves Squad's own pane independently of where new task endpoints are spawned; while away it writes nothing to that pane and holds every wake for the return summary.
 It supports `tmux`, `herdr`, `tuios`, and native-only `orca` supervisor panes.
 Set `SQUAD_SUPERVISOR_BACKEND=tmux|herdr|tuios|orca` and `SQUAD_SUPERVISOR_TARGET=<target>` to override both axes explicitly; the herdr target is `"<session>:<pane-id>"` and the TUIOS target is `"<session>:<window-id>"`.
 Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TUIOS_ENV=1` with `TUIOS_SESSION` and `TUIOS_PANE_ID`, then falls back to `tmux`.
@@ -230,12 +230,12 @@ Selecting any other supervisor backend, including `zellij` and `cmux`, refuses a
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
-When away-mode injection wedges past `SQUAD_MAX_DEFER_SECS`, the sub-supervisor raises a loud, rate-limited alarm.
-Beyond the durable `state/.subsuper-inject-wedged` marker and the tmux status-line flash, it attempts a configured backend-independent active alert that can reach the commander even when every pane and its backend status-line is unreadable.
+When an away-mode ledger write fails, the sub-supervisor queues the item on the durable stand-to path and raises a loud, rate-limited alarm; a ledger entry parked past `SQUAD_MAX_DEFER_SECS` raises only a durable stand-to notice.
+Beyond the durable `state/.subsuper-inject-wedged` marker, the alarm attempts a configured backend-independent active alert that can reach the commander even when every pane and its backend status-line is unreadable.
 `config/wedge-alarm` (local, gitignored) lists channel directives, one per non-empty, non-comment line; every listed non-`off` channel fires, best-effort.
 `SQUAD_WEDGE_ALARM_CHANNEL` overrides the file with a single directive.
 Directives are `off` (a position-independent kill switch that disables every active alert), `auto`/`default`, `osascript` (macOS Notification Center banner), `herdr` (herdr UI notification), and `command:<cmd>` (run `<cmd>` via `sh -c`, summary on `$1` and stdin).
-An absent file means `auto`, i.e. default-on on macOS: the alarm exists precisely so a wedged away-mode primary is never silent, and it fires at most once per max-defer window after a genuine wedge.
+An absent file means `auto`, i.e. default-on on macOS: the alarm exists precisely so an undeliverable away-mode ledger is never silent, and it fires at most once per max-defer window.
 A missing or failing channel logs and falls through to the next, never crashing the daemon.
 See [`wedge-alarm.md`](wedge-alarm.md) for the current channel reference, [`verification/supervision.md`](verification/supervision.md#wedge-alarm-channels) for active evidence, and [`examples/wedge-alarm`](examples/wedge-alarm) for a copyable config.
 
@@ -731,8 +731,8 @@ SQUAD_SUPERVISOR_BACKEND=             # optional supervisor pane backend overrid
 SQUAD_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target, herdr <session>:<pane-id>, tuios <session>:<window-id>, or an exact Orca terminal handle, otherwise auto-detected
 SQUAD_SUPERVISOR_HARNESS=             # optional Orca receiver adapter selector; pi is the only proven value, otherwise bin/sq-harness.sh process ancestry must resolve the exact Pi primary to pi before any away-mode mutation
 SQUAD_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
-SQUAD_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
-SQUAD_MAX_DEFER_SECS=300              # max buffered escalation age before retry plus wedge alarm; 0 disables
+SQUAD_ESCALATE_BATCH_SECS=90          # ledger age before the housekeeping pass retires an acknowledged native handoff; 0 = every pass; nothing is delivered to the pane while away
+SQUAD_MAX_DEFER_SECS=300              # max parked ledger age before one durable stand-to notice per absence, and the active-alert rate-limit window; 0 disables the notice
 SQUAD_WEDGE_ALARM_CHANNEL=            # override config/wedge-alarm with one active-alert directive for the wedge alarm; off|auto|osascript|herdr|command:<cmd>; absent = auto (macOS -> an OS notification)
 SQUAD_WEDGE_ALARM_EXEC=              # notifier seam: route every channel (osascript, herdr, command:) through this command as `<cmd> <channel> <summary>`; "discard" fires nothing; unset in production; the daemon defaults it to "discard" when sourced so no test posts a real notification (docs/wedge-alarm.md)
 SQUAD_WEDGE_ALARM_TIMEOUT_SECS=10    # maximum seconds for each osascript, herdr, override, or command: notifier before its watchdog terminates it and continues to the next channel; invalid or zero values use 10

@@ -2,10 +2,11 @@
 
 # Alarme de travamento de injeção do modo ausente
 
-O sub-supervisor do modo ausente (`bin/sq-supervise-daemon.sh`) armazena escalações em buffer e as injeta no próprio painel do Squad.
-Quando a injeção não consegue confirmar um envio após `SQUAD_MAX_DEFER_SECS`, a `inject_wedge_alarm` dispara um alarme ruidoso e com taxa limitada para que a parada nunca fique invisível.
+O sub-supervisor do modo ausente (`bin/sq-supervise-daemon.sh`) não escreve nada no painel do comandante durante a ausência; guarda cada wake no ledger de away-mode para o resumo do retorno.
+Uma escrita de ledger que falha não é entregável, então `ledger_undeliverable` a enfileira no caminho durável de stand-to e dispara um alerta ativo ruidoso e com taxa limitada.
+Uma entrada parada além de `SQUAD_MAX_DEFER_SECS` gera um aviso durável de stand-to por ausência, sem alerta.
 O alerta ativo é independente de painel porque um flash na status line do tmux não tem equivalente entre backends e não alcança um comandante ausente de forma confiável.
-O marcador durável e o flash no tmux permanecem como sinais adicionais.
+O marcador durável permanece como sinal adicional.
 
 ## Canais
 
@@ -13,7 +14,7 @@ O `config/wedge-alarm` é local e gitignored.
 Ele lista diretivas de canal, uma por linha não vazia e não comentário, e todo canal listado diferente de `off` dispara em melhor esforço.
 `SQUAD_WEDGE_ALARM_CHANNEL` sobrepõe o arquivo com uma diretiva para testes focados.
 
-- `off` desativa todo alerta ativo mantendo o marcador durável e o flash no tmux.
+- `off` desativa todo alerta ativo mantendo o marcador durável.
 - `auto` ou `default` resolve para `osascript` no macOS.
   Outras plataformas não têm canal nativo do sistema operacional, então configure `command:` quando só o marcador durável não for suficiente.
 - `osascript` posta um banner no Notification Center do macOS fora do painel do terminal.
@@ -21,7 +22,7 @@ Ele lista diretivas de canal, uma por linha não vazia e não comentário, e tod
 - `command:<cmd>` roda `<cmd>` via `sh -c` com o resumo do alarme como `$1` e no stdin, permitindo entrega para um celular ou serviço de pager.
 
 Um `config/wedge-alarm` ausente se comporta como `auto`, que é padrão ligado no macOS.
-Isso é deliberado porque o alarme dispara apenas depois de uma trava real de max-defer e tem taxa limitada a no máximo uma vez por janela de max-defer.
+Isso é deliberado porque o alarme dispara apenas para uma escrita de ledger não entregável e tem taxa limitada a no máximo uma vez por janela de max-defer.
 
 Cada canal é de melhor esforço.
 Um binário ausente ou exit não zero registra um warning e segue para o próximo canal sem derrubar o loop do daemon.
