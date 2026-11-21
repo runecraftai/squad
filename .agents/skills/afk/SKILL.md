@@ -37,13 +37,13 @@ Run these steps without asking the commander first.
    - the daemon state, and which wake classes it absorbs and which it escalates to Squad.
 3. **Park his questions instead of asking.** Each question that belongs to him goes into the record and becomes its own backlog item held with `sq-tasks hold <id> --reason "<reason>" --kind commander`, per `AGENTS.md` section 10.
    Do not re-ask it in chat while he is away.
-4. **Keep delivering.** Dispatch, supervise, and merge through `AGENTS.md` sections 7 and 8, with merges only through `bin/sq-pr-merge.sh` and only a merge the record grants under step 2.
+4. **Keep delivering.** Dispatch, supervise, and merge through `AGENTS.md` sections 7 and 8, with merges only through `bin/sq-pr-merge.sh`; on a project where yolo is off, only a merge the record grants under step 2, and on a yolo-on project the standing merge authority of `AGENTS.md` section 7 still applies during the absence.
    Supervision is the daemon's sentry, as its section describes; do not arm a second sentry.
    Wakes the daemon escalates reach Squad, which applies the judge under the record from step 2.
    The judge returns one verdict per decision: decide or park, the reason, and the reservations he should read.
    Record every verdict in the record next to the work it decided.
    A judge verdict is a delegated Squad decision recorded as such, not his approval.
-   Never merge a red PR, and never widen a merge beyond step 2.
+   Never merge a red PR, and never widen a merge beyond step 2 on a project where yolo is off.
 5. **Acknowledge once**, in `AGENTS.md` section 9 language: "Comandante, juiz forte armado e modo ausente ativo; o trabalho segue até a entrega e as suas perguntas ficam guardadas para o seu retorno."
 6. **Return.** An absence record without a `Retorno:` line is open.
    When an unmarked message arrives while it is open, the commander is back: run the daemon return owner (`bin/sq-afk-return.sh`) first, then read the record, present the parked questions as decision blocks anchored to their backlog items, batch every verdict and merge, and append `Retorno: <time>` to the record.
