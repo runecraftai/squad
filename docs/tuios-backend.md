@@ -152,7 +152,9 @@ A daemon restart destroys every running program. The restored session keeps its 
   A Pi operator spawn pins its conversation to `sq-<task-id>` with `--session-id` and records `pi_session_id=` in the task meta.
   A relaunch into the reused window launches `pi --session sq-<task-id>` with one short continuation note, but only when every gate holds.
   The gates are: the window was reused, a `pi_session_id=` is recorded, the harness and model match the recorded ones, the transcript is readable, and it is at most `SQUAD_RESUME_MAX_BYTES` (default `4194304`).
-  The transcript path is `~/.pi/agent/sessions/--<worktree path with / as ->--/`, or under `PI_CODING_AGENT_DIR` when that is set.
+  The transcript is `*_sq-<task-id>.jsonl` in `~/.pi/agent/sessions/--<key>--/` (or `$PI_CODING_AGENT_DIR/sessions/--<key>--/`), where `<key>` is the worktree's physical path (symlinks resolved) without its leading slash and with every `/`, `\` and `:` replaced by `-`.
+  When `PI_CODING_AGENT_SESSION_DIR` is set, the transcript is looked up in that directory and its `--<key>--/` subdirectory instead.
+  When the agent or project `settings.json` sets `sessionDir`, the transcript is not looked up, so the relaunch is refused as `missing or unreadable transcript` and the spawn does not pin a conversation id.
   The full brief stays on disk as the authority and is never re-sent on this path.
 - Any refused gate relaunches a fresh conversation with the full brief and no pin, exactly as before.
   The refusal reasons a Pi operator relaunch records are `endpoint was not a recovered agentless window`, `no recorded session id`, `harness mismatch`, `model mismatch`, `missing or unreadable transcript`, `oversize transcript`, and `invalid SQUAD_RESUME_MAX_BYTES`.
