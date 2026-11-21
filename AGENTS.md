@@ -366,7 +366,8 @@ These replacements are enforceable, not stylistic: a raw command that skips a Sq
 ### Away-mode stub
 
 Invoke the `/afk` skill when the commander says `/afk`, says they are going afk, `state/.afk` exists, an incoming message starts with `SQUAD_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
-The skill owns the daemon procedure; these safety facts remain inline:
+`/afk` arms the judge-delegation routine and starts the away-mode daemon in the same move: the daemon absorbs routine wakes and never decides, a strong-model judge decides in-scope gates while delivery continues, and his questions wait in the absence record for his return.
+The skill owns both procedures and their composition; these daemon safety facts remain inline:
 
 - Every current daemon injection uses the `away-supervisor` kind from `bin/sq-operational-input.sh` after `SQUAD_OPERATIONAL_PREFIX` (U+2063 INVISIBLE SEPARATOR followed by `SQUAD_OP: `), while the `/afk` skill owns legacy bare-marker compatibility.
 - While `state/.afk` exists, the daemon owns supervision; do not arm a separate sentry.
