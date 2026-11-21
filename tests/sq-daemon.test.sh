@@ -207,6 +207,7 @@ test_stale_diagnostic_wedge_survives_busy_housekeeping() {
 
     (
       kill() { printf 'kill %s\n' "$*" >> "$action_log"; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { printf 'interrupt %s\n' "$*" >> "$action_log"; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
       PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
@@ -641,6 +642,7 @@ afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition
 
   (
     kill() { :; }
+    # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
     fm_backend_send_text_submit() { :; }
     LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
   )
@@ -725,6 +727,7 @@ SH
     [ ! -e "$state/.subsuper-stale-$key" ] || fail "real progress kept the handed-off busy episode's daemon tracking"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -757,6 +760,7 @@ SH
     reason=$(grep -m1 "stale: $win" "$out") || fail "repeated frozen hash emitted no stale handoff"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -786,6 +790,7 @@ SH
     reason=$(grep -m1 "stale: $win" "$out") || fail "second static episode was not handed off"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -797,6 +802,7 @@ SH
     [ ! -s "$state/.subsuper-escalations" ] || fail "second static episode escalated before its full window"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -833,6 +839,7 @@ SH
     [ "$episode" -gt $(( $(date +%s) - 240 )) ] || fail "successful capture inherited unreadable time"
     (
       kill() { :; }
+      # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
       fm_backend_send_text_submit() { :; }
       LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
     )
@@ -926,6 +933,7 @@ busy_wedge_daemon_case() {  # <first|repeat>
   date '+%s' > "$state/.afk"
   (
     kill() { :; }
+    # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
     fm_backend_send_text_submit() { :; }
     LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
   )
@@ -1780,6 +1788,7 @@ test_max_defer_notice_is_durable_and_never_types() {
   (
     # Load the stand-to library the way the daemon does, so the notice reaches
     # the same durable queue Squad drains on return.
+    # shellcheck source=/dev/null
     SQUAD_STATE_OVERRIDE="$state" . "$ROOT/bin/sq-stand-to-lib.sh"
     PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
       SQUAD_INJECT_CONFIRM_SLEEP=0.05 SQUAD_ESCALATE_BATCH_SECS=99999 SQUAD_MAX_DEFER_SECS=60 \
@@ -1796,6 +1805,7 @@ test_max_defer_notice_is_durable_and_never_types() {
     || fail "max-defer notice did not reach the durable stand-to queue as a check"
   rm -f "$state/.subsuper-inject-wedged"
   (
+    # shellcheck source=/dev/null
     SQUAD_STATE_OVERRIDE="$state" . "$ROOT/bin/sq-stand-to-lib.sh"
     PATH="$fakebin:$PATH" SQUAD_FAKE_COMPOSER="$dir/composer" SQUAD_FAKE_SENT="$sent" \
       SQUAD_INJECT_CONFIRM_SLEEP=0.05 SQUAD_ESCALATE_BATCH_SECS=99999 SQUAD_MAX_DEFER_SECS=60 \
@@ -2679,6 +2689,7 @@ test_escalate_flush_skips_the_retired_prefix() {
     fm_afk_pi_handoff_submit "$state" "primary:window-1" "$encoded" 1 || true
     id=$(jq -r '.id' "$state/.pi-away-handoff/request.json")
     jq -n --arg id "$id" '{id:$id,status:"handled"}' > "$state/.pi-away-handoff/result.json"
+    # shellcheck disable=SC2329 # invoked indirectly by the daemon under test
     inject_msg() { printf '%s' "$1" > "$dir/digest"; return 0; }
     escalate_flush "$state" || fail "flush failed after retiring an acknowledged prefix"
     [ ! -e "$dir/digest" ] || fail "away mode typed the ledger into the pane during flush"

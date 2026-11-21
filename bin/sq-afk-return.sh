@@ -202,7 +202,7 @@ print_summary() {  # <evidence-file>
   [ -z "$events" ] || printf '  events in order:\n%s' "$events"
   locators=$(printf '%s\n' "$urls" | sed '/^$/d' | sort -u | sed 's/^/    /')
   statuses=$(printf '%s\n' "$statuses" | sed '/^$/d' | sort -u | sed 's#^#    state/#')
-  absence=$(ls -t "$SQUAD_BASE"/data/absence-*.md 2>/dev/null | head -1 || true)
+  absence=$(find "$SQUAD_BASE/data" -maxdepth 1 -name 'absence-*.md' 2>/dev/null | sort | tail -1 || true)
   if [ -n "$locators$statuses$absence" ]; then
     printf '  links and paths:\n'
     [ -z "$locators" ] || printf '%s\n' "$locators"
