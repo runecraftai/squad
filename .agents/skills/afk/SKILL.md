@@ -46,7 +46,8 @@ Run these steps without asking the commander first.
 5. **Acknowledge once**, in `AGENTS.md` section 9 language: "Comandante, juiz forte armado e modo ausente ativo; o trabalho segue até a entrega e as suas perguntas ficam guardadas para o seu retorno."
 6. **Return.** An absence record without a `Retorno:` line is open.
    When an unmarked message arrives while it is open, the commander is back: run the daemon return owner (`bin/sq-afk-return.sh`) first, then read the record, present the parked questions as decision blocks anchored to their backlog items, batch every verdict and merge, and append `Retorno: <time>` to the record.
-   A message beginning `/afk` while the record is open refreshes it with a new line and leaves a running daemon alone; it does not open another record.
+   A message beginning `/afk` while the record is open refreshes it with a new line and does not open another record.
+   It checks `bin/sq-afk-launch.sh status`, leaves a live daemon alone, and restarts the daemon through the daemon procedure's step 2 when it is not live, recording the restart in the record.
 
 ## Away-mode daemon: what it does (started by /afk)
 
@@ -94,7 +95,7 @@ batched digest rather than per-wake injections.
 3. **Do not separately arm `sq-sentry.sh`.** The daemon manages the sentry as
    its child; the singleton lock no-ops a stray arm harmlessly.
 
-4. **Acknowledge** in `AGENTS.md` section 9 language: "Comandante, o modo ausente está ativo; vou agrupar as atualizações de rotina e apresentar apenas decisões, falhas, credenciais ou trabalho pronto para revisão até o seu retorno."
+4. **Acknowledge** unless the routine started the daemon, in which case the routine's step 5 acknowledgement replaces this one; otherwise acknowledge in `AGENTS.md` section 9 language: "Comandante, o modo ausente está ativo; vou agrupar as atualizações de rotina e apresentar apenas decisões, falhas, credenciais ou trabalho pronto para revisão até o seu retorno."
 
 ## How to exit the daemon
 
@@ -117,9 +118,10 @@ a false exit is self-correcting (the commander re-runs `/afk`).
 
 ## Orthogonal to approval authority
 
-afk changes how aggressively Squad surfaces things, **not who approves what**.
-"Away" never means "approves more" or "approves less."
-A PR ready for merge or a needs-decision finding keeps the same configured authority and exceptions from `AGENTS.md` section 7, while anything requiring the commander still waits for the commander's explicit word.
+The daemon changes how aggressively Squad surfaces things, **not who approves what**; it decides nothing.
+The daemon alone never means "approves more" or "approves less."
+Under `/afk`, the judge's authority is exactly the authority record from routine step 2: gate findings inside the accepted scope, product questions already bounded by an approved plan, and merge of a PR whose checks are all green and readable, never more.
+Everything outside that record, including the escalations it parks, keeps the configured authority and exceptions from `AGENTS.md` section 7 and still waits for the commander's explicit word.
 The daemon only batches the notification.
 
 ## Operational prefix contract
