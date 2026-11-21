@@ -366,13 +366,15 @@ These replacements are enforceable, not stylistic: a raw command that skips a Sq
 ### Away-mode stub
 
 Invoke the `/afk` skill when the commander says `/afk`, says they are going afk, `state/.afk` exists, an incoming message starts with `SQUAD_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
-The skill owns the daemon procedure; these safety facts remain inline:
+`/afk` arms the judge-delegation routine by default: a strong-model judge decides in-scope gates while delivery continues, and his questions wait in the absence record for his return.
+The away-mode daemon is the explicit alternative, entered only on an explicit request for it.
+The skill owns both procedures; these daemon safety facts remain inline:
 
 - Every current daemon injection uses the `away-supervisor` kind from `bin/sq-operational-input.sh` after `SQUAD_OPERATIONAL_PREFIX` (U+2063 INVISIBLE SEPARATOR followed by `SQUAD_OP: `), while the `/afk` skill owns legacy bare-marker compatibility.
 - While `state/.afk` exists, the daemon owns supervision; do not arm a separate sentry.
 - A marked message while away mode is active is internal escalation and does not exit away mode.
 - A message beginning `/afk` refreshes away mode.
-- Any other unmarked message means the commander returned; load `/afk`, run the return owner, and do not process that message as ordinary work until its durable catch-up gate clears.
+- Any other unmarked message means the commander returned; load `/afk`, run the return step for the active mode the skill names, and do not process that message as ordinary work until its durable catch-up gate clears.
 - Away mode never expands approval authority for merges, ask-user findings, destructive actions, irreversible actions, or security-sensitive choices.
 - Bias ambiguous input toward exit because a present commander takes precedence.
 
