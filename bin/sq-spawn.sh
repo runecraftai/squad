@@ -1944,14 +1944,14 @@ harness_resume_argument() {  # <harness>
   esac
 }
 
-# relaunch_resume_refusal: prints the one-line reason this relaunch must not resume the
-# recorded conversation and returns 1; returns 0 only when every gate holds. The transcript
-# path mirrors pi's store: the cwd without its leading slash, every /, \ and : replaced by -,
-# wrapped in --.
 pi_pin_id_valid() {
   [[ "$1" =~ ^sq-[a-z0-9-]*[a-z0-9]$ ]]
 }
 
+# relaunch_resume_refusal: prints the one-line reason this relaunch must not resume the
+# recorded conversation and returns 1; returns 0 only when every gate holds. The transcript
+# path mirrors pi's store: the cwd without its leading slash, every /, \ and : replaced by -,
+# wrapped in --.
 pi_session_transcript() {
   local id=$1 key dir f found='' wt_real agent settings store=''
   wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || wt_real=$WT
