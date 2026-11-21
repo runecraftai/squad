@@ -155,7 +155,8 @@ A daemon restart destroys every running program. The restored session keeps its 
   The transcript path is `~/.pi/agent/sessions/--<worktree path with / as ->--/`, or under `PI_CODING_AGENT_DIR` when that is set.
   The full brief stays on disk as the authority and is never re-sent on this path.
 - Any refused gate relaunches a fresh conversation with the full brief and no pin, exactly as before.
-  The refusal reasons are `endpoint was not a recovered agentless window`, `harness has no resume contract`, `raw launch command`, `no recorded session id`, `harness mismatch`, `model mismatch`, `missing or unreadable transcript`, `oversize transcript`, and `invalid SQUAD_RESUME_MAX_BYTES`.
+  The refusal reasons a Pi operator relaunch records are `endpoint was not a recovered agentless window`, `no recorded session id`, `harness mismatch`, `model mismatch`, `missing or unreadable transcript`, `oversize transcript`, and `invalid SQUAD_RESUME_MAX_BYTES`.
+  A non-Pi harness or a raw launch command is also refused, but such a relaunch writes no status line.
   A fresh-conversation relaunch carries no pin, so a later restart of that same task re-briefs too.
 - Every Pi operator relaunch of existing task metadata appends exactly one status line: `resumed: same conversation (session <id>)` or `relaunched: fresh brief (<reason>)`.
   An XO relaunch and every non-Pi relaunch append no status line.
