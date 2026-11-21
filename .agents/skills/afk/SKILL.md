@@ -27,7 +27,8 @@ Run these steps without asking the commander first.
    Record the resolved lane in the absence record.
 2. **Write the authority record** at `data/absence-<YYYY-MM-DD-HHMM>.md`; never open a second record while one is open.
    It states:
-   - what the judge may decide: gate findings inside the accepted scope of the task, product questions already bounded by an approved plan, and merge of a PR whose checks are all green and readable, with the merge reason and diff summary written in the record so he can read it in the morning;
+   - what the judge may decide: gate findings inside the accepted scope of the task, and product questions already bounded by an approved plan, always within that scope;
+   - merge of a PR whose checks are all green and readable, only if the commander's explicit instruction for this absence grants it; that instruction is quoted in the record, and the merge reason and diff summary are written there so he can read it in the morning. If he grants no merge, no merge is delegated and the PR waits for him;
    - what always escalates and is parked: contract expansion, discard, any irreversible or destructive action, security-sensitive choices, a credential or login, and a conflict between two of his own decisions;
    - the parallelism ceiling: his own if he set one, otherwise 2 concurrent workers, stated in the record;
    - the memory check before each dispatch: `bin/sq-startup-memory-budget.sh report` must fit the `read` budget, otherwise the dispatch waits;
@@ -36,7 +37,7 @@ Run these steps without asking the commander first.
    - the daemon state, and which wake classes it absorbs and which it escalates to Squad.
 3. **Park his questions instead of asking.** Each question that belongs to him goes into the record and becomes its own backlog item held with `sq-tasks hold <id> --reason "<reason>" --kind commander`, per `AGENTS.md` section 10.
    Do not re-ask it in chat while he is away.
-4. **Keep delivering.** Dispatch, supervise, and merge through `AGENTS.md` sections 7 and 8, with merges only through `bin/sq-pr-merge.sh` and only within step 2.
+4. **Keep delivering.** Dispatch, supervise, and merge through `AGENTS.md` sections 7 and 8, with merges only through `bin/sq-pr-merge.sh` and only a merge the record grants under step 2.
    Supervision is the daemon's sentry, as its section describes; do not arm a second sentry.
    Wakes the daemon escalates reach Squad, which applies the judge under the record from step 2.
    The judge returns one verdict per decision: decide or park, the reason, and the reservations he should read.
@@ -119,8 +120,9 @@ a false exit is self-correcting (the commander re-runs `/afk`).
 ## Orthogonal to approval authority
 
 The daemon changes how aggressively Squad surfaces things, **not who approves what**; it decides nothing.
-The daemon alone never means "approves more" or "approves less."
-Under `/afk`, the judge's authority is exactly the authority record from routine step 2: gate findings inside the accepted scope, product questions already bounded by an approved plan, and merge of a PR whose checks are all green and readable, never more.
+Away mode alone changes no approval authority, and the daemon alone never means "approves more" or "approves less."
+A merge is delegated only by the commander's explicit instruction for that absence, which must be copied into the authority record; without it, no merge is delegated and the PR waits for him, as hard rule 2 of `AGENTS.md` requires.
+Under `/afk`, the judge's authority is exactly the authority record from routine step 2: gate findings inside the accepted scope, product questions already bounded by an approved plan, and any merge the record quotes from his instruction, never more.
 Everything outside that record, including the escalations it parks, keeps the configured authority and exceptions from `AGENTS.md` section 7 and still waits for the commander's explicit word.
 The daemon only batches the notification.
 
