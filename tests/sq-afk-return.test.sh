@@ -695,6 +695,32 @@ SH
   pass "routine evidence stays inside the ledger's retention window across shutdown retries while escalations stay uncapped"
 }
 
+test_routine_retention_uses_append_order_after_clock_rollback() {
+  local dir state out rc=0 rows
+  dir="$TMP_ROOT/routine-clock-rollback"
+  install_runner "$dir"
+  seed_live_blocker "$dir" tmux clock-rollback
+  state="$dir/home/state"
+  printf '1700000003|routine|evicted event\n1700000002|routine|overlapping event\n' > "$state/.subsuper-routine"
+  out=$(SQUAD_ROUTINE_LEDGER_LIMIT=2 run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the initial return did not preserve its gate: $out"
+
+  printf '1700000002|routine|overlapping event\n1700000001|routine|newly appended event\n' > "$state/.subsuper-routine"
+  rc=0
+  out=$(SQUAD_ROUTINE_LEDGER_LIMIT=2 run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the rotated ledger did not preserve its gate: $out"
+  rows=$(awk -F '\t' '$1 == "evidence" && $2 == "escalation" && $3 ~ /^[0-9]+\|routine\|/ { print $3 }' "$state/.afk-return-catchup")
+  [ "$rows" = $'1700000002|routine|overlapping event\n1700000001|routine|newly appended event' ] \
+    || fail "the gate did not retain the two newest appends in order: $rows"
+
+  printf 'resolved [key=clock-rollback]: cleared\n' >> "$state/repair-task.status"
+  out=$(SQUAD_ROUTINE_LEDGER_LIMIT=2 run_return "$dir" check) || fail "the resolved return did not clear: $out"
+  printf '%s\n' "$out" | grep -qE '^  1\. .*\[routine\] newly appended event$' || fail "the summary did not sort by timestamp: $out"
+  printf '%s\n' "$out" | grep -qE '^  2\. .*\[routine\] overlapping event$' || fail "the summary lost the overlapping row: $out"
+  assert_not_contains "$out" 'evicted event' 'the summary presented an evicted row'
+  pass 'routine retention follows append order across a clock rollback while display follows timestamps'
+}
+
 # Finding: the summary counted retained rows while reading as if it counted the
 # whole absence, and the routine ledger's retention window was undocumented.
 test_summary_count_names_the_retained_scope() {
@@ -883,6 +909,7 @@ test_cold_fold_obeys_return_deadline
 test_unread_blocker_fails_closed
 test_blocker_scan_is_bounded_by_new_appends
 test_routine_evidence_stays_bounded_across_shutdown_retries
+test_routine_retention_uses_append_order_after_clock_rollback
 test_summary_count_names_the_retained_scope
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary

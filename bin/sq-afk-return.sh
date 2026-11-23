@@ -89,43 +89,46 @@ clean_field() {
 }
 
 merge_evidence() {
-  local source
-  local -a sources=("$GATE" kind=wake "$@") ledgers=()
+  local routine_ledger="$STATE/.subsuper-routine" escalation_ledger="$STATE/.subsuper-escalations"
+  local -a sources=("$GATE" kind=wake "$@")
   if [ -f "$STATE/.subsuper-inject-wedged" ]; then
     sources+=(kind=wedge "$STATE/.subsuper-inject-wedged")
   fi
-  for source in "$STATE"/.subsuper-{routine,escalations}; do
-    [ ! -f "$source" ] || ledgers+=("$source")
-  done
+  sources+=(kind=escalation)
+  [ ! -f "$routine_ledger" ] || sources+=("$routine_ledger")
   (
     set -o pipefail
-    if [ -n "${ledgers[0]:-}" ]; then
-      sort -s -t'|' -k1,1n "${ledgers[@]}"
+    if [ -f "$escalation_ledger" ]; then
+      sort -s -t'|' -k1,1n "$escalation_ledger"
     fi | LC_ALL=C awk -F '\t' -v routine_limit="$ROUTINE_EVIDENCE_LIMIT" '
       function isroutine(field, text) {
         return field == "escalation" && text ~ /^[0-9]+\|routine\|/
       }
       function keep(text, routine) {
+        if (!routine && text in seen) return
         row_count++
         line[row_count] = text
-        if (routine) { routine_count++; routine_row[routine_count] = row_count }
+        if (routine) {
+          if (text in seen) dropped[seen[text]] = 1
+          routine_row[++routine_count] = row_count
+        }
+        seen[text] = row_count
       }
       kind == "" {
-        if ($1 == "evidence" && !seen[$0]++) keep($0, isroutine($2, $3))
+        if ($1 == "evidence") keep($0, isroutine($2, $3))
         next
       }
       { gsub(/[\t\r]/, " "); if ($0 == "") next
         row = "evidence\t" kind "\t" $0
-        if (!seen[row]++) keep(row, isroutine(kind, $0)) }
-      # Rows are buffered only to keep their original order while the oldest
-      # routine rows are dropped: everything is still one linear pass, and one
-      # class can no longer grow the gate without bound across retries.
+        keep(row, isroutine(kind, $0)) }
       END {
-        first_kept = routine_count > routine_limit ? routine_count - routine_limit + 1 : 1
-        for (i = 1; i < first_kept; i++) dropped[routine_row[i]] = 1
+        for (i = routine_count; i > 0; i--) {
+          idx = routine_row[i]
+          if (!dropped[idx] && ++retained > routine_limit) dropped[idx] = 1
+        }
         for (i = 1; i <= row_count; i++) { if (!dropped[i]) print line[i] }
       }
-    ' "${sources[@]}" kind=escalation -
+    ' "${sources[@]}" -
   )
 }
 
