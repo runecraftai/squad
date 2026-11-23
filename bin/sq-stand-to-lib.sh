@@ -560,6 +560,9 @@ fm_wake_append() {
     printf '%s\t%s\t%s\t%s\t%s\n' "$epoch" "$seq" "$kind" "$clean_key" "$clean_payload" >> "$SQUAD_WAKE_QUEUE" || status=$?
   fi
   fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
+  if [ "$status" -eq 0 ] && [ "${4:-}" = --print-identity ]; then
+    printf '%s:%s\n' "$epoch" "$seq"
+  fi
   return "$status"
 }
 
@@ -606,6 +609,8 @@ fm_wake_print_deduped() {
       dedupe = $3 SUBSEP $4
       if ($3 == "heartbeat") {
         dedupe = "heartbeat"
+      } else if ($3 == "check" && $4 == "afk-ledger-undeliverable") {
+        dedupe = dedupe SUBSEP $1 SUBSEP $2
       }
       if (!(dedupe in seen)) {
         order[++count] = dedupe

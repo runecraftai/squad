@@ -1281,7 +1281,7 @@ wedge_alarm_notify() {  # <summary> <marker>
 # window. The supervisor pane is never touched here, so the commander is not
 # interrupted by a daemon fault.
 ledger_undeliverable() {  # <state> <item>
-  local state=$1 item=$2 marker max_defer now notify=1
+  local state=$1 item=$2 marker max_defer now wake identity='' notify=1
   marker="$state/.subsuper-inject-wedged"
   max_defer="${SQUAD_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}"
   now=$(_now)
@@ -1291,9 +1291,12 @@ ledger_undeliverable() {  # <state> <item>
     WEDGE_ALARM_LAST_EPOCH=$now
     log "ERROR: away-mode ledger write failed; queued on the stand-to path: $item"
   fi
-  printf 'away-mode ledger undeliverable as of %s: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$item" >> "$marker" 2>/dev/null || true
-  fm_wake_append check afk-ledger-undeliverable "check: away-mode ledger could not record: $item" 2>/dev/null \
-    || log 'ERROR: away-mode ledger undeliverable and the stand-to queue append also failed'
+  if wake=$(fm_wake_append check afk-ledger-undeliverable "check: away-mode ledger could not record: $item" --print-identity 2>/dev/null); then
+    [ -z "$wake" ] || identity=" [wake=$wake]"
+  else
+    log 'ERROR: away-mode ledger undeliverable and the stand-to queue append also failed'
+  fi
+  printf 'away-mode ledger undeliverable as of %s%s: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$identity" "$item" >> "$marker" 2>/dev/null || true
   if [ "$notify" -eq 1 ]; then
     wedge_alarm_notify "away-mode ledger undeliverable - see $marker" "$marker"
   fi

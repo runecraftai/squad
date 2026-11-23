@@ -289,7 +289,7 @@ test_undeliverable_ledger_item_reaches_the_summary() {
   dir="$TMP_ROOT/ledger-undeliverable"
   install_runner "$dir"
   date +%s > "$dir/home/state/.afk"
-  printf 'away-mode ledger undeliverable as of now: escalation: fake-c2: done: PR https://example.test/pr/77\n' \
+  printf 'away-mode ledger undeliverable as of now [wake=1784074290:5]: escalation: fake-c2: done: PR https://example.test/pr/77\n' \
     > "$dir/home/state/.subsuper-inject-wedged"
   {
     printf '1784074290\t5\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: escalation: fake-c2: done: PR https://example.test/pr/77\n'
@@ -317,16 +317,18 @@ test_undeliverable_ledger_item_reaches_the_summary() {
   install_runner "$dir"
   date +%s > "$dir/home/state/.afk"
   {
-    printf 'away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000: escalation: fake-c4: failed: lint\n'
-    printf 'away-mode ledger undeliverable as of 2026-01-01T10:05:00+0000: escalation: fake-c5: done: PR https://example.test/pr/88\n'
-    printf 'away-mode ledger undeliverable as of 2026-01-01T10:06:00+0000: escalation: fake-c4: failed: lint\n'
+    printf 'away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000 [wake=1784074299:6]: escalation: fake-c5: done: PR https://example.test/pr/88\n'
+    printf 'away-mode ledger undeliverable as of 2026-01-01T10:05:00+0000 [wake=1784074300:7]: escalation: fake-c5: done: PR https://example.test/pr/88\n'
+    printf 'away-mode ledger undeliverable as of 2026-01-01T10:06:00+0000: escalation: fake-c5: done: PR https://example.test/pr/88\n'
   } > "$dir/home/state/.subsuper-inject-wedged"
   printf '1784074300\t7\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: escalation: fake-c5: done: PR https://example.test/pr/88\n' \
     > "$dir/home/state/.fake-drain"
   out=$(run_return "$dir" begin) || fail "partially drained undeliverable return should clear: $out"
-  assert_contains "$out" 'daemon-notice=2' "partially drained undeliverable items were not both counted"
-  assert_contains "$out" '[daemon-notice] away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000: escalation: fake-c4: failed: lint' \
-    "undeliverable item drained during the absence was lost from the summary"
+  assert_contains "$out" 'daemon-notice=3' "partially drained undeliverable occurrences were not all counted"
+  assert_contains "$out" '[daemon-notice] away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000 [wake=1784074299:6]' \
+    "marker for a different wake with identical text was lost from the summary"
+  assert_contains "$out" 'as of 2026-01-01T10:06:00+0000: escalation: fake-c5' \
+    "unlinked marker with identical text was lost from the summary"
   assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: escalation: fake-c5: done: PR https://example.test/pr/88' \
     "surviving undeliverable record was not presented"
   assert_not_contains "$out" 'as of 2026-01-01T10:05:00+0000' "marker line duplicated the surviving queued record"
@@ -692,31 +694,29 @@ SH
 # the blocker scan re-folded every task's whole history - a subshell per
 # historical line on every retry - so a long-running task could stall the return.
 test_blocker_scan_is_bounded_by_new_appends() {
-  local dir state out rc
+  local dir state status transition probe out rc=0
   dir="$TMP_ROOT/blocker-fold"
   install_runner "$dir"
   state="$dir/home/state"
   printf 'window=synthetic:sq-fold\nbackend=tmux\nkind=strike\n' > "$state/fold-task.meta"
+  status="$state/fold-task.status"
+  probe="$dir/fold-reads"
   awk 'BEGIN {
     for (i = 1; i <= 40000; i++) printf "working: historical step %d\n", i
-    print "blocked [key=slow-history]: synthetic blocker"
-  }' > "$state/fold-task.status"
-  : > "$state/.fake-drain"
-  # The drain has already folded this log, so its cursor sits at the end of the
-  # history before the blocker scan runs - exactly the retry shape of the finding.
-  SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" bash -c '
-    . "$1"
-    status_open_decisions_incremental "$2" >/dev/null
-  ' _ "$ROOT/bin/sq-classify-lib.sh" "$state/fold-task.status" || fail "could not prime the open-decisions cursor"
+    print "blocked [key=old-blocker]: synthetic blocker"
+  }' > "$status"
+  out=$(run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 3 ] || fail "could not prime the blocker cursor: $out"
 
-  set +e
-  out=$(fm_run_timed 25 env SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" "$dir/bin/sq-afk-return.sh" begin 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -ne 124 ] \
-    || fail "the blocker scan re-folded a 40k-line status history instead of only the bytes appended since the drain"
-  [ "$rc" -eq 3 ] || fail "the long-history return did not gate on its live blocker (rc=$rc): $(printf '%s' "$out" | tail -3)"
-  assert_contains "$out" 'Squad-actionable blocker: fold-task [key=slow-history]' "the bounded blocker scan lost the live blocker"
+  transition=$'resolved [key=old-blocker]: cleared\nblocked [key=new-blocker]: waiting for review\n'
+  printf '%s' "$transition" >> "$status"
+  : > "$probe"
+  rc=0
+  out=$(SQUAD_OPEN_DECISIONS_READ_PROBE="$probe" run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the long-history check did not gate on its live blocker (rc=$rc): $out"
+  [ "$(< "$probe")" = "$status"$'\t'"${#transition}" ] || fail "check did not fold exactly the appended bytes: $(< "$probe")"
+  assert_contains "$out" 'Squad-actionable blocker: fold-task [key=new-blocker]' "the bounded blocker scan lost the new blocker"
+  assert_not_contains "$out" '[key=old-blocker]' "the bounded blocker scan kept the resolved blocker"
   pass "the blocker scan costs new appends, not a whole status history"
 }
 
@@ -1003,7 +1003,7 @@ test_summary_write_failure_preserves_evidence() (
 
 test_check_reports_wake_from_killed_drain() {
   local kind=$1 key=$2 live_key=$3 recovered=$4 live=$5 interrupt_again=${6:-no} dir state out rc=0
-  dir="$TMP_ROOT/killed-drain-$kind"
+  dir="$TMP_ROOT/killed-drain-$kind-$key"
   install_runner "$dir"
   install_real_drain "$dir"
   state="$dir/home/state"
@@ -1027,6 +1027,9 @@ SH
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'the killed drain did not leave an unpublished batch'
 
   printf '1784074301\t2\t%s\t%s\t%s\n' "$kind" "$live_key" "$live" >> "$state/.stand-to-queue"
+  if [ "$key" = afk-ledger-undeliverable ]; then
+    printf '1784074301\t3\t%s\t%s\t%s\n' "$kind" "$live_key" "$live" >> "$state/.stand-to-queue"
+  fi
   if [ "$interrupt_again" = yes ]; then
     rc=0
     out=$(PATH="$dir/bin:$PATH" run_return "$dir" check) || rc=$?
@@ -1045,8 +1048,13 @@ SH
   [ -s "$state/.afk-return-catchup" ] || fail 'the failed check cleared the recovered evidence'
 
   out=$(run_return "$dir" check) || fail "the recovered wake could not be presented: $out"
-  grep -Fxq "    1784074300 1 $kind $key $recovered" <<< "$out" || fail 'check did not present the recovered wake payload'
-  grep -Fxq "    1784074301 2 $kind $live_key $live" <<< "$out" || fail 'check did not present the newer wake payload'
+  if [ "$key" = afk-ledger-undeliverable ]; then
+    [ "$(grep -Fc "[daemon-notice] $recovered" <<< "$out")" -eq 3 ] || fail "check did not report all identical notices: $out"
+    assert_contains "$out" 'daemon-notice=3' 'check did not count every notice occurrence'
+  else
+    grep -Fxq "    1784074300 1 $kind $key $recovered" <<< "$out" || fail 'check did not present the recovered wake payload'
+    grep -Fxq "    1784074301 2 $kind $live_key $live" <<< "$out" || fail 'check did not present the newer wake payload'
+  fi
   if [ "$interrupt_again" = yes ]; then
     assert_contains "$out" "$live_key check: appended after second kill" 'check did not present the wake appended after the second kill'
   fi
@@ -1059,6 +1067,8 @@ SH
 
 test_real_drain_preserves_wakes_across_return_failures
 test_check_reports_wake_from_killed_drain check task.status task.status 'check: recovered ordinary wake details' 'check: different live wake details' yes
+test_check_reports_wake_from_killed_drain check afk-ledger-undeliverable afk-ledger-undeliverable \
+  'check: away-mode ledger could not record: repeated payload' 'check: away-mode ledger could not record: repeated payload'
 test_check_reports_wake_from_killed_drain stale dev-window dev-window 'stale: dev-window' 'stale: dev-window (busy expired without activity)'
 test_check_reports_wake_from_killed_drain signal task.status task.status 'signal: recovered task status' 'signal: updated task status'
 test_check_reports_wake_from_killed_drain heartbeat old-tick new-tick 'heartbeat: recovered tick' 'heartbeat: updated tick'

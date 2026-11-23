@@ -54,11 +54,11 @@
 # Hitting either deadline is a failure and the recorded terminal id is preserved for a retry.
 # Process-tree containment is not reliably bounded from shell.
 # A TERM-resistant descendant started in a second process group in the same session can outlive the per-call cap.
+# An outer deadline can also miss descendants in the original process group after its leader has been reaped.
 # The follow-up is to move process control out of shell.
-# Known limit: after tmux closes its last session, a no-server response can leave away mode set despite successful cleanup; the follow-up is to accept the tmux backend's conclusive no-server results while still rejecting timeouts and ambiguous failures.
-# Known limit: marker suppression ignores timestamps, so repeated ledger-write failures for an item can collapse into one notice after a later item replaces it in the queue; the follow-up is to suppress a marker only when a drained wake represents that notice.
-# Known limit: the long-history blocker regression measures elapsed time rather than using the fold read probe to verify that only appended bytes are read.
-# Known limit: lowering the routine ledger limit can record an already-retained repeat a second time during the next trim; the follow-up is to check for duplicates after trimming to the new window.
+# Known limit - after kill-session removes the last session, tmux may exit and report no server rather than a missing session, leaving away mode and the terminal record set despite successful cleanup; the follow-up is to recognize conclusive no-server responses while still rejecting timeouts and ambiguous socket errors.
+# Known limit - the teardown runner needs Perl and its modules, so without them a stop cannot probe its backend and stays gated even where GNU timeout or the Bash fallback works; the follow-up is a bounded path without Perl.
+# Known limit - lowering the routine retention limit can re-record a row that survives the trim because the append decision uses the pre-trim count; the follow-up is to trim first and decide against the retained window.
 # Known limit: the routine display cap can omit the earliest retained event after a clock rollback; the follow-up is to apply the display cap after sorting by timestamp.
 #
 # Supported supervisor targets: herdr, tmux, TUIOS, and native-only Orca (adopted

@@ -200,8 +200,6 @@ fmt_epoch() {  # <epoch> -> local "MM-DD HH:MM" (bash builtin, then GNU date, th
 summary_evidence() {
   LC_ALL=C awk -F '\t' '
     function identity(text) {
-      if (sub(/^check: away-mode ledger could not record: /, "", text) ||
-          sub(/^away-mode ledger undeliverable as of [^ ]+: /, "", text)) return "u:" text
       if (text ~ /s past max-defer/ &&
           sub(/^(check: away-mode escalations|away-mode ledger) held /, "", text)) {
         sub(/s past max-defer.*/, "", text)
@@ -210,12 +208,28 @@ summary_evidence() {
       return "x:" text
     }
     $1 != "evidence" { next }
+    $2 == "wake" && $3 ~ /^[0-9]+ [0-9]+ check afk-ledger-undeliverable / {
+      split($3, fields, " ")
+      if (!render) drained[fields[1] ":" fields[2]] = 1
+      else print
+      next
+    }
     $2 == "wake" && $3 ~ /^[0-9]+ [0-9]+ check afk-[A-Za-z0-9._-]+ / {
       item = $3
       sub(/^[^ ]+ [^ ]+ check [^ ]+ /, "", item)
       key = identity(item)
       if (!render) { queued[key] = 1; next }
       if (seen[key]++) next
+    }
+    render && $2 == "wedge" && $3 ~ /^away-mode ledger undeliverable as of / {
+      if (match($3, /^away-mode ledger undeliverable as of [^ ]+ \[wake=[0-9]+:[0-9]+\]: /)) {
+        key = substr($3, RSTART, RLENGTH)
+        sub(/^.*\[wake=/, "", key)
+        sub(/\]: $/, "", key)
+        if (key in drained) next
+      }
+      print
+      next
     }
     render && $2 == "wedge" {
       key = identity($3)
