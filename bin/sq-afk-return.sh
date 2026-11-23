@@ -65,25 +65,15 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 GATE="$STATE/.afk-return-catchup"
 LOCK="$STATE/.afk-return-catchup.lock"
-decimal_setting() {
-  local value=$1 fallback=$2
-  case "$value" in ''|*[!0123456789]*) printf '%s\n' "$fallback"; return ;; esac
-  value=${value#"${value%%[!0]*}"}
-  if [ "${#value}" -le 9 ]; then
-    printf '%s\n' "${value:-0}"
-  else
-    printf '%s\n' "$fallback"
-  fi
-}
-
-MAX_ROUTINE_EVENTS=$(decimal_setting "${SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS:-}" 200)
+# shellcheck source=bin/sq-afk-settings.sh
+. "$SCRIPT_DIR/sq-afk-settings.sh"
+MAX_ROUTINE_EVENTS=$(fm_afk_decimal_setting "${SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS:-}" 200)
 # The routine ledger's retention window, owned by bin/sq-supervise-daemon.sh:
 # that script keeps at most this many routine rows, and the gate's merged
 # routine evidence obeys the same window so a shutdown retried across rotations
 # cannot carry every evicted row forward forever. Escalations are never capped.
-ROUTINE_EVIDENCE_LIMIT=$(decimal_setting "${SQUAD_ROUTINE_LEDGER_LIMIT:-}" 1000)
-[ "$ROUTINE_EVIDENCE_LIMIT" -ge 1 ] || ROUTINE_EVIDENCE_LIMIT=1000
-LOCK_WAIT_SECS=$(decimal_setting "${SQUAD_AFK_RETURN_LOCK_SECS:-}" 30)
+ROUTINE_EVIDENCE_LIMIT=$(fm_afk_routine_ledger_limit)
+LOCK_WAIT_SECS=$(fm_afk_decimal_setting "${SQUAD_AFK_RETURN_LOCK_SECS:-}" 30)
 # The field separator, resolved once: a `while IFS="$(printf '\t')" read` re-runs
 # its command substitution on every iteration, which is a process per line.
 TAB=$(printf '\t')
@@ -459,7 +449,8 @@ return_reconcile() {
     remaining=$((deadline - $(date +%s)))
     [ "$remaining" -ge 1 ] || remaining=1
     stop_rc=0
-    fm_run_timed "$remaining" "$SCRIPT_DIR/sq-afk-launch.sh" stop || stop_rc=$?
+    fm_run_timed "$remaining" env SQUAD_AFK_RETURN_OWNS_STOP_TIMEOUT=1 \
+      "$SCRIPT_DIR/sq-afk-launch.sh" stop || stop_rc=$?
     if [ "$stop_rc" -ne 0 ]; then
       # The recorded terminal and state/.afk stay in place, so the next check
       # retries the same exact-id teardown instead of clearing away mode on an

@@ -49,13 +49,10 @@
 #                              worktree/parent binding; otherwise report each
 #                              candidate and preserve the intent.
 #
-# Bounds. Every vendor-CLI operation this script issues on the teardown path (tmux,
-# the Orca CLI, TUIOS) runs under the shared hard bound SQUAD_AFK_BACKEND_TIMEOUT_SECS
-# (default 10, from bin/sq-timeout-lib.sh), because an unresponsive backend must
-# never leave the away-mode return holding its catch-up lock: bin/sq-afk-return.sh
-# would then be unable to recover. Hitting the bound is a FAILED operation, never a
-# success, so the recorded terminal id is preserved for a retry rather than away
-# mode being cleared on an unconfirmed teardown.
+# Bounds. Standalone teardown uses SQUAD_AFK_BACKEND_TIMEOUT_SECS (default 10)
+# for bounded vendor calls. During away-mode return, bin/sq-afk-return.sh owns
+# the shutdown deadline for the whole process group. Hitting either bound is a
+# failure and the recorded terminal id is preserved for a retry.
 #
 # Supported supervisor targets: herdr, tmux, TUIOS, and native-only Orca (adopted
 # from the runtime-issued identity or selected explicitly).
@@ -102,12 +99,9 @@ SQUAD_AFK_LAUNCH_STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 SQUAD_AFK_LAUNCH_RECORD="$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal"
 SQUAD_AFK_LAUNCH_LOCK="$SQUAD_AFK_LAUNCH_STATE/.afk-launch.lock"
 SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
-# One vendor-CLI operation on the teardown path; see "Bounds" above. A value of
-# zero would disable the deadline, so it is never accepted.
-SQUAD_AFK_BACKEND_TIMEOUT_SECS=${SQUAD_AFK_BACKEND_TIMEOUT_SECS:-10}
-case "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" in
-  ''|*[!0-9]*|0) SQUAD_AFK_BACKEND_TIMEOUT_SECS=10 ;;
-esac
+# shellcheck source=bin/sq-afk-settings.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-afk-settings.sh"
+SQUAD_AFK_BACKEND_TIMEOUT_SECS=$(fm_afk_decimal_setting "${SQUAD_AFK_BACKEND_TIMEOUT_SECS:-}" 10 1)
 
 # shellcheck source=bin/sq-backend.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-backend.sh"
@@ -159,7 +153,11 @@ fm_afk_launch_log() { printf 'sq-afk-launch: %s\n' "$*" >&2; }
 # except 124, which means the bound was hit - the caller treats that as a failed
 # operation, exactly like any other non-zero status.
 fm_afk_launch_bounded() {  # <command> [args...]
-  fm_run_timed "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" "$@"
+  if [ "${return_owns_stop_timeout:-0}" = 1 ]; then
+    "$@"
+  else
+    fm_run_timed "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" "$@"
+  fi
 }
 
 fm_afk_launch_lock_owned() {
@@ -931,6 +929,7 @@ EOF
 
 fm_afk_launch_stop() {
   local pid pid_identity current_identity result=0 read_result primary resolve_result
+  local return_owns_stop_timeout=${SQUAD_AFK_RETURN_OWNS_STOP_TIMEOUT:-0}
   fm_afk_launch_record_read
   read_result=$?
   if [ "$read_result" -eq 2 ]; then

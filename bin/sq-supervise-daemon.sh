@@ -210,6 +210,8 @@ fi
 # classification predicates have exactly one definition.
 # shellcheck source=bin/sq-classify-lib.sh
 . "$SQUAD_DAEMON_DIR/sq-classify-lib.sh"
+# shellcheck source=bin/sq-afk-settings.sh
+. "$SQUAD_DAEMON_DIR/sq-afk-settings.sh"
 
 # Supervisor-pane discovery (SQUAD_SUPERVISOR_TARGET_DEFAULT,
 # SQUAD_SUPERVISOR_BACKEND_DEFAULT, discover_supervisor_pane and its unvalidated
@@ -869,8 +871,7 @@ ledger_add() {  # <state> <class> <distilled-item>
 routine_ledger_append() {
   local buf="$1/.subsuper-routine" item=$2 result pending limit
   # This script owns the routine retention window its header documents.
-  limit=${SQUAD_ROUTINE_LEDGER_LIMIT:-1000}
-  case "$limit" in ''|*[!0-9]*|0) limit=1000 ;; esac
+  limit=$(fm_afk_routine_ledger_limit)
   if [ -s "$buf" ]; then
     result=$(LEDGER_ENTRY="$item" LC_ALL=C awk '
       function identity(text) {

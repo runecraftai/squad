@@ -1174,7 +1174,7 @@ FAKE_TUIOS
 # vendor CLI runs under SQUAD_AFK_BACKEND_TIMEOUT_SECS, and hitting the bound is a
 # FAILED teardown that preserves the recorded terminal id for a retry.
 unit_stop_bounds_backend_operations() {
-  local st shim started elapsed rc
+  local setting=$1 guard=$2 max_elapsed=$3 st shim started elapsed rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-bounded-stop.XXXXXX")
   shim="$st/shim"
   mkdir -p "$st/state" "$shim"
@@ -1182,23 +1182,22 @@ unit_stop_bounds_backend_operations() {
   printf 'tmux\texact-session\towned\n' > "$st/state/.afk-daemon-terminal"
   cat > "$shim/tmux" <<'SH'
 #!/usr/bin/env bash
-# An unresponsive tmux server: neither kill-session nor has-session answers.
-sleep 30
-exit 1
+[ "${1:-}" = kill-session ] || exit 1
+exec sleep 18
 SH
   chmod +x "$shim/tmux"
 
   started=$(date +%s)
   rc=0
-  SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 PATH="$shim:$PATH" SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" \
-    fm_run_timed 20 "$LAUNCH" stop > "$st/out" 2>&1 || rc=$?
+  SQUAD_AFK_BACKEND_TIMEOUT_SECS=$setting PATH="$shim:$PATH" SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" \
+    fm_run_timed "$guard" "$LAUNCH" stop > "$st/out" 2>&1 || rc=$?
   elapsed=$(( $(date +%s) - started ))
   if [ "$rc" -eq 124 ]; then
     fail "bounded stop: an unresponsive tmux held stop past the backend bound instead of returning"
   elif [ "$rc" -eq 0 ]; then
     fail "bounded stop: an unconfirmed terminal teardown was reported as success"
-  elif [ "$elapsed" -gt 15 ]; then
-    fail "bounded stop: stop took ${elapsed}s against a 1s per-operation bound"
+  elif [ "$elapsed" -gt "$max_elapsed" ]; then
+    fail "bounded stop: stop took ${elapsed}s with timeout setting '$setting'"
   elif [ ! -e "$st/state/.afk-daemon-terminal" ]; then
     fail "bounded stop: an unconfirmed terminal teardown discarded the recorded id"
   elif grep -q 'preserving exact id' "$st/out"; then
@@ -1371,7 +1370,8 @@ unit_flag_write_failure_aborts
 unit_tuios_launch_and_attached_protection
 unit_tuios_launch_rolls_back_a_created_session
 unit_tuios_launch_rolls_back_when_new_reports_failure
-unit_stop_bounds_backend_operations
+unit_stop_bounds_backend_operations 1 8 6
+unit_stop_bounds_backend_operations 00 17 15
 unit_status_health
 e2e_herdr
 e2e_tmux

@@ -20,7 +20,7 @@ install_runner() {  # <case-dir>
   cp "$ROOT/bin/sq-afk-return.sh" "$dir/bin/"
   cp "$ROOT/bin/sq-stand-to-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/sq-classify-lib.sh" "$dir/bin/"
-  cp "$ROOT/bin/sq-timeout-lib.sh" "$dir/bin/"
+  cp "$ROOT/bin/sq-timeout-lib.sh" "$ROOT/bin/sq-afk-settings.sh" "$dir/bin/"
   cat > "$dir/bin/sq-afk-launch.sh" <<'SH'
 #!/usr/bin/env bash
 [ "${1:-}" = stop ] || exit 2
@@ -520,6 +520,34 @@ test_shutdown_step_is_bounded_and_retains_lifecycle() {
   pass "an unresponsive away-mode shutdown is bounded and retains the lifecycle state for the next check"
 }
 
+test_shutdown_contains_real_backend() {
+  local dir out rc=0 started_at elapsed
+  dir="$TMP_ROOT/shutdown-real-backend"
+  install_runner "$dir"
+  printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$ROOT/bin/sq-afk-launch.sh" > "$dir/bin/sq-afk-launch.sh"
+  date +%s > "$dir/home/state/.afk"
+  printf 'tmux\tsynthetic-session\towned\n' > "$dir/home/state/.afk-daemon-terminal"
+  cat > "$dir/bin/tmux" <<'SH'
+#!/usr/bin/env bash
+[ "$*" = 'kill-session -t synthetic-session' ] || exit 1
+printf 'backend entered\n'
+exec sleep 14
+SH
+  chmod +x "$dir/bin/tmux"
+
+  started_at=$(date +%s)
+  out=$(env PATH="$dir/bin:$PATH" SQUAD_AFK_RETURN_LOCK_SECS=3 SQUAD_AFK_BACKEND_TIMEOUT_SECS=12 \
+    SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" begin 2>&1) || rc=$?
+  elapsed=$(( $(date +%s) - started_at ))
+  [ "$rc" -eq 3 ] || fail "the return did not gate on timed-out backend cleanup (rc=$rc): $out"
+  assert_contains "$out" 'backend entered' 'the real launcher did not reach the stalled backend'
+  assert_contains "$out" 'return catch-up gate phase: shutdown-failed' 'the backend timeout did not retain the gate'
+  [ "$elapsed" -lt 10 ] || fail "the backend held return output open for ${elapsed}s after the shutdown deadline"
+  [ -e "$dir/home/state/.afk" ] && [ -e "$dir/home/state/.afk-daemon-terminal" ] \
+    || fail 'the timed-out backend lost its lifecycle state'
+  pass 'the return deadline contains the real launcher and its stalled backend'
+}
+
 # Finding: when the evidence merge failed after the queue was consumed, the gate
 # still said `stopping-and-draining` and the run only printed a generic retry, so
 # the phase that actually failed could not be named.
@@ -608,18 +636,18 @@ test_routine_evidence_stays_bounded_across_shutdown_retries() {
 
   for rotation in 1 2 3; do
     awk -v r="$rotation" 'BEGIN {
-      for (i = 1; i <= 50; i++) printf "17000000%02d|routine|rotation %d event %d\n", r, r, i
+      for (i = 1; i <= 8; i++) printf "17000000%02d|routine|rotation %d event %d\n", r, r, i
     }' > "$dir/home/state/.subsuper-routine"
     set +e
-    out=$(env SQUAD_ROUTINE_LEDGER_LIMIT=50 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
+    out=$(env SQUAD_ROUTINE_LEDGER_LIMIT=08 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
       "$dir/bin/sq-afk-return.sh" check 2>&1)
     set -e
     [ -s "$gate" ] || fail "retry $rotation cleared a gate whose shutdown keeps failing: $out"
     routine_rows=$(awk -F '\t' '$1 == "evidence" && $2 == "escalation" && $3 ~ /^[0-9]+\|routine\|/ { n++ } END { print n + 0 }' "$gate")
-    [ "$routine_rows" -le 50 ] \
-      || fail "retry $rotation carried $routine_rows routine evidence rows past the 50-row routine window"
+    [ "$routine_rows" -eq 8 ] \
+      || fail "retry $rotation retained $routine_rows routine evidence rows instead of the 8-row window"
   done
-  grep -F $'evidence\tescalation\t1700000003|routine|rotation 3 event 50' "$gate" >/dev/null \
+  grep -F $'evidence\tescalation\t1700000003|routine|rotation 3 event 8' "$gate" >/dev/null \
     || fail "the routine evidence window dropped the newest routine row"
   if grep -F 'rotation 1 event 1' "$gate" >/dev/null; then
     fail "the routine evidence window kept the oldest routine row instead of the newest"
@@ -635,9 +663,9 @@ test_routine_evidence_stays_bounded_across_shutdown_retries() {
 rm -f "$SQUAD_BASE/state/.afk" "$SQUAD_BASE/state/.afk-daemon-terminal"
 SH
   chmod +x "$dir/bin/sq-afk-launch.sh"
-  out=$(env SQUAD_ROUTINE_LEDGER_LIMIT=50 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
+  out=$(env SQUAD_ROUTINE_LEDGER_LIMIT=08 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
     "$dir/bin/sq-afk-return.sh" check 2>&1) || fail "the recovered shutdown did not clear the gate: $out"
-  assert_contains "$out" 'counts: escalation=2 routine=50' "the cleared summary did not present both escalations and the retained routine class"
+  assert_contains "$out" 'counts: escalation=2 routine=8' "the cleared summary did not present both escalations and the retained routine class"
   assert_contains "$out" '[escalation] escalation-one' "the cleared summary lost an escalation"
   pass "routine evidence stays inside the ledger's retention window across shutdown retries while escalations stay uncapped"
 }
@@ -756,6 +784,7 @@ test_real_drain_preserves_wakes_across_return_failures
 test_retry_preserves_checkpoint_published_during_merge
 test_summary_write_failure_preserves_evidence
 test_shutdown_step_is_bounded_and_retains_lifecycle
+test_shutdown_contains_real_backend
 test_failed_evidence_merge_names_its_phase
 test_blocker_scan_is_bounded_by_new_appends
 test_routine_evidence_stays_bounded_across_shutdown_retries

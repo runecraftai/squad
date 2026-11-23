@@ -1371,6 +1371,15 @@ test_routine_ledger_never_records_the_same_entry_twice() {
   lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
   [ "$lines" -le 1000 ] || fail "distinct routine events exceeded the retention budget"
   grep -F 'force-self' "$state/.subsuper-routine" >/dev/null || fail "full ledger dropped its newest event"
+  awk 'BEGIN { for (i = 1; i <= 8; i++) print "1784074300|routine|earlier event " i }' > "$state/.subsuper-routine"
+  SQUAD_ROUTINE_LEDGER_LIMIT=08 SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" SQUAD_INJECT_SKIP=signal \
+    handle_wake "signal: $state/dedup-1.status" "$state" >/dev/null 2>&1
+  lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
+  [ "$lines" -eq 8 ] || fail "the padded decimal limit retained $lines rows instead of 8"
+  grep -F 'force-self' "$state/.subsuper-routine" >/dev/null || fail 'the padded limit dropped the newest event'
+  if grep -F 'earlier event 1' "$state/.subsuper-routine" >/dev/null; then
+    fail 'the padded limit did not evict the oldest event'
+  fi
   pass "the away-mode routine ledger deduplicates rechecks and retains bounded recent evidence"
 }
 
