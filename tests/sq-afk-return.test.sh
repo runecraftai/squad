@@ -632,10 +632,19 @@ SH
 # still said `stopping-and-draining` and the run only printed a generic retry, so
 # the phase that actually failed could not be named.
 test_failed_evidence_merge_names_its_phase() {
-  local dir gate out rc phase
-  dir="$TMP_ROOT/merge-phase"
+  local drain_result=$1 dir gate out rc phase
+  dir="$TMP_ROOT/merge-phase-$drain_result"
   install_runner "$dir"
   install_real_drain "$dir"
+  if [ "$drain_result" = failure ]; then
+    mv "$dir/bin/sq-stand-to-drain.sh" "$dir/bin/real-drain.sh"
+    cat > "$dir/bin/sq-stand-to-drain.sh" <<'SH'
+#!/usr/bin/env bash
+"${0%/*}/real-drain.sh" || exit "$?"
+[ ! -s "$SQUAD_WAKE_DRAIN_CHECKPOINT" ]
+SH
+    chmod +x "$dir/bin/sq-stand-to-drain.sh"
+  fi
   seed_live_blocker "$dir" tmux merge-blocker
   gate="$dir/home/state/.afk-return-catchup"
   printf '1784074300|escalation|evidence merge trigger\n' > "$dir/home/state/.subsuper-escalations"
@@ -660,8 +669,9 @@ SH
   [ "$phase" = merging-evidence ] \
     || fail "the failed evidence merge left the gate in phase '${phase}' instead of naming the merge it could not commit"
   assert_contains "$out" 'return catch-up gate phase: merging-evidence' "the failed merge did not report the phase it reached"
-  assert_contains "$out" 'the drain consumed the queue but the evidence merge could not commit' \
-    "the failed merge did not explain why the gate could not advance"
+  assert_contains "$out" 'the evidence merge has not committed; any unmerged drain checkpoints remain in the spool' \
+    "the failed merge did not explain where uncommitted evidence remains"
+  assert_not_contains "$(< "$gate")" 'merge checkpoint' 'the failed merge unexpectedly committed the spooled wake'
 
   grep -q 'merge checkpoint' "$dir/home/state"/.afk-return-drain.*/raw || fail 'the failed merge lost the drained checkpoint'
   [ ! -s "$dir/home/state/.stand-to-queue" ] || fail 'the live blocker prevented the queue drain'
@@ -675,7 +685,7 @@ SH
   assert_contains "$out" '[escalation] evidence merge trigger' "the merge retry lost the ledger escalation"
   assert_contains "$out" 'check: away-mode ledger could not record: merge checkpoint' 'the merge retry lost the drained wake'
   [ ! -e "$gate" ] || fail "the successful merge retry left the gate behind"
-  pass "a failed evidence merge persists and reports the phase it could not commit"
+  pass "a failed evidence merge reports its phase after drain $drain_result"
 }
 
 # Finding: the drain folded each status log through the cursor-backed fold, but
@@ -894,7 +904,9 @@ test_unread_blocker_fails_closed() {
   local dir out rc=0
   dir="$TMP_ROOT/unread-blocker"
   install_runner "$dir"
+  install_real_drain "$dir"
   seed_live_blocker "$dir" tmux unread-blocker
+  printf '1784074300\t1\tcheck\tunread\tcheck: spooled before blocker scan\n' > "$dir/home/state/.stand-to-queue"
   {
     cat <<'SH'
 #!/usr/bin/env bash
@@ -905,10 +917,14 @@ SH
   chmod +x "$dir/bin/tail"
   out=$(PATH="$dir/bin:$PATH" run_return "$dir" begin) || rc=$?
   [ "$rc" -eq 1 ] && [ -s "$dir/home/state/.afk-return-catchup" ] || fail "unread status cleared the gate: $out"
+  assert_contains "$out" 'return catch-up gate phase: blocker-scan-failed' 'the unread blocker did not name its failed phase'
+  assert_not_contains "$out" 'the evidence merge has not committed' 'the scan failure was reported as a failed merge'
+  grep -Fq 'spooled before blocker scan' "$dir/home/state"/.afk-return-drain.*/raw || fail 'the failed scan lost its raw checkpoint'
   rc=0
   out=$(run_return "$dir" check) || rc=$?
   [ "$rc" -eq 3 ] || fail "the readable blocker did not gate the retry: $out"
   assert_contains "$out" 'return catch-up gate phase: blocked' 'the retry lost the unread blocker'
+  grep -Fq 'spooled before blocker scan' "$dir/home/state/.afk-return-catchup" || fail 'the retry did not commit the spooled wake'
   pass 'an incomplete blocker fold cannot clear the return gate'
 }
 
@@ -966,7 +982,7 @@ test_summary_write_failure_preserves_evidence() (
 )
 
 test_check_reports_wake_from_killed_drain() {
-  local kind=$1 key=$2 live_key=$3 recovered=$4 live=$5 dir state out batch rc=0
+  local kind=$1 key=$2 live_key=$3 recovered=$4 live=$5 interrupt_again=${6:-no} dir state out rc=0
   dir="$TMP_ROOT/killed-drain-$kind"
   install_runner "$dir"
   install_real_drain "$dir"
@@ -977,25 +993,29 @@ test_check_reports_wake_from_killed_drain() {
   cat > "$dir/bin/mv" <<'SH'
 #!/usr/bin/env bash
 case "$1" in
-  */raw.pending) kill -KILL "$PPID"; exit 1 ;;
+  */raw.pending)
+    printf 'interrupted\n' >> "$SQUAD_STATE_OVERRIDE/interrupted.log"
+    kill -KILL "$PPID"
+    exit 1
+    ;;
 esac
 exec "$REAL_MV" "$@"
 SH
   chmod +x "$dir/bin/mv"
   out=$(PATH="$dir/bin:$PATH" run_return "$dir" begin) || rc=$?
   [ "$rc" -eq 3 ] || fail "the killed drain did not gate return (rc=$rc): $out"
-  batch=$(compgen -G "$state/.stand-to-queue.drain.*") || fail 'the killed drain did not leave an unpublished batch'
-  rm -f "$dir/bin/mv"
+  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'the killed drain did not leave an unpublished batch'
 
-  printf '1784074301\t2\t%s\t%s\t%s\n' "$kind" "$live_key" "$live" > "$state/.stand-to-queue"
-  rc=0
-  out=$(run_return "$dir" check 2>&1) || rc=$?
-  [ "$rc" -eq 3 ] || fail "the conflicting $kind wake advanced return (rc=$rc): $out"
-  assert_contains "$out" "$kind key $live_key has a different queued payload" 'the conflicting check did not explain the refusal'
-  [ -s "$state/.afk-return-catchup" ] || fail 'the conflicting check cleared the gate'
-  assert_contains "$(< "$batch")" "$recovered" 'the conflict lost the recovered wake'
-  assert_contains "$(< "$state/.stand-to-queue")" "$live" 'the conflict lost the live wake'
-  mv "$state/.stand-to-queue" "$dir/conflicting-wake"
+  printf '1784074301\t2\t%s\t%s\t%s\n' "$kind" "$live_key" "$live" >> "$state/.stand-to-queue"
+  if [ "$interrupt_again" = yes ]; then
+    rc=0
+    out=$(PATH="$dir/bin:$PATH" run_return "$dir" check) || rc=$?
+    [ "$rc" -eq 3 ] || fail "the second kill did not gate return (rc=$rc): $out"
+    [ "$(grep -c '^interrupted$' "$state/interrupted.log")" -eq 2 ] || fail 'the retry never reached raw publication'
+    [ ! -s "$state/.stand-to-queue" ] || fail 'the retry never took the live batch for publication'
+    printf '1784074302\t3\t%s\t%s\tcheck: appended after second kill\n' "$kind" "$live_key" >> "$state/.stand-to-queue"
+  fi
+  rm -f "$dir/bin/mv"
 
   rc=0
   SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" check >&- 2> "$dir/error" || rc=$?
@@ -1005,15 +1025,20 @@ SH
   [ -s "$state/.afk-return-catchup" ] || fail 'the failed check cleared the recovered evidence'
 
   out=$(run_return "$dir" check) || fail "the recovered wake could not be presented: $out"
-  assert_contains "$out" "$key $recovered" 'check did not present the recovered wake payload'
+  grep -Fxq "    1784074300 1 $kind $key $recovered" <<< "$out" || fail 'check did not present the recovered wake payload'
+  grep -Fxq "    1784074301 2 $kind $live_key $live" <<< "$out" || fail 'check did not present the newer wake payload'
+  if [ "$interrupt_again" = yes ]; then
+    assert_contains "$out" "$live_key check: appended after second kill" 'check did not present the wake appended after the second kill'
+  fi
   [ ! -e "$state/.afk-return-catchup" ] || fail 'the reported wake did not clear the gate'
   out=$(run_return "$dir" check) || fail "clean check failed: $out"
   assert_not_contains "$out" "$recovered" 'clean check replayed the reported wake'
-  pass "return check gates a conflicting recovered $kind wake and presents its details on retry"
+  assert_not_contains "$out" "$live" 'clean check replayed the newer wake'
+  pass "return presents recovered and newer $kind wakes without coalescing their batches"
 }
 
 test_real_drain_preserves_wakes_across_return_failures
-test_check_reports_wake_from_killed_drain check task.status task.status 'check: recovered ordinary wake details' 'check: different live wake details'
+test_check_reports_wake_from_killed_drain check task.status task.status 'check: recovered ordinary wake details' 'check: different live wake details' yes
 test_check_reports_wake_from_killed_drain stale dev-window dev-window 'stale: dev-window' 'stale: dev-window (busy expired without activity)'
 test_check_reports_wake_from_killed_drain signal task.status task.status 'signal: recovered task status' 'signal: updated task status'
 test_check_reports_wake_from_killed_drain heartbeat old-tick new-tick 'heartbeat: recovered tick' 'heartbeat: updated tick'
@@ -1022,7 +1047,8 @@ test_summary_write_failure_preserves_evidence
 test_shutdown_step_is_bounded_and_retains_lifecycle
 test_shutdown_contains_real_backend
 test_backend_registry_retires_timeouts_and_ignores_stale_identity
-test_failed_evidence_merge_names_its_phase
+test_failed_evidence_merge_names_its_phase success
+test_failed_evidence_merge_names_its_phase failure
 test_cold_fold_obeys_return_deadline
 test_unread_blocker_fails_closed
 test_blocker_scan_is_bounded_by_new_appends

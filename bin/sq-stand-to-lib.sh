@@ -584,28 +584,8 @@ fm_wake_queued_keys_locked() {
     "$SQUAD_WAKE_QUEUE" 2>/dev/null || true
 }
 
-fm_wake_restore_queue() {
-  local drained=$1 restore
-  restore="$STATE/.stand-to-queue.restore.pending"
-  rm -f "$restore" || return 1
-  if [ ! -e "$SQUAD_WAKE_QUEUE" ]; then
-    mv "$drained" "$SQUAD_WAKE_QUEUE"
-    return $?
-  fi
-  if cat "$drained" "$SQUAD_WAKE_QUEUE" > "$restore" && mv "$restore" "$SQUAD_WAKE_QUEUE"; then
-    return 0
-  fi
-  rm -f "$restore"
-  return 1
-}
-
 fm_wake_print_deduped() {
-  local check_recovery=0
-  if [ "$1" = --check-recovery ]; then
-    check_recovery=1
-    shift
-  fi
-  awk -F '\t' -v check_recovery="$check_recovery" '
+  awk -F '\t' '
     NF >= 5 {
       dedupe = $3 SUBSEP $4
       if ($3 == "heartbeat") {
@@ -615,34 +595,14 @@ fm_wake_print_deduped() {
         order[++count] = dedupe
         seen[dedupe] = 1
       }
-      if (check_recovery) {
-        payload[dedupe] = $5
-        kind[dedupe] = $3
-        key[dedupe] = $4
-        if (FILENAME != ARGV[ARGC - 1]) {
-          batch_payload[FILENAME, dedupe] = $5
-          batch_key[FILENAME, dedupe] = dedupe
-        }
-      } else {
-        line[dedupe] = $0
-      }
+      line[dedupe] = $0
     }
     END {
-      if (check_recovery) {
-        for (row in batch_key) {
-          dedupe = batch_key[row]
-          if (("x" batch_payload[row]) != ("x" payload[dedupe])) {
-            printf "sq-stand-to-drain: refusing to recover interrupted drain: %s key %s has a different queued payload\n", kind[dedupe], key[dedupe]
-            exit 1
-          }
-        }
-      } else {
-        for (i = 1; i <= count; i++) {
-          print line[order[i]]
-        }
+      for (i = 1; i <= count; i++) {
+        print line[order[i]]
       }
     }
-  ' "$@"
+  ' "$1"
 }
 
 # Map one structurally valid signal key to its base-local status filename.

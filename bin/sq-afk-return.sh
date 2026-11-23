@@ -404,8 +404,10 @@ gate_reason() {  # <phase>
       printf 'away-mode shutdown failed; lifecycle state was preserved for retry' ;;
     drain-failed)
       printf 'durable wake drain failed or its queue lock did not become available' ;;
+    blocker-scan-failed)
+      printf 'the blocker scan could not finish; any unmerged drain checkpoints remain in the spool' ;;
     merging-evidence)
-      printf 'the drain consumed the queue but the evidence merge could not commit, so the gate holds the drained batch and retrying the merge is the recovery' ;;
+      printf 'the evidence merge has not committed; any unmerged drain checkpoints remain in the spool' ;;
     presenting)
       printf 'catch-up evidence was recorded but presentation or cleanup did not finish' ;;
     blocked)
@@ -469,18 +471,19 @@ return_reconcile() {
       mv "$spool/output.pending" "$spool/output" || exit 1
       exit "$rc"
     ) || phase=drain-failed
-    if [ -z "$phase" ]; then
-      write_gate_phase merging-evidence || return 1
-    fi
   fi
 
-  scan_open_blockers > "$blockers" || return 1
+  if ! scan_open_blockers > "$blockers"; then
+    write_gate_phase blocker-scan-failed
+    return 1
+  fi
   if [ -z "$phase" ] && [ -s "$blockers" ]; then
     phase=blocked
   fi
   for checkpoint in "$STATE"/.afk-return-drain.*/{raw,output}; do
     [ ! -f "$checkpoint" ] || checkpoints+=("$checkpoint")
   done
+  write_gate_phase merging-evidence || return 1
   write_gate "$blockers" "${phase:-presenting}" ${checkpoints[@]+"${checkpoints[@]}"} || return 1
   for checkpoint in ${checkpoints[@]+"${checkpoints[@]}"}; do
     rm -f -- "$checkpoint" || return 1

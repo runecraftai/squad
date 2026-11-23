@@ -408,20 +408,26 @@ test_interruption_before_and_after_raw_commit() {
   SQUAD_STATE_OVERRIDE="$state" SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT=5 "$DRAIN" > "$before_out" &
   pid=$!
   i=0
-  while [ "$i" -lt 100 ] && ! compgen -G "$state/.stand-to-queue.drain.*" >/dev/null; do
+  for ((i = 0; i < 100; i++)); do
+    if [ -f "$state/.stand-to-queue" ] && [ ! -s "$state/.stand-to-queue" ] &&
+       compgen -G "$state/.stand-to-queue.drain.*" >/dev/null; then
+      break
+    fi
     sleep 0.05
-    i=$((i + 1))
   done
-  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || { kill "$pid" 2>/dev/null || true; fail "pre-commit drain never rotated the queue"; }
+  [ "$i" -lt 100 ] || { kill "$pid" 2>/dev/null || true; fail "pre-commit drain never rotated the queue"; }
   kill -TERM "$pid" 2>/dev/null || fail "could not interrupt drain before raw commitment"
   set +e
   wait "$pid"
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "pre-commit interruption unexpectedly succeeded"
-  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$replay_out" || fail "restored pre-commit wake did not drain"
+  append_wake "$state" signal task.status 'signal: newer task wake after TERM' || fail 'post-TERM wake append failed'
+  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$replay_out" || fail 'pre-commit wakes did not drain'
   count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$replay_out")
-  [ "$count" -eq 1 ] || fail "pre-commit interruption lost or duplicated the restored row"
+  [ "$count" -eq 2 ] || fail 'pre-commit interruption lost or duplicated a conflicting wake'
+  grep -Fxq 'signal: task' < <(cut -f5 "$replay_out") || fail 'pre-commit interruption lost the original payload'
+  grep -Fxq 'signal: newer task wake after TERM' < <(cut -f5 "$replay_out") || fail 'pre-commit interruption lost the newer payload'
 
   append_wake "$state" signal task.status "signal: task after commit" || fail "post-commit interruption wake append failed"
   SQUAD_STATE_OVERRIDE="$state" SQUAD_WAKE_ENRICH_TEST_DELAY=5 "$DRAIN" > "$after_out" &
@@ -435,17 +441,16 @@ test_interruption_before_and_after_raw_commit() {
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$empty_out" || fail "drain after post-commit interruption failed"
   count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$after_out" "$empty_out")
   [ "$count" -eq 1 ] || fail "post-commit interruption restored or duplicated the consumed row"
-  pass "interruptions restore before commitment and never replay after raw commitment"
+  pass "interruptions preserve separate batches before commitment and never replay after raw commitment"
 }
 
 # A drain killed with no chance to run its EXIT trap (SIGKILL, a hard crash) leaves
-# the queue empty and its in-flight batch in .stand-to-queue.drain.<pid>. The next
+# the queue empty and its in-flight batch in .stand-to-queue.drain.*. The next
 # drain must recover that batch before deciding the queue is empty; otherwise the
 # wake is never reported, and bin/sq-afk-return.sh would clear its return gate as
 # if nothing had happened.
 test_killed_drain_batch_is_recovered() {
   local dir state queue pid count i
-  local -a scratch
   dir=$(make_case killed-batch)
   state="$dir/state"
   printf 'done: killed batch fixture\n' > "$state/task.status"
@@ -455,7 +460,7 @@ test_killed_drain_batch_is_recovered() {
   pid=$!
   queue="$state/.stand-to-queue"
   for ((i = 0; i < 200; i++)); do
-    if compgen -G "$state/.stand-to-queue.drain.*" >/dev/null && [ -f "$queue" ] && [ ! -s "$queue" ]; then
+    if [ -f "$queue" ] && [ ! -s "$queue" ] && compgen -G "$state/.stand-to-queue.drain.*" >/dev/null; then
       break
     fi
     sleep 0.05
@@ -473,34 +478,22 @@ test_killed_drain_batch_is_recovered() {
   {
     cat <<'SH'
 #!/usr/bin/env bash
-case "$1" in
+case "${!#}" in
   *.stand-to-queue.drain.*)
-    printf 'partial restore\n'
-    if [ "${INTERRUPT_RESTORE:-0}" = 1 ]; then
-      kill -KILL "$PPID"
-    fi
+    printf 'partial batch read\n'
     exit 1
     ;;
 esac
 SH
-    printf "exec %q \"\$@\"\n" "$(command -v cat)"
-  } > "$dir/bin/cat"
-  chmod +x "$dir/bin/cat"
+    printf "exec %q \"\$@\"\n" "$(command -v awk)"
+  } > "$dir/bin/awk"
+  chmod +x "$dir/bin/awk"
   if SQUAD_STATE_OVERRIDE="$state" PATH="$dir/bin:$PATH" "$DRAIN" > "$dir/failed.out" 2> "$dir/failed.err"; then
-    fail 'the drain reported success after failing to restore the abandoned batch'
+    fail 'the drain reported success after failing to read the abandoned batch'
   fi
-  [ ! -s "$dir/failed.out" ] || fail 'a failed restore reported a wake as delivered'
-  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'a failed restore removed the abandoned batch'
-
-  for i in 1 2; do
-    if INTERRUPT_RESTORE=1 SQUAD_STATE_OVERRIDE="$state" PATH="$dir/bin:$PATH" \
-      "$DRAIN" > "$dir/interrupted-$i.out" 2> "$dir/interrupted-$i.err"; then
-      fail 'an interrupted restore reported success'
-    fi
-    [ ! -s "$dir/interrupted-$i.out" ] || fail 'an interrupted restore reported a wake as delivered'
-  done
-  scratch=("$state"/.stand-to-queue.restore.*)
-  [ "${#scratch[@]}" -eq 1 ] && [ -s "${scratch[0]}" ] || fail 'restore attempts did not reuse one scratch path'
+  [ ! -s "$dir/failed.out" ] || fail 'a failed read reported a wake as delivered'
+  grep -Fq 'could not read drain batch' "$dir/failed.err" || fail 'the drain did not name the failed read'
+  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'a failed read removed the abandoned batch'
 
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/recovered.out" 2> "$dir/recovered.err" \
     || fail "the drain after a killed batch failed"
@@ -511,9 +504,7 @@ SH
     || fail "the recovered wake lost its payload"
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
     && fail "the recovered batch was left in place for the next drain to replay"
-  compgen -G "$state/.stand-to-queue.restore.*" >/dev/null \
-    && fail 'unpublished scratch remained after recovery'
-  grep -F 'recovered an interrupted drain batch' "$dir/recovered.err" >/dev/null \
+  grep -F 'recovered 1 interrupted drain batch' "$dir/recovered.err" >/dev/null \
     || fail "the recovery was not reported"
 
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/replay.out" || fail "the drain after recovery failed"

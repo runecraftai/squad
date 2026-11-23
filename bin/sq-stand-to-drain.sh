@@ -11,9 +11,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/sq-line-cap-lib.sh
 . "$SCRIPT_DIR/sq-line-cap-lib.sh"
 
-DRAIN_TMP=
 DRAIN_LOCK_HELD=false
 RAW_ROWS=
+DRAIN_BATCHES=()
 
 # Defense in depth for the supervision chain: this script runs at the top of
 # every wake-handling and recovery turn, so assert supervision health here too. A
@@ -152,44 +152,9 @@ print_teardown_pending_section() {
   printf "TEARDOWN PENDING: clear one once its work is confirmed landed: bin/sq-teardown.sh <id>\n"
 }
 
-# Recover a batch a previous drain rotated aside but never published. A drain
-# killed with no chance to run its EXIT trap (SIGKILL, a hard crash) leaves the
-# queue empty and its batch in .stand-to-queue.drain.<pid>, which the next drain
-# would otherwise read as "nothing queued" - and bin/sq-afk-return.sh would then
-# clear its gate without ever reporting that wake. The trap below removes the
-# batch it restored, so any leftover batch is exactly one whose raw output was
-# never committed; replaying one that was already published is the documented
-# at-least-once boundary. Runs under the queue lock, so no other drain can be
-# mid-batch while it decides.
-recover_abandoned_batches() {
-  local batch held live=/dev/null
-  local -a batches=()
-  for batch in "$STATE"/.stand-to-queue.drain.*; do
-    [ -f "$batch" ] || continue
-    batches+=("$batch")
-  done
-  [ -n "${batches[0]:-}" ] || return 0
-  if [ -e "$SQUAD_WAKE_QUEUE" ]; then
-    live=$SQUAD_WAKE_QUEUE
-  fi
-  fm_wake_print_deduped --check-recovery "${batches[@]}" "$live" >&2 || return 1
-  for batch in "${batches[@]}"; do
-    held=$(awk 'NF >= 5 { n++ } END { print n + 0 }' "$batch" 2>/dev/null) || held=0
-    if fm_wake_restore_queue "$batch" && rm -f "$batch"; then
-      printf 'sq-stand-to-drain: recovered an interrupted drain batch (%s record(s)) before reporting it\n' "$held" >&2
-    else
-      printf 'sq-stand-to-drain: an interrupted drain batch could not be recovered; leaving it in place for the next drain\n' >&2
-      return 1
-    fi
-  done
-}
-
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
-  if [ "$status" -ne 0 ] && [ "$DRAIN_LOCK_HELD" = true ] && [ -n "$DRAIN_TMP" ] && [ -e "$DRAIN_TMP" ]; then
-    { fm_wake_restore_queue "$DRAIN_TMP" && rm -f "$DRAIN_TMP"; } || true
-  fi
   if [ "$DRAIN_LOCK_HELD" = true ]; then
     fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
   fi
@@ -207,29 +172,36 @@ else
 fi
 DRAIN_LOCK_HELD=true
 
-recover_abandoned_batches || exit 1
+recovered=0
+for batch in "$STATE"/.stand-to-queue.drain.*; do
+  [ -e "$batch" ] || [ -L "$batch" ] || continue
+  DRAIN_BATCHES+=("$batch")
+  recovered=$((recovered + 1))
+done
 
-if [ ! -s "$SQUAD_WAKE_QUEUE" ]; then
-  : > "$SQUAD_WAKE_QUEUE" || exit 1
-  fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
-  DRAIN_LOCK_HELD=false
-  (print_open_decisions_section) || true
-  (print_teardown_pending_section) || true
-  assert_sentry_liveness
-  exit 0
+if [ -s "$SQUAD_WAKE_QUEUE" ]; then
+  batch=$(mktemp "$STATE/.stand-to-queue.drain.XXXXXX") || exit 1
+  mv "$SQUAD_WAKE_QUEUE" "$batch" || exit 1
+  DRAIN_BATCHES+=("$batch")
 fi
-
-DRAIN_TMP="$STATE/.stand-to-queue.drain.${BASHPID:-$$}"
-mv "$SQUAD_WAKE_QUEUE" "$DRAIN_TMP" || exit 1
 : > "$SQUAD_WAKE_QUEUE" || exit 1
 
-RAW_ROWS=$(fm_wake_print_deduped "$DRAIN_TMP") || exit "$?"
-case "${SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT:-0}" in
-  0) ;;
-  ''|*[!0-9]*) ;;
-  *) sleep "$SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT" ;;
-esac
+if [ -n "${DRAIN_BATCHES[0]:-}" ]; then
+  RAW_ROWS=$(
+    for batch in "${DRAIN_BATCHES[@]}"; do
+      if [ ! -f "$batch" ] || [ -L "$batch" ] || ! fm_wake_print_deduped "$batch"; then
+        printf 'sq-stand-to-drain: could not read drain batch %s; leaving batches in place for retry\n' "$batch" >&2
+        exit 1
+      fi
+    done
+  ) || exit 1
+fi
 if [ -n "$RAW_ROWS" ]; then
+  case "${SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT:-0}" in
+    0) ;;
+    ''|*[!0-9]*) ;;
+    *) sleep "$SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT" ;;
+  esac
   # Print-before-delete is the deliberate at-least-once no-loss boundary: a
   # crash in this micro-gap may replay a wake, and annotations stay outside it.
   if [ -n "${SQUAD_WAKE_DRAIN_CHECKPOINT:-}" ]; then
@@ -239,14 +211,18 @@ if [ -n "$RAW_ROWS" ]; then
     printf '%s\n' "$RAW_ROWS" || exit "$?"
   fi
 fi
-rm -f "$DRAIN_TMP" || exit "$?"
-DRAIN_TMP=
+if [ -n "${DRAIN_BATCHES[0]:-}" ]; then
+  rm -f -- "${DRAIN_BATCHES[@]}" || exit 1
+fi
 fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
 DRAIN_LOCK_HELD=false
+if [ "$recovered" -gt 0 ]; then
+  printf 'sq-stand-to-drain: recovered %s interrupted drain batch(es)\n' "$recovered" >&2
+fi
 
 # Raw output and queue deletion are authoritative. Everything below is
 # best-effort and cannot restore, duplicate, hide, or fail the consumed rows.
-(fm_wake_print_annotations "$RAW_ROWS") || true
+[ -z "$RAW_ROWS" ] || (fm_wake_print_annotations "$RAW_ROWS") || true
 (print_open_decisions_section) || true
 (print_teardown_pending_section) || true
 assert_sentry_liveness
