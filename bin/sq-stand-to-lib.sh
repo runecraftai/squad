@@ -590,14 +590,14 @@ fm_wake_queued_keys() {
 
 fm_wake_queued_keys_locked() {
   local kind=$1 file
-  local -a files
-  files=()
-  for file in "$SQUAD_WAKE_BATCH_PREFIX"* "$SQUAD_WAKE_QUEUE"; do
-    [ -f "$file" ] && [ ! -L "$file" ] && files+=("$file")
-  done
-  [ -n "${files[0]:-}" ] || return 0
-  awk -F '\t' -v kind="$kind" 'NF >= 5 && $3 == kind { print $2 "\t" $4 }' "${files[@]}" 2>/dev/null |
-    LC_ALL=C sort -n -k1,1 | awk -F '\t' '!seen[$2]++ { print $2 }'
+  {
+    for file in "$SQUAD_WAKE_BATCH_PREFIX"* "$SQUAD_WAKE_QUEUE"; do
+      [ -f "$file" ] && [ ! -L "$file" ] || continue
+      if ! awk -F '\t' -v kind="$kind" 'NF >= 5 && $3 == kind { print $2 "\t" $4 }' "$file" 2>/dev/null; then
+        printf 'fm_wake_queued_keys: could not read queue file: %s\n' "$file" >&2
+      fi
+    done
+  } | LC_ALL=C sort -n -k1,1 | awk -F '\t' '!seen[$2]++ { print $2 }'
 }
 
 fm_wake_print_deduped() {

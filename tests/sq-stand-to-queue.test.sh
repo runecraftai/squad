@@ -528,6 +528,39 @@ SH
   pass 'a failed recovery read leaves the live queue untouched and a retry delivers both wakes once'
 }
 
+test_queued_keys_survive_unreadable_batch() {
+  local dir state unreadable
+  dir=$(make_case queued-keys)
+  state="$dir/state"
+  unreadable="$state/.stand-to-queue.drain.00-unreadable"
+  printf '1\t1\tcheck\tprocevent:hidden:1\tcheck: hidden\n' > "$unreadable"
+  printf '1\t2\tcheck\tprocevent:batch:1\tcheck: recovered\n' > "$state/.stand-to-queue.drain.01-readable"
+  printf '2\t3\tcheck\tprocevent:live:1\tcheck: live\n2\t4\tcheck\tprocevent:batch:1\tcheck: repeat\n' > "$state/.stand-to-queue"
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+for arg; do
+  if [ "$arg" = "$UNREADABLE_BATCH" ]; then
+    printf 'permission denied: %s\n' "$arg" >&2
+    exit 2
+  fi
+done
+SH
+    printf "exec %q \"\$@\"\n" "$(command -v awk)"
+  } > "$dir/fakebin/awk"
+  chmod +x "$dir/fakebin/awk"
+
+  PATH="$dir/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" UNREADABLE_BATCH="$unreadable" bash -c '
+    # shellcheck disable=SC1090,SC1091
+    . "$1"
+    fm_wake_queued_keys check
+  ' _ "$ROOT/bin/sq-stand-to-lib.sh" > "$dir/keys" 2> "$dir/errors" || fail 'queued-key lookup failed'
+  printf 'procevent:batch:1\nprocevent:live:1\n' > "$dir/expected"
+  cmp -s "$dir/expected" "$dir/keys" || fail 'a failed read hid readable keys or broke ordering or deduplication'
+  grep -Fq "$unreadable" "$dir/errors" || fail 'queued-key lookup did not name the failed input'
+  pass 'queued-key lookup reports read errors and keeps readable keys'
+}
+
 test_concurrent_append_and_drain
 test_signal_catchup_without_running_sentry
 test_stale_enqueue_before_suppressor
@@ -541,3 +574,4 @@ test_enrichment_caps_and_status_file_failures
 test_slow_annotation_does_not_block_append_and_deleted_file_fails_open
 test_interruption_before_and_after_raw_commit
 test_killed_drain_batch_is_recovered
+test_queued_keys_survive_unreadable_batch
