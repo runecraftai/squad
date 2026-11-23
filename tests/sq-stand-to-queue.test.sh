@@ -438,6 +438,52 @@ test_interruption_before_and_after_raw_commit() {
   pass "interruptions restore before commitment and never replay after raw commitment"
 }
 
+# A drain killed with no chance to run its EXIT trap (SIGKILL, a hard crash) leaves
+# the queue empty and its in-flight batch in .stand-to-queue.drain.<pid>. The next
+# drain must recover that batch before deciding the queue is empty; otherwise the
+# wake is never reported, and bin/sq-afk-return.sh would clear its return gate as
+# if nothing had happened.
+test_killed_drain_batch_is_recovered() {
+  local dir state pid count i
+  dir=$(make_case killed-batch)
+  state="$dir/state"
+  printf 'done: killed batch fixture\n' > "$state/task.status"
+  append_wake "$state" signal task.status "signal: task before the kill" || fail "wake append failed"
+
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT=10 "$DRAIN" > "$dir/killed.out" &
+  pid=$!
+  i=0
+  while [ "$i" -lt 200 ] && ! compgen -G "$state/.stand-to-queue.drain.*" >/dev/null; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
+    || { kill -KILL "$pid" 2>/dev/null || true; fail "the drain never rotated the queue aside"; }
+  kill -KILL "$pid" 2>/dev/null || fail "could not kill the drain before it published its raw output"
+  wait "$pid" 2>/dev/null || true
+  [ -s "$state/.stand-to-queue" ] \
+    && fail "the killed drain left records in the queue, so the fixture is not the pre-publication crash"
+  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
+    || fail "the killed drain left no in-flight batch to recover"
+
+  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/recovered.out" 2> "$dir/recovered.err" \
+    || fail "the drain after a killed batch failed"
+  count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$dir/recovered.out")
+  [ "$count" -eq 1 ] \
+    || fail "a killed drain's batch was not recovered: the queue looked empty and its wake was never reported"
+  grep -F 'signal: task before the kill' "$dir/recovered.out" >/dev/null \
+    || fail "the recovered wake lost its payload"
+  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
+    && fail "the recovered batch was left in place for the next drain to replay"
+  grep -F 'recovered an interrupted drain batch' "$dir/recovered.err" >/dev/null \
+    || fail "the recovery was not reported"
+
+  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/replay.out" || fail "the drain after recovery failed"
+  count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$dir/replay.out")
+  [ "$count" -eq 0 ] || fail "a recovered batch was reported twice"
+  pass "a drain killed before publication has its batch recovered once, under the queue lock"
+}
+
 test_concurrent_append_and_drain
 test_signal_catchup_without_running_sentry
 test_stale_enqueue_before_suppressor
@@ -450,3 +496,4 @@ test_structural_signal_enrichment_preserves_raw_rows
 test_enrichment_caps_and_status_file_failures
 test_slow_annotation_does_not_block_append_and_deleted_file_fails_open
 test_interruption_before_and_after_raw_commit
+test_killed_drain_batch_is_recovered

@@ -49,6 +49,14 @@
 #                              worktree/parent binding; otherwise report each
 #                              candidate and preserve the intent.
 #
+# Bounds. Every vendor-CLI operation this script issues on the teardown path (tmux,
+# the Orca CLI, TUIOS) runs under the shared hard bound SQUAD_AFK_BACKEND_TIMEOUT_SECS
+# (default 10, from bin/sq-timeout-lib.sh), because an unresponsive backend must
+# never leave the away-mode return holding its catch-up lock: bin/sq-afk-return.sh
+# would then be unable to recover. Hitting the bound is a FAILED operation, never a
+# success, so the recorded terminal id is preserved for a retry rather than away
+# mode being cleared on an unconfirmed teardown.
+#
 # Supported supervisor targets: herdr, tmux, TUIOS, and native-only Orca (adopted
 # from the runtime-issued identity or selected explicitly).
 # herdr (a `--no-focus` workspace) and tmux (a detached session) launch the daemon
@@ -94,6 +102,12 @@ SQUAD_AFK_LAUNCH_STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 SQUAD_AFK_LAUNCH_RECORD="$SQUAD_AFK_LAUNCH_STATE/.afk-daemon-terminal"
 SQUAD_AFK_LAUNCH_LOCK="$SQUAD_AFK_LAUNCH_STATE/.afk-launch.lock"
 SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
+# One vendor-CLI operation on the teardown path; see "Bounds" above. A value of
+# zero would disable the deadline, so it is never accepted.
+SQUAD_AFK_BACKEND_TIMEOUT_SECS=${SQUAD_AFK_BACKEND_TIMEOUT_SECS:-10}
+case "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" in
+  ''|*[!0-9]*|0) SQUAD_AFK_BACKEND_TIMEOUT_SECS=10 ;;
+esac
 
 # shellcheck source=bin/sq-backend.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-backend.sh"
@@ -105,6 +119,8 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 . "$SQUAD_AFK_LAUNCH_DIR/sq-afk-orca-launch.sh"
 # shellcheck source=bin/sq-supervisor-target-lib.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-supervisor-target-lib.sh"
+# shellcheck source=bin/sq-timeout-lib.sh
+. "$SQUAD_AFK_LAUNCH_DIR/sq-timeout-lib.sh"
 
 # Adopt only identity issued to this process by Orca. Non-empty explicit
 # supervisor variables and any detected non-Orca pane remain authoritative, and
@@ -138,6 +154,13 @@ fi
 set +e
 
 fm_afk_launch_log() { printf 'sq-afk-launch: %s\n' "$*" >&2; }
+
+# Bound one vendor-CLI backend operation. Exit status is the operation's own,
+# except 124, which means the bound was hit - the caller treats that as a failed
+# operation, exactly like any other non-zero status.
+fm_afk_launch_bounded() {  # <command> [args...]
+  fm_run_timed "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" "$@"
+}
 
 fm_afk_launch_lock_owned() {
   local pid expected actual
@@ -196,7 +219,7 @@ fm_afk_launch_lock_release() {
 }
 
 fm_afk_launch_usage() {
-  sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,59p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # The command run inside the created terminal. Real launch runs the shared
@@ -291,7 +314,7 @@ fm_afk_launch_close_terminal() {  # <backend> <target>
       [ "$target" != pending ] || return 0
       fm_afk_launch_orca_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
       local out
-      out=$(orca terminal close --terminal "$target" --json) || return 1
+      out=$(fm_afk_launch_bounded orca terminal close --terminal "$target" --json) || return 1
       printf '%s' "$out" | jq -e '.ok == true' >/dev/null
       ;;
     herdr)
@@ -302,13 +325,13 @@ fm_afk_launch_close_terminal() {  # <backend> <target>
       ;;
     tmux)
       # target is the dedicated daemon session name - kill exactly it.
-      tmux kill-session -t "$target" 2>/dev/null
+      fm_afk_launch_bounded tmux kill-session -t "$target" 2>/dev/null
       ;;
     tuios)
       fm_backend_source tuios || return 1
       fm_afk_launch_tuios_owned "$target" "$SQUAD_AFK_REC_EXTRA" || return 1
       local tuios_session=${target%%:*}
-      "$(fm_backend_tuios_bin)" kill-session "$tuios_session" >/dev/null 2>&1
+      fm_afk_launch_bounded "$(fm_backend_tuios_bin)" kill-session "$tuios_session" >/dev/null 2>&1
       ;;
     none)
       return 0
@@ -338,7 +361,7 @@ fm_afk_launch_terminal_absent() {  # <backend> <target>
       [ "$code" = pane_not_found ]
       ;;
     tmux)
-      out=$(tmux has-session -t "$target" 2>&1)
+      out=$(fm_afk_launch_bounded tmux has-session -t "$target" 2>&1)
       result=$?
       [ "$result" -eq 1 ] || return 1
       printf '%s' "$out" | grep -Eq "can't find session"
@@ -433,7 +456,7 @@ fm_afk_launch_terminal_alive() {  # <backend> <target>
       fm_backend_herdr_cli "$session" pane get "$pane" >/dev/null 2>&1
       ;;
     tmux)
-      tmux has-session -t "$target" 2>/dev/null
+      fm_afk_launch_bounded tmux has-session -t "$target" 2>/dev/null
       ;;
     *) return 1 ;;
   esac

@@ -222,7 +222,7 @@ Classify each wake this way:
 
 Every wake the daemon handles is written to the away-mode ledger as `<epoch>|<class>|<one-line description>`.
 Commander-relevant events go to `state/.subsuper-escalations` (class `escalation`), and self-handled wakes go to `state/.subsuper-routine` (class `routine`), except bare heartbeat ticks, which are not events.
-The routine class is bounded: a wake that repeats is recorded once, and a task that has finished or been torn down records nothing routine at all, so an absence cannot inflate the ledger.
+The routine class is bounded: the ledger keeps only a recent window of routine rows (its size is documented in the daemon's own header), a wake that repeats is recorded once while it is retained, and a task that has finished or been torn down records nothing routine at all, so an absence cannot inflate the ledger; the return summary counts the retained rows, not the whole absence.
 Nothing is typed into the commander's pane while away; `bin/sq-afk-return.sh` merges both files by time and presents them once, as one summary, on return, and that script's header owns the bounds of its own work and its supported recovery from a gate it did not finish.
 
 ## Injection hardening

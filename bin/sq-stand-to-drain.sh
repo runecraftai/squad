@@ -152,11 +152,35 @@ print_teardown_pending_section() {
   printf "TEARDOWN PENDING: clear one once its work is confirmed landed: bin/sq-teardown.sh <id>\n"
 }
 
+# Recover a batch a previous drain rotated aside but never published. A drain
+# killed with no chance to run its EXIT trap (SIGKILL, a hard crash) leaves the
+# queue empty and its batch in .stand-to-queue.drain.<pid>, which the next drain
+# would otherwise read as "nothing queued" - and bin/sq-afk-return.sh would then
+# clear its gate without ever reporting that wake. The trap below removes the
+# batch it restored, so any leftover batch is exactly one whose raw output was
+# never committed; replaying one that was already published is the documented
+# at-least-once boundary. Runs under the queue lock, so no other drain can be
+# mid-batch while it decides.
+recover_abandoned_batches() {
+  local batch name_pid held
+  for batch in "$STATE"/.stand-to-queue.drain.*; do
+    [ -f "$batch" ] || continue
+    name_pid=${batch##*.}
+    [ "$name_pid" != "$(fm_current_pid)" ] || continue
+    held=$(awk 'NF >= 5 { n++ } END { print n + 0 }' "$batch" 2>/dev/null) || held=0
+    if fm_wake_restore_queue "$batch" && rm -f "$batch"; then
+      printf 'sq-stand-to-drain: recovered an interrupted drain batch (%s record(s)) before reporting it\n' "$held" >&2
+    else
+      printf 'sq-stand-to-drain: an interrupted drain batch could not be recovered; leaving it in place for the next drain\n' >&2
+    fi
+  done
+}
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
   if [ "$status" -ne 0 ] && [ "$DRAIN_LOCK_HELD" = true ] && [ -n "$DRAIN_TMP" ] && [ -e "$DRAIN_TMP" ]; then
-    fm_wake_restore_queue "$DRAIN_TMP" || true
+    { fm_wake_restore_queue "$DRAIN_TMP" && rm -f "$DRAIN_TMP"; } || true
   fi
   if [ "$DRAIN_LOCK_HELD" = true ]; then
     fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
@@ -174,6 +198,8 @@ else
   fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
 fi
 DRAIN_LOCK_HELD=true
+
+recover_abandoned_batches
 
 if [ ! -s "$SQUAD_WAKE_QUEUE" ]; then
   : > "$SQUAD_WAKE_QUEUE"

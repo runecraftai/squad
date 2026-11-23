@@ -42,12 +42,21 @@
 # acquire the catch-up lock reports that instead of spinning.
 #
 # Bounds. The return path must always terminate for the commander, so every step
-# is bounded: the catch-up lock wait is bounded by SQUAD_AFK_RETURN_LOCK_SECS
-# (default 30), the evidence merge and the summary each make one linear pass over
-# the evidence file instead of one filesystem scan per line, and the routine class
+# is bounded: the catch-up lock wait and the run's whole budget are bounded by
+# SQUAD_AFK_RETURN_LOCK_SECS (default 30), the away-mode shutdown spends what is
+# left of that budget (so a backend that stops responding, or a launcher that
+# ignores its own per-operation bound, cannot hold the catch-up lock past it),
+# the evidence merge and the summary each make one linear pass over
+# the evidence file instead of one filesystem scan per line, the blocker scan
+# folds each task's status log through the cursor-backed open-decisions fold
+# rather than re-reading its whole history, and the routine class
 # - the one a repeating wake can inflate - is presented at most
 # SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS (default 200) times, with the remainder
-# reported as a count. Escalation and daemon-notice events are never truncated.
+# reported as a count. The routine evidence a retried gate carries is capped at
+# the routine ledger's own retention window (SQUAD_ROUTINE_LEDGER_LIMIT, owned by
+# bin/sq-supervise-daemon.sh, default 1000 rows), so a shutdown retried across
+# ledger rotations cannot accumulate a routine row from every rotation.
+# Escalation and daemon-notice events are never truncated or capped.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,6 +77,12 @@ decimal_setting() {
 }
 
 MAX_ROUTINE_EVENTS=$(decimal_setting "${SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS:-}" 200)
+# The routine ledger's retention window, owned by bin/sq-supervise-daemon.sh:
+# that script keeps at most this many routine rows, and the gate's merged
+# routine evidence obeys the same window so a shutdown retried across rotations
+# cannot carry every evicted row forward forever. Escalations are never capped.
+ROUTINE_EVIDENCE_LIMIT=$(decimal_setting "${SQUAD_ROUTINE_LEDGER_LIMIT:-}" 1000)
+[ "$ROUTINE_EVIDENCE_LIMIT" -ge 1 ] || ROUTINE_EVIDENCE_LIMIT=1000
 LOCK_WAIT_SECS=$(decimal_setting "${SQUAD_AFK_RETURN_LOCK_SECS:-}" 30)
 # The field separator, resolved once: a `while IFS="$(printf '\t')" read` re-runs
 # its command substitution on every iteration, which is a process per line.
@@ -94,11 +109,30 @@ merge_evidence() {
     set -o pipefail
     if [ -n "${ledgers[0]:-}" ]; then
       sort -s -t'|' -k1,1n "${ledgers[@]}"
-    fi | LC_ALL=C awk -F '\t' '
-      kind == "" { if ($1 == "evidence" && !seen[$0]++) print; next }
+    fi | LC_ALL=C awk -F '\t' -v routine_limit="$ROUTINE_EVIDENCE_LIMIT" '
+      function isroutine(field, text) {
+        return field == "escalation" && text ~ /^[0-9]+\|routine\|/
+      }
+      function keep(text, routine) {
+        row_count++
+        line[row_count] = text
+        if (routine) { routine_count++; routine_row[routine_count] = row_count }
+      }
+      kind == "" {
+        if ($1 == "evidence" && !seen[$0]++) keep($0, isroutine($2, $3))
+        next
+      }
       { gsub(/[\t\r]/, " "); if ($0 == "") next
         row = "evidence\t" kind "\t" $0
-        if (!seen[row]++) print row }
+        if (!seen[row]++) keep(row, isroutine(kind, $0)) }
+      # Rows are buffered only to keep their original order while the oldest
+      # routine rows are dropped: everything is still one linear pass, and one
+      # class can no longer grow the gate without bound across retries.
+      END {
+        first_kept = routine_count > routine_limit ? routine_count - routine_limit + 1 : 1
+        for (i = 1; i < first_kept; i++) dropped[routine_row[i]] = 1
+        for (i = 1; i <= row_count; i++) { if (!dropped[i]) print line[i] }
+      }
     ' "${sources[@]}" kind=escalation -
   )
 }
@@ -111,12 +145,15 @@ scan_open_blockers() {  # -> tab-separated blocker rows
     id=${id%.meta}
     status="$STATE/$id.status"
     [ -f "$status" ] || continue
+    # The cursor-backed fold, for the same reason the drain uses it: a long
+    # status history must not be re-folded on every retry, so a live task's
+    # whole lifetime cannot stall the return.
     while IFS="$TAB" read -r key verb summary; do
       [ "$verb" = blocked ] || continue
       clean_summary=$(printf '%s' "$summary" | clean_field)
       printf 'blocker\t%s\t%s\t%s\n' "$id" "$key" "$clean_summary"
     done <<EOF
-$(status_open_decisions "$status")
+$(status_open_decisions_incremental "$status")
 EOF
   done
 }
@@ -291,7 +328,8 @@ print_summary() {  # <evidence-file>
     done <<< "$(printf '%s\n' "$sorted_rows" | grep -Eo '[A-Za-z0-9._-]+\.status' || true)"
   fi
   printf 'catch-up summary (one presentation for this absence)\n' || return 1
-  printf '  counts: escalation=%d routine=%d daemon-notice=%d\n' "$escalated" "$routine" "$notice" || return 1
+  printf '  counts: escalation=%d routine=%d daemon-notice=%d (retained rows only: the routine ledger keeps its most recent %s rows, so a routine event it evicted is not counted here, and escalations are never capped)\n' \
+    "$escalated" "$routine" "$notice" "$ROUTINE_EVIDENCE_LIMIT" || return 1
   if [ "$suppressed" -gt 0 ]; then
     printf '  routine entries past the first %d are counted but not listed; lower or raise the limit with SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS\n' "$MAX_ROUTINE_EVENTS" || return 1
   fi
@@ -334,6 +372,18 @@ clear_delivery_artifacts() {
     "$STATE/.subsuper-inject-wedged"
 }
 
+write_gate_phase() {  # <phase>: persist the phase without merging evidence
+  local phase=$1 pending
+  [ -f "$GATE" ] || return 0
+  pending=$(mktemp "$STATE/.afk-return-catchup.pending.XXXXXX") || return 1
+  awk -F '\t' -v OFS='\t' -v phase="$phase" '
+    $1 == "phase" { print "phase", phase; seen = 1; next }
+    { print }
+    END { if (!seen) print "phase", phase }
+  ' "$GATE" > "$pending" 2>/dev/null || { rm -f "$pending"; return 1; }
+  mv "$pending" "$GATE"
+}
+
 gate_field() {  # <key> -> value of a keyed gate line, or nothing
   [ -f "$GATE" ] || return 0
   awk -F '\t' -v key="$1" '$1 == key { print $2; exit }' "$GATE" 2>/dev/null || true
@@ -352,6 +402,8 @@ gate_reason() {  # <phase>
       printf 'away-mode shutdown failed; lifecycle state was preserved for retry' ;;
     drain-failed)
       printf 'durable wake drain failed or its queue lock did not become available' ;;
+    merging-evidence)
+      printf 'the drain consumed the queue but the evidence merge could not commit, so the gate holds the drained batch and retrying the merge is the recovery' ;;
     presenting)
       printf 'catch-up evidence was recorded but presentation or cleanup did not finish' ;;
     blocked)
@@ -401,10 +453,21 @@ return_guard() {
 }
 
 return_reconcile() {
-  local blockers=$1 deadline=$2 phase='' spool remaining checkpoint
+  local blockers=$1 deadline=$2 phase='' spool remaining checkpoint stop_rc
   local -a checkpoints=()
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-daemon-terminal" ]; then
-    "$SCRIPT_DIR/sq-afk-launch.sh" stop || phase=shutdown-failed
+    remaining=$((deadline - $(date +%s)))
+    [ "$remaining" -ge 1 ] || remaining=1
+    stop_rc=0
+    fm_run_timed "$remaining" "$SCRIPT_DIR/sq-afk-launch.sh" stop || stop_rc=$?
+    if [ "$stop_rc" -ne 0 ]; then
+      # The recorded terminal and state/.afk stay in place, so the next check
+      # retries the same exact-id teardown instead of clearing away mode on an
+      # unconfirmed shutdown.
+      phase=shutdown-failed
+      [ "$stop_rc" -ne 124 ] \
+        || printf 'sq-afk-return: away-mode shutdown exceeded its %ss budget; lifecycle state is retained for the next check\n' "$remaining" >&2
+    fi
   fi
   if [ -z "$phase" ]; then
     spool=$(mktemp -d "$STATE/.afk-return-drain.XXXXXX") || return 1
@@ -426,6 +489,12 @@ return_reconcile() {
   for checkpoint in "$STATE"/.afk-return-drain.*/{raw,output}; do
     [ ! -f "$checkpoint" ] || checkpoints+=("$checkpoint")
   done
+  if [ -z "$phase" ]; then
+    # The drain already consumed the queue. Record the phase this run is in
+    # before attempting the commit, so a merge that fails leaves a gate that
+    # names the merge rather than claiming it never got past the drain.
+    write_gate_phase merging-evidence || return 1
+  fi
   write_gate "$blockers" "${phase:-presenting}" ${checkpoints[@]+"${checkpoints[@]}"} || return 1
   for checkpoint in ${checkpoints[@]+"${checkpoints[@]}"}; do
     rm -f -- "$checkpoint" || return 1
@@ -461,6 +530,8 @@ main() {
   . "$SCRIPT_DIR/sq-stand-to-lib.sh"
   # shellcheck source=bin/sq-classify-lib.sh
   . "$SCRIPT_DIR/sq-classify-lib.sh"
+  # shellcheck source=bin/sq-timeout-lib.sh
+  . "$SCRIPT_DIR/sq-timeout-lib.sh"
 
   mkdir -p "$STATE" || return 1
   # A bounded wait, not an unbounded spin: a lock left behind by a killed run must
@@ -484,6 +555,7 @@ main() {
   rm -rf -- "$scratch"
   if [ "$rc" -eq 1 ]; then
     printf 'sq-afk-return: catch-up did not commit; retry bin/sq-afk-return.sh check\n' >&2
+    report_gate_phase >&2
   fi
   return "$rc"
 }

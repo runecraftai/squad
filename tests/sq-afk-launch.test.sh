@@ -22,6 +22,8 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LAUNCH="$ROOT/bin/sq-afk-launch.sh"
 START="$ROOT/bin/sq-afk-start.sh"
+# shellcheck source=bin/sq-timeout-lib.sh
+. "$ROOT/bin/sq-timeout-lib.sh"
 
 FAILED=0
 fail() { printf 'not ok - %s\n' "$1" >&2; FAILED=1; }
@@ -477,14 +479,28 @@ unit_readiness_failure_preserves_unconfirmed_record() {
 }
 
 unit_tmux_absence_distinguishes_probe_failure() {
-  local st
+  local st shim
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-tmux-probe.XXXXXX")
-  if SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+  shim="$st/shim"
+  mkdir -p "$st/state" "$shim"
+  # A real executable, not a shell function: every tmux probe on the teardown
+  # path now runs inside the shared bounded child, so the fake has to be a
+  # command the child can actually reach.
+  cat > "$shim/tmux" <<'SH'
+#!/usr/bin/env bash
+printf '%s' "${SQUAD_FAKE_TMUX_OUTPUT:-}" >&2
+exit 1
+SH
+  chmod +x "$shim/tmux"
+  if PATH="$shim:$PATH" SQUAD_FAKE_TMUX_OUTPUT="can't find session: exact-session" \
+      SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
-    tmux() { printf "%s" "can'\''t find session: exact-session" >&2; return 1; }
     fm_afk_launch_terminal_absent tmux exact-session
-    tmux() { printf "%s" "error connecting to /tmp/tmux.sock" >&2; return 1; }
-    ! fm_afk_launch_terminal_absent tmux exact-session
+  ' _ "$LAUNCH" \
+    && ! PATH="$shim:$PATH" SQUAD_FAKE_TMUX_OUTPUT='error connecting to /tmp/tmux.sock' \
+      SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" bash -c '
+    . "$1"
+    fm_afk_launch_terminal_absent tmux exact-session
   ' _ "$LAUNCH"; then
     pass "tmux absence: clean missing differs from transport probe failure"
   else
@@ -1153,6 +1169,46 @@ FAKE_TUIOS
 # UNIT status: health is read-only and reports active, exact terminal, daemon
 # lock, and marker ages.
 # ---------------------------------------------------------------------------
+# The away-mode return holds its catch-up lock while this script's stop runs, so
+# an unresponsive backend must not be able to hang it: every teardown-path
+# vendor CLI runs under SQUAD_AFK_BACKEND_TIMEOUT_SECS, and hitting the bound is a
+# FAILED teardown that preserves the recorded terminal id for a retry.
+unit_stop_bounds_backend_operations() {
+  local st shim started elapsed rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-bounded-stop.XXXXXX")
+  shim="$st/shim"
+  mkdir -p "$st/state" "$shim"
+  date +%s > "$st/state/.afk"
+  printf 'tmux\texact-session\towned\n' > "$st/state/.afk-daemon-terminal"
+  cat > "$shim/tmux" <<'SH'
+#!/usr/bin/env bash
+# An unresponsive tmux server: neither kill-session nor has-session answers.
+sleep 30
+exit 1
+SH
+  chmod +x "$shim/tmux"
+
+  started=$(date +%s)
+  rc=0
+  SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 PATH="$shim:$PATH" SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" \
+    fm_run_timed 20 "$LAUNCH" stop > "$st/out" 2>&1 || rc=$?
+  elapsed=$(( $(date +%s) - started ))
+  if [ "$rc" -eq 124 ]; then
+    fail "bounded stop: an unresponsive tmux held stop past the backend bound instead of returning"
+  elif [ "$rc" -eq 0 ]; then
+    fail "bounded stop: an unconfirmed terminal teardown was reported as success"
+  elif [ "$elapsed" -gt 15 ]; then
+    fail "bounded stop: stop took ${elapsed}s against a 1s per-operation bound"
+  elif [ ! -e "$st/state/.afk-daemon-terminal" ]; then
+    fail "bounded stop: an unconfirmed terminal teardown discarded the recorded id"
+  elif grep -q 'preserving exact id' "$st/out"; then
+    pass "bounded stop: an unresponsive backend hits its bound, keeps the recorded id, and never reports success"
+  else
+    fail "bounded stop: the preserved record was not reported ($(tail -n 1 "$st/out"))"
+  fi
+  rm -rf "$st"
+}
+
 unit_status_health() {
   command -v tmux >/dev/null 2>&1 || { echo "skip: tmux not found (status)"; return 0; }
   local st session sleeper_pid out before after
@@ -1315,6 +1371,7 @@ unit_flag_write_failure_aborts
 unit_tuios_launch_and_attached_protection
 unit_tuios_launch_rolls_back_a_created_session
 unit_tuios_launch_rolls_back_when_new_reports_failure
+unit_stop_bounds_backend_operations
 unit_status_health
 e2e_herdr
 e2e_tmux

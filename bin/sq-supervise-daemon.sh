@@ -8,8 +8,7 @@
 # away-mode ledger (state/.subsuper-escalations for escalations,
 # state/.subsuper-routine for routine) as "<epoch>|<class>|<line>", and
 # bin/sq-afk-return.sh presents that ledger once, as one summary, on return.
-# Routine
-# reasons are prefixed with a `routine:` envelope by the sentry's wake
+# Routine reasons are prefixed with a `routine:` envelope by the sentry's wake
 # function (via afk_wake_is_routine) so the Pi extension suppresses the
 # wake prompt while the daemon still triages the original reason. This is
 # the token-efficient replacement for the prior always-inject daemon:
@@ -17,6 +16,14 @@
 # needs-decision/blocked/failed/persistent-wedge/check-output events, a
 # declared-pause recheck, and the sentry's named objective evidence (pause-era or
 # quiet pipeline step) are held in the ledger for the return summary.
+# The routine ledger keeps a bounded retention window of its most recent
+# SQUAD_ROUTINE_LEDGER_LIMIT rows (default 1000), so an absence of unbounded
+# length cannot grow it without bound: a repeat is recorded once while both rows
+# are retained, and an event that has aged out of the window is no longer there
+# to deduplicate against, so it can be recorded again later in the same absence.
+# The return summary therefore counts and presents the retained rows, not the
+# whole absence, and bin/sq-afk-return.sh caps the routine evidence a retried
+# shutdown carries at this same window. Escalations are never capped.
 #
 # PRESENCE-GATING (the /afk contract). The daemon is the away-mode engine: it
 # runs ONLY while the durable away-mode flag state/.afk is present. Invoking
@@ -860,7 +867,10 @@ ledger_add() {  # <state> <class> <distilled-item>
 }
 
 routine_ledger_append() {
-  local buf="$1/.subsuper-routine" item=$2 result pending limit=1000
+  local buf="$1/.subsuper-routine" item=$2 result pending limit
+  # This script owns the routine retention window its header documents.
+  limit=${SQUAD_ROUTINE_LEDGER_LIMIT:-1000}
+  case "$limit" in ''|*[!0-9]*|0) limit=1000 ;; esac
   if [ -s "$buf" ]; then
     result=$(LEDGER_ENTRY="$item" LC_ALL=C awk '
       function identity(text) {

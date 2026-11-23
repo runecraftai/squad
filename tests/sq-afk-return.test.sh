@@ -20,6 +20,7 @@ install_runner() {  # <case-dir>
   cp "$ROOT/bin/sq-afk-return.sh" "$dir/bin/"
   cp "$ROOT/bin/sq-stand-to-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/sq-classify-lib.sh" "$dir/bin/"
+  cp "$ROOT/bin/sq-timeout-lib.sh" "$dir/bin/"
   cat > "$dir/bin/sq-afk-launch.sh" <<'SH'
 #!/usr/bin/env bash
 [ "${1:-}" = stop ] || exit 2
@@ -468,12 +469,204 @@ test_catchup_lock_wait_is_bounded() {
   pass "a held catch-up lock reports a bounded timeout with the gate phase instead of hanging the return"
 }
 
+install_hanging_launcher() {  # <case-dir>
+  cat > "$1/bin/sq-afk-launch.sh" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" = stop ] || exit 2
+# An unresponsive backend: the shutdown never returns on its own.
+sleep 60
+exit 1
+SH
+  chmod +x "$1/bin/sq-afk-launch.sh"
+}
+
+# A shutdown that fails while the daemon and its terminal are still there: the
+# lifecycle state survives, so every check retries the same stop and fails again.
+install_failing_launcher() {  # <case-dir>
+  cat > "$1/bin/sq-afk-launch.sh" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" = stop ] || exit 2
+exit 1
+SH
+  chmod +x "$1/bin/sq-afk-launch.sh"
+}
+
+# Finding: the shutdown step ran without a deadline, so one unresponsive backend
+# held the catch-up lock and `check` could never recover. The step now spends the
+# run's budget and leaves the lifecycle state in place when it cannot finish.
+test_shutdown_step_is_bounded_and_retains_lifecycle() {
+  local dir out rc started_at elapsed
+  dir="$TMP_ROOT/shutdown-bound"
+  install_runner "$dir"
+  install_hanging_launcher "$dir"
+  date +%s > "$dir/home/state/.afk"
+  printf 'tmux\tsynthetic-session\towned\n' > "$dir/home/state/.afk-daemon-terminal"
+  : > "$dir/home/state/.fake-drain"
+
+  started_at=$(date +%s)
+  set +e
+  out=$(fm_run_timed 40 env SQUAD_AFK_RETURN_LOCK_SECS=3 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
+    "$dir/bin/sq-afk-return.sh" begin 2>&1)
+  rc=$?
+  set -e
+  elapsed=$(( $(date +%s) - started_at ))
+  [ "$rc" -ne 124 ] || fail "an unresponsive away-mode shutdown held the catch-up lock instead of returning inside its budget"
+  [ "$rc" -eq 3 ] || fail "a bounded shutdown failure should keep the catch-up gated (rc=$rc): $out"
+  assert_contains "$out" 'away-mode shutdown exceeded its' "the bounded shutdown did not report the budget it hit"
+  assert_contains "$out" 'return catch-up gate phase: shutdown-failed' "the bounded shutdown did not name the gate phase"
+  [ -e "$dir/home/state/.afk" ] || fail "the bounded shutdown cleared the away-mode flag it could not confirm"
+  [ -e "$dir/home/state/.afk-daemon-terminal" ] || fail "the bounded shutdown discarded the recorded terminal id"
+  [ "$elapsed" -le 20 ] || fail "the bounded shutdown took ${elapsed}s against a 3s budget"
+  pass "an unresponsive away-mode shutdown is bounded and retains the lifecycle state for the next check"
+}
+
+# Finding: when the evidence merge failed after the queue was consumed, the gate
+# still said `stopping-and-draining` and the run only printed a generic retry, so
+# the phase that actually failed could not be named.
+test_failed_evidence_merge_names_its_phase() {
+  local dir gate out rc phase
+  dir="$TMP_ROOT/merge-phase"
+  install_runner "$dir"
+  gate="$dir/home/state/.afk-return-catchup"
+  printf '1784074300|escalation|evidence merge trigger\n' > "$dir/home/state/.subsuper-escalations"
+  : > "$dir/home/state/.fake-drain"
+  REAL_SORT=$(command -v sort)
+  export REAL_SORT
+  cat > "$dir/bin/sort" <<'SH'
+#!/usr/bin/env bash
+case "$*" in *.subsuper-escalations*) exit 1 ;; esac
+exec "$REAL_SORT" "$@"
+SH
+  chmod +x "$dir/bin/sort"
+
+  set +e
+  out=$(PATH="$dir/bin:$PATH" run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "the failed evidence merge was not surfaced (rc=$rc): $out"
+  [ -s "$gate" ] || fail "the failed evidence merge cleared its gate"
+  phase=$(awk -F '\t' '$1 == "phase" { print $2; exit }' "$gate")
+  [ "$phase" = merging-evidence ] \
+    || fail "the failed evidence merge left the gate in phase '${phase}' instead of naming the merge it could not commit"
+  assert_contains "$out" 'return catch-up gate phase: merging-evidence' "the failed merge did not report the phase it reached"
+  assert_contains "$out" 'the drain consumed the queue but the evidence merge could not commit' \
+    "the failed merge did not explain why the gate could not advance"
+
+  rm -f "$dir/bin/sort"
+  out=$(run_return "$dir" check) || fail "the merge retry did not recover: $out"
+  assert_contains "$out" '[escalation] evidence merge trigger' "the merge retry lost the ledger escalation"
+  [ ! -e "$gate" ] || fail "the successful merge retry left the gate behind"
+  pass "a failed evidence merge persists and reports the phase it could not commit"
+}
+
+# Finding: the drain folded each status log through the cursor-backed fold, but
+# the blocker scan re-folded every task's whole history - a subshell per
+# historical line on every retry - so a long-running task could stall the return.
+test_blocker_scan_is_bounded_by_new_appends() {
+  local dir state out rc
+  dir="$TMP_ROOT/blocker-fold"
+  install_runner "$dir"
+  state="$dir/home/state"
+  printf 'window=synthetic:sq-fold\nbackend=tmux\nkind=strike\n' > "$state/fold-task.meta"
+  awk 'BEGIN {
+    for (i = 1; i <= 40000; i++) printf "working: historical step %d\n", i
+    print "blocked [key=slow-history]: synthetic blocker"
+  }' > "$state/fold-task.status"
+  : > "$state/.fake-drain"
+  # The drain has already folded this log, so its cursor sits at the end of the
+  # history before the blocker scan runs - exactly the retry shape of the finding.
+  SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    status_open_decisions_incremental "$2" >/dev/null
+  ' _ "$ROOT/bin/sq-classify-lib.sh" "$state/fold-task.status" || fail "could not prime the open-decisions cursor"
+
+  set +e
+  out=$(fm_run_timed 25 env SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" "$dir/bin/sq-afk-return.sh" begin 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 124 ] \
+    || fail "the blocker scan re-folded a 40k-line status history instead of only the bytes appended since the drain"
+  [ "$rc" -eq 3 ] || fail "the long-history return did not gate on its live blocker (rc=$rc): $(printf '%s' "$out" | tail -3)"
+  assert_contains "$out" 'Squad-actionable blocker: fold-task [key=slow-history]' "the bounded blocker scan lost the live blocker"
+  pass "the blocker scan costs new appends, not a whole status history"
+}
+
+# Finding: each retried shutdown preserved the previous gate's evidence and copied
+# in the current routine ledger, so every rotation of the bounded ledger left its
+# evicted rows in the gate and the routine evidence grew without limit.
+test_routine_evidence_stays_bounded_across_shutdown_retries() {
+  local dir gate out routine_rows escalation_rows rotation
+  dir="$TMP_ROOT/gate-routine-budget"
+  install_runner "$dir"
+  install_failing_launcher "$dir"
+  gate="$dir/home/state/.afk-return-catchup"
+  date +%s > "$dir/home/state/.afk"
+  printf 'tmux\tsynthetic-session\towned\n' > "$dir/home/state/.afk-daemon-terminal"
+  : > "$dir/home/state/.fake-drain"
+  printf '1700000001|escalation|escalation-one\n1700000002|escalation|escalation-two\n' \
+    > "$dir/home/state/.subsuper-escalations"
+
+  for rotation in 1 2 3; do
+    awk -v r="$rotation" 'BEGIN {
+      for (i = 1; i <= 50; i++) printf "17000000%02d|routine|rotation %d event %d\n", r, r, i
+    }' > "$dir/home/state/.subsuper-routine"
+    set +e
+    out=$(env SQUAD_ROUTINE_LEDGER_LIMIT=50 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
+      "$dir/bin/sq-afk-return.sh" check 2>&1)
+    set -e
+    [ -s "$gate" ] || fail "retry $rotation cleared a gate whose shutdown keeps failing: $out"
+    routine_rows=$(awk -F '\t' '$1 == "evidence" && $2 == "escalation" && $3 ~ /^[0-9]+\|routine\|/ { n++ } END { print n + 0 }' "$gate")
+    [ "$routine_rows" -le 50 ] \
+      || fail "retry $rotation carried $routine_rows routine evidence rows past the 50-row routine window"
+  done
+  grep -F $'evidence\tescalation\t1700000003|routine|rotation 3 event 50' "$gate" >/dev/null \
+    || fail "the routine evidence window dropped the newest routine row"
+  if grep -F 'rotation 1 event 1' "$gate" >/dev/null; then
+    fail "the routine evidence window kept the oldest routine row instead of the newest"
+  fi
+  escalation_rows=$(awk -F '\t' '$1 == "evidence" && $2 == "escalation" && $3 ~ /\|escalation\|/ { n++ } END { print n + 0 }' "$gate")
+  [ "$escalation_rows" -eq 2 ] || fail "the routine evidence window capped escalation evidence ($escalation_rows of 2 rows survived)"
+
+  # A shutdown that finally succeeds still presents the retained evidence, so the
+  # routine bound cannot hide an escalation.
+  cat > "$dir/bin/sq-afk-launch.sh" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" = stop ] || exit 2
+rm -f "$SQUAD_BASE/state/.afk" "$SQUAD_BASE/state/.afk-daemon-terminal"
+SH
+  chmod +x "$dir/bin/sq-afk-launch.sh"
+  out=$(env SQUAD_ROUTINE_LEDGER_LIMIT=50 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
+    "$dir/bin/sq-afk-return.sh" check 2>&1) || fail "the recovered shutdown did not clear the gate: $out"
+  assert_contains "$out" 'counts: escalation=2 routine=50' "the cleared summary did not present both escalations and the retained routine class"
+  assert_contains "$out" '[escalation] escalation-one' "the cleared summary lost an escalation"
+  pass "routine evidence stays inside the ledger's retention window across shutdown retries while escalations stay uncapped"
+}
+
+# Finding: the summary counted retained rows while reading as if it counted the
+# whole absence, and the routine ledger's retention window was undocumented.
+test_summary_count_names_the_retained_scope() {
+  local dir out
+  dir="$TMP_ROOT/summary-scope"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  printf '1784074271|routine|retained routine event\n' > "$dir/home/state/.subsuper-routine"
+  printf '1784074280|escalation|retained escalation event\n' > "$dir/home/state/.subsuper-escalations"
+  out=$(run_return "$dir" begin) || fail "the ledger return failed: $out"
+  assert_contains "$out" 'counts: escalation=1 routine=1 daemon-notice=0 (retained rows only:' \
+    "the summary count did not say it covers retained rows rather than the whole absence"
+  assert_contains "$out" 'the routine ledger keeps its most recent 1000 rows' \
+    "the summary did not name the routine retention window behind that count"
+  pass "the away-mode summary states that its counts cover the retained ledger rows"
+}
+
 test_real_drain_preserves_wakes_across_return_failures() (
   dir="$TMP_ROOT/real-drain"
   install_runner "$dir"
   cp "$ROOT/bin/sq-stand-to-drain.sh" "$ROOT/bin/sq-line-cap-lib.sh" "$dir/bin/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/sq-guard.sh"
   chmod +x "$dir/bin/sq-guard.sh"
+  # The function body IS the subshell, so exporting here is the intended scope.
+  # shellcheck disable=SC2030,SC2031
   export SQUAD_STATE_OVERRIDE="$dir/home/state"
   . "$dir/bin/sq-stand-to-lib.sh"
   fm_wake_append check afk-ledger-undeliverable 'check: away-mode ledger could not record: retained wake' || fail 'could not seed the queue'
@@ -512,6 +705,8 @@ test_retry_preserves_checkpoint_published_during_merge() (
   cp "$ROOT/bin/sq-stand-to-drain.sh" "$ROOT/bin/sq-line-cap-lib.sh" "$dir/bin/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/sq-guard.sh"
   chmod +x "$dir/bin/sq-guard.sh"
+  # The function body IS the subshell, so exporting here is the intended scope.
+  # shellcheck disable=SC2030,SC2031
   export SQUAD_STATE_OVERRIDE="$dir/home/state"
   . "$dir/bin/sq-stand-to-lib.sh"
   export LATE_CHECKPOINT="$SQUAD_STATE_OVERRIDE/.afk-return-drain.interrupted/raw"
@@ -560,6 +755,11 @@ test_summary_write_failure_preserves_evidence() (
 test_real_drain_preserves_wakes_across_return_failures
 test_retry_preserves_checkpoint_published_during_merge
 test_summary_write_failure_preserves_evidence
+test_shutdown_step_is_bounded_and_retains_lifecycle
+test_failed_evidence_merge_names_its_phase
+test_blocker_scan_is_bounded_by_new_appends
+test_routine_evidence_stays_bounded_across_shutdown_retries
+test_summary_count_names_the_retained_scope
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
