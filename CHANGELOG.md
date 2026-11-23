@@ -18,9 +18,11 @@ It is not an exhaustive repository log and does not represent a root package ver
   The follow-up is to move process control out of shell.
   Return check reports both recovered and newer wake payloads even when they share a kind and key, and keeps the gate closed if presentation fails.
   A failed read of a recovered batch leaves the live queue untouched for retry.
-  Known limit: the long-history blocker regression measures elapsed time rather than verifying that the fold reads only appended bytes.
-  Known limit: lowering the routine ledger limit can record an already-retained repeat a second time during the next trim.
-  Known limit: the routine display cap selects rows by append order before sorting them by timestamp, which can omit the earliest event after a clock rollback.
+  Known limit: the long-history blocker regression measures elapsed time rather than using the fold read probe to verify that only appended bytes are read.
+  Known limit: lowering the routine ledger limit can record an already-retained repeat a second time during the next trim; the follow-up is to check for duplicates after trimming to the new window.
+  Known limit: the routine display cap can omit the earliest retained event after a clock rollback; the follow-up is to apply the display cap after sorting by timestamp.
+  Known limit: after tmux closes its last session, a no-server response can leave away mode set despite successful cleanup; the follow-up is to accept the tmux backend's conclusive no-server results while still rejecting timeouts and ambiguous failures.
+  Known limit: marker suppression ignores timestamps, so repeated ledger-write failures for an item can collapse into one notice after a later item replaces it in the queue; the follow-up is to suppress a marker only when a drained wake represents that notice.
 - Document the away-mode routine ledger's retention window in `bin/sq-supervise-daemon.sh`: it keeps the most recent `SQUAD_ROUTINE_LEDGER_LIMIT` rows (default 1000), a repeat is recorded once while both rows are retained, and an event that aged out of the window can be recorded again later in the same absence.
 - Make the away-mode return path always terminate and keep its ledger bounded: `bin/sq-afk-return.sh` no longer rescans the whole evidence file once per candidate line and no longer rebuilds a growing string once per event, so a return over a large ledger finishes in linear time instead of running for minutes.
   The catch-up lock wait is bounded by `SQUAD_AFK_RETURN_LOCK_SECS` (default 30), and the routine class is presented at most `SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS` (default 200) times with the remainder reported as a count, while escalation and daemon-notice events are never truncated.

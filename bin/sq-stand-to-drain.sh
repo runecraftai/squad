@@ -173,7 +173,7 @@ fi
 DRAIN_LOCK_HELD=true
 
 recovered=0
-for batch in "$STATE"/.stand-to-queue.drain.*; do
+for batch in "$SQUAD_WAKE_BATCH_PREFIX"*; do
   [ -e "$batch" ] || [ -L "$batch" ] || continue
   DRAIN_BATCHES+=("$batch")
   recovered=$((recovered + 1))
@@ -197,7 +197,7 @@ fi
 
 live_batch=
 if [ -s "$SQUAD_WAKE_QUEUE" ]; then
-  live_batch=$(mktemp "$STATE/.stand-to-queue.drain.XXXXXX") || exit 1
+  live_batch=$(mktemp "${SQUAD_WAKE_BATCH_PREFIX}XXXXXX") || exit 1
   mv "$SQUAD_WAKE_QUEUE" "$live_batch" || exit 1
   DRAIN_BATCHES+=("$live_batch")
 fi

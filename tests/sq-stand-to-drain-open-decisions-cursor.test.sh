@@ -144,7 +144,7 @@ test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision() {
 }
 
 test_same_size_rewrite_is_detected_via_inode_identity() {
-  local dir state out probe status new_bytes probe_bytes
+  local dir state out probe status new_bytes probe_bytes padded pad
   dir=$(make_case cursor-rotation)
   state="$dir/state"
   out="$dir/drain.out"
@@ -167,8 +167,9 @@ test_same_size_rewrite_is_detected_via_inode_identity() {
   new_bytes=$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')
   printf 'needs-decision [key=migration]: rewritten via rotation\n' > "$dir/replacement"
   padded=$(LC_ALL=C wc -c < "$dir/replacement" | tr -d '[:space:]')
-  pad=$((new_bytes - padded))
-  [ "$pad" -gt 0 ] && head -c "$pad" /dev/zero | tr '\0' 'x' >> "$dir/replacement"
+  pad=$((new_bytes - padded - 1))
+  [ "$pad" -gt 0 ] || fail 'test setup error: no room for the replacement filler record'
+  { head -c "$pad" /dev/zero | tr '\0' 'x'; printf '\n'; } >> "$dir/replacement"
   mv "$dir/replacement" "$status"
   [ "$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')" = "$new_bytes" ] \
     || fail "test setup error: the rotated replacement is not the same size as the original"

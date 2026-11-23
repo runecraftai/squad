@@ -928,6 +928,26 @@ SH
   pass 'an incomplete blocker fold cannot clear the return gate'
 }
 
+test_split_blocker_fails_closed_until_complete() {
+  local dir state out rc=0
+  dir="$TMP_ROOT/split-blocker"
+  state="$dir/home/state"
+  install_runner "$dir"
+  install_real_drain "$dir"
+  seed_live_blocker "$dir" tmux release
+  printf 'working: preparing release\nblock' > "$state/repair-task.status"
+  out=$(run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 1 ] && [ -s "$state/.afk-return-catchup" ] || fail "partial status cleared the gate: $out"
+  assert_contains "$out" 'return catch-up gate phase: blocker-scan-failed' 'partial status did not fail the scan'
+
+  printf 'ed [key=release]: waiting for review\n' >> "$state/repair-task.status"
+  rc=0
+  out=$(run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the completed blocker did not gate the retry: $out"
+  assert_contains "$out" 'waiting for review' 'the retry lost the blocker split across two writes'
+  pass 'the blocker cursor does not consume an incomplete status record'
+}
+
 test_retry_preserves_checkpoint_published_during_merge() (
   dir="$TMP_ROOT/late-checkpoint"
   install_runner "$dir"
@@ -1051,6 +1071,7 @@ test_failed_evidence_merge_names_its_phase success
 test_failed_evidence_merge_names_its_phase failure
 test_cold_fold_obeys_return_deadline
 test_unread_blocker_fails_closed
+test_split_blocker_fails_closed_until_complete
 test_blocker_scan_is_bounded_by_new_appends
 test_routine_evidence_stays_bounded_across_shutdown_retries
 test_routine_retention_uses_append_order_after_clock_rollback

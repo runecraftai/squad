@@ -8,6 +8,7 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-${STATE:-$SQUAD_BASE/state}}"
 SQUAD_WAKE_QUEUE="${SQUAD_WAKE_QUEUE:-$STATE/.stand-to-queue}"
 SQUAD_WAKE_QUEUE_LOCK="${SQUAD_WAKE_QUEUE_LOCK:-$STATE/.stand-to-queue.lock}"
+SQUAD_WAKE_BATCH_PREFIX="$STATE/.stand-to-queue.drain."
 SQUAD_LOCK_STALE_AFTER="${SQUAD_LOCK_STALE_AFTER:-2}"
 # Resolved once at source time: fm_pid_identity and fm_path_mtime run inside 0.2s
 # confirm and 0.5s attach polls, and forking uname per call is a measurable cost on
@@ -562,6 +563,15 @@ fm_wake_append() {
   return "$status"
 }
 
+fm_wake_pending() {
+  local batch
+  [ ! -s "$SQUAD_WAKE_QUEUE" ] || return 0
+  for batch in "$SQUAD_WAKE_BATCH_PREFIX"*; do
+    [ ! -s "$batch" ] || return 0
+  done
+  return 1
+}
+
 # fm_wake_queued_keys <kind>
 # Print the distinct keys currently queued for <kind>, oldest first. Read under
 # the append lock so a concurrent append is never observed half-written. The
@@ -579,9 +589,15 @@ fm_wake_queued_keys() {
 }
 
 fm_wake_queued_keys_locked() {
-  local kind=$1
-  awk -F '\t' -v kind="$kind" 'NF >= 5 && $3 == kind && !seen[$4]++ { print $4 }' \
-    "$SQUAD_WAKE_QUEUE" 2>/dev/null || true
+  local kind=$1 file
+  local -a files
+  files=()
+  for file in "$SQUAD_WAKE_BATCH_PREFIX"* "$SQUAD_WAKE_QUEUE"; do
+    [ -f "$file" ] && [ ! -L "$file" ] && files+=("$file")
+  done
+  [ -n "${files[0]:-}" ] || return 0
+  awk -F '\t' -v kind="$kind" 'NF >= 5 && $3 == kind { print $2 "\t" $4 }' "${files[@]}" 2>/dev/null |
+    LC_ALL=C sort -n -k1,1 | awk -F '\t' '!seen[$2]++ { print $2 }'
 }
 
 fm_wake_print_deduped() {

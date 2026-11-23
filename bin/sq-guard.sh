@@ -167,7 +167,7 @@ if [ "$needed" = false ]; then
   exit 0
 fi
 
-[ -s "$SQUAD_WAKE_QUEUE" ] && queue_pending=true
+fm_wake_pending && queue_pending=true
 
 # No fresh sentry with tasks in flight is the dangerous state: emit a prominent,
 # bordered banner FIRST so it reads as an alarm, not a buried stderr line. Later

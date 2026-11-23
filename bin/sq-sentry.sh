@@ -1135,7 +1135,7 @@ procevent_surface_after_output() {
 procevent_surface_queued() {
   local key reason
   PROCEVENT_SURFACED=
-  [ -s "$SQUAD_WAKE_QUEUE" ] || return 0
+  fm_wake_pending || return 0
   fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
   while IFS= read -r key; do
     case "$key" in procevent:*) ;; *) continue ;; esac

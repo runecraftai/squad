@@ -404,6 +404,7 @@ test_interruption_before_and_after_raw_commit() {
   empty_out="$dir/empty.out"
   printf 'done: interruption fixture\n' > "$state/task.status"
   append_wake "$state" signal task.status "signal: task" || fail "pre-commit interruption wake append failed"
+  append_wake "$state" check procevent:interrupted:1 'check: captured result' || fail 'process-event wake append failed'
 
   SQUAD_STATE_OVERRIDE="$state" SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT=5 "$DRAIN" > "$before_out" &
   pid=$!
@@ -422,10 +423,20 @@ test_interruption_before_and_after_raw_commit() {
   rc=$?
   set -e
   [ "$rc" -ne 0 ] || fail "pre-commit interruption unexpectedly succeeded"
+  [ ! -s "$state/.stand-to-queue" ] || fail 'the interrupted fixture still has a live queue row'
+  printf 'id=task\n' > "$state/task.meta"
+  SQUAD_ROOT_OVERRIDE="$dir" SQUAD_STATE_OVERRIDE="$state" SQUAD_GUARD_READ_ONLY=1 \
+    "$ROOT/bin/sq-guard.sh" > "$dir/guard.out" 2>&1
+  grep -Fq 'WARNING: queued wakes pending' "$dir/guard.out" || fail 'the guard missed the unpublished batch'
+  PATH="$dir/fakebin:$PATH" SQUAD_BASE="$dir" SQUAD_STATE_OVERRIDE="$state" \
+    SQUAD_POLL=1 SQUAD_CHECK_INTERVAL=999999 SQUAD_HEARTBEAT=999999 "$WATCH" > "$dir/watch.out" &
+  wait_for_exit "$!" 40 || fail 'the sentry did not surface the unpublished process-event wake'
+  grep -Fxq 'check: process-event result captured: procevent:interrupted:1' "$dir/watch.out" \
+    || fail 'the sentry missed the process-event key in the unpublished batch'
   append_wake "$state" signal task.status 'signal: newer task wake after TERM' || fail 'post-TERM wake append failed'
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$replay_out" || fail 'pre-commit wakes did not drain'
   count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$replay_out")
-  [ "$count" -eq 2 ] || fail 'pre-commit interruption lost or duplicated a conflicting wake'
+  [ "$count" -eq 3 ] || fail 'pre-commit interruption lost or duplicated a wake'
   grep -Fxq 'signal: task' < <(cut -f5 "$replay_out") || fail 'pre-commit interruption lost the original payload'
   grep -Fxq 'signal: newer task wake after TERM' < <(cut -f5 "$replay_out") || fail 'pre-commit interruption lost the newer payload'
 
