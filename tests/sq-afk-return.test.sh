@@ -10,6 +10,7 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+. "$ROOT/bin/sq-timeout-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot sq-afk-return-tests)
 
@@ -349,6 +350,26 @@ seed_routine_ledger() {  # <case-dir> <lines> <duplicates|distinct>
   }' > "$dir/home/state/.subsuper-routine"
 }
 
+test_decimal_limits_preserve_summary_order() {
+  local dir out
+  dir="$TMP_ROOT/decimal-limits"
+  install_runner "$dir"
+  seed_routine_ledger "$dir" 9 distinct
+  printf '1700000001|escalation|same-second escalation\n' > "$dir/home/state/.subsuper-escalations"
+
+  out=$(SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS=08 SQUAD_AFK_RETURN_LOCK_SECS=08 run_return "$dir" begin) \
+    || fail "return failed with decimal limits: $out"
+  assert_contains "$out" 'counts: escalation=1 routine=9' "the display cap changed the event counts"
+  assert_contains "$out" 'routine entries past the first 8 are counted but not listed' "08 was not treated as decimal 8"
+  printf '%s\n' "$out" | grep -qE '^  8\. .*\[routine\].*stale tick 8:' \
+    || fail "the eighth routine event did not retain its position: $out"
+  printf '%s\n' "$out" | grep -qE '^  9\. .*\[escalation\] same-second escalation$' \
+    || fail "the escalation did not follow the same-second routine events: $out"
+  case "$out" in *'stale tick 9:'*) fail "the ninth routine event was not suppressed" ;; esac
+  [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "return did not clear the catch-up gate"
+  pass "decimal settings preserve evidence order while capping routine output"
+}
+
 test_pathological_ledger_terminates_within_bound() {
   local dir out rc shape
   for shape in duplicates distinct; do
@@ -361,7 +382,7 @@ test_pathological_ledger_terminates_within_bound() {
       seed_routine_ledger "$dir" 12000 duplicates
     fi
     set +e
-    out=$(timeout 45 env SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" check 2>&1)
+    out=$(fm_run_timed 45 env SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" check 2>&1)
     rc=$?
     set -e
     [ "$rc" -ne 124 ] || fail "the $shape-ledger return did not terminate inside the 45s bound"
@@ -426,7 +447,7 @@ test_catchup_lock_wait_is_bounded() {
 
   started_at=$(date +%s)
   set +e
-  out=$(SQUAD_AFK_RETURN_LOCK_SECS=1 timeout 30 env SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" check 2>&1)
+  out=$(fm_run_timed 30 env SQUAD_AFK_RETURN_LOCK_SECS=0001 SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" check 2>&1)
   rc=$?
   set -e
   elapsed=$(( $(date +%s) - started_at ))
@@ -449,6 +470,7 @@ test_away_ledger_while_blocked_presents_only_a_count
 test_commander_decision_does_not_masquerade_as_Squad_blocker
 test_away_reentry_refuses_pending_return_gate
 test_check_retries_recorded_terminal_teardown
+test_decimal_limits_preserve_summary_order
 test_pathological_ledger_terminates_within_bound
 test_stuck_gate_names_its_phase_and_the_supported_recovery
 test_catchup_lock_wait_is_bounded

@@ -56,10 +56,19 @@ SQUAD_BASE="${SQUAD_BASE:-${SQUAD_HOME:-${SQUAD_ROOT_OVERRIDE:-$SQUAD_ROOT}}}"
 STATE="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 GATE="$STATE/.afk-return-catchup"
 LOCK="$STATE/.afk-return-catchup.lock"
-MAX_ROUTINE_EVENTS=${SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS:-200}
-LOCK_WAIT_SECS=${SQUAD_AFK_RETURN_LOCK_SECS:-30}
-case "$MAX_ROUTINE_EVENTS" in ''|*[!0-9]*) MAX_ROUTINE_EVENTS=200 ;; esac
-case "$LOCK_WAIT_SECS" in ''|*[!0-9]*) LOCK_WAIT_SECS=30 ;; esac
+decimal_setting() {
+  local value=$1 fallback=$2
+  case "$value" in ''|*[!0123456789]*) printf '%s\n' "$fallback"; return ;; esac
+  value=${value#"${value%%[!0]*}"}
+  if [ "${#value}" -le 9 ]; then
+    printf '%s\n' "${value:-0}"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
+MAX_ROUTINE_EVENTS=$(decimal_setting "${SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS:-}" 200)
+LOCK_WAIT_SECS=$(decimal_setting "${SQUAD_AFK_RETURN_LOCK_SECS:-}" 30)
 # The field separator, resolved once: a `while IFS="$(printf '\t')" read` re-runs
 # its command substitution on every iteration, which is a process per line.
 TAB=$(printf '\t')
@@ -198,9 +207,9 @@ notice_key() {  # <notice text> -> identity shared by a queued afk-* record and 
 
 print_summary() {  # <evidence-file>
   local file=$1 tag kind text ts cls item label when re afk_re seq=0 absence locators status_lines
-  local escalated=0 routine=0 notice=0 queued=0 suppressed=0 row
+  local escalated=0 routine=0 notice=0 queued=0 suppressed=0
   local afk_keys='' wedges='' notices=''
-  local -a hard_rows=() routine_rows=() rows=() events=() urls=() statuses=()
+  local -a rows=() events=() urls=() statuses=()
   re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
   afk_re='^([0-9]+) [0-9]+ check afk-[A-Za-z0-9._-]+ (.*)$'
   # One linear pass. Rows are collected in arrays, never by re-concatenating a
@@ -217,16 +226,18 @@ print_summary() {  # <evidence-file>
         case "$ts" in ''|*[!0-9]*) ts='' cls=escalation item=$text ;; esac
         if [ "$cls" = routine ]; then
           routine=$((routine + 1))
-          routine_rows+=("${ts:-0}"$'\t'"routine"$'\t'"${item}")
+          if [ "$routine" -le "$MAX_ROUTINE_EVENTS" ]; then
+            rows+=("${ts:-0}"$'\t'"routine"$'\t'"${item}")
+          fi
         else
           escalated=$((escalated + 1))
-          hard_rows+=("${ts:-0}"$'\t'"escalation"$'\t'"${item}")
+          rows+=("${ts:-0}"$'\t'"escalation"$'\t'"${item}")
         fi
         ;;
       wake)
         if [[ $text =~ $afk_re ]]; then
           notice=$((notice + 1))
-          hard_rows+=("${BASH_REMATCH[1]}"$'\t'"daemon-notice"$'\t'"${BASH_REMATCH[2]}")
+          rows+=("${BASH_REMATCH[1]}"$'\t'"daemon-notice"$'\t'"${BASH_REMATCH[2]}")
           afk_keys="${afk_keys}$(notice_key "${BASH_REMATCH[2]}")"$'\n'
         elif [[ $text =~ $re ]]; then
           queued=$((queued + 1))
@@ -244,7 +255,7 @@ print_summary() {  # <evidence-file>
       [ -n "$item" ] || continue
       printf '%s' "$afk_keys" | grep -Fqx -- "$(notice_key "$item")" && continue
       notice=$((notice + 1))
-      hard_rows+=("0"$'\t'"daemon-notice"$'\t'"${item}")
+      rows+=("0"$'\t'"daemon-notice"$'\t'"${item}")
     done <<< "$wedges"
   fi
   # Bound the one class a repeating wake can inflate. Each distinct routine event
@@ -253,7 +264,6 @@ print_summary() {  # <evidence-file>
   # Escalations and daemon notices are never truncated: they are the contract.
   if [ "$routine" -gt "$MAX_ROUTINE_EVENTS" ]; then
     suppressed=$(( routine - MAX_ROUTINE_EVENTS ))
-    routine_rows=("${routine_rows[@]:0:$MAX_ROUTINE_EVENTS}")
   fi
   [ "$queued" -eq 0 ] || notices="  queued wake records drained: ${queued}"$'\n'"${notices}"
   if [ $((escalated + routine + notice)) -eq 0 ]; then
@@ -262,9 +272,6 @@ print_summary() {  # <evidence-file>
     [ -z "$notices" ] || printf 'catch-up open items (still open at return):\n%s' "$notices"
     return 0
   fi
-  for row in ${hard_rows[@]+"${hard_rows[@]}"} ${routine_rows[@]+"${routine_rows[@]}"}; do
-    [ -n "$row" ] && rows+=("$row")
-  done
   local sorted_rows=''
   if [ -n "${rows[0]:-}" ]; then
     sorted_rows=$(printf '%s\n' "${rows[@]}" | sort -s -t "$TAB" -k1,1n)
