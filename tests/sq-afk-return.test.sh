@@ -597,6 +597,37 @@ SH
   pass 'return and standalone stop contain backends that hold probe output open or stall their supervisor'
 }
 
+test_backend_registry_retires_timeouts_and_ignores_stale_identity() {
+  local registry="$TMP_ROOT/backend-registry" pid rc=0 unrelated status
+  mkdir "$registry"
+  cat > "$TMP_ROOT/backend-registry-probe" <<'SH'
+printf '%s\n' "$$" > "$1"
+exec sleep 30
+SH
+  SQ_TIMEOUT_BACKEND_REGISTRY="$registry" fm_run_timed_in_group 1 \
+    bash "$TMP_ROOT/backend-registry-probe" "$TMP_ROOT/backend-registry-pid" || rc=$?
+  [ "$rc" -eq 124 ] || fail "expected a backend timeout, got $rc"
+  pid=$(< "$TMP_ROOT/backend-registry-pid")
+  [ ! -e "$registry/$pid" ] || fail 'the reaped backend stayed in the cancellation registry'
+
+  set -m
+  (exec sleep 30) &
+  unrelated=$!
+  set +m
+  if [ -r "/proc/$unrelated/stat" ]; then
+    printf 'proc:0\n' > "$registry/$unrelated"
+  else
+    printf 'ps:%s Thu Jan  1 00:00:00 1970\n' "$unrelated" > "$registry/$unrelated"
+  fi
+  fm_timeout_signal_backends KILL "$registry"
+  sleep 0.1
+  status=$(ps -o stat= -p "$unrelated" 2>/dev/null) || true
+  kill -KILL -- "-$unrelated" 2>/dev/null || true
+  wait "$unrelated" 2>/dev/null || true
+  [[ -n "$status" && "$status" != Z* ]] || fail 'the stale registry entry killed an unrelated group'
+  pass 'backend cancellation retires expired registrations and rejects stale identities'
+}
+
 # Finding: when the evidence merge failed after the queue was consumed, the gate
 # still said `stopping-and-draining` and the run only printed a generic retry, so
 # the phase that actually failed could not be named.
@@ -987,6 +1018,7 @@ test_retry_preserves_checkpoint_published_during_merge
 test_summary_write_failure_preserves_evidence
 test_shutdown_step_is_bounded_and_retains_lifecycle
 test_shutdown_contains_real_backend
+test_backend_registry_retires_timeouts_and_ignores_stale_identity
 test_failed_evidence_merge_names_its_phase
 test_cold_fold_obeys_return_deadline
 test_unread_blocker_fails_closed

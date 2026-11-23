@@ -42,12 +42,29 @@ fm_timeout_mechanism() {
 }
 
 fm_timeout_signal_backends() {
-  local signal=$1 registry=$2 entry
+  local signal=$1 registry=$2 entry pid registered current stat
+  local -a fields
   [ -n "$registry" ] || return 0
   for entry in "$registry"/[1-9]*; do
-    case "${entry##*/}" in *[!0-9]*) continue ;; esac
+    pid=${entry##*/}
+    case "$pid" in *[!0-9]*) continue ;; esac
     [ -f "$entry" ] || continue
-    kill -s "$signal" -- "-${entry##*/}" 2>/dev/null || true
+    IFS= read -r registered < "$entry" || continue
+    case "$registered" in
+      proc:*)
+        { IFS= read -r stat < "/proc/$pid/stat"; } 2>/dev/null || continue
+        read -r -a fields <<< "${stat##*) }"
+        [ "${fields[2]:-}" = "$pid" ] || continue
+        current="proc:${fields[19]:-}"
+        ;;
+      ps:*)
+        current=$(LC_ALL=C ps -o pgid= -o lstart= -p "$pid" 2>/dev/null) || continue
+        current="ps:$current"
+        ;;
+      *) continue ;;
+    esac
+    [ "$current" = "$registered" ] || continue
+    kill -s "$signal" -- "-$pid" 2>/dev/null || true
   done
 }
 
@@ -136,16 +153,36 @@ fm_run_timed_in_group() {
       $SIG{TERM} = "DEFAULT";
       open(STDOUT, ">&", $out) && open(STDERR, ">&", $err) or POSIX::_exit(125);
       if (length $registry) {
+        my $identity;
+        if (open(my $stat, "<", "/proc/$$/stat")) {
+          local $/;
+          my $line = <$stat>;
+          $line =~ s/^.*\) //s or POSIX::_exit(125);
+          my @fields = split " ", $line;
+          POSIX::_exit(125) unless $fields[2] == $$ && defined $fields[19];
+          $identity = "proc:$fields[19]";
+        } else {
+          local $ENV{LC_ALL} = "C";
+          open(my $ps, "-|", "ps", "-o", "pgid=", "-o", "lstart=", "-p", $$) or POSIX::_exit(125);
+          my $line = <$ps>;
+          close($ps) && defined($line) && $line =~ /^\s*$$\s/ or POSIX::_exit(125);
+          chomp $line;
+          $identity = "ps:$line";
+        }
         open(my $entry, ">", "$registry/$$") or POSIX::_exit(125);
+        print {$entry} "$identity\n" or POSIX::_exit(125);
         close($entry) or POSIX::_exit(125);
         POSIX::_exit(124) if -e "$registry.expired" || !-d $registry;
       }
       exec @ARGV or POSIX::_exit(125);
     }
     my $status;
-    while (!$cancelled && clock_gettime(CLOCK_MONOTONIC) < $deadline) {
+    my $backend_gone = sub {
       $status = $? if !defined($status) && waitpid($pid, WNOHANG) == $pid;
-      if (defined($status) && !kill(0, $pid) && $! == ESRCH && !kill(0, -$pid) && $! == ESRCH) {
+      return defined($status) && !kill(0, $pid) && $! == ESRCH && !kill(0, -$pid) && $! == ESRCH;
+    };
+    while (!$cancelled && clock_gettime(CLOCK_MONOTONIC) < $deadline) {
+      if ($backend_gone->()) {
         unlink "$registry/$pid" if length $registry;
         exit 124 if $cancelled;
         seek($out, 0, 0) && seek($err, 0, 0) or exit 125;
@@ -163,7 +200,15 @@ fm_run_timed_in_group() {
     kill "KILL", -$pid;
     kill "KILL", $pid unless defined $status;
     kill "KILL", -$pid unless defined $status;
-    waitpid($pid, WNOHANG) unless defined $status;
+    my $reap_deadline = clock_gettime(CLOCK_MONOTONIC) + 0.1;
+    while (1) {
+      if ($backend_gone->()) {
+        unlink "$registry/$pid" if length $registry;
+        last;
+      }
+      last if clock_gettime(CLOCK_MONOTONIC) >= $reap_deadline;
+      sleep 0.01;
+    }
     exit 124;
   ' "$@" </dev/null
 }
