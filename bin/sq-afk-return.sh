@@ -91,9 +91,10 @@ clean_field() {
 merge_evidence() {
   local routine_ledger="$STATE/.subsuper-routine" escalation_ledger="$STATE/.subsuper-escalations"
   local -a sources=("$GATE" kind=wake "$@")
-  if [ -f "$STATE/.subsuper-inject-wedged" ]; then
-    sources+=(kind=wedge "$STATE/.subsuper-inject-wedged")
-  fi
+  local marker
+  for marker in "$STATE/.subsuper-inject-wedged" "$STATE/.subsuper-ledger-undeliverable"; do
+    [ ! -f "$marker" ] || sources+=(kind=wedge "$marker")
+  done
   sources+=(kind=escalation)
   [ ! -f "$routine_ledger" ] || sources+=("$routine_ledger")
   (
@@ -404,7 +405,8 @@ clear_delivery_artifacts() {
     "$STATE/.subsuper-escalations.since" \
     "$STATE/.subsuper-routine" \
     "$STATE/.subsuper-parked-notified" \
-    "$STATE/.subsuper-inject-wedged"
+    "$STATE/.subsuper-inject-wedged" \
+    "$STATE/.subsuper-ledger-undeliverable"
 }
 
 write_gate_phase() {  # <phase>: persist the phase without merging evidence

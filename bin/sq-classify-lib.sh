@@ -615,11 +615,15 @@ SQUAD_OPEN_DECISIONS_FOLD_VERSION=4
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> "dev:inode", empty on I/O failure
-  local f=$1
+  local f=$1 darwin_format='%d:%i' gnu_format='%d:%i'
+  if [ "${2:-}" = snapshot ]; then
+    darwin_format+=' %z'
+    gnu_format+=' %s'
+  fi
   if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-    LC_ALL=C stat -f '%d:%i' "$f" 2>/dev/null
+    LC_ALL=C stat -L -f "$darwin_format" "$f" 2>/dev/null
   else
-    LC_ALL=C stat -c '%d:%i' "$f" 2>/dev/null
+    LC_ALL=C stat -L -c "$gnu_format" "$f" 2>/dev/null
   fi
 }
 
@@ -644,7 +648,7 @@ _fm_open_decisions_line_bytes() {
 status_open_decisions_incremental() (  # <status-file>
   local f=$1 cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0 save_failed=0
-  local chunk_bytes end start original cursor_tmp saved line_bytes scratch_prefix folded
+  local chunk_bytes end start original cursor_tmp saved line_bytes scratch_prefix folded snapshot live
   [ ! -L "$f" ] || return 0
   [ -f "$f" ] && [ -r "$f" ] || return 1
   cf=$(_fm_open_decisions_cursor_path "$f")
@@ -693,10 +697,10 @@ status_open_decisions_incremental() (  # <status-file>
   # A stat/size-read failure is a genuine I/O error, not "the file is empty" -
   # report the already-trusted persisted set unchanged rather than risking a
   # silent invalidation that would wipe it.
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || { printf '%s' "$trusted_open"; return 1; }
-  [ -n "$cur_ident" ] || { printf '%s' "$trusted_open"; return 1; }
-  size=$(LC_ALL=C wc -c < "$f" 2>/dev/null) || { printf '%s' "$trusted_open"; return 1; }
-  size=${size//[[:space:]]/}
+  exec 9< "$f" || { printf '%s' "$trusted_open"; return 1; }
+  snapshot=$(_fm_open_decisions_file_ident /dev/fd/9 snapshot) || { printf '%s' "$trusted_open"; return 1; }
+  cur_ident=${snapshot%% *}
+  size=${snapshot#* }
   case "$size" in ''|*[!0-9]*) printf '%s' "$trusted_open"; return 1 ;; esac
 
   if [ -z "$version" ] || [ -z "$ident" ] || [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$size" ]; then
@@ -723,7 +727,7 @@ status_open_decisions_incremental() (  # <status-file>
     start=$offset
     end=$((offset + chunk_bytes))
     [ "$end" -le "$size" ] || end=$size
-    _fm_open_decisions_read_chunk "$f" "$((offset + 1))" "$((end - offset))" > "$chunk_file" \
+    _fm_open_decisions_read_chunk /dev/fd/9 "$((offset + 1))" "$((end - offset))" > "$chunk_file" \
       || { printf '%s' "$open"; return 1; }
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file") || { printf '%s' "$open"; return 1; }
     [ "${chunk_size//[[:space:]]/}" = "$((end - offset))" ] || { printf '%s' "$open"; return 1; }
@@ -752,6 +756,11 @@ status_open_decisions_incremental() (  # <status-file>
     _fm_open_decisions_line_bytes line_bytes "$line"
     folded=$((offset + line_bytes))
     [ "$folded" -eq "$size" ] || { printf '%s' "$open"; return 1; }
+  fi
+  if [ -L "$f" ] || ! live=$(_fm_open_decisions_file_ident "$f" snapshot) ||
+      [ "${live%% *}" != "$cur_ident" ] || [ "${live#* }" -lt "$size" ]; then
+    printf '%s' "$trusted_open"
+    return 1
   fi
   if [ "$save_failed" -eq 0 ] && [ "$cursor_dirty" -eq 1 ]; then
     _fm_open_decisions_save "$cf" "$cursor_tmp" "$offset" "$cur_ident" "$open" || save_failed=1

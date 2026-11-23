@@ -125,7 +125,9 @@ The tmux submit core (shared `fm_tmux_submit_enter_core`) treats an OpenCode-bus
 Composer-content classification has one shared owner, `bin/sq-composer-lib.sh`, used by tmux, herdr, Orca, cmux, and TUIOS after each adapter performs its own capture and composer-row recognition.
 That primitive injects only into an affirmatively `empty` composer, so both `pending` and `unknown` defer and a bare dead-shell prompt cannot receive text; the current boundary is in [Composer and injection safety](herdr-backend.md#composer-and-injection-safety).
 Unsupported supervisor backends refuse at daemon startup.
-A ledger parked past `SQUAD_MAX_DEFER_SECS` raises one durable stand-to notice per absence, and a failed ledger write is queued durably, writes `state/.subsuper-inject-wedged`, and attempts a configured backend-independent active alert instead of failing silently.
+A ledger parked past `SQUAD_MAX_DEFER_SECS` raises one durable stand-to notice per absence.
+When a ledger write fails, the daemon records the occurrence in `state/.subsuper-ledger-undeliverable` before attempting to queue it and send a configured backend-independent alert.
+Only a successful return presentation retires that fallback evidence.
 On an unmarked return, `bin/sq-afk-return.sh` owns ordered shutdown, durable catch-up evidence, and the fail-closed gate that keeps ordinary work behind every live Squad-actionable blocker.
 `sq-send.sh` selects a pre-Enter popup-settle for slash commands and for codex `$...` skill invocations using metadata-routed target `harness=` values, then adds its own `SQUAD_SEND_SETTLE` pause after successful text sends so immediate peeks catch the receiving turn starting; the sub-supervisor uses only the shared submit core and does not pay that post-submit pause.
 For a metadata-routed local non-XO Pi or pi-signed target, `sq-send.sh` first offers text through the task extension's private `state/.pi-delivery` dropbox, which invokes Pi's `sendUserMessage(..., { deliverAs: "followUp" })` without relying on the parked composer.

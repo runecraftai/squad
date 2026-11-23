@@ -1283,7 +1283,7 @@ wedge_alarm_notify() {  # <summary> <marker>
 # interrupted by a daemon fault.
 ledger_undeliverable() {  # <state> <item>
   local state=$1 item=$2 marker max_defer now occurrence notify=1
-  marker="$state/.subsuper-inject-wedged"
+  marker="$state/.subsuper-ledger-undeliverable"
   max_defer="${SQUAD_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}"
   now=$(_now)
   LEDGER_FAILURE_SEQ=$((LEDGER_FAILURE_SEQ + 1))

@@ -870,7 +870,7 @@ test_cold_fold_obeys_return_deadline() {
   {
     cat <<'SH'
 #!/usr/bin/env bash
-if [[ "$1" = -c && "$2" != +1 && "$3" = */repair-task.status ]]; then exec sleep 15; fi
+if [[ "$1" = -c && "$2" != +1 ]]; then exec sleep 15; fi
 SH
     printf "exec %q \"\$@\"\n" "$(command -v tail)"
   } > "$dir/bin/tail"
@@ -926,6 +926,39 @@ SH
   assert_contains "$out" 'return catch-up gate phase: blocked' 'the retry lost the unread blocker'
   grep -Fq 'spooled before blocker scan' "$dir/home/state/.afk-return-catchup" || fail 'the retry did not commit the spooled wake'
   pass 'an incomplete blocker fold cannot clear the return gate'
+}
+
+test_status_replacement_during_fold_fails_closed() {
+  local dir state status out rc=0
+  dir="$TMP_ROOT/status-replacement"
+  install_runner "$dir"
+  state="$dir/home/state"
+  seed_live_blocker "$dir" tmux rotated
+  status="$state/repair-task.status"
+  awk 'BEGIN { printf "%-80s\n", "blocked [key=rotated]: prevent release"; for (i=0; i<40; i++) printf "working: %02048d\n", i }' > "$state/replacement"
+  {
+    printf '%-80s\n' 'working: preparing release'
+    command tail -n +2 "$state/replacement"
+  } > "$status"
+  {
+    printf '#!/usr/bin/env bash\nMOVE_FROM=%q\nMOVE_TO=%q\n' "$state/replacement" "$status"
+    cat <<'SH'
+if [[ "$1" = -c && "$2" != +1 && -f "$MOVE_FROM" ]]; then
+  mv "$MOVE_FROM" "$MOVE_TO" || exit 1
+fi
+SH
+    printf "exec %q \"\$@\"\n" "$(command -v tail)"
+  } > "$dir/bin/tail"
+  chmod +x "$dir/bin/tail"
+  out=$(PATH="$dir/bin:$PATH" run_return "$dir" check) || rc=$?
+  [ ! -e "$state/replacement" ] || fail 'fixture did not replace the status between chunks'
+  [ "$rc" -eq 1 ] && [ -s "$state/.afk-return-catchup" ] || fail "mixed snapshot cleared the gate: $out"
+  assert_contains "$out" 'return catch-up gate phase: blocker-scan-failed' 'the replaced snapshot did not fail closed'
+  rc=0
+  out=$(run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 3 ] || fail "retry did not gate on the replacement's blocker: $out"
+  assert_contains "$out" 'Squad-actionable blocker: repair-task [key=rotated]' 'retry skipped the replacement prefix'
+  pass 'a status replacement between chunks cannot clear the gate'
 }
 
 test_unterminated_status_is_folded_without_consuming_its_tail() {
@@ -1021,6 +1054,42 @@ test_identical_ledger_failures_survive_return_retries() (
     || fail "return did not report both unqueued occurrences exactly once: $out"
   assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: escalation: identical failure' 'return lost the queued occurrence'
   pass 'return keeps identical failures distinct and suppresses only the paired fallback'
+)
+
+test_ledger_fallback_survives_native_retire() (
+  local dir state handoff prefix out target=term_test
+  dir="$TMP_ROOT/ledger-native-retire"
+  state="$dir/home/state"
+  install_runner "$dir"
+  install_real_drain "$dir"
+  local LOG="$dir/daemon-events.log"
+  # shellcheck disable=SC2030,SC2031
+  export SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" SQUAD_WEDGE_ALARM_EXEC=discard
+  . "$ROOT/bin/sq-stand-to-lib.sh"
+  . "$ROOT/bin/sq-supervise-daemon.sh"
+  mkdir "$state/.subsuper-routine" "$state/.stand-to-queue.seq"
+  ledger_add "$state" routine 'failure outside the acknowledged prefix' > "$dir/daemon.log" 2>&1
+  [ ! -s "$SQUAD_WAKE_QUEUE" ] || fail 'fixture unexpectedly queued the failed wake'
+  [ ! -f "$state/.subsuper-routine" ] || fail 'fixture unexpectedly wrote the routine ledger'
+  rmdir "$state/.subsuper-routine" "$state/.stand-to-queue.seq"
+  prefix='1784074300|escalation|already acknowledged'
+  printf '%s\n' "$prefix" > "$state/.subsuper-escalations"
+  printf 'native escalation wedge\n' >> "$state/.subsuper-inject-wedged"
+  handoff=$(fm_supervisor_native_dir "$state" "$target") || fail 'could not derive the native handoff directory'
+  (umask 077; mkdir -p "$handoff") || fail 'could not create the native handoff directory'
+  jq -n --arg target "$target" --arg prefix "$prefix" \
+    '{version:1,id:"retire-1",endpoint:{backend:"orca",target:$target},receiver:{pid:42},lines:1,prefix:$prefix}' > "$handoff/request.json"
+  jq '. + {status:"handled"}' "$handoff/request.json" > "$handoff/result.json"
+  fm_supervisor_native_retire "$state" "$target" || fail 'Orca failed to retire the acknowledged prefix'
+  [ ! -s "$state/.subsuper-escalations" ] && [ ! -e "$state/.subsuper-inject-wedged" ] \
+    || fail 'fixture did not run native wedge cleanup'
+  out=$(run_return "$dir" check) || fail "return could not report the fallback: $out"
+  assert_contains "$out" 'routine: failure outside the acknowledged prefix' 'native retirement lost the unqueued fallback'
+  assert_contains "$out" 'daemon-notice=1' 'return did not report the occurrence exactly once'
+  [ ! -e "$state/.afk-return-catchup" ] || fail 'return did not clear after reporting the fallback'
+  out=$(run_return "$dir" check) || fail "second check failed: $out"
+  assert_not_contains "$out" 'failure outside the acknowledged prefix' 'successful return did not retire the fallback'
+  pass 'Orca native acknowledgement cannot retire a routine ledger failure'
 )
 
 test_retry_preserves_checkpoint_published_during_merge() (
@@ -1156,6 +1225,7 @@ test_failed_evidence_merge_names_its_phase success
 test_failed_evidence_merge_names_its_phase failure
 test_cold_fold_obeys_return_deadline
 test_unread_blocker_fails_closed
+test_status_replacement_during_fold_fails_closed
 test_unterminated_status_is_folded_without_consuming_its_tail
 test_blocker_scan_is_bounded_by_new_appends
 test_routine_evidence_stays_bounded_across_shutdown_retries
@@ -1165,6 +1235,7 @@ test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_ledger_fallback_survives_daemon_killed_in_queue_lock_wait
 test_identical_ledger_failures_survive_return_retries
+test_ledger_fallback_survives_native_retire
 test_explicit_reclassification_requires_durable_reason
 test_away_ledger_is_presented_once_and_never_repeated
 test_single_class_ledger_clears_return_gate
