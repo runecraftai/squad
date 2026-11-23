@@ -83,10 +83,7 @@ clean_field() {
 
 merge_evidence() {
   local source
-  local -a sources=("$GATE" kind=wake) ledgers=()
-  for source in "$STATE"/.afk-return-drain.*/{raw,output}; do
-    [ ! -f "$source" ] || sources+=("$source")
-  done
+  local -a sources=("$GATE" kind=wake "$@") ledgers=()
   if [ -f "$STATE/.subsuper-inject-wedged" ]; then
     sources+=(kind=wedge "$STATE/.subsuper-inject-wedged")
   fi
@@ -137,14 +134,15 @@ write_pending_seed() {  # Fail-closed marker before any lifecycle mutation.
   mv "$pending" "$GATE"
 }
 
-write_gate() {  # <blockers-file> <phase>
+write_gate() {  # <blockers-file> <phase> [checkpoint ...]
   local blockers=$1 phase=$2 pending started
+  shift 2
   pending=$(mktemp "$STATE/.afk-return-catchup.pending.XXXXXX") || return 1
   started=$(awk -F '\t' '$1 == "started" { print $2; exit }' "$GATE" 2>/dev/null || true)
   [ -n "$started" ] || started=$(date +%s)
   {
     printf 'schema\tsq-afk-return.v1\nstarted\t%s\nphase\t%s\n' "$started" "$phase" &&
-      merge_evidence && cat "$blockers"
+      merge_evidence "$@" && cat "$blockers"
   } > "$pending" || { rm -f "$pending"; return 1; }
   mv "$pending" "$GATE"
 }
@@ -257,7 +255,7 @@ print_summary() {  # <evidence-file>
   if [ $((escalated + routine + notice)) -eq 0 ]; then
     # No away-mode events: only live open items remain, shown without the absence
     # summary header so a re-run never presents the summary again.
-    [ -z "$notices" ] || printf 'catch-up open items (still open at return):\n%s' "$notices"
+    [ -z "$notices" ] || printf 'catch-up open items (still open at return):\n%s' "$notices" || return 1
     return 0
   fi
   local sorted_rows=''
@@ -292,12 +290,14 @@ print_summary() {  # <evidence-file>
       [ -n "$status_ref" ] && statuses+=("$status_ref")
     done <<< "$(printf '%s\n' "$sorted_rows" | grep -Eo '[A-Za-z0-9._-]+\.status' || true)"
   fi
-  printf 'catch-up summary (one presentation for this absence)\n'
-  printf '  counts: escalation=%d routine=%d daemon-notice=%d\n' "$escalated" "$routine" "$notice"
+  printf 'catch-up summary (one presentation for this absence)\n' || return 1
+  printf '  counts: escalation=%d routine=%d daemon-notice=%d\n' "$escalated" "$routine" "$notice" || return 1
   if [ "$suppressed" -gt 0 ]; then
-    printf '  routine entries past the first %d are counted but not listed; lower or raise the limit with SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS\n' "$MAX_ROUTINE_EVENTS"
+    printf '  routine entries past the first %d are counted but not listed; lower or raise the limit with SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS\n' "$MAX_ROUTINE_EVENTS" || return 1
   fi
-  [ -z "${events[0]:-}" ] || printf '  events in order:\n%s\n' "$(printf '%s\n' "${events[@]}")"
+  if [ -n "${events[0]:-}" ]; then
+    printf '  events in order:\n' && printf '%s\n' "${events[@]}" || return 1
+  fi
   locators=''
   if [ -n "${urls[0]:-}" ]; then
     locators=$(printf '%s\n' "${urls[@]}" | sed '/^$/d' | sort -u | sed 's/^/    /')
@@ -308,12 +308,12 @@ print_summary() {  # <evidence-file>
   fi
   absence=$(find "$SQUAD_BASE/data" -maxdepth 1 -name 'absence-*.md' 2>/dev/null | sort | tail -1 || true)
   if [ -n "$locators$status_lines$absence" ]; then
-    printf '  links and paths:\n'
-    [ -z "$locators" ] || printf '%s\n' "$locators"
-    [ -z "$status_lines" ] || printf '%s\n' "$status_lines"
-    [ -z "$absence" ] || printf '    %s\n' "$absence"
+    printf '  links and paths:\n' || return 1
+    [ -z "$locators" ] || printf '%s\n' "$locators" || return 1
+    [ -z "$status_lines" ] || printf '%s\n' "$status_lines" || return 1
+    [ -z "$absence" ] || printf '    %s\n' "$absence" || return 1
   fi
-  printf '  never executed while you were away: any merge outside the grant quoted in the absence record, destructive or irreversible actions, security-sensitive choices, and anything outside the accepted scope of the judge; each waits for you.\n'
+  printf '  never executed while you were away: any merge outside the grant quoted in the absence record, destructive or irreversible actions, security-sensitive choices, and anything outside the accepted scope of the judge; each waits for you.\n' || return 1
   [ -z "$notices" ] || printf '  open items at return:\n%s' "$notices"
 }
 
@@ -401,7 +401,8 @@ return_guard() {
 }
 
 return_reconcile() {
-  local blockers=$1 deadline=$2 phase='' spool remaining
+  local blockers=$1 deadline=$2 phase='' spool remaining checkpoint
+  local -a checkpoints=()
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-daemon-terminal" ]; then
     "$SCRIPT_DIR/sq-afk-launch.sh" stop || phase=shutdown-failed
   fi
@@ -409,16 +410,27 @@ return_reconcile() {
     spool=$(mktemp -d "$STATE/.afk-return-drain.XXXXXX") || return 1
     remaining=$((deadline - $(date +%s)))
     [ "$remaining" -ge 0 ] || remaining=0
-    SQUAD_WAKE_DRAIN_LOCK_SECS=$remaining SQUAD_WAKE_DRAIN_CHECKPOINT="$spool/raw" \
-      "$SCRIPT_DIR/sq-stand-to-drain.sh" > "$spool/output" || phase=drain-failed
+    (
+      rc=0
+      SQUAD_WAKE_DRAIN_LOCK_SECS=$remaining SQUAD_WAKE_DRAIN_CHECKPOINT="$spool/raw" \
+        "$SCRIPT_DIR/sq-stand-to-drain.sh" > "$spool/output.pending" || rc=$?
+      mv "$spool/output.pending" "$spool/output" || exit 1
+      exit "$rc"
+    ) || phase=drain-failed
   fi
 
   scan_open_blockers > "$blockers" || return 1
   if [ -z "$phase" ] && [ -s "$blockers" ]; then
     phase=blocked
   fi
-  write_gate "$blockers" "${phase:-presenting}" || return 1
-  rm -rf -- "$STATE"/.afk-return-drain.*/ || return 1
+  for checkpoint in "$STATE"/.afk-return-drain.*/{raw,output}; do
+    [ ! -f "$checkpoint" ] || checkpoints+=("$checkpoint")
+  done
+  write_gate "$blockers" "${phase:-presenting}" ${checkpoints[@]+"${checkpoints[@]}"} || return 1
+  for checkpoint in ${checkpoints[@]+"${checkpoints[@]}"}; do
+    rm -f -- "$checkpoint" || return 1
+    rmdir "${checkpoint%/*}" 2>/dev/null || true
+  done
   if [ -n "$phase" ]; then
     printf 'sq-afk-return: catch-up must finish before the commander request\n' >&2
     printf 'sq-afk-return: %s away-mode event(s) are held in the catch-up record; one summary is presented once the blockers clear\n' "$(grep -c "^evidence"$'\t'"escalation"$'\t' "$GATE" 2>/dev/null || true)" >&2

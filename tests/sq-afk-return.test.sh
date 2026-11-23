@@ -506,7 +506,60 @@ SH
   pass 'return bounds the real drain lock wait and retries failed evidence merges without losing wakes'
 )
 
+test_retry_preserves_checkpoint_published_during_merge() (
+  dir="$TMP_ROOT/late-checkpoint"
+  install_runner "$dir"
+  cp "$ROOT/bin/sq-stand-to-drain.sh" "$ROOT/bin/sq-line-cap-lib.sh" "$dir/bin/"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/sq-guard.sh"
+  chmod +x "$dir/bin/sq-guard.sh"
+  export SQUAD_STATE_OVERRIDE="$dir/home/state"
+  . "$dir/bin/sq-stand-to-lib.sh"
+  export LATE_CHECKPOINT="$SQUAD_STATE_OVERRIDE/.afk-return-drain.interrupted/raw"
+  mkdir -p "${LATE_CHECKPOINT%/*}"
+  : > "${LATE_CHECKPOINT%/*}/output"
+  printf '1784074300 1 check afk-ledger-undeliverable check: away-mode ledger could not record: late wake\n' > "$LATE_CHECKPOINT.pending"
+  printf '1784074300|escalation|trigger evidence merge\n' > "$SQUAD_STATE_OVERRIDE/.subsuper-escalations"
+  REAL_SORT=$(command -v sort)
+  export REAL_SORT
+  cat > "$dir/bin/sort" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *.subsuper-escalations*) mv "$LATE_CHECKPOINT.pending" "$LATE_CHECKPOINT" || exit 1 ;;
+esac
+exec "$REAL_SORT" "$@"
+SH
+  chmod +x "$dir/bin/sort"
+  fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
+  rc=0
+  out=$(PATH="$dir/bin:$PATH" SQUAD_AFK_RETURN_LOCK_SECS=0 run_return "$dir" check) || rc=$?
+  fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
+  [ "$rc" -eq 3 ] || fail "held queue lock did not preserve the gate: $rc: $out"
+  [ -s "$LATE_CHECKPOINT" ] || fail 'retry removed a checkpoint published after the merge snapshot'
+  out=$(run_return "$dir" check) || fail "late checkpoint retry did not recover: $out"
+  assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: late wake' 'retry lost the late wake'
+  [ ! -e "$LATE_CHECKPOINT" ] || fail 'successful merge did not remove the recorded checkpoint'
+  pass 'return only removes checkpoints included in its evidence commit'
+)
+
+test_summary_write_failure_preserves_evidence() (
+  dir="$TMP_ROOT/summary-write-failure"
+  install_runner "$dir"
+  state="$dir/home/state"
+  printf '1784074300|escalation|undelivered summary event\n' > "$state/.subsuper-escalations"
+  rc=0
+  SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" "$dir/bin/sq-afk-return.sh" begin >&- 2> "$dir/error" || rc=$?
+  [ "$rc" -eq 1 ] || fail "summary write failure was not surfaced: $rc"
+  [ -s "$state/.afk-return-catchup" ] || fail 'summary write failure cleared the gate'
+  [ -s "$state/.subsuper-escalations" ] || fail 'summary write failure cleared the ledger'
+  out=$(run_return "$dir" check) || fail "summary retry failed: $out"
+  assert_contains "$out" '[escalation] undelivered summary event' 'summary retry lost the escalation'
+  [ ! -e "$state/.afk-return-catchup" ] || fail 'successful summary did not clear the gate'
+  pass 'return retries an undelivered summary without losing its evidence'
+)
+
 test_real_drain_preserves_wakes_across_return_failures
+test_retry_preserves_checkpoint_published_during_merge
+test_summary_write_failure_preserves_evidence
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
