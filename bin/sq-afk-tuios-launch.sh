@@ -5,7 +5,7 @@ fm_afk_launch_tuios_sessions() {
   local json bin
   fm_backend_source tuios || return 1
   bin=$(fm_backend_tuios_bin)
-  json=$("$bin" list-sessions --json 2>/dev/null) || return 1
+  json=$(fm_afk_launch_bounded "$bin" list-sessions --json 2>/dev/null) || return 1
   printf '%s' "$json" | jq -e 'type == "array" and all(.[]; type == "object" and (.name | type == "string") and (.id | type == "string") and (.attached | type == "boolean") and (.windows | type == "array"))' >/dev/null 2>&1 || return 1
   printf '%s' "$json"
 }
@@ -69,7 +69,7 @@ fm_afk_launch_tuios_session_absent() {  # <session:window>
   session=${target%%:*}
   [ -n "$session" ] || return 1
   sessions=$(fm_afk_launch_tuios_sessions) || return 1
-  ! printf '%s' "$sessions" | jq -e --arg name "$session" 'any(.[]; .name == $name)' >/dev/null 2>&1
+  printf '%s' "$sessions" | jq -e --arg name "$session" 'all(.[]; .name != $name)' >/dev/null 2>&1
 }
 
 fm_afk_launch_tuios_create_result() {  # <session-name> -> session-id<TAB>window-id

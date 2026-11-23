@@ -21,13 +21,13 @@ fm_supervisor_native_endpoint() {  # <backend> <target>
   if ! command -v orca >/dev/null || ! command -v jq >/dev/null; then
     echo 'error: Orca supervisor needs orca and jq on PATH' >&2; return 1
   fi
-  status=$(orca status --json) || {
+  status=$("${fm_backend_cli_runner:-command}" orca status --json) || {
     echo 'error: orca status --json failed; start the selected local Orca host, confirm it answers that command, and retry' >&2; return 1
   }
   printf '%s' "$status" | jq -e '.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready" and (.result.runtime.runtimeId | type == "string" and length > 0)' >/dev/null || {
     echo 'error: Orca supervisor requires a reachable ready runtime with runtimeId; start the selected local Orca host first' >&2; return 1;
   }
-  terminal=$(orca terminal show --terminal "$target" --json) || {
+  terminal=$("${fm_backend_cli_runner:-command}" orca terminal show --terminal "$target" --json) || {
     echo "error: \`orca terminal show --terminal $target --json\` failed; verify that exact runtime-issued handle on the selected local Orca host" >&2; return 1
   }
   jq -cen --arg target "$target" --argjson s "$status" --argjson t "$terminal" '

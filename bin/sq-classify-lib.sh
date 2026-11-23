@@ -376,12 +376,16 @@ status_line_append() {  # <status-file> <line>
 # explicit "[key=default]" from no token at all can ask for it.
 # The parsers are pure reads of a single line; the verb parser strips any
 # key token before the colon so the leading word is recovered cleanly.
-status_line_verb() {  # <status-line> -> leading verb word
+status_line_verb() {  # <status-line> [output-variable]
   local v=${1%%:*}
   v=${v%%\[key=*}
   v=${v#"${v%%[![:space:]]*}"}
   v=${v%"${v##*[![:space:]]}"}
-  printf '%s' "$v"
+  if [ "$#" -eq 2 ]; then
+    printf -v "$2" '%s' "$v"
+  else
+    printf '%s' "$v"
+  fi
 }
 status_line_note() {  # <status-line> -> text after the first colon, trimmed
   case "$1" in
@@ -482,27 +486,21 @@ _fm_decision_key_transition_allowed() {  # <key> <note>
   return 0
 }
 
-_fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb>
-  local open=$1 line=$2 resolve=$3 held=$4 verb key note stripped
-  stripped=${line//[[:space:]]/}
-  [ -n "$stripped" ] || { printf '%s' "$open"; return 0; }
-  verb=$(status_line_verb "$line")
-  key=$(_fm_decision_key "$line") || { printf '%s' "$open"; return 0; }
-  _fm_decision_key_transition_allowed "$key" "$(status_line_note "$line")" \
-    || { printf '%s' "$open"; return 0; }
+_fm_decision_fold_line() {  # <open-set-variable> <status-line> <resolve-verb> <held-verb>
+  local dest=$1 row=$2 closed=$3 reserved=$4 verb key note next
+  status_line_verb "$row" verb
+  case "$verb" in needs-decision|blocked|"$closed"|"$reserved") ;; *) return 0 ;; esac
+  key=$(_fm_decision_key "$row") || return 0
+  note=$(status_line_note "$row") || return 1
+  _fm_decision_key_transition_allowed "$key" "$note" || return 0
+  next=$(_fm_decision_drop "${!dest}" "$key") || return 1
   case "$verb" in
     needs-decision|blocked)
-      note=$(status_line_note "$line")
-      open=$(_fm_decision_drop "$open" "$key")
-      [ -n "$open" ] && open="${open}"$'\n'
-      open="${open}${key}"$'\t'"${verb}"$'\t'"${note}"$'\n'
-      ;;
-    "$resolve"|"$held")
-      open=$(_fm_decision_drop "$open" "$key")
-      [ -n "$open" ] && open="${open}"$'\n'
+      [ -z "$next" ] || next+=$'\n'
+      next+="${key}"$'\t'"${verb}"$'\t'"${note}"
       ;;
   esac
-  printf '%s' "$open"
+  printf -v "$dest" '%s' "$next"
 }
 
 # Fold the WHOLE status stream into the set of decisions still open. Prints one
@@ -523,7 +521,7 @@ status_open_decisions() {  # <status-file>
   resolve=${SQUAD_CLASSIFY_RESOLVE_VERB:-$SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT}
   held=${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}
   while IFS= read -r line || [ -n "$line" ]; do
-    open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
+    _fm_decision_fold_line open "$line" "$resolve" "$held" || return 1
   done < "$f"
   printf '%s' "$open"
 }
@@ -593,9 +591,8 @@ EOF
 #
 # The other real failure mode is OUR OWN read failing (a stat/wc/tail I/O
 # error), not a malformed writer: every such read here is checked, and on
-# failure this reports the already-trusted persisted set unchanged rather than
-# risking a silent invalidation that would wipe it - never a bare "empty" as if
-# nothing were open.
+# failure this reports the already-trusted persisted set with a nonzero status,
+# so callers can distinguish incomplete evidence from a complete empty result.
 #
 # Not a pure status-file read: this writes/rewrites the sibling cursor file as a
 # side effect (state/.<task>.open-decisions-cursor), the library's second
@@ -626,10 +623,30 @@ _fm_open_decisions_file_ident() {  # <file> -> "dev:inode", empty on I/O failure
   fi
 }
 
-status_open_decisions_incremental() {  # <status-file>
+_fm_open_decisions_save() {
+  local path=$1 tmp=$2 offset=$3 ident=$4 open=$5
+  printf 'version=%s\noffset=%s\nident=%s\n%s' "$SQUAD_OPEN_DECISIONS_FOLD_VERSION" "$offset" "$ident" "$open" > "$tmp" &&
+    mv -f "$tmp" "$path"
+}
+
+_fm_open_decisions_read_chunk() {
+  local -a results
+  tail -c "+$2" "$1" 2>/dev/null | head -c "$3"
+  results=("${PIPESTATUS[@]}")
+  [ "${results[1]}" -eq 0 ] && { [ "${results[0]}" -eq 0 ] || [ "${results[0]}" -eq 141 ]; }
+}
+
+_fm_open_decisions_line_bytes() {
+  local LC_ALL=C
+  printf -v "$1" '%s' "${#2}"
+}
+
+status_open_decisions_incremental() (  # <status-file>
   local f=$1 cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
+  local chunk_bytes end start original cursor_tmp have_newline saved line_bytes
+  [ ! -L "$f" ] || return 0
+  [ -f "$f" ] && [ -r "$f" ] || return 1
   cf=$(_fm_open_decisions_cursor_path "$f")
   offset=0
   ident=''
@@ -676,12 +693,11 @@ status_open_decisions_incremental() {  # <status-file>
   # A stat/size-read failure is a genuine I/O error, not "the file is empty" -
   # report the already-trusted persisted set unchanged rather than risking a
   # silent invalidation that would wipe it.
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || { printf '%s' "$trusted_open"; return 0; }
-  [ -n "$cur_ident" ] || { printf '%s' "$trusted_open"; return 0; }
-  size=$(LC_ALL=C wc -c < "$f" 2>/dev/null) \
-    || { printf '%s' "$trusted_open"; return 0; }
+  cur_ident=$(_fm_open_decisions_file_ident "$f") || { printf '%s' "$trusted_open"; return 1; }
+  [ -n "$cur_ident" ] || { printf '%s' "$trusted_open"; return 1; }
+  size=$(LC_ALL=C wc -c < "$f" 2>/dev/null) || { printf '%s' "$trusted_open"; return 1; }
   size=${size//[[:space:]]/}
-  case "$size" in ''|*[!0-9]*) printf '%s' "$trusted_open"; return 0 ;; esac
+  case "$size" in ''|*[!0-9]*) printf '%s' "$trusted_open"; return 1 ;; esac
 
   if [ -z "$version" ] || [ -z "$ident" ] || [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$size" ]; then
     offset=0
@@ -690,45 +706,53 @@ status_open_decisions_incremental() {  # <status-file>
     cursor_dirty=1
   fi
 
-  if [ "$offset" -lt "$size" ]; then
-    chunk_file="$cf.read.$$"
-    tail -c "+$((offset + 1))" "$f" > "$chunk_file" 2>/dev/null \
-      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
-    chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
-      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
-    chunk_size=${chunk_size//[[:space:]]/}
-    case "$chunk_size" in
-      ''|*[!0-9]*) rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0 ;;
-    esac
-    # Test-only observability seam (off by default, no production behavior
-    # change): when set, records exactly how many bytes THIS call folded, so a
-    # test can assert the incremental path stays bounded by new appends rather
-    # than re-reading the whole file, without relying on timing or source text.
-    [ -n "${SQUAD_OPEN_DECISIONS_READ_PROBE:-}" ] \
-      && printf '%s\t%s\n' "$f" "$chunk_size" >> "$SQUAD_OPEN_DECISIONS_READ_PROBE"
-    resolve=${SQUAD_CLASSIFY_RESOLVE_VERB:-$SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT}
-    held=${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}
-    while IFS= read -r line || [ -n "$line" ]; do
-      open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
-    done < "$chunk_file"
-    rm -f "$chunk_file"
-    offset=$size
-    cursor_dirty=1
-  fi
+  chunk_file="$cf.read.${BASHPID:-$$}"
+  cursor_tmp="$cf.tmp.${BASHPID:-$$}"
+  trap 'rm -f "$chunk_file" "$cursor_tmp"' EXIT
+  trap 'exit 143' TERM
+  original=$offset
+  saved=$offset
+  chunk_bytes=65536
+  resolve=${SQUAD_CLASSIFY_RESOLVE_VERB:-$SQUAD_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${SQUAD_CLASSIFY_COMMANDER_HELD_VERB:-$SQUAD_CLASSIFY_COMMANDER_HELD_VERB_DEFAULT}
+  while [ "$offset" -lt "$size" ]; do
+    start=$offset
+    end=$((offset + chunk_bytes))
+    [ "$end" -le "$size" ] || end=$size
+    _fm_open_decisions_read_chunk "$f" "$((offset + 1))" "$((end - offset))" > "$chunk_file" \
+      || { printf '%s' "$open"; return 1; }
+    chunk_size=$(LC_ALL=C wc -c < "$chunk_file") || { printf '%s' "$open"; return 1; }
+    [ "${chunk_size//[[:space:]]/}" = "$((end - offset))" ] || { printf '%s' "$open"; return 1; }
+    while :; do
+      have_newline=1
+      if ! IFS= read -r line; then
+        [ "$end" -eq "$size" ] && [ -n "$line" ] || break
+        have_newline=0
+      fi
+      _fm_decision_fold_line open "$line" "$resolve" "$held" || return 1
+      _fm_open_decisions_line_bytes line_bytes "$line"
+      offset=$((offset + line_bytes + have_newline))
+      if [ "$((offset - saved))" -ge 4096 ]; then
+        _fm_open_decisions_save "$cf" "$cursor_tmp" "$offset" "$cur_ident" "$open" || return 1
+        saved=$offset
+      fi
+    done < "$chunk_file" || return 1
+    if [ "$offset" -eq "$start" ]; then
+      [ "$end" -lt "$size" ] || return 1
+      chunk_bytes=$((chunk_bytes * 2))
+    else
+      cursor_dirty=1
+      chunk_bytes=65536
+    fi
+  done
   if [ "$cursor_dirty" -eq 1 ]; then
-    {
-      printf 'version=%s\n' "$SQUAD_OPEN_DECISIONS_FOLD_VERSION"
-      printf 'offset=%s\n' "$offset"
-      printf 'ident=%s\n' "$cur_ident"
-      # An `if` (not `[ -n "$open" ] && printf ...`) so the group's exit status
-      # is always 0 even when open is empty (fully resolved) - a bare `&&`
-      # there would make the whole group fail on that condition, silently
-      # skipping the mv below and leaving the cursor stuck on the OLD offset.
-      if [ -n "$open" ]; then printf '%s' "$open"; fi
-    } > "$cf.tmp.$$" && mv -f "$cf.tmp.$$" "$cf"
+    _fm_open_decisions_save "$cf" "$cursor_tmp" "$offset" "$cur_ident" "$open" || return 1
+  fi
+  if [ "$offset" -gt "$original" ] && [ -n "${SQUAD_OPEN_DECISIONS_READ_PROBE:-}" ]; then
+    printf '%s\t%s\n' "$f" "$((offset - original))" >> "$SQUAD_OPEN_DECISIONS_READ_PROBE"
   fi
   printf '%s' "$open"
-}
+)
 
 # Incremental sibling of scan_open_decisions: same unit-wide directory walk and
 # output shape ("<task>\t<key>\t<verb>\t<note>" per open decision), but folds
@@ -740,7 +764,7 @@ scan_open_decisions_incremental() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     task=$(basename "$f"); task="${task%.status}"
-    open=$(status_open_decisions_incremental "$f") || continue
+    open=$(status_open_decisions_incremental "$f") || :
     [ -n "$open" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue

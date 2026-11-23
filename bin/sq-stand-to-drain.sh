@@ -162,16 +162,15 @@ print_teardown_pending_section() {
 # at-least-once boundary. Runs under the queue lock, so no other drain can be
 # mid-batch while it decides.
 recover_abandoned_batches() {
-  local batch name_pid held
+  local batch held
   for batch in "$STATE"/.stand-to-queue.drain.*; do
     [ -f "$batch" ] || continue
-    name_pid=${batch##*.}
-    [ "$name_pid" != "$(fm_current_pid)" ] || continue
     held=$(awk 'NF >= 5 { n++ } END { print n + 0 }' "$batch" 2>/dev/null) || held=0
     if fm_wake_restore_queue "$batch" && rm -f "$batch"; then
       printf 'sq-stand-to-drain: recovered an interrupted drain batch (%s record(s)) before reporting it\n' "$held" >&2
     else
       printf 'sq-stand-to-drain: an interrupted drain batch could not be recovered; leaving it in place for the next drain\n' >&2
+      return 1
     fi
   done
 }
@@ -199,10 +198,10 @@ else
 fi
 DRAIN_LOCK_HELD=true
 
-recover_abandoned_batches
+recover_abandoned_batches || exit 1
 
 if [ ! -s "$SQUAD_WAKE_QUEUE" ]; then
-  : > "$SQUAD_WAKE_QUEUE"
+  : > "$SQUAD_WAKE_QUEUE" || exit 1
   fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
   (print_open_decisions_section) || true
@@ -211,8 +210,7 @@ if [ ! -s "$SQUAD_WAKE_QUEUE" ]; then
   exit 0
 fi
 
-DRAIN_TMP="$STATE/.stand-to-queue.drain.$(fm_current_pid)"
-rm -f "$DRAIN_TMP"
+DRAIN_TMP="$STATE/.stand-to-queue.drain.${BASHPID:-$$}"
 mv "$SQUAD_WAKE_QUEUE" "$DRAIN_TMP" || exit 1
 : > "$SQUAD_WAKE_QUEUE" || exit 1
 

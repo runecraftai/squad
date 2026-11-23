@@ -466,6 +466,21 @@ test_killed_drain_batch_is_recovered() {
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
     || fail "the killed drain left no in-flight batch to recover"
 
+  mkdir -p "$dir/bin"
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+case "$1" in *.stand-to-queue.drain.*) exit 1 ;; esac
+SH
+    printf "exec %q \"\$@\"\n" "$(command -v cat)"
+  } > "$dir/bin/cat"
+  chmod +x "$dir/bin/cat"
+  if SQUAD_STATE_OVERRIDE="$state" PATH="$dir/bin:$PATH" "$DRAIN" > "$dir/failed.out" 2> "$dir/failed.err"; then
+    fail 'the drain reported success after failing to restore the abandoned batch'
+  fi
+  [ ! -s "$dir/failed.out" ] || fail 'a failed restore reported a wake as delivered'
+  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'a failed restore removed the abandoned batch'
+
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/recovered.out" 2> "$dir/recovered.err" \
     || fail "the drain after a killed batch failed"
   count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$dir/recovered.out")

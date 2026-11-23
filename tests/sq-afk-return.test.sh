@@ -25,12 +25,11 @@ install_runner() {  # <case-dir>
 #!/usr/bin/env bash
 [ "${1:-}" = stop ] || exit 2
 printf 'stop\n' >> "$SQUAD_BASE/stop.log"
-rm -f "$SQUAD_BASE/state/.afk"
 if [ -e "$SQUAD_BASE/state/.fail-terminal-stop-once" ]; then
   rm -f "$SQUAD_BASE/state/.fail-terminal-stop-once"
   exit 1
 fi
-rm -f "$SQUAD_BASE/state/.afk-daemon-terminal"
+rm -f "$SQUAD_BASE/state/.afk-daemon-terminal" "$SQUAD_BASE/state/.afk"
 SH
   cat > "$dir/bin/sq-stand-to-drain.sh" <<'SH'
 #!/usr/bin/env bash
@@ -39,6 +38,12 @@ file="$SQUAD_BASE/state/.fake-drain"
 : > "$file"
 SH
   chmod +x "$dir/bin/"*.sh
+}
+
+install_real_drain() {
+  cp "$ROOT/bin/sq-stand-to-drain.sh" "$ROOT/bin/sq-line-cap-lib.sh" "$1/bin/"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$1/bin/sq-guard.sh"
+  chmod +x "$1/bin/sq-guard.sh"
 }
 
 run_return() {  # <case-dir> <mode>
@@ -208,9 +213,8 @@ test_check_retries_recorded_terminal_teardown() {
   [ "$rc" -eq 3 ] || fail "failed terminal teardown should keep return catch-up gated (rc=$rc): $out"
   [ -e "$gate" ] || fail "failed terminal teardown cleared the return gate"
   [ -e "$dir/home/state/.afk-daemon-terminal" ] || fail "failed terminal teardown discarded its durable record"
-  [ ! -e "$dir/home/state/.afk" ] || fail "failed terminal teardown did not preserve stop ordering"
+  [ -e "$dir/home/state/.afk" ] || fail "failed terminal teardown cleared away mode"
   assert_not_contains "$out" 'resuming a catch-up' "fresh return reported an interrupted drain"
-  touch "$dir/home/state/.afk"
   rc=0; out=$(run_return "$dir" guard) || rc=$?
   [ "$rc" -eq 3 ] || fail "guard did not refuse while shutdown was pending"
   assert_contains "$out" 'return catch-up gate phase: shutdown-failed' "away mode masked the lifecycle diagnosis"
@@ -219,6 +223,7 @@ test_check_retries_recorded_terminal_teardown() {
   out=$(run_return "$dir" check) || fail "check did not retry recorded terminal teardown: $out"
   [ ! -e "$dir/home/state/.afk-daemon-terminal" ] || fail "successful check left the terminal teardown record behind"
   [ ! -e "$gate" ] || fail "successful terminal teardown retry left the return gate behind"
+  [ ! -e "$dir/home/state/.afk" ] || fail "successful terminal teardown retry left away mode active"
   [ "$(wc -l < "$dir/home/stop.log" | tr -d ' ')" -eq 2 ] || fail "check did not retry terminal teardown exactly once"
   pass "check retries recorded terminal teardown and keeps catch-up gated until success"
 }
@@ -463,7 +468,7 @@ test_catchup_lock_wait_is_bounded() {
   wait "$holder" 2>/dev/null || true
   [ "$rc" -ne 124 ] || fail "a held catch-up lock spun without a bound instead of reporting a timeout"
   [ "$rc" -eq 3 ] || fail "a held catch-up lock should refuse with the timeout diagnosis (rc=$rc): $out"
-  assert_contains "$out" 'the return catch-up lock is still held after 1s' "the lock timeout did not name its bound"
+  assert_contains "$out" 'waiting for the held return catch-up lock' "the lock timeout did not name its bound"
   assert_contains "$out" 'return catch-up gate phase: stopping-and-draining' "the lock timeout did not report the gate phase"
   [ "$elapsed" -le 15 ] || fail "the bounded lock wait took ${elapsed}s against a 1s bound"
   pass "a held catch-up lock reports a bounded timeout with the gate phase instead of hanging the return"
@@ -512,8 +517,8 @@ test_shutdown_step_is_bounded_and_retains_lifecycle() {
   elapsed=$(( $(date +%s) - started_at ))
   [ "$rc" -ne 124 ] || fail "an unresponsive away-mode shutdown held the catch-up lock instead of returning inside its budget"
   [ "$rc" -eq 3 ] || fail "a bounded shutdown failure should keep the catch-up gated (rc=$rc): $out"
-  assert_contains "$out" 'away-mode shutdown exceeded its' "the bounded shutdown did not report the budget it hit"
-  assert_contains "$out" 'return catch-up gate phase: shutdown-failed' "the bounded shutdown did not name the gate phase"
+  assert_contains "$out" 'catch-up exceeded its 3s budget' "the bounded shutdown did not report the budget it hit"
+  [ -s "$dir/home/state/.afk-return-catchup" ] || fail 'the bounded shutdown did not retain the gate'
   [ -e "$dir/home/state/.afk" ] || fail "the bounded shutdown cleared the away-mode flag it could not confirm"
   [ -e "$dir/home/state/.afk-daemon-terminal" ] || fail "the bounded shutdown discarded the recorded terminal id"
   [ "$elapsed" -le 20 ] || fail "the bounded shutdown took ${elapsed}s against a 3s budget"
@@ -531,7 +536,9 @@ test_shutdown_contains_real_backend() {
 #!/usr/bin/env bash
 [ "$*" = 'kill-session -t synthetic-session' ] || exit 1
 printf 'backend entered\n'
-exec sleep 14
+[ "${MOCK_TERMINAL_DIRECT:-0}" != 1 ] || exec sleep 14
+(trap '' TERM; sleep 14; touch "$SQUAD_BASE/backend-escaped") &
+wait
 SH
   chmod +x "$dir/bin/tmux"
 
@@ -541,11 +548,18 @@ SH
   elapsed=$(( $(date +%s) - started_at ))
   [ "$rc" -eq 3 ] || fail "the return did not gate on timed-out backend cleanup (rc=$rc): $out"
   assert_contains "$out" 'backend entered' 'the real launcher did not reach the stalled backend'
-  assert_contains "$out" 'return catch-up gate phase: shutdown-failed' 'the backend timeout did not retain the gate'
+  assert_contains "$out" 'catch-up exceeded its 3s budget' 'the backend escaped the return deadline'
+  [ -s "$dir/home/state/.afk-return-catchup" ] || fail 'the backend timeout did not retain the gate'
   [ "$elapsed" -lt 10 ] || fail "the backend held return output open for ${elapsed}s after the shutdown deadline"
   [ -e "$dir/home/state/.afk" ] && [ -e "$dir/home/state/.afk-daemon-terminal" ] \
     || fail 'the timed-out backend lost its lifecycle state'
-  pass 'the return deadline contains the real launcher and its stalled backend'
+  rc=0
+  out=$(env PATH="$dir/bin:$PATH" MOCK_TERMINAL_DIRECT=1 SQUAD_AFK_RETURN_LOCK_SECS=6 SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 \
+    SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" check 2>&1) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the nested backend cap did not gate the retry (rc=$rc): $out"
+  assert_contains "$out" 'return catch-up gate phase: shutdown-failed' 'the nested backend ignored its shorter cap'
+  assert_not_contains "$out" 'catch-up exceeded' 'the nested backend spent the whole return budget'
+  pass 'the return deadline contains the real launcher without disabling its backend cap'
 }
 
 # Finding: when the evidence merge failed after the queue was consumed, the gate
@@ -555,9 +569,12 @@ test_failed_evidence_merge_names_its_phase() {
   local dir gate out rc phase
   dir="$TMP_ROOT/merge-phase"
   install_runner "$dir"
+  install_real_drain "$dir"
+  seed_live_blocker "$dir" tmux merge-blocker
   gate="$dir/home/state/.afk-return-catchup"
   printf '1784074300|escalation|evidence merge trigger\n' > "$dir/home/state/.subsuper-escalations"
-  : > "$dir/home/state/.fake-drain"
+  printf '1784074300\t1\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: merge checkpoint\n' \
+    > "$dir/home/state/.stand-to-queue"
   REAL_SORT=$(command -v sort)
   export REAL_SORT
   cat > "$dir/bin/sort" <<'SH'
@@ -580,9 +597,17 @@ SH
   assert_contains "$out" 'the drain consumed the queue but the evidence merge could not commit' \
     "the failed merge did not explain why the gate could not advance"
 
+  grep -q 'merge checkpoint' "$dir/home/state"/.afk-return-drain.*/raw || fail 'the failed merge lost the drained checkpoint'
+  [ ! -s "$dir/home/state/.stand-to-queue" ] || fail 'the live blocker prevented the queue drain'
   rm -f "$dir/bin/sort"
+  rc=0
+  out=$(run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the merge retry did not preserve the live blocker: $out"
+  assert_contains "$out" 'return catch-up gate phase: blocked' 'the retry did not commit the blocked outcome'
+  printf 'resolved [key=merge-blocker]: cleared\n' >> "$dir/home/state/repair-task.status"
   out=$(run_return "$dir" check) || fail "the merge retry did not recover: $out"
   assert_contains "$out" '[escalation] evidence merge trigger' "the merge retry lost the ledger escalation"
+  assert_contains "$out" 'check: away-mode ledger could not record: merge checkpoint' 'the merge retry lost the drained wake'
   [ ! -e "$gate" ] || fail "the successful merge retry left the gate behind"
   pass "a failed evidence merge persists and reports the phase it could not commit"
 }
@@ -704,7 +729,10 @@ test_real_drain_preserves_wakes_across_return_failures() (
   out=$(fm_run_timed 15 env SQUAD_AFK_RETURN_LOCK_SECS=1 SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" begin 2>&1) || rc=$?
   fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
   [ "$rc" -eq 3 ] || fail "held queue lock did not return a bounded refusal: $rc: $out"
-  assert_contains "$out" 'return catch-up gate phase: drain-failed' 'queue lock failure did not name its phase'
+  case "$out" in
+    *'catch-up exceeded its 1s budget'*|*'return catch-up gate phase: drain-failed'*) ;;
+    *) fail "queue lock refusal lacked a diagnosis: $out" ;;
+  esac
   grep -q 'retained wake' "$SQUAD_WAKE_QUEUE" || fail 'timed-out drain consumed its queue'
 
   REAL_SORT=$(command -v sort)
@@ -726,6 +754,64 @@ SH
   assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: retained wake' 'retry lost the drained queue record'
   pass 'return bounds the real drain lock wait and retries failed evidence merges without losing wakes'
 )
+
+test_cold_fold_obeys_return_deadline() {
+  local dir state out rc=0 total offset
+  dir="$TMP_ROOT/cold-deadline"
+  install_runner "$dir"
+  install_real_drain "$dir"
+  seed_live_blocker "$dir" tmux cold-blocker
+  state="$dir/home/state"
+  awk 'BEGIN { for (i=0; i<36; i++) printf "working: %02048d\n", i }' >> "$state/repair-task.status"
+  total=$(wc -c < "$state/repair-task.status")
+  printf '1784074300\t1\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: cold checkpoint\n' > "$state/.stand-to-queue"
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+if [[ "$1" = -c && "$2" != +1 && "$3" = */repair-task.status ]]; then exec sleep 15; fi
+SH
+    printf "exec %q \"\$@\"\n" "$(command -v tail)"
+  } > "$dir/bin/tail"
+  chmod +x "$dir/bin/tail"
+  out=$(fm_run_timed 9 env SQUAD_AFK_RETURN_LOCK_SECS=3 PATH="$dir/bin:$PATH" SQUAD_BASE="$dir/home" \
+    "$dir/bin/sq-afk-return.sh" begin 2>&1) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the real cold drain escaped its enclosing budget ($rc): $out"
+  assert_contains "$out" 'catch-up exceeded its 3s budget' 'the real cold fold did not hit the deadline'
+  offset=$(awk -F= '$1 == "offset" { print $2 }' "$state/.repair-task.open-decisions-cursor")
+  [ "$offset" -gt 0 ] && [ "$offset" -lt "$total" ] || fail 'the interrupted fold did not checkpoint partial progress'
+  grep -q 'cold checkpoint' "$state"/.afk-return-drain.*/raw || fail 'the deadline lost the published raw batch'
+  rm -f "$dir/bin/tail"
+  rc=0
+  out=$(run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the resumed cold fold did not retain the live blocker: $out"
+  assert_contains "$out" 'return catch-up gate phase: blocked' 'the resumed fold lost the blocker'
+  printf 'resolved [key=cold-blocker]: cleared\n' >> "$state/repair-task.status"
+  out=$(run_return "$dir" check) || fail "the resolved return stayed gated: $out"
+  assert_contains "$out" 'cold checkpoint' 'the timed-out drain lost its queued wake'
+  pass 'the return deadline contains the real cold drain and preserves fold progress and wakes'
+}
+
+test_unread_blocker_fails_closed() {
+  local dir out rc=0
+  dir="$TMP_ROOT/unread-blocker"
+  install_runner "$dir"
+  seed_live_blocker "$dir" tmux unread-blocker
+  {
+    cat <<'SH'
+#!/usr/bin/env bash
+[ "$1" != -c ] || exit 1
+SH
+    printf "exec %q \"\$@\"\n" "$(command -v tail)"
+  } > "$dir/bin/tail"
+  chmod +x "$dir/bin/tail"
+  out=$(PATH="$dir/bin:$PATH" run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 1 ] && [ -s "$dir/home/state/.afk-return-catchup" ] || fail "unread status cleared the gate: $out"
+  rc=0
+  out=$(run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the readable blocker did not gate the retry: $out"
+  assert_contains "$out" 'return catch-up gate phase: blocked' 'the retry lost the unread blocker'
+  pass 'an incomplete blocker fold cannot clear the return gate'
+}
 
 test_retry_preserves_checkpoint_published_during_merge() (
   dir="$TMP_ROOT/late-checkpoint"
@@ -786,6 +872,8 @@ test_summary_write_failure_preserves_evidence
 test_shutdown_step_is_bounded_and_retains_lifecycle
 test_shutdown_contains_real_backend
 test_failed_evidence_merge_names_its_phase
+test_cold_fold_obeys_return_deadline
+test_unread_blocker_fails_closed
 test_blocker_scan_is_bounded_by_new_appends
 test_routine_evidence_stays_bounded_across_shutdown_retries
 test_summary_count_names_the_retained_scope

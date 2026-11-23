@@ -60,8 +60,10 @@ fm_run_bash_timeout() {
     set +m
     sleep "$seconds"
     printf 'expired\n' > "$deadline_status"
-    kill -TERM -- "-$child_pid" 2>/dev/null || true
-    sleep 0.2
+    if [ "${fm_timeout_clean_group:-0}" != 1 ]; then
+      kill -TERM -- "-$child_pid" 2>/dev/null || true
+      sleep 0.2
+    fi
     kill -KILL -- "-$child_pid" 2>/dev/null || true
     exit 124
   ) &
@@ -82,8 +84,32 @@ fm_run_bash_timeout() {
     recorded_rc=$(cat "$command_status" 2>/dev/null || true)
     case "$recorded_rc" in ''|*[!0-9]*) ;; *) command_rc=$recorded_rc ;; esac
   fi
+  if [ "${fm_timeout_clean_group:-0}" = 1 ]; then
+    kill -KILL -- "-$child_pid" 2>/dev/null || true
+  fi
   rm -f "$command_status" "$deadline_status" 2>/dev/null || true
   return "$command_rc"
+}
+
+fm_run_timed_in_group() {
+  local seconds=$1 child watchdog rc=0
+  shift
+  (exec "$@") </dev/null &
+  child=$!
+  (
+    timer=''
+    trap 'if [ -n "$timer" ]; then kill "$timer" 2>/dev/null || true; fi; exit 0' TERM
+    sleep "$seconds" &
+    timer=$!
+    wait "$timer" || exit 0
+    kill -KILL "$child" 2>/dev/null || true
+  ) </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$child" 2>/dev/null || rc=$?
+  kill -TERM "$watchdog" 2>/dev/null || true
+  wait "$watchdog" 2>/dev/null || true
+  [ "$rc" -ne 137 ] || rc=124
+  return "$rc"
 }
 
 fm_run_external_timeout() {

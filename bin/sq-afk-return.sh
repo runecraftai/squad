@@ -74,6 +74,8 @@ MAX_ROUTINE_EVENTS=$(fm_afk_decimal_setting "${SQUAD_AFK_RETURN_MAX_ROUTINE_EVEN
 # cannot carry every evicted row forward forever. Escalations are never capped.
 ROUTINE_EVIDENCE_LIMIT=$(fm_afk_routine_ledger_limit)
 LOCK_WAIT_SECS=$(fm_afk_decimal_setting "${SQUAD_AFK_RETURN_LOCK_SECS:-}" 30)
+RUN_BUDGET_SECS=$LOCK_WAIT_SECS
+[ "$RUN_BUDGET_SECS" -ne 0 ] || RUN_BUDGET_SECS=30
 # The field separator, resolved once: a `while IFS="$(printf '\t')" read` re-runs
 # its command substitution on every iteration, which is a process per line.
 TAB=$(printf '\t')
@@ -128,7 +130,7 @@ merge_evidence() {
 }
 
 scan_open_blockers() {  # -> tab-separated blocker rows
-  local meta id status key verb summary clean_summary
+  local meta id status open key verb summary clean_summary
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     id=$(basename "$meta")
@@ -138,13 +140,15 @@ scan_open_blockers() {  # -> tab-separated blocker rows
     # The cursor-backed fold, for the same reason the drain uses it: a long
     # status history must not be re-folded on every retry, so a live task's
     # whole lifetime cannot stall the return.
+    if ! open=$(status_open_decisions_incremental "$status"); then
+      printf 'sq-afk-return: could not finish reading blocker history for %s\n' "$id" >&2
+      return 1
+    fi
     while IFS="$TAB" read -r key verb summary; do
       [ "$verb" = blocked ] || continue
       clean_summary=$(printf '%s' "$summary" | clean_field)
       printf 'blocker\t%s\t%s\t%s\n' "$id" "$key" "$clean_summary"
-    done <<EOF
-$(status_open_decisions_incremental "$status")
-EOF
+    done <<< "$open"
   done
 }
 
@@ -443,34 +447,23 @@ return_guard() {
 }
 
 return_reconcile() {
-  local blockers=$1 deadline=$2 phase='' spool remaining checkpoint stop_rc
+  local blockers=$1 phase='' spool checkpoint
   local -a checkpoints=()
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-daemon-terminal" ]; then
-    remaining=$((deadline - $(date +%s)))
-    [ "$remaining" -ge 1 ] || remaining=1
-    stop_rc=0
-    fm_run_timed "$remaining" env SQUAD_AFK_RETURN_OWNS_STOP_TIMEOUT=1 \
-      "$SCRIPT_DIR/sq-afk-launch.sh" stop || stop_rc=$?
-    if [ "$stop_rc" -ne 0 ]; then
-      # The recorded terminal and state/.afk stay in place, so the next check
-      # retries the same exact-id teardown instead of clearing away mode on an
-      # unconfirmed shutdown.
-      phase=shutdown-failed
-      [ "$stop_rc" -ne 124 ] \
-        || printf 'sq-afk-return: away-mode shutdown exceeded its %ss budget; lifecycle state is retained for the next check\n' "$remaining" >&2
-    fi
+    SQUAD_AFK_RETURN_OWNS_STOP_TIMEOUT=1 "$SCRIPT_DIR/sq-afk-launch.sh" stop || phase=shutdown-failed
   fi
   if [ -z "$phase" ]; then
     spool=$(mktemp -d "$STATE/.afk-return-drain.XXXXXX") || return 1
-    remaining=$((deadline - $(date +%s)))
-    [ "$remaining" -ge 0 ] || remaining=0
     (
       rc=0
-      SQUAD_WAKE_DRAIN_LOCK_SECS=$remaining SQUAD_WAKE_DRAIN_CHECKPOINT="$spool/raw" \
+      SQUAD_WAKE_DRAIN_LOCK_SECS=$LOCK_WAIT_SECS SQUAD_WAKE_DRAIN_CHECKPOINT="$spool/raw" \
         "$SCRIPT_DIR/sq-stand-to-drain.sh" > "$spool/output.pending" || rc=$?
       mv "$spool/output.pending" "$spool/output" || exit 1
       exit "$rc"
     ) || phase=drain-failed
+    if [ -z "$phase" ]; then
+      write_gate_phase merging-evidence || return 1
+    fi
   fi
 
   scan_open_blockers > "$blockers" || return 1
@@ -480,12 +473,6 @@ return_reconcile() {
   for checkpoint in "$STATE"/.afk-return-drain.*/{raw,output}; do
     [ ! -f "$checkpoint" ] || checkpoints+=("$checkpoint")
   done
-  if [ -z "$phase" ]; then
-    # The drain already consumed the queue. Record the phase this run is in
-    # before attempting the commit, so a merge that fails leaves a gate that
-    # names the merge rather than claiming it never got past the drain.
-    write_gate_phase merging-evidence || return 1
-  fi
   write_gate "$blockers" "${phase:-presenting}" ${checkpoints[@]+"${checkpoints[@]}"} || return 1
   for checkpoint in ${checkpoints[@]+"${checkpoints[@]}"}; do
     rm -f -- "$checkpoint" || return 1
@@ -505,15 +492,8 @@ return_reconcile() {
   return 0
 }
 
-main() {
-  local mode=${1:-begin} rc resumed deadline scratch
-  case "$mode" in
-    begin|check) ;;
-    guard) return_guard; return ;;
-    -h|--help|help) usage; return 0 ;;
-    *) usage >&2; return 2 ;;
-  esac
-
+run_reconciliation() {
+  local rc resumed scratch
   # The mutating begin/check paths need locks and the keyed status fold.
   # `guard` returned above without sourcing sq-stand-to-lib.sh, whose initialization
   # creates the state directory, so the advertised read-only guard is literal.
@@ -521,32 +501,50 @@ main() {
   . "$SCRIPT_DIR/sq-stand-to-lib.sh"
   # shellcheck source=bin/sq-classify-lib.sh
   . "$SCRIPT_DIR/sq-classify-lib.sh"
-  # shellcheck source=bin/sq-timeout-lib.sh
-  . "$SCRIPT_DIR/sq-timeout-lib.sh"
 
   mkdir -p "$STATE" || return 1
-  # A bounded wait, not an unbounded spin: a lock left behind by a killed run must
-  # report itself to the commander instead of hanging the return.
-  deadline=$(( $(date +%s) + LOCK_WAIT_SECS ))
-  if ! fm_lock_acquire_wait_bounded "$LOCK" "$LOCK_WAIT_SECS"; then
-    printf 'sq-afk-return: catch-up did not start: the return catch-up lock is still held after %ss\n' "$LOCK_WAIT_SECS" >&2
+  trap 'exit 143' TERM
+  trap 'fm_lock_release "$LOCK"; if [ -n "${scratch:-}" ]; then rm -rf -- "$scratch"; fi' EXIT
+  if ! fm_lock_try_acquire "$LOCK"; then
+    printf 'sq-afk-return: waiting for the held return catch-up lock\n' >&2
     report_gate_phase >&2
-    printf 'sq-afk-return: retry bin/sq-afk-return.sh check once the run holding it has exited\n' >&2
-    return 3
+    fm_lock_acquire_wait_bounded "$LOCK" "$LOCK_WAIT_SECS" || return 3
   fi
-  trap 'fm_lock_release "$LOCK"' EXIT
   resumed=$(gate_field phase)
   if [ -n "$resumed" ] && [ "$resumed" != blocked ]; then
     printf 'sq-afk-return: resuming a catch-up found in phase %s: %s\n' "$resumed" "$(gate_reason "$resumed")" >&2
   fi
   write_pending_seed || return 1
   scratch=$(mktemp -d "$STATE/.afk-return-work.XXXXXX") || return 1
-  return_reconcile "$scratch/blockers" "$deadline"
+  return_reconcile "$scratch/blockers"
   rc=$?
   rm -rf -- "$scratch"
   if [ "$rc" -eq 1 ]; then
     printf 'sq-afk-return: catch-up did not commit; retry bin/sq-afk-return.sh check\n' >&2
     report_gate_phase >&2
+  fi
+  return "$rc"
+}
+
+main() {
+  local rc=0 phase=''
+  case "${1:-begin}" in
+    begin|check) ;;
+    guard) return_guard; return ;;
+    -h|--help|help) usage; return 0 ;;
+    *) usage >&2; return 2 ;;
+  esac
+  # shellcheck source=bin/sq-timeout-lib.sh
+  . "$SCRIPT_DIR/sq-timeout-lib.sh"
+  fm_timeout_clean_group=1 fm_run_bash_timeout "$RUN_BUDGET_SECS" run_reconciliation || rc=$?
+  if [ "$rc" -eq 124 ]; then
+    printf 'sq-afk-return: catch-up exceeded its %ss budget; retry bin/sq-afk-return.sh check\n' "$RUN_BUDGET_SECS" >&2
+    if [ -f "$GATE" ] && { read -r && read -r && IFS= read -r -n 128 phase; } < "$GATE"; then
+      if [[ "$phase" == phase$'\t'* ]]; then
+        printf 'sq-afk-return: last recorded catch-up gate phase: %s\n' "${phase#*$'\t'}" >&2
+      fi
+    fi
+    return 3
   fi
   return "$rc"
 }

@@ -1182,8 +1182,11 @@ unit_stop_bounds_backend_operations() {
   printf 'tmux\texact-session\towned\n' > "$st/state/.afk-daemon-terminal"
   cat > "$shim/tmux" <<'SH'
 #!/usr/bin/env bash
-[ "${1:-}" = kill-session ] || exit 1
-exec sleep 18
+case "${1:-}" in
+  kill-session) exec sleep 18 ;;
+  has-session) [ "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" = 1 ] && exec sleep 18 ;;
+esac
+exit 1
 SH
   chmod +x "$shim/tmux"
 
@@ -1198,12 +1201,34 @@ SH
     fail "bounded stop: an unconfirmed terminal teardown was reported as success"
   elif [ "$elapsed" -gt "$max_elapsed" ]; then
     fail "bounded stop: stop took ${elapsed}s with timeout setting '$setting'"
-  elif [ ! -e "$st/state/.afk-daemon-terminal" ]; then
-    fail "bounded stop: an unconfirmed terminal teardown discarded the recorded id"
+  elif [ ! -e "$st/state/.afk-daemon-terminal" ] || [ ! -e "$st/state/.afk" ]; then
+    fail "bounded stop: an unconfirmed terminal teardown discarded lifecycle state"
   elif grep -q 'preserving exact id' "$st/out"; then
     pass "bounded stop: an unresponsive backend hits its bound, keeps the recorded id, and never reports success"
   else
     fail "bounded stop: the preserved record was not reported ($(tail -n 1 "$st/out"))"
+  fi
+  rm -rf "$st"
+}
+
+unit_stop_bounds_ownership_probe() {
+  local st rc=0
+  st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-bounded-probe.XXXXXX")
+  mkdir -p "$st/state"
+  date +%s > "$st/state/.afk"
+  printf 'tuios\towned-session:window\tsession-id\n' > "$st/state/.afk-daemon-terminal"
+  cat > "$st/tuios" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = list-sessions ] || exit 2
+exec sleep 18
+SH
+  chmod +x "$st/tuios"
+  SQUAD_TUIOS_BIN="$st/tuios" SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 SQUAD_BASE="$st" SQUAD_STATE_OVERRIDE="$st/state" \
+    fm_run_timed 8 "$LAUNCH" stop > "$st/out" 2>&1 || rc=$?
+  if [ "$rc" -eq 1 ] && [ -s "$st/state/.afk" ] && [ -s "$st/state/.afk-daemon-terminal" ]; then
+    pass 'a stalled TUIOS ownership probe fails closed inside the backend cap'
+  else
+    fail "a stalled TUIOS ownership probe returned $rc or lost lifecycle state"
   fi
   rm -rf "$st"
 }
@@ -1372,6 +1397,7 @@ unit_tuios_launch_rolls_back_a_created_session
 unit_tuios_launch_rolls_back_when_new_reports_failure
 unit_stop_bounds_backend_operations 1 8 6
 unit_stop_bounds_backend_operations 00 17 15
+unit_stop_bounds_ownership_probe
 unit_status_health
 e2e_herdr
 e2e_tmux

@@ -39,7 +39,7 @@ fm_afk_launch_orca_pending_match() {  # read-only: 0 exact single live match; 2 
   fi
   # Search the whole runtime: a handle moved to another worktree is an identity
   # mismatch, not proof that the terminal disappeared from the original one.
-  if ! inventory=$(orca terminal list --limit 10000 --json); then
+  if ! inventory=$(fm_afk_launch_bounded orca terminal list --limit 10000 --json); then
     fm_afk_launch_log 'Orca daemon identity is recorded but the runtime terminal inventory could not be read; preserving the pending intent (no create retry)'
     return 1
   fi
@@ -146,7 +146,7 @@ fm_afk_launch_orca_release_evidence() {  # [inventory-json]
   SQUAD_AFK_ORCA_RELEASE_BRANCH=incomplete-evidence
   parent=$(printf '%s' "$extra" | jq -ce '.parent') || return 1
   target=$(printf '%s' "$extra" | jq -r '.endpoint.target // empty') || return 1
-  status=$(orca status --json) || return 1
+  status=$(fm_afk_launch_bounded orca status --json) || return 1
   runtime=$(printf '%s' "$status" | jq -er '
     select(.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready")
     | .result.runtime.runtimeId | select(type == "string" and length > 0)') || return 1
@@ -158,7 +158,7 @@ fm_afk_launch_orca_release_evidence() {  # [inventory-json]
   fi
   inventory=${1:-}
   if [ -z "$inventory" ]; then
-    inventory=$(orca terminal list --limit 10000 --json) || return 1
+    inventory=$(fm_afk_launch_bounded orca terminal list --limit 10000 --json) || return 1
   fi
   printf '%s' "$inventory" | jq -e --arg runtime "$runtime" '
     .ok == true and ._meta.runtimeId == $runtime and .result.truncated == false
@@ -238,9 +238,9 @@ fm_afk_launch_orca_absent() {  # <target> <record-json>
     return
   fi
   runtime=$(printf '%s' "$extra" | jq -er '.endpoint.runtime') || return 1
-  status=$(orca status --json) || return 1
+  status=$(fm_afk_launch_bounded orca status --json) || return 1
   printf '%s' "$status" | jq -e --arg runtime "$runtime" '.ok == true and .result.runtime.reachable == true and .result.runtime.state == "ready" and .result.runtime.runtimeId == $runtime' >/dev/null || return 1
-  inventory=$(orca terminal list --limit 10000 --json) || return 1
+  inventory=$(fm_afk_launch_bounded orca terminal list --limit 10000 --json) || return 1
   printf '%s' "$inventory" | jq -e --arg target "$target" --arg runtime "$runtime" '
     .ok == true and ._meta.runtimeId == $runtime and .result.truncated == false and (.result.hostScope.omittedHostIds | type == "array" and length == 0) and (.result.terminals | type == "array") and all(.result.terminals[]; (.handle | type == "string")) and all(.result.terminals[]; .handle != $target)' >/dev/null
 }

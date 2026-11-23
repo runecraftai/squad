@@ -102,6 +102,7 @@ SQUAD_AFK_LAUNCH_WS_LABEL="Squad-afk-daemon"
 # shellcheck source=bin/sq-afk-settings.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-afk-settings.sh"
 SQUAD_AFK_BACKEND_TIMEOUT_SECS=$(fm_afk_decimal_setting "${SQUAD_AFK_BACKEND_TIMEOUT_SECS:-}" 10 1)
+fm_backend_cli_runner=fm_afk_launch_bounded
 
 # shellcheck source=bin/sq-backend.sh
 . "$SQUAD_AFK_LAUNCH_DIR/sq-backend.sh"
@@ -154,7 +155,7 @@ fm_afk_launch_log() { printf 'sq-afk-launch: %s\n' "$*" >&2; }
 # operation, exactly like any other non-zero status.
 fm_afk_launch_bounded() {  # <command> [args...]
   if [ "${return_owns_stop_timeout:-0}" = 1 ]; then
-    "$@"
+    fm_run_timed_in_group "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" "$@"
   else
     fm_run_timed "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" "$@"
   fi
@@ -354,7 +355,7 @@ fm_afk_launch_terminal_absent() {  # <backend> <target>
       [ -n "$session" ] && [ -n "$pane" ] && [ "$pane" != "$target" ] || return 1
       out=$(fm_backend_herdr_cli "$session" pane get "$pane" 2>&1)
       result=$?
-      [ "$result" -ne 0 ] || return 1
+      [ "$result" -ne 0 ] && [ "$result" -ne 124 ] || return 1
       code=$(printf '%s' "$out" | jq -r '.error.code // empty' 2>/dev/null) || return 1
       [ "$code" = pane_not_found ]
       ;;
@@ -1023,21 +1024,16 @@ fm_afk_launch_stop() {
   if [ "$read_result" -eq 0 ]; then
     fm_afk_launch_close_recorded || result=1
   fi
-  if [ "$result" -ne 0 ] && [ "${SQUAD_AFK_REC_BACKEND:-}" = orca ]; then
-    fm_afk_launch_log 'Orca terminal cleanup is unconfirmed; stop is not complete'
+  if [ "$result" -ne 0 ]; then
+    fm_afk_launch_log 'terminal cleanup is unconfirmed; preserving away mode for retry'
     return 1
   fi
   # (3) Clear the away-mode flag LAST.
   if ! rm -f "$SQUAD_AFK_LAUNCH_STATE/.afk"; then
     fm_afk_launch_log "failed to clear away-mode flag"
-    result=1
+    return 1
   fi
-  if [ "$result" -eq 0 ]; then
-    fm_afk_launch_log "away mode stopped; daemon terminal torn down and .afk cleared"
-  else
-    fm_afk_launch_log "away mode stopped; terminal teardown remains recorded for retry"
-  fi
-  return "$result"
+  fm_afk_launch_log "away mode stopped; daemon terminal torn down and .afk cleared"
 }
 
 fm_afk_launch_main() {
