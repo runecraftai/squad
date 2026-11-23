@@ -175,6 +175,22 @@ fm_supervisor_native_submit() {  # <state> <target> <message> <covered-lines>
   return 1
 }
 
+_fm_supervisor_native_preserve_legacy_wakes() {
+  local marker="$1/.subsuper-inject-wedged" archived rc=0
+  [ -e "$marker" ] || return 0
+  LC_ALL=C grep '^away-mode ledger undeliverable as of ' "$marker" >/dev/null || rc=$?
+  case "$rc" in
+    1) return 0 ;;
+    0) ;;
+    *) return 1 ;;
+  esac
+  archived=$(mktemp "$1/.subsuper-ledger-undeliverable.legacy.XXXXXX") || return 1
+  if ! mv -f "$marker" "$archived"; then
+    rm -f "$archived"
+    return 1
+  fi
+}
+
 # shellcheck disable=SC2034 # Refusal reasons are read by sourcing callers that keep the request.
 fm_supervisor_native_retire() {  # <state> <target>
   local state=$1 target=$2 dir lines expected actual buf
@@ -200,6 +216,11 @@ fm_supervisor_native_retire() {  # <state> <target>
     || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='acknowledged prefix no longer matches the escalation buffer head'; return 1; }
   tail -n "+$((lines + 1))" "$buf" > "$buf.retire.$$" \
     || { rm -f "$buf.retire.$$"; SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='escalation buffer could not be rewritten'; return 1; }
+  if [ ! -s "$buf.retire.$$" ] && ! _fm_supervisor_native_preserve_legacy_wakes "$state"; then
+    rm -f "$buf.retire.$$"
+    SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='legacy undeliverable evidence could not be preserved'
+    return 1
+  fi
   mv "$buf.retire.$$" "$buf" \
     || { SQUAD_SUPERVISOR_NATIVE_RETIRE_REASON='retired buffer rewrite could not be committed'; return 1; }
   # On a crash before unlink, a mismatched prefix remains blocked, never replayed.

@@ -633,11 +633,25 @@ _fm_open_decisions_save() {
     mv -f "$tmp" "$path"
 }
 
-_fm_open_decisions_read_chunk() {
-  local -a results
-  tail -c "+$2" "$1" 2>/dev/null | head -c "$3"
-  results=("${PIPESTATUS[@]}")
-  [ "${results[1]}" -eq 0 ] && { [ "${results[0]}" -eq 0 ] || [ "${results[0]}" -eq 141 ]; }
+_fm_open_decisions_snapshot() {
+  LC_ALL=C perl -e '
+    my ($operation, $offset, $remaining) = @ARGV;
+    if ($operation eq "identity") {
+      my @info = stat(STDIN);
+      @info && -f _ or exit 1;
+      print "$info[0]:$info[1] $info[7]\n" or exit 1;
+    } else {
+      defined sysseek(STDIN, $offset, 0) or exit 1;
+      binmode STDOUT or exit 1;
+      while ($remaining > 0) {
+        my $read = sysread(STDIN, my $bytes, $remaining < 65536 ? $remaining : 65536);
+        $read or exit 1;
+        print $bytes or exit 1;
+        $remaining -= $read;
+      }
+    }
+    close STDOUT or exit 1;
+  ' -- "$@" <&9
 }
 
 _fm_open_decisions_line_bytes() {
@@ -698,7 +712,7 @@ status_open_decisions_incremental() (  # <status-file>
   # report the already-trusted persisted set unchanged rather than risking a
   # silent invalidation that would wipe it.
   exec 9< "$f" || { printf '%s' "$trusted_open"; return 1; }
-  snapshot=$(_fm_open_decisions_file_ident /dev/fd/9 snapshot) || { printf '%s' "$trusted_open"; return 1; }
+  snapshot=$(_fm_open_decisions_snapshot identity) || { printf '%s' "$trusted_open"; return 1; }
   cur_ident=${snapshot%% *}
   size=${snapshot#* }
   case "$size" in ''|*[!0-9]*) printf '%s' "$trusted_open"; return 1 ;; esac
@@ -727,7 +741,7 @@ status_open_decisions_incremental() (  # <status-file>
     start=$offset
     end=$((offset + chunk_bytes))
     [ "$end" -le "$size" ] || end=$size
-    _fm_open_decisions_read_chunk /dev/fd/9 "$((offset + 1))" "$((end - offset))" > "$chunk_file" \
+    _fm_open_decisions_snapshot read "$offset" "$((end - offset))" > "$chunk_file" \
       || { printf '%s' "$open"; return 1; }
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file") || { printf '%s' "$open"; return 1; }
     [ "${chunk_size//[[:space:]]/}" = "$((end - offset))" ] || { printf '%s' "$open"; return 1; }

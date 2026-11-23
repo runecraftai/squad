@@ -870,11 +870,11 @@ test_cold_fold_obeys_return_deadline() {
   {
     cat <<'SH'
 #!/usr/bin/env bash
-if [[ "$1" = -c && "$2" != +1 ]]; then exec sleep 15; fi
+if [[ "${4:-}" = read && "${5:-}" != 0 ]]; then exec sleep 15; fi
 SH
-    printf "exec %q \"\$@\"\n" "$(command -v tail)"
-  } > "$dir/bin/tail"
-  chmod +x "$dir/bin/tail"
+    printf "exec %q \"\$@\"\n" "$(command -v perl)"
+  } > "$dir/bin/perl"
+  chmod +x "$dir/bin/perl"
   out=$(fm_run_timed 9 env SQUAD_AFK_RETURN_LOCK_SECS=3 PATH="$dir/bin:$PATH" SQUAD_BASE="$dir/home" \
     "$dir/bin/sq-afk-return.sh" begin 2>&1) || rc=$?
   [ "$rc" -eq 3 ] || fail "the real cold drain escaped its enclosing budget ($rc): $out"
@@ -882,7 +882,7 @@ SH
   offset=$(awk -F= '$1 == "offset" { print $2 }' "$state/.repair-task.open-decisions-cursor")
   [ "$offset" -gt 0 ] && [ "$offset" -lt "$total" ] || fail 'the interrupted fold did not checkpoint partial progress'
   grep -q 'cold checkpoint' "$state"/.afk-return-drain.*/raw || fail 'the deadline lost the published raw batch'
-  rm -f "$dir/bin/tail"
+  rm -f "$dir/bin/perl"
   rc=0
   out=$(run_return "$dir" check) || rc=$?
   [ "$rc" -eq 3 ] || fail "the resumed cold fold did not retain the live blocker: $out"
@@ -910,11 +910,11 @@ test_unread_blocker_fails_closed() {
   {
     cat <<'SH'
 #!/usr/bin/env bash
-[ "$1" != -c ] || exit 1
+[ "${4:-}" != read ] || exit 1
 SH
-    printf "exec %q \"\$@\"\n" "$(command -v tail)"
-  } > "$dir/bin/tail"
-  chmod +x "$dir/bin/tail"
+    printf "exec %q \"\$@\"\n" "$(command -v perl)"
+  } > "$dir/bin/perl"
+  chmod +x "$dir/bin/perl"
   out=$(PATH="$dir/bin:$PATH" run_return "$dir" begin) || rc=$?
   [ "$rc" -eq 1 ] && [ -s "$dir/home/state/.afk-return-catchup" ] || fail "unread status cleared the gate: $out"
   assert_contains "$out" 'return catch-up gate phase: blocker-scan-failed' 'the unread blocker did not name its failed phase'
@@ -928,30 +928,56 @@ SH
   pass 'an incomplete blocker fold cannot clear the return gate'
 }
 
-test_status_replacement_during_fold_fails_closed() {
-  local dir state status out rc=0
-  dir="$TMP_ROOT/status-replacement"
+test_status_replacement_during_fold() {
+  local mode=$1 dir state status out rc=0 reader
+  dir="$TMP_ROOT/status-replacement-$mode"
   install_runner "$dir"
   state="$dir/home/state"
   seed_live_blocker "$dir" tmux rotated
   status="$state/repair-task.status"
-  awk 'BEGIN { printf "%-80s\n", "blocked [key=rotated]: prevent release"; for (i=0; i<40; i++) printf "working: %02048d\n", i }' > "$state/replacement"
-  {
-    printf '%-80s\n' 'working: preparing release'
-    command tail -n +2 "$state/replacement"
-  } > "$status"
-  {
-    printf '#!/usr/bin/env bash\nMOVE_FROM=%q\nMOVE_TO=%q\n' "$state/replacement" "$status"
-    cat <<'SH'
-if [[ "$1" = -c && "$2" != +1 && -f "$MOVE_FROM" ]]; then
-  mv "$MOVE_FROM" "$MOVE_TO" || exit 1
+  awk 'BEGIN { printf "%-80s\n", "blocked [key=original]: prevent release"; for (i=0; i<40; i++) printf "working: %02048d\n", i; printf "%-80s\n", "working: preparing release" }' > "$status"
+  awk 'NR==1 { printf "%-80s\n", "blocked [key=rotated]: prevent release"; next }
+       NR==42 { printf "%-80s\n", "resolved [key=original]: release ready"; next }
+       { print }' "$status" > "$state/replacement"
+  for reader in perl tail; do
+    {
+      printf '#!/usr/bin/env bash\nSTATUS=%q\nMODE=%q\nREAL=%q\n' "$status" "$mode" "$(command -v "$reader")"
+      cat <<'SH'
+if [[ ( ${4:-} = read && ${5:-} != 0 || $1 = -c && $2 != +1 ) && -f "${STATUS%/*}/replacement" ]]; then
+  mv "$STATUS" "$STATUS.original" || exit 1
+  mv "${STATUS%/*}/replacement" "$STATUS" || exit 1
+  touch "$STATUS.swapped"
+  "$REAL" "$@"
+  rc=$?
+  if [ "$MODE" != persistent ]; then mv "$STATUS.original" "$STATUS" || exit 1; fi
+  exit "$rc"
 fi
+exec "$REAL" "$@"
 SH
-    printf "exec %q \"\$@\"\n" "$(command -v tail)"
-  } > "$dir/bin/tail"
-  chmod +x "$dir/bin/tail"
+    } > "$dir/bin/$reader"
+    chmod +x "$dir/bin/$reader"
+  done
+  if [ "$mode" = portable ]; then
+    {
+      printf '#!/usr/bin/env bash\nSTATUS=%q\nREAL=%q\n' "$status" "$(command -v stat)"
+      cat <<'SH'
+case "${!#}" in
+  /dev/fd/*) printf '0:0 1\n'; exit 0 ;;
+  "$STATUS") if [ ! -f "$STATUS.swapped" ]; then printf '0:0 1\n'; exit 0; fi ;;
+esac
+exec "$REAL" "$@"
+SH
+    } > "$dir/bin/stat"
+    chmod +x "$dir/bin/stat"
+  fi
   out=$(PATH="$dir/bin:$PATH" run_return "$dir" check) || rc=$?
-  [ ! -e "$state/replacement" ] || fail 'fixture did not replace the status between chunks'
+  [ -e "$status.swapped" ] || fail "fixture did not replace the status between chunks: $out"
+  if [ "$mode" != persistent ]; then
+    [ "$rc" -eq 3 ] && [ -s "$state/.afk-return-catchup" ] || fail "the original snapshot did not gate return: $out"
+    assert_contains "$out" 'Squad-actionable blocker: repair-task [key=original]' 'the replacement suffix hid the original blocker'
+    pass "the $mode snapshot kept the original blocker"
+    return
+  fi
   [ "$rc" -eq 1 ] && [ -s "$state/.afk-return-catchup" ] || fail "mixed snapshot cleared the gate: $out"
   assert_contains "$out" 'return catch-up gate phase: blocker-scan-failed' 'the replaced snapshot did not fail closed'
   rc=0
@@ -1074,7 +1100,9 @@ test_ledger_fallback_survives_native_retire() (
   rmdir "$state/.subsuper-routine" "$state/.stand-to-queue.seq"
   prefix='1784074300|escalation|already acknowledged'
   printf '%s\n' "$prefix" > "$state/.subsuper-escalations"
-  printf 'native escalation wedge\n' >> "$state/.subsuper-inject-wedged"
+  printf '%s\n' 'native escalation wedge' \
+    'away-mode ledger undeliverable as of 1784074300: routine: legacy failure outside the acknowledged prefix' \
+    >> "$state/.subsuper-inject-wedged"
   handoff=$(fm_supervisor_native_dir "$state" "$target") || fail 'could not derive the native handoff directory'
   (umask 077; mkdir -p "$handoff") || fail 'could not create the native handoff directory'
   jq -n --arg target "$target" --arg prefix "$prefix" \
@@ -1085,7 +1113,9 @@ test_ledger_fallback_survives_native_retire() (
     || fail 'fixture did not run native wedge cleanup'
   out=$(run_return "$dir" check) || fail "return could not report the fallback: $out"
   assert_contains "$out" 'routine: failure outside the acknowledged prefix' 'native retirement lost the unqueued fallback'
-  assert_contains "$out" 'daemon-notice=1' 'return did not report the occurrence exactly once'
+  assert_contains "$out" 'routine: legacy failure outside the acknowledged prefix' 'native retirement lost the persisted legacy fallback'
+  assert_not_contains "$out" 'native escalation wedge' 'return reported the retired native wedge'
+  assert_contains "$out" 'daemon-notice=2' 'return did not report both occurrences exactly once'
   [ ! -e "$state/.afk-return-catchup" ] || fail 'return did not clear after reporting the fallback'
   out=$(run_return "$dir" check) || fail "second check failed: $out"
   assert_not_contains "$out" 'failure outside the acknowledged prefix' 'successful return did not retire the fallback'
@@ -1225,7 +1255,9 @@ test_failed_evidence_merge_names_its_phase success
 test_failed_evidence_merge_names_its_phase failure
 test_cold_fold_obeys_return_deadline
 test_unread_blocker_fails_closed
-test_status_replacement_during_fold_fails_closed
+test_status_replacement_during_fold persistent
+test_status_replacement_during_fold transient
+test_status_replacement_during_fold portable
 test_unterminated_status_is_folded_without_consuming_its_tail
 test_blocker_scan_is_bounded_by_new_appends
 test_routine_evidence_stays_bounded_across_shutdown_retries

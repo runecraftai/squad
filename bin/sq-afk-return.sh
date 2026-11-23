@@ -95,6 +95,9 @@ merge_evidence() {
   for marker in "$STATE/.subsuper-inject-wedged" "$STATE/.subsuper-ledger-undeliverable"; do
     [ ! -f "$marker" ] || sources+=(kind=wedge "$marker")
   done
+  for marker in "$STATE"/.subsuper-ledger-undeliverable.legacy.*; do
+    [ ! -f "$marker" ] || sources+=(kind=legacy_wedge "$marker")
+  done
   sources+=(kind=escalation)
   [ ! -f "$routine_ledger" ] || sources+=("$routine_ledger")
   (
@@ -114,7 +117,7 @@ merge_evidence() {
             sub(/^.*\[/, "", key)
             sub(/\].*$/, "", key)
           } else {
-            key = "legacy-undeliverable:" ++legacy_rows[kind]
+            key = "legacy-undeliverable:" ++legacy_rows[kind == "legacy_wedge" ? "wedge" : kind]
           }
         }
         if (!routine && key in seen) return
@@ -130,9 +133,11 @@ merge_evidence() {
         if ($1 == "evidence") keep($0, $2, $3)
         next
       }
+      kind == "legacy_wedge" && !/^away-mode ledger undeliverable as of / { next }
       { gsub(/[\t\r]/, " "); if ($0 == "") next
-        row = "evidence\t" kind "\t" $0
-        keep(row, kind, $0) }
+        field = kind == "legacy_wedge" ? "wedge" : kind
+        row = "evidence\t" field "\t" $0
+        keep(row, field, $0) }
       END {
         for (i = routine_count; i > 0; i--) {
           idx = routine_row[i]
@@ -406,7 +411,8 @@ clear_delivery_artifacts() {
     "$STATE/.subsuper-routine" \
     "$STATE/.subsuper-parked-notified" \
     "$STATE/.subsuper-inject-wedged" \
-    "$STATE/.subsuper-ledger-undeliverable"
+    "$STATE/.subsuper-ledger-undeliverable" \
+    "$STATE"/.subsuper-ledger-undeliverable.legacy.*
 }
 
 write_gate_phase() {  # <phase>: persist the phase without merging evidence

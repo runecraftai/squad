@@ -204,18 +204,12 @@ test_read_failure_never_silently_returns_empty() {
   before_cursor=$(LC_ALL=C cksum "$cursor")
 
   printf 'working: more routine content\n' >> "$statusfile"
-  # Fail ONLY the byte-offset content read (`tail -c ...`) that status_open_
-  # decisions_incremental uses to pull new appended bytes; pass every other
-  # drain/guard invocation through to the real tail, so this isolates exactly
-  # the one read path under test.
-  cat > "$fakebin/tail" <<SH
+  cat > "$fakebin/perl" <<SH
 #!/usr/bin/env bash
-for a in "\$@"; do
-  case "\$a" in -c|-c*) exit 1 ;; esac
-done
-exec "$(command -v tail)" "\$@"
+[ "\${4:-}" != read ] || exit 1
+exec "$(command -v perl)" "\$@"
 SH
-  chmod +x "$fakebin/tail"
+  chmod +x "$fakebin/perl"
 
   SQUAD_STATE_OVERRIDE="$state" PATH="$fakebin:$PATH" "$DRAIN" > "$out" \
     || fail "wake drain failed instead of preserving state after the injected read failure"
