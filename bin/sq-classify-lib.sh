@@ -643,7 +643,7 @@ _fm_open_decisions_line_bytes() {
 
 status_open_decisions_incremental() (  # <status-file>
   local f=$1 cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
-  local version='' size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
+  local version='' size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0 save_failed=0
   local chunk_bytes end start original cursor_tmp saved line_bytes scratch_prefix
   [ ! -L "$f" ] || return 0
   [ -f "$f" ] && [ -r "$f" ] || return 1
@@ -731,9 +731,12 @@ status_open_decisions_incremental() (  # <status-file>
       _fm_decision_fold_line open "$line" "$resolve" "$held" || return 1
       _fm_open_decisions_line_bytes line_bytes "$line"
       offset=$((offset + line_bytes + 1))
-      if [ "$((offset - saved))" -ge 4096 ]; then
-        _fm_open_decisions_save "$cf" "$cursor_tmp" "$offset" "$cur_ident" "$open" || return 1
-        saved=$offset
+      if [ "$save_failed" -eq 0 ] && [ "$((offset - saved))" -ge 4096 ]; then
+        if _fm_open_decisions_save "$cf" "$cursor_tmp" "$offset" "$cur_ident" "$open"; then
+          saved=$offset
+        else
+          save_failed=1
+        fi
       fi
     done < "$chunk_file" || return 1
     if [ "$offset" -gt "$start" ]; then
@@ -744,14 +747,14 @@ status_open_decisions_incremental() (  # <status-file>
     fi
     [ "$end" -lt "$size" ] || break
   done
-  if [ "$cursor_dirty" -eq 1 ]; then
-    _fm_open_decisions_save "$cf" "$cursor_tmp" "$offset" "$cur_ident" "$open" || return 1
+  if [ "$save_failed" -eq 0 ] && [ "$cursor_dirty" -eq 1 ]; then
+    _fm_open_decisions_save "$cf" "$cursor_tmp" "$offset" "$cur_ident" "$open" || save_failed=1
   fi
   if [ "$offset" -gt "$original" ] && [ -n "${SQUAD_OPEN_DECISIONS_READ_PROBE:-}" ]; then
     printf '%s\t%s\n' "$f" "$((offset - original))" >> "$SQUAD_OPEN_DECISIONS_READ_PROBE"
   fi
   printf '%s' "$open"
-  [ "$offset" -eq "$size" ]
+  [ "$save_failed" -eq 0 ] && [ "$offset" -eq "$size" ]
 )
 
 # Incremental sibling of scan_open_decisions: same unit-wide directory walk and

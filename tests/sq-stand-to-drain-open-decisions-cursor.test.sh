@@ -271,6 +271,45 @@ SH
   pass "a cursor-cache read failure refolds the authoritative status file without hiding an open decision"
 }
 
+test_cursor_cache_save_failure_preserves_folded_output() {
+  local dir state fakebin statusfile cursor out real_mv filler
+  dir=$(make_case cursor-cache-save-failure)
+  state="$dir/state"
+  fakebin="$dir/failbin"
+  mkdir -p "$fakebin"
+  statusfile="$state/task-save.status"
+  cursor="$state/.task-save.open-decisions-cursor"
+  out="$dir/drain.out"
+  real_mv=$(command -v mv)
+
+  cat > "$fakebin/mv" <<SH
+#!/usr/bin/env bash
+if [ "\${!#}" = "$cursor" ]; then
+  exit 1
+fi
+exec "$real_mv" "\$@"
+SH
+  chmod +x "$fakebin/mv"
+
+  for filler in 0 100; do
+    : > "$statusfile"
+    append_filler "$statusfile" "$filler" >/dev/null
+    printf 'needs-decision [key=save]: choose despite cache failure\n' >> "$statusfile"
+    SQUAD_STATE_OVERRIDE="$state" PATH="$fakebin:$PATH" "$DRAIN" > "$out" \
+      || fail "wake drain failed instead of displaying the folded decision"
+    grep -F 'task-save [key=save] needs-decision: choose despite cache failure' "$out" >/dev/null \
+      || fail "a failed cursor save hid the decision after $filler filler lines"
+    if PATH="$fakebin:$PATH" bash -c '. "$1"; status_open_decisions_incremental "$2"' \
+      bash "$ROOT/bin/sq-classify-lib.sh" "$statusfile" > "$out"; then
+      fail "the checkpoint-sensitive fold accepted the failed cursor save"
+    fi
+    grep -F 'choose despite cache failure' "$out" >/dev/null \
+      || fail "the fold returned failure without emitting the folded decision"
+  done
+
+  pass "failed cursor checkpoints preserve folded decisions without certifying the scan"
+}
+
 test_previous_fold_cache_is_refolded_under_current_semantics() {
   local dir state status cursor out probe status_bytes ident appended_bytes probe_bytes
   dir=$(make_case cursor-fold-version)
@@ -316,5 +355,6 @@ test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision
 test_same_size_rewrite_is_detected_via_inode_identity
 test_read_failure_never_silently_returns_empty
 test_cursor_cache_read_failure_refolds_authoritative_status
+test_cursor_cache_save_failure_preserves_folded_output
 test_previous_fold_cache_is_refolded_under_current_semantics
 test_buried_decision_survives_many_growing_drains_and_resolution_clears_it
