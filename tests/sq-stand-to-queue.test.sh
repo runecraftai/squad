@@ -488,20 +488,24 @@ SH
     printf "exec %q \"\$@\"\n" "$(command -v awk)"
   } > "$dir/bin/awk"
   chmod +x "$dir/bin/awk"
+  append_wake "$state" signal task.status 'signal: task after the kill' || fail 'live wake append failed'
+  cp "$queue" "$dir/live.expected" || fail 'could not snapshot the live queue'
   if SQUAD_STATE_OVERRIDE="$state" PATH="$dir/bin:$PATH" "$DRAIN" > "$dir/failed.out" 2> "$dir/failed.err"; then
     fail 'the drain reported success after failing to read the abandoned batch'
   fi
   [ ! -s "$dir/failed.out" ] || fail 'a failed read reported a wake as delivered'
   grep -Fq 'could not read drain batch' "$dir/failed.err" || fail 'the drain did not name the failed read'
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'a failed read removed the abandoned batch'
+  cmp -s "$queue" "$dir/live.expected" || fail 'a failed recovery read rotated the live queue'
 
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/recovered.out" 2> "$dir/recovered.err" \
     || fail "the drain after a killed batch failed"
   count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$dir/recovered.out")
-  [ "$count" -eq 1 ] \
-    || fail "a killed drain's batch was not recovered: the queue looked empty and its wake was never reported"
+  [ "$count" -eq 2 ] || fail 'the retry did not deliver exactly two wakes'
   grep -F 'signal: task before the kill' "$dir/recovered.out" >/dev/null \
     || fail "the recovered wake lost its payload"
+  grep -F 'signal: task after the kill' "$dir/recovered.out" >/dev/null \
+    || fail 'the live wake lost its payload'
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
     && fail "the recovered batch was left in place for the next drain to replay"
   grep -F 'recovered 1 interrupted drain batch' "$dir/recovered.err" >/dev/null \
@@ -510,7 +514,7 @@ SH
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/replay.out" || fail "the drain after recovery failed"
   count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$dir/replay.out")
   [ "$count" -eq 0 ] || fail "a recovered batch was reported twice"
-  pass "a drain killed before publication has its batch recovered once, under the queue lock"
+  pass 'a failed recovery read leaves the live queue untouched and a retry delivers both wakes once'
 }
 
 test_concurrent_append_and_drain

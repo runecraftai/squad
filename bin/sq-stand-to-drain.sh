@@ -179,22 +179,35 @@ for batch in "$STATE"/.stand-to-queue.drain.*; do
   recovered=$((recovered + 1))
 done
 
+read_drain_batch() {
+  local batch=$1
+  if [ ! -f "$batch" ] || [ -L "$batch" ] || ! fm_wake_print_deduped "$batch"; then
+    printf 'sq-stand-to-drain: could not read drain batch %s; leaving batches in place for retry\n' "$batch" >&2
+    return 1
+  fi
+}
+
+if [ "$recovered" -gt 0 ]; then
+  RAW_ROWS=$(
+    for batch in "${DRAIN_BATCHES[@]}"; do
+      read_drain_batch "$batch" || exit 1
+    done
+  ) || exit 1
+fi
+
+live_batch=
 if [ -s "$SQUAD_WAKE_QUEUE" ]; then
-  batch=$(mktemp "$STATE/.stand-to-queue.drain.XXXXXX") || exit 1
-  mv "$SQUAD_WAKE_QUEUE" "$batch" || exit 1
-  DRAIN_BATCHES+=("$batch")
+  live_batch=$(mktemp "$STATE/.stand-to-queue.drain.XXXXXX") || exit 1
+  mv "$SQUAD_WAKE_QUEUE" "$live_batch" || exit 1
+  DRAIN_BATCHES+=("$live_batch")
 fi
 : > "$SQUAD_WAKE_QUEUE" || exit 1
 
-if [ -n "${DRAIN_BATCHES[0]:-}" ]; then
-  RAW_ROWS=$(
-    for batch in "${DRAIN_BATCHES[@]}"; do
-      if [ ! -f "$batch" ] || [ -L "$batch" ] || ! fm_wake_print_deduped "$batch"; then
-        printf 'sq-stand-to-drain: could not read drain batch %s; leaving batches in place for retry\n' "$batch" >&2
-        exit 1
-      fi
-    done
-  ) || exit 1
+if [ -n "$live_batch" ]; then
+  live_rows=$(read_drain_batch "$live_batch") || exit 1
+  if [ -n "$live_rows" ]; then
+    RAW_ROWS=${RAW_ROWS:+$RAW_ROWS$'\n'}$live_rows
+  fi
 fi
 if [ -n "$RAW_ROWS" ]; then
   case "${SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT:-0}" in
