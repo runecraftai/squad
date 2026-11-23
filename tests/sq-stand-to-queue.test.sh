@@ -528,6 +528,50 @@ SH
   pass 'a failed recovery read leaves the live queue untouched and a retry delivers both wakes once'
 }
 
+test_failed_rotation_preserves_only_populated_batches() {
+  local dir state queue mode
+  dir=$(make_case failed-rotation)
+  state="$dir/state"
+  queue="$state/.stand-to-queue"
+  append_wake "$state" signal task.status 'signal: failed rotation fixture' || fail 'wake append failed'
+  cp "$queue" "$dir/expected" || fail 'could not snapshot the live queue'
+  {
+    printf '#!/usr/bin/env bash\nreal_mv=%q\n' "$(command -v mv)"
+    cat <<'SH'
+case "$1:$2" in
+  *.stand-to-queue:*.stand-to-queue.drain.*)
+    if [ "$ROTATION_FAILURE" = after ]; then
+      "$real_mv" "$@" || exit 2
+    fi
+    exit 1
+    ;;
+esac
+exec "$real_mv" "$@"
+SH
+  } > "$dir/fakebin/mv"
+  chmod +x "$dir/fakebin/mv"
+
+  for mode in before before after; do
+    if PATH="$dir/fakebin:$PATH" ROTATION_FAILURE="$mode" SQUAD_STATE_OVERRIDE="$state" \
+      "$DRAIN" > "$dir/failed.out"; then
+      fail "rotation failure ($mode move) was reported as success"
+    fi
+    [ ! -s "$dir/failed.out" ] || fail 'a failed rotation reported a wake as delivered'
+    if [ "$mode" = before ]; then
+      if compgen -G "$queue.drain.*" >/dev/null; then
+        fail 'a failed move left an empty recovery reservation'
+      fi
+      cmp -s "$queue" "$dir/expected" || fail 'a failed move changed the live queue'
+    else
+      [ ! -e "$queue" ] || fail 'the move fault did not populate the recovery batch'
+    fi
+  done
+
+  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/retry.out" || fail 'rotation retry failed'
+  cmp -s "$dir/retry.out" "$dir/expected" || fail 'the retry did not deliver the populated batch exactly once'
+  pass 'failed rotation removes empty reservations and preserves a populated batch for retry'
+}
+
 test_queued_keys_survive_unreadable_batch() {
   local dir state unreadable
   dir=$(make_case queued-keys)
@@ -574,4 +618,5 @@ test_enrichment_caps_and_status_file_failures
 test_slow_annotation_does_not_block_append_and_deleted_file_fails_open
 test_interruption_before_and_after_raw_commit
 test_killed_drain_batch_is_recovered
+test_failed_rotation_preserves_only_populated_batches
 test_queued_keys_survive_unreadable_batch

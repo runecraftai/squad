@@ -198,7 +198,12 @@ fi
 live_batch=
 if [ -s "$SQUAD_WAKE_QUEUE" ]; then
   live_batch=$(mktemp "${SQUAD_WAKE_BATCH_PREFIX}XXXXXX") || exit 1
-  mv "$SQUAD_WAKE_QUEUE" "$live_batch" || exit 1
+  if ! mv "$SQUAD_WAKE_QUEUE" "$live_batch"; then
+    if [ -f "$live_batch" ] && [ ! -L "$live_batch" ] && [ ! -s "$live_batch" ]; then
+      rm -f -- "$live_batch"
+    fi
+    exit 1
+  fi
   DRAIN_BATCHES+=("$live_batch")
 fi
 : > "$SQUAD_WAKE_QUEUE" || exit 1
