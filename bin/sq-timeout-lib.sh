@@ -41,15 +41,35 @@ fm_timeout_mechanism() {
   fi
 }
 
+fm_timeout_signal_backends() {
+  local signal=$1 registry=$2 entry
+  [ -n "$registry" ] || return 0
+  for entry in "$registry"/[1-9]*; do
+    case "${entry##*/}" in *[!0-9]*) continue ;; esac
+    [ -f "$entry" ] || continue
+    kill -s "$signal" -- "-${entry##*/}" 2>/dev/null || true
+  done
+}
+
 fm_run_bash_timeout() {
   local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0
+  local registry=''
   shift
   command_status=$(mktemp "${TMPDIR:-/tmp}/sq-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
   deadline_status="${command_status}.deadline"
+  if [ "${fm_timeout_clean_group:-0}" = 1 ]; then
+    registry="${command_status}.backends"
+    if ! mkdir -m 700 -- "$registry"; then
+      rm -f -- "$command_status"
+      return 124
+    fi
+    deadline_status="$registry.expired"
+  fi
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m
   (
     set +m
+    export SQ_TIMEOUT_BACKEND_REGISTRY="$registry"
     "$@"
     command_rc=$?
     printf '%s\n' "$command_rc" > "$command_status"
@@ -62,11 +82,13 @@ fm_run_bash_timeout() {
     printf 'expired\n' > "$deadline_status"
     kill -TERM -- "-$child_pid" 2>/dev/null || true
     if [ "${fm_timeout_clean_group:-0}" = 1 ]; then
+      fm_timeout_signal_backends TERM "$registry"
       sleep 0.5
     else
       sleep 0.2
     fi
     kill -KILL -- "-$child_pid" 2>/dev/null || true
+    fm_timeout_signal_backends KILL "$registry"
     exit 124
   ) &
   watchdog_pid=$!
@@ -86,8 +108,11 @@ fm_run_bash_timeout() {
     recorded_rc=$(cat "$command_status" 2>/dev/null || true)
     case "$recorded_rc" in ''|*[!0-9]*) ;; *) command_rc=$recorded_rc ;; esac
   fi
-  if [ "${fm_timeout_clean_group:-0}" = 1 ]; then
+  if [ -n "$registry" ]; then
+    : > "$deadline_status"
     kill -KILL -- "-$child_pid" 2>/dev/null || true
+    fm_timeout_signal_backends KILL "$registry"
+    rm -rf -- "$registry"
   fi
   rm -f "$command_status" "$deadline_status" 2>/dev/null || true
   return "$command_rc"
@@ -97,6 +122,7 @@ fm_run_timed_in_group() {
   perl -MErrno=ESRCH -MFile::Temp=tempfile -MFile::Copy=copy \
     -MPOSIX=setsid,WNOHANG -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC,sleep -e '
     my $deadline = clock_gettime(CLOCK_MONOTONIC) + shift;
+    my $registry = $ENV{SQ_TIMEOUT_BACKEND_REGISTRY} // "";
     my $cancelled = 0;
     local $SIG{TERM} = sub { $cancelled = 1 };
     my ($out, $out_path) = tempfile(UNLINK => 1);
@@ -109,12 +135,18 @@ fm_run_timed_in_group() {
       defined(setsid()) or POSIX::_exit(125);
       $SIG{TERM} = "DEFAULT";
       open(STDOUT, ">&", $out) && open(STDERR, ">&", $err) or POSIX::_exit(125);
+      if (length $registry) {
+        open(my $entry, ">", "$registry/$$") or POSIX::_exit(125);
+        close($entry) or POSIX::_exit(125);
+        POSIX::_exit(124) if -e "$registry.expired" || !-d $registry;
+      }
       exec @ARGV or POSIX::_exit(125);
     }
     my $status;
     while (!$cancelled && clock_gettime(CLOCK_MONOTONIC) < $deadline) {
       $status = $? if !defined($status) && waitpid($pid, WNOHANG) == $pid;
-      if (defined($status) && !kill(0, -$pid) && $! == ESRCH) {
+      if (defined($status) && !kill(0, $pid) && $! == ESRCH && !kill(0, -$pid) && $! == ESRCH) {
+        unlink "$registry/$pid" if length $registry;
         exit 124 if $cancelled;
         seek($out, 0, 0) && seek($err, 0, 0) or exit 125;
         copy($out, \*STDOUT) && copy($err, \*STDERR) or exit 125;

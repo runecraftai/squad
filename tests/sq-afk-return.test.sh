@@ -526,7 +526,7 @@ test_shutdown_step_is_bounded_and_retains_lifecycle() {
 }
 
 test_shutdown_contains_real_backend() {
-  local dir out rc=0 started_at elapsed descendant status
+  local dir out rc=0 started_at elapsed descendant status backend
   dir="$TMP_ROOT/shutdown-real-backend"
   install_runner "$dir"
   printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$ROOT/bin/sq-afk-launch.sh" > "$dir/bin/sq-afk-launch.sh"
@@ -539,18 +539,27 @@ printf "can't find session: synthetic-session\n" >&2
 [ "${MOCK_TERMINAL_ABSENT:-0}" != 1 ] || exit 1
 (trap '' TERM; exec sleep 14) &
 printf '%s\n' "$!" > "$SQUAD_BASE/backend-child"
+if [ "${MOCK_STALL_SUPERVISOR:-0}" = 1 ]; then
+  printf '%s\n' "$$" > "$SQUAD_BASE/backend-leader"
+  kill -STOP "$PPID" || exit 2
+  trap '' TERM
+  exec sleep 14
+fi
 exit 1
 SH
   chmod +x "$dir/bin/tmux"
 
   started_at=$(date +%s)
-  out=$(env PATH="$dir/bin:$PATH" SQUAD_AFK_RETURN_LOCK_SECS=3 SQUAD_AFK_BACKEND_TIMEOUT_SECS=12 \
+  out=$(env PATH="$dir/bin:$PATH" MOCK_STALL_SUPERVISOR=1 SQUAD_AFK_RETURN_LOCK_SECS=3 SQUAD_AFK_BACKEND_TIMEOUT_SECS=12 \
     SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" begin 2>&1) || rc=$?
   elapsed=$(( $(date +%s) - started_at ))
   [ "$rc" -eq 3 ] || fail "the return did not gate on timed-out backend cleanup (rc=$rc): $out"
   descendant=$(< "$dir/home/backend-child")
   status=$(ps -o stat= -p "$descendant" 2>/dev/null) || true
   [[ -z "$status" || "$status" = Z* ]] || fail 'the backend child survived the outer deadline'
+  backend=$(< "$dir/home/backend-leader")
+  status=$(ps -o stat= -p "$backend" 2>/dev/null) || true
+  [[ -z "$status" || "$status" = Z* ]] || fail 'the backend leader survived the outer deadline'
   assert_contains "$out" 'catch-up exceeded its 3s budget' 'the backend escaped the return deadline'
   [ -s "$dir/home/state/.afk-return-catchup" ] || fail 'the backend timeout did not retain the gate'
   [ "$elapsed" -lt 10 ] || fail "the backend held return output open for ${elapsed}s after the shutdown deadline"
@@ -567,10 +576,25 @@ SH
   status=$(ps -o stat= -p "$descendant" 2>/dev/null) || true
   [[ -z "$status" || "$status" = Z* ]] || fail 'the backend child survived the shorter backend deadline'
   [ -e "$dir/home/state/.afk-daemon-terminal" ] || fail 'the incomplete probe discarded the terminal record'
+
+  rc=0
+  rm -f "$dir/home/backend-child"
+  started_at=$(date +%s)
+  out=$(env PATH="$dir/bin:$PATH" SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 \
+    SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-launch.sh" stop 2>&1) || rc=$?
+  elapsed=$(( $(date +%s) - started_at ))
+  [ "$rc" -eq 1 ] || fail "standalone stop accepted an incomplete probe (rc=$rc): $out"
+  [ "$elapsed" -lt 10 ] || fail "the backend held standalone stop open for ${elapsed}s"
+  descendant=$(< "$dir/home/backend-child")
+  status=$(ps -o stat= -p "$descendant" 2>/dev/null) || true
+  [[ -z "$status" || "$status" = Z* ]] || fail 'the backend child survived standalone stop'
+  [ -e "$dir/home/state/.afk" ] && [ -e "$dir/home/state/.afk-daemon-terminal" ] \
+    || fail 'standalone stop lost its lifecycle state'
+
   out=$(env PATH="$dir/bin:$PATH" MOCK_TERMINAL_ABSENT=1 SQUAD_AFK_RETURN_LOCK_SECS=6 SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 \
     SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" check 2>&1) || fail "confirmed absence did not clear return: $out"
   assert_contains "$out" 'catch-up clear' 'the retry did not confirm terminal absence'
-  pass 'both return and backend deadlines contain a child holding the probe output open'
+  pass 'return and standalone stop contain backends that hold probe output open or stall their supervisor'
 }
 
 # Finding: when the evidence merge failed after the queue was consumed, the gate
@@ -911,7 +935,7 @@ test_summary_write_failure_preserves_evidence() (
 )
 
 test_check_reports_wake_from_killed_drain() {
-  local dir state out rc=0
+  local dir state out batch rc=0
   dir="$TMP_ROOT/killed-drain-check"
   install_runner "$dir"
   install_real_drain "$dir"
@@ -929,8 +953,18 @@ SH
   chmod +x "$dir/bin/mv"
   out=$(PATH="$dir/bin:$PATH" run_return "$dir" begin) || rc=$?
   [ "$rc" -eq 3 ] || fail "the killed drain did not gate return (rc=$rc): $out"
-  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'the killed drain did not leave an unpublished batch'
+  batch=$(compgen -G "$state/.stand-to-queue.drain.*") || fail 'the killed drain did not leave an unpublished batch'
   rm -f "$dir/bin/mv"
+
+  printf '1784074301\t2\tcheck\ttask.status\tcheck: different live wake details\n' > "$state/.stand-to-queue"
+  rc=0
+  out=$(run_return "$dir" check 2>&1) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the conflicting check advanced return (rc=$rc): $out"
+  assert_contains "$out" 'check key task.status has a different queued payload' 'the conflicting check did not explain the refusal'
+  [ -s "$state/.afk-return-catchup" ] || fail 'the conflicting check cleared the gate'
+  assert_contains "$(< "$batch")" 'recovered ordinary wake details' 'the conflict lost the recovered wake'
+  assert_contains "$(< "$state/.stand-to-queue")" 'different live wake details' 'the conflict lost the live wake'
+  mv "$state/.stand-to-queue" "$dir/conflicting-wake"
 
   rc=0
   SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" check >&- 2> "$dir/error" || rc=$?

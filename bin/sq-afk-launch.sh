@@ -154,7 +154,7 @@ fm_afk_launch_log() { printf 'sq-afk-launch: %s\n' "$*" >&2; }
 # except 124, which means the bound was hit - the caller treats that as a failed
 # operation, exactly like any other non-zero status.
 fm_afk_launch_bounded() {  # <command> [args...]
-  if [ "${return_owns_stop_timeout:-0}" = 1 ]; then
+  if [ "${stop_uses_isolated_runner:-0}" = 1 ]; then
     fm_run_timed_in_group "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" "$@"
   else
     fm_run_timed "$SQUAD_AFK_BACKEND_TIMEOUT_SECS" "$@"
@@ -930,7 +930,7 @@ EOF
 
 fm_afk_launch_stop() {
   local pid pid_identity current_identity result=0 read_result primary resolve_result
-  local return_owns_stop_timeout=${SQUAD_AFK_RETURN_OWNS_STOP_TIMEOUT:-0}
+  local stop_uses_isolated_runner=1
   fm_afk_launch_record_read
   read_result=$?
   if [ "$read_result" -eq 2 ]; then

@@ -458,7 +458,7 @@ return_reconcile() {
   local blockers=$1 phase='' spool checkpoint
   local -a checkpoints=()
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-daemon-terminal" ]; then
-    SQUAD_AFK_RETURN_OWNS_STOP_TIMEOUT=1 "$SCRIPT_DIR/sq-afk-launch.sh" stop || phase=shutdown-failed
+    "$SCRIPT_DIR/sq-afk-launch.sh" stop || phase=shutdown-failed
   fi
   if [ -z "$phase" ]; then
     spool=$(mktemp -d "$STATE/.afk-return-drain.XXXXXX") || return 1
