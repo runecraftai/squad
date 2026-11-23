@@ -162,25 +162,18 @@ print_teardown_pending_section() {
 # at-least-once boundary. Runs under the queue lock, so no other drain can be
 # mid-batch while it decides.
 recover_abandoned_batches() {
-  local batch held
+  local batch held live=/dev/null
+  local -a batches=()
   for batch in "$STATE"/.stand-to-queue.drain.*; do
     [ -f "$batch" ] || continue
-    if [ -e "$SQUAD_WAKE_QUEUE" ]; then
-      awk -F '\t' '
-        NF >= 5 && $3 == "check" {
-          if (FILENAME == ARGV[1]) recovered[$4] = $5
-          else queued[$4] = $5
-        }
-        END {
-          for (key in recovered) {
-            if (key in queued && ("x" recovered[key]) != ("x" queued[key])) {
-              printf "sq-stand-to-drain: refusing to recover interrupted drain: check key %s has a different queued payload\n", key
-              exit 1
-            }
-          }
-        }
-      ' "$batch" "$SQUAD_WAKE_QUEUE" >&2 || return 1
-    fi
+    batches+=("$batch")
+  done
+  [ -n "${batches[0]:-}" ] || return 0
+  if [ -e "$SQUAD_WAKE_QUEUE" ]; then
+    live=$SQUAD_WAKE_QUEUE
+  fi
+  fm_wake_print_deduped --check-recovery "${batches[@]}" "$live" >&2 || return 1
+  for batch in "${batches[@]}"; do
     held=$(awk 'NF >= 5 { n++ } END { print n + 0 }' "$batch" 2>/dev/null) || held=0
     if fm_wake_restore_queue "$batch" && rm -f "$batch"; then
       printf 'sq-stand-to-drain: recovered an interrupted drain batch (%s record(s)) before reporting it\n' "$held" >&2

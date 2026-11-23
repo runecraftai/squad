@@ -966,12 +966,12 @@ test_summary_write_failure_preserves_evidence() (
 )
 
 test_check_reports_wake_from_killed_drain() {
-  local dir state out batch rc=0
-  dir="$TMP_ROOT/killed-drain-check"
+  local kind=$1 key=$2 live_key=$3 recovered=$4 live=$5 dir state out batch rc=0
+  dir="$TMP_ROOT/killed-drain-$kind"
   install_runner "$dir"
   install_real_drain "$dir"
   state="$dir/home/state"
-  printf '1784074300\t1\tcheck\ttask.status\tcheck: recovered ordinary wake details\n' > "$state/.stand-to-queue"
+  printf '1784074300\t1\t%s\t%s\t%s\n' "$kind" "$key" "$recovered" > "$state/.stand-to-queue"
   export REAL_MV
   REAL_MV=$(command -v mv)
   cat > "$dir/bin/mv" <<'SH'
@@ -987,14 +987,14 @@ SH
   batch=$(compgen -G "$state/.stand-to-queue.drain.*") || fail 'the killed drain did not leave an unpublished batch'
   rm -f "$dir/bin/mv"
 
-  printf '1784074301\t2\tcheck\ttask.status\tcheck: different live wake details\n' > "$state/.stand-to-queue"
+  printf '1784074301\t2\t%s\t%s\t%s\n' "$kind" "$live_key" "$live" > "$state/.stand-to-queue"
   rc=0
   out=$(run_return "$dir" check 2>&1) || rc=$?
-  [ "$rc" -eq 3 ] || fail "the conflicting check advanced return (rc=$rc): $out"
-  assert_contains "$out" 'check key task.status has a different queued payload' 'the conflicting check did not explain the refusal'
+  [ "$rc" -eq 3 ] || fail "the conflicting $kind wake advanced return (rc=$rc): $out"
+  assert_contains "$out" "$kind key $live_key has a different queued payload" 'the conflicting check did not explain the refusal'
   [ -s "$state/.afk-return-catchup" ] || fail 'the conflicting check cleared the gate'
-  assert_contains "$(< "$batch")" 'recovered ordinary wake details' 'the conflict lost the recovered wake'
-  assert_contains "$(< "$state/.stand-to-queue")" 'different live wake details' 'the conflict lost the live wake'
+  assert_contains "$(< "$batch")" "$recovered" 'the conflict lost the recovered wake'
+  assert_contains "$(< "$state/.stand-to-queue")" "$live" 'the conflict lost the live wake'
   mv "$state/.stand-to-queue" "$dir/conflicting-wake"
 
   rc=0
@@ -1005,15 +1005,18 @@ SH
   [ -s "$state/.afk-return-catchup" ] || fail 'the failed check cleared the recovered evidence'
 
   out=$(run_return "$dir" check) || fail "the recovered wake could not be presented: $out"
-  assert_contains "$out" 'task.status check: recovered ordinary wake details' 'check did not present the recovered wake payload'
+  assert_contains "$out" "$key $recovered" 'check did not present the recovered wake payload'
   [ ! -e "$state/.afk-return-catchup" ] || fail 'the reported wake did not clear the gate'
   out=$(run_return "$dir" check) || fail "clean check failed: $out"
-  assert_not_contains "$out" 'recovered ordinary wake details' 'clean check replayed the reported wake'
-  pass 'return check gates an unreported recovered wake and presents its details on retry'
+  assert_not_contains "$out" "$recovered" 'clean check replayed the reported wake'
+  pass "return check gates a conflicting recovered $kind wake and presents its details on retry"
 }
 
 test_real_drain_preserves_wakes_across_return_failures
-test_check_reports_wake_from_killed_drain
+test_check_reports_wake_from_killed_drain check task.status task.status 'check: recovered ordinary wake details' 'check: different live wake details'
+test_check_reports_wake_from_killed_drain stale dev-window dev-window 'stale: dev-window' 'stale: dev-window (busy expired without activity)'
+test_check_reports_wake_from_killed_drain signal task.status task.status 'signal: recovered task status' 'signal: updated task status'
+test_check_reports_wake_from_killed_drain heartbeat old-tick new-tick 'heartbeat: recovered tick' 'heartbeat: updated tick'
 test_retry_preserves_checkpoint_published_during_merge
 test_summary_write_failure_preserves_evidence
 test_shutdown_step_is_bounded_and_retains_lifecycle

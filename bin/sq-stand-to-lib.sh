@@ -600,8 +600,12 @@ fm_wake_restore_queue() {
 }
 
 fm_wake_print_deduped() {
-  local file=$1
-  awk -F '\t' '
+  local check_recovery=0
+  if [ "$1" = --check-recovery ]; then
+    check_recovery=1
+    shift
+  fi
+  awk -F '\t' -v check_recovery="$check_recovery" '
     NF >= 5 {
       dedupe = $3 SUBSEP $4
       if ($3 == "heartbeat") {
@@ -611,14 +615,34 @@ fm_wake_print_deduped() {
         order[++count] = dedupe
         seen[dedupe] = 1
       }
-      line[dedupe] = $0
-    }
-    END {
-      for (i = 1; i <= count; i++) {
-        print line[order[i]]
+      if (check_recovery) {
+        payload[dedupe] = $5
+        kind[dedupe] = $3
+        key[dedupe] = $4
+        if (FILENAME != ARGV[ARGC - 1]) {
+          batch_payload[FILENAME, dedupe] = $5
+          batch_key[FILENAME, dedupe] = dedupe
+        }
+      } else {
+        line[dedupe] = $0
       }
     }
-  ' "$file"
+    END {
+      if (check_recovery) {
+        for (row in batch_key) {
+          dedupe = batch_key[row]
+          if (("x" batch_payload[row]) != ("x" payload[dedupe])) {
+            printf "sq-stand-to-drain: refusing to recover interrupted drain: %s key %s has a different queued payload\n", kind[dedupe], key[dedupe]
+            exit 1
+          }
+        }
+      } else {
+        for (i = 1; i <= count; i++) {
+          print line[order[i]]
+        }
+      }
+    }
+  ' "$@"
 }
 
 # Map one structurally valid signal key to its base-local status filename.

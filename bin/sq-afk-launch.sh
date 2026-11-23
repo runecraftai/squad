@@ -49,10 +49,12 @@
 #                              worktree/parent binding; otherwise report each
 #                              candidate and preserve the intent.
 #
-# Bounds. Standalone teardown uses SQUAD_AFK_BACKEND_TIMEOUT_SECS (default 10)
-# for bounded vendor calls. During away-mode return, bin/sq-afk-return.sh owns
-# the shutdown deadline for the whole process group. Hitting either bound is a
-# failure and the recorded terminal id is preserved for a retry.
+# Bounds. Standalone teardown uses SQUAD_AFK_BACKEND_TIMEOUT_SECS (default 10) as the per-call deadline for vendor commands.
+# During away-mode return, bin/sq-afk-return.sh also applies an overall shutdown deadline.
+# Hitting either deadline is a failure and the recorded terminal id is preserved for a retry.
+# Process-tree containment is not reliably bounded from shell.
+# A TERM-resistant descendant started in a second process group in the same session can outlive the per-call cap.
+# The follow-up is to move process control out of shell.
 #
 # Supported supervisor targets: herdr, tmux, TUIOS, and native-only Orca (adopted
 # from the runtime-issued identity or selected explicitly).

@@ -5,12 +5,16 @@ It is not an exhaustive repository log and does not represent a root package ver
 
 ## Unreleased
 
-- Finish bounding the away-mode return so it can never hold its catch-up lock on an unresponsive backend: `bin/sq-afk-launch.sh` runs every teardown-path vendor call under `SQUAD_AFK_BACKEND_TIMEOUT_SECS` (default 10), `bin/sq-afk-return.sh` spends its own catch-up budget on the shutdown step as a whole, and a bound that fires is a failed teardown that keeps the recorded terminal id instead of reporting success.
+- Apply `SQUAD_AFK_BACKEND_TIMEOUT_SECS` (default 10) to teardown-path vendor calls and an overall catch-up budget to the away-mode shutdown step, treating an expired deadline as a failed teardown that preserves the recorded terminal id.
   `bin/sq-stand-to-drain.sh` recovers a batch an interrupted drain rotated aside but never published, under the queue lock, before it decides the queue is empty, so a killed drain can no longer make the return clear its gate without ever reporting that wake.
   A return whose evidence merge fails now persists and reports the merge phase it could not commit instead of leaving the gate claiming it never got past the drain, and the blocker scan folds each status log through the cursor-backed fold, so a long-running task's history is not re-read on every retry.
   The routine evidence a retried shutdown carries is capped at the routine ledger's own retention window, so repeated retries across ledger rotations no longer grow the gate without bound while escalations stay uncapped, and the return summary states that its counts cover the retained ledger rows rather than the whole absence.
-  A backend invocation during return runs in its own session with isolated output, and either deadline cancels the group rather than leaving a stalled CLI descendant behind.
-  Return check shows the recovered wake payload and keeps the gate closed if presentation fails.
+  A backend invocation during return runs in its own session with isolated output, and deadline cleanup targets its original process group rather than the entire session.
+  Process-tree containment is not reliably bounded from shell.
+  A TERM-resistant descendant started in a second process group in the same session can outlive the per-call cap.
+  An outer deadline can also miss descendants in the original process group after its leader has been reaped.
+  The follow-up is to move process control out of shell.
+  Return check shows the recovered wake payload and keeps the gate closed if presentation fails or queue coalescing would drop a different recovered payload.
   Known limit: evidence-merge diagnostics can conflate a blocker scan failure with a commit failure or describe a batch still in the spool as committed, and reconciliation after a drain failure may attempt a merge without recording the phase first.
   Known limit: the long-history blocker regression measures elapsed time rather than verifying that the fold reads only appended bytes.
   Known limit: lowering the routine ledger limit can record an already-retained repeat a second time during the next trim.
