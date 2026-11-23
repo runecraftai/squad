@@ -104,23 +104,34 @@ merge_evidence() {
       function isroutine(field, text) {
         return field == "escalation" && text ~ /^[0-9]+\|routine\|/
       }
-      function keep(text, routine) {
-        if (!routine && text in seen) return
+      function keep(text, field, item, routine, key) {
+        routine = isroutine(field, item)
+        key = text
+        if (field == "wedge" && item ~ /^away-mode ledger undeliverable as of /) {
+          if (match(item, /^away-mode ledger undeliverable as of [^ ]+ \[(occurrence=[0-9-]+|wake=[0-9]+:[0-9]+)\]: /)) {
+            key = substr(item, RSTART, RLENGTH)
+            sub(/^.*\[/, "", key)
+            sub(/\].*$/, "", key)
+          } else {
+            key = "legacy-undeliverable:" ++legacy_rows[kind]
+          }
+        }
+        if (!routine && key in seen) return
         row_count++
         line[row_count] = text
         if (routine) {
-          if (text in seen) dropped[seen[text]] = 1
+          if (key in seen) dropped[seen[key]] = 1
           routine_row[++routine_count] = row_count
         }
-        seen[text] = row_count
+        seen[key] = row_count
       }
       kind == "" {
-        if ($1 == "evidence") keep($0, isroutine($2, $3))
+        if ($1 == "evidence") keep($0, $2, $3)
         next
       }
       { gsub(/[\t\r]/, " "); if ($0 == "") next
         row = "evidence\t" kind "\t" $0
-        keep(row, isroutine(kind, $0)) }
+        keep(row, kind, $0) }
       END {
         for (i = routine_count; i > 0; i--) {
           idx = routine_row[i]
@@ -210,8 +221,16 @@ summary_evidence() {
     $1 != "evidence" { next }
     $2 == "wake" && $3 ~ /^[0-9]+ [0-9]+ check afk-ledger-undeliverable / {
       split($3, fields, " ")
-      if (!render) drained[fields[1] ":" fields[2]] = 1
-      else print
+      if (!render) drained["wake=" fields[1] ":" fields[2]] = 1
+      item = $3
+      if (match(item, /^[0-9]+ [0-9]+ check afk-ledger-undeliverable \[occurrence=[0-9-]+\] /)) {
+        key = substr(item, RSTART, RLENGTH)
+        sub(/^.*\[/, "", key)
+        sub(/\].*$/, "", key)
+        if (!render) drained[key] = 1
+        item = fields[1] " " fields[2] " check afk-ledger-undeliverable " substr(item, RLENGTH + 1)
+      }
+      if (render) print $1 "\t" $2 "\t" item
       next
     }
     $2 == "wake" && $3 ~ /^[0-9]+ [0-9]+ check afk-[A-Za-z0-9._-]+ / {
@@ -222,10 +241,10 @@ summary_evidence() {
       if (seen[key]++) next
     }
     render && $2 == "wedge" && $3 ~ /^away-mode ledger undeliverable as of / {
-      if (match($3, /^away-mode ledger undeliverable as of [^ ]+ \[wake=[0-9]+:[0-9]+\]: /)) {
+      if (match($3, /^away-mode ledger undeliverable as of [^ ]+ \[(occurrence=[0-9-]+|wake=[0-9]+:[0-9]+)\]: /)) {
         key = substr($3, RSTART, RLENGTH)
-        sub(/^.*\[wake=/, "", key)
-        sub(/\]: $/, "", key)
+        sub(/^.*\[/, "", key)
+        sub(/\].*$/, "", key)
         if (key in drained) next
       }
       print

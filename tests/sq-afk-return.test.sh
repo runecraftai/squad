@@ -928,25 +928,100 @@ SH
   pass 'an incomplete blocker fold cannot clear the return gate'
 }
 
-test_split_blocker_fails_closed_until_complete() {
-  local dir state out rc=0
+test_unterminated_status_is_folded_without_consuming_its_tail() {
+  local dir state status out rc=0
   dir="$TMP_ROOT/split-blocker"
   state="$dir/home/state"
   install_runner "$dir"
   install_real_drain "$dir"
   seed_live_blocker "$dir" tmux release
-  printf 'working: preparing release\nblock' > "$state/repair-task.status"
-  out=$(run_return "$dir" begin) || rc=$?
-  [ "$rc" -eq 1 ] && [ -s "$state/.afk-return-catchup" ] || fail "partial status cleared the gate: $out"
-  assert_contains "$out" 'return catch-up gate phase: blocker-scan-failed' 'partial status did not fail the scan'
+  status="$state/repair-task.status"
+  printf 'working: preparing release\nworking: waiting' > "$status"
+  out=$(run_return "$dir" check) || fail "unterminated working record held the gate: $out"
+  [ ! -e "$state/.afk-return-catchup" ] || fail 'unterminated working record retained the gate'
 
-  printf 'ed [key=release]: waiting for review\n' >> "$state/repair-task.status"
-  rc=0
+  printf '\nblock' >> "$status"
+  out=$(run_return "$dir" check) || fail "unrecognized tail held the gate: $out"
+  printf 'ed [key=release]: waiting for review' >> "$status"
   out=$(run_return "$dir" check) || rc=$?
-  [ "$rc" -eq 3 ] || fail "the completed blocker did not gate the retry: $out"
-  assert_contains "$out" 'waiting for review' 'the retry lost the blocker split across two writes'
-  pass 'the blocker cursor does not consume an incomplete status record'
+  [ "$rc" -eq 3 ] || fail "the unterminated blocker did not gate the retry: $out"
+  assert_contains "$out" 'Squad-actionable blocker: repair-task [key=release]' 'the blocker scan lost the tail split across two writes'
+  pass 'the blocker scan folds unterminated records without consuming their tails'
 }
+
+test_ledger_fallback_survives_daemon_killed_in_queue_lock_wait() (
+  dir="$TMP_ROOT/ledger-lock-wait"
+  state="$dir/home/state"
+  install_runner "$dir"
+  install_real_drain "$dir"
+  local LOG="$dir/daemon-events.log"
+  # shellcheck disable=SC2030,SC2031
+  export SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" SQUAD_WEDGE_ALARM_EXEC=discard
+  . "$ROOT/bin/sq-stand-to-lib.sh"
+  . "$ROOT/bin/sq-supervise-daemon.sh"
+  mkdir "$state/.subsuper-escalations"
+  fm_lock_try_acquire "$SQUAD_WAKE_QUEUE_LOCK" || fail 'could not hold the wake lock'
+  (
+    producer_pid=${BASHPID:-$$}
+    sleep() {
+      touch "$dir/waiting"
+      kill -KILL "$producer_pid" "${BASHPID:-$$}"
+    }
+    ledger_add "$state" escalation 'failure during lock wait'
+  ) > "$dir/daemon.log" 2>&1 &
+  pid=$!
+  rc=0
+  wait "$pid" 2>/dev/null || rc=$?
+  fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
+  rmdir "$state/.subsuper-escalations"
+  [ "$rc" -eq 137 ] && [ -f "$dir/waiting" ] \
+    || fail "producer did not stop during the queue lock wait (rc=$rc): $(< "$dir/daemon.log")"
+  [ ! -s "$SQUAD_WAKE_QUEUE" ] || fail 'fixture unexpectedly queued the wake'
+  out=$(run_return "$dir" check) || fail "return could not report the fallback: $out"
+  assert_contains "$out" 'escalation: failure during lock wait' 'return lost the occurrence stopped in the queue lock wait'
+  assert_contains "$out" 'daemon-notice=1' 'the fallback was not reported exactly once'
+  [ ! -e "$state/.afk-return-catchup" ] || fail 'return did not clear after reporting the fallback'
+  pass 'a ledger write failure survives a producer killed during the queue lock wait'
+)
+
+test_identical_ledger_failures_survive_return_retries() (
+  dir="$TMP_ROOT/identical-ledger-failures"
+  state="$dir/home/state"
+  install_runner "$dir"
+  install_real_drain "$dir"
+  seed_live_blocker "$dir" tmux release
+  local LOG="$dir/daemon-events.log"
+  # shellcheck disable=SC2030,SC2031
+  export SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" SQUAD_WEDGE_ALARM_EXEC=discard
+  . "$ROOT/bin/sq-stand-to-lib.sh"
+  . "$ROOT/bin/sq-supervise-daemon.sh"
+  mkdir "$state/.subsuper-escalations" "$state/.stand-to-queue.seq"
+  (
+    date() {
+      case "$1" in
+        '+%Y-%m-%dT%H:%M:%S%z') printf '2026-01-01T10:00:00+0000\n' ;;
+        *) command date "$@" ;;
+      esac
+    }
+    ledger_add "$state" escalation 'identical failure'
+    ledger_add "$state" escalation 'identical failure'
+    [ ! -s "$SQUAD_WAKE_QUEUE" ] || fail 'fixture unexpectedly queued either failed wake'
+    rmdir "$state/.stand-to-queue.seq"
+    ledger_add "$state" escalation 'identical failure'
+  ) > "$dir/daemon.log" 2>&1 || fail "ledger failure fixture did not run: $(< "$dir/daemon.log")"
+  [ -s "$SQUAD_WAKE_QUEUE" ] || fail 'fixture did not queue the third wake'
+  rmdir "$state/.subsuper-escalations"
+  rc=0
+  out=$(run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 3 ] || fail "return did not retain the evidence while blocked: $out"
+  printf 'resolved [key=release]: review finished\n' >> "$state/repair-task.status"
+  out=$(run_return "$dir" check) || fail "return could not report retained occurrences: $out"
+  assert_contains "$out" 'daemon-notice=3' 'return lost a distinct failure or duplicated a replayed marker'
+  [ "$(grep -c 'away-mode ledger undeliverable as of .*escalation: identical failure' <<< "$out")" -eq 2 ] \
+    || fail "return did not report both unqueued occurrences exactly once: $out"
+  assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: escalation: identical failure' 'return lost the queued occurrence'
+  pass 'return keeps identical failures distinct and suppresses only the paired fallback'
+)
 
 test_retry_preserves_checkpoint_published_during_merge() (
   dir="$TMP_ROOT/late-checkpoint"
@@ -1081,13 +1156,15 @@ test_failed_evidence_merge_names_its_phase success
 test_failed_evidence_merge_names_its_phase failure
 test_cold_fold_obeys_return_deadline
 test_unread_blocker_fails_closed
-test_split_blocker_fails_closed_until_complete
+test_unterminated_status_is_folded_without_consuming_its_tail
 test_blocker_scan_is_bounded_by_new_appends
 test_routine_evidence_stays_bounded_across_shutdown_retries
 test_routine_retention_uses_append_order_after_clock_rollback
 test_summary_count_names_the_retained_scope
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
+test_ledger_fallback_survives_daemon_killed_in_queue_lock_wait
+test_identical_ledger_failures_survive_return_retries
 test_explicit_reclassification_requires_durable_reason
 test_away_ledger_is_presented_once_and_never_repeated
 test_single_class_ledger_clears_return_gate

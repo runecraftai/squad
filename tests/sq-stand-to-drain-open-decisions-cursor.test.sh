@@ -351,6 +351,28 @@ test_previous_fold_cache_is_refolded_under_current_semantics() {
   pass "an old fold cache is rebuilt once before same-version incremental reads resume"
 }
 
+test_unterminated_blocker_is_displayed_and_refolded_after_append() {
+  local dir state status out probe tail
+  dir=$(make_case cursor-unterminated)
+  state="$dir/state"
+  status="$state/task.status"
+  out="$dir/drain.out"
+  probe="$dir/probe.tsv"
+  tail='blocked [key=release]: waiting'
+  printf 'working: preparing release\n%s' "$tail" > "$status"
+  SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail 'drain failed with an unterminated blocker'
+  grep -F 'task [key=release] blocked: waiting' "$out" >/dev/null || fail 'drain omitted the unterminated blocker'
+
+  tail+=$' for review\n'
+  printf ' for review\n' >> "$status"
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_OPEN_DECISIONS_READ_PROBE="$probe" "$DRAIN" > "$out" \
+    || fail 'drain failed after the blocker was extended'
+  grep -F 'task [key=release] blocked: waiting for review' "$out" >/dev/null || fail 'drain retained a stale blocker note'
+  [ "$(last_probe_bytes "$probe" "$status")" = "${#tail}" ] || fail 'drain did not refold exactly the extended tail'
+  pass 'ordinary drain displays the unterminated blocker and refolds its extended tail'
+}
+
+test_unterminated_blocker_is_displayed_and_refolded_after_append
 test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision
 test_same_size_rewrite_is_detected_via_inode_identity
 test_read_failure_never_silently_returns_empty

@@ -246,6 +246,7 @@ HOUSEKEEPING_TICK_DEFAULT=15
 MAX_DEFER_SECS_DEFAULT=300
 WEDGE_ALARM_TIMEOUT_SECS_DEFAULT=10
 WEDGE_ALARM_LAST_EPOCH=0
+LEDGER_FAILURE_SEQ=0
 WEDGE_ALARM_NOTIFIER_PID=
 # The commander-relevant verb set and the status classifiers (last_status_line,
 # status_is_commander_relevant, window_to_task, scan_commander_relevant_statuses) now
@@ -1281,22 +1282,22 @@ wedge_alarm_notify() {  # <summary> <marker>
 # window. The supervisor pane is never touched here, so the commander is not
 # interrupted by a daemon fault.
 ledger_undeliverable() {  # <state> <item>
-  local state=$1 item=$2 marker max_defer now wake identity='' notify=1
+  local state=$1 item=$2 marker max_defer now occurrence notify=1
   marker="$state/.subsuper-inject-wedged"
   max_defer="${SQUAD_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}"
   now=$(_now)
+  LEDGER_FAILURE_SEQ=$((LEDGER_FAILURE_SEQ + 1))
+  occurrence="$now-${BASHPID:-$$}-$LEDGER_FAILURE_SEQ-$RANDOM"
+  printf 'away-mode ledger undeliverable as of %s [occurrence=%s]: %s\n' \
+    "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$occurrence" "$item" >> "$marker" 2>/dev/null || true
   if [ "$WEDGE_ALARM_LAST_EPOCH" -gt 0 ] && [ $((now - WEDGE_ALARM_LAST_EPOCH)) -lt "$max_defer" ]; then
     notify=0
   else
     WEDGE_ALARM_LAST_EPOCH=$now
-    log "ERROR: away-mode ledger write failed; queued on the stand-to path: $item"
+    log "ERROR: away-mode ledger write failed; attempting to queue on the stand-to path: $item"
   fi
-  if wake=$(fm_wake_append check afk-ledger-undeliverable "check: away-mode ledger could not record: $item" --print-identity 2>/dev/null); then
-    [ -z "$wake" ] || identity=" [wake=$wake]"
-  else
-    log 'ERROR: away-mode ledger undeliverable and the stand-to queue append also failed'
-  fi
-  printf 'away-mode ledger undeliverable as of %s%s: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$identity" "$item" >> "$marker" 2>/dev/null || true
+  fm_wake_append check afk-ledger-undeliverable "[occurrence=$occurrence] check: away-mode ledger could not record: $item" 2>/dev/null \
+    || log 'ERROR: away-mode ledger undeliverable and the stand-to queue append also failed'
   if [ "$notify" -eq 1 ]; then
     wedge_alarm_notify "away-mode ledger undeliverable - see $marker" "$marker"
   fi
