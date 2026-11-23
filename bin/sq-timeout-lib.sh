@@ -60,8 +60,10 @@ fm_run_bash_timeout() {
     set +m
     sleep "$seconds"
     printf 'expired\n' > "$deadline_status"
-    if [ "${fm_timeout_clean_group:-0}" != 1 ]; then
-      kill -TERM -- "-$child_pid" 2>/dev/null || true
+    kill -TERM -- "-$child_pid" 2>/dev/null || true
+    if [ "${fm_timeout_clean_group:-0}" = 1 ]; then
+      sleep 0.5
+    else
       sleep 0.2
     fi
     kill -KILL -- "-$child_pid" 2>/dev/null || true
@@ -92,24 +94,46 @@ fm_run_bash_timeout() {
 }
 
 fm_run_timed_in_group() {
-  local seconds=$1 child watchdog rc=0
-  shift
-  (exec "$@") </dev/null &
-  child=$!
-  (
-    timer=''
-    trap 'if [ -n "$timer" ]; then kill "$timer" 2>/dev/null || true; fi; exit 0' TERM
-    sleep "$seconds" &
-    timer=$!
-    wait "$timer" || exit 0
-    kill -KILL "$child" 2>/dev/null || true
-  ) </dev/null >/dev/null 2>&1 &
-  watchdog=$!
-  wait "$child" 2>/dev/null || rc=$?
-  kill -TERM "$watchdog" 2>/dev/null || true
-  wait "$watchdog" 2>/dev/null || true
-  [ "$rc" -ne 137 ] || rc=124
-  return "$rc"
+  perl -MErrno=ESRCH -MFile::Temp=tempfile -MFile::Copy=copy \
+    -MPOSIX=setsid,WNOHANG -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC,sleep -e '
+    my $deadline = clock_gettime(CLOCK_MONOTONIC) + shift;
+    my $cancelled = 0;
+    local $SIG{TERM} = sub { $cancelled = 1 };
+    my ($out, $out_path) = tempfile(UNLINK => 1);
+    my ($err, $err_path) = tempfile(UNLINK => 1);
+    unlink($out_path, $err_path) == 2 or exit 125;
+    exit 124 if $cancelled;
+    my $pid = fork;
+    exit 125 unless defined $pid;
+    if (!$pid) {
+      defined(setsid()) or POSIX::_exit(125);
+      $SIG{TERM} = "DEFAULT";
+      open(STDOUT, ">&", $out) && open(STDERR, ">&", $err) or POSIX::_exit(125);
+      exec @ARGV or POSIX::_exit(125);
+    }
+    my $status;
+    while (!$cancelled && clock_gettime(CLOCK_MONOTONIC) < $deadline) {
+      $status = $? if !defined($status) && waitpid($pid, WNOHANG) == $pid;
+      if (defined($status) && !kill(0, -$pid) && $! == ESRCH) {
+        exit 124 if $cancelled;
+        seek($out, 0, 0) && seek($err, 0, 0) or exit 125;
+        copy($out, \*STDOUT) && copy($err, \*STDERR) or exit 125;
+        exit(($status & 127) ? 128 + ($status & 127) : $status >> 8);
+      }
+      sleep 0.02;
+    }
+    kill "TERM", -$pid;
+    kill "TERM", $pid unless defined $status;
+    my $grace = clock_gettime(CLOCK_MONOTONIC) + 0.2;
+    while ((my $remaining = $grace - clock_gettime(CLOCK_MONOTONIC)) > 0) {
+      sleep $remaining;
+    }
+    kill "KILL", -$pid;
+    kill "KILL", $pid unless defined $status;
+    kill "KILL", -$pid unless defined $status;
+    waitpid($pid, WNOHANG) unless defined $status;
+    exit 124;
+  ' "$@" </dev/null
 }
 
 fm_run_external_timeout() {

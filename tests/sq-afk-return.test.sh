@@ -526,7 +526,7 @@ test_shutdown_step_is_bounded_and_retains_lifecycle() {
 }
 
 test_shutdown_contains_real_backend() {
-  local dir out rc=0 started_at elapsed
+  local dir out rc=0 started_at elapsed descendant status
   dir="$TMP_ROOT/shutdown-real-backend"
   install_runner "$dir"
   printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$ROOT/bin/sq-afk-launch.sh" > "$dir/bin/sq-afk-launch.sh"
@@ -534,11 +534,12 @@ test_shutdown_contains_real_backend() {
   printf 'tmux\tsynthetic-session\towned\n' > "$dir/home/state/.afk-daemon-terminal"
   cat > "$dir/bin/tmux" <<'SH'
 #!/usr/bin/env bash
-[ "$*" = 'kill-session -t synthetic-session' ] || exit 1
-printf 'backend entered\n'
-[ "${MOCK_TERMINAL_DIRECT:-0}" != 1 ] || exec sleep 14
-(trap '' TERM; sleep 14; touch "$SQUAD_BASE/backend-escaped") &
-wait
+[ "$*" = 'has-session -t synthetic-session' ] || exit 1
+printf "can't find session: synthetic-session\n" >&2
+[ "${MOCK_TERMINAL_ABSENT:-0}" != 1 ] || exit 1
+(trap '' TERM; exec sleep 14) &
+printf '%s\n' "$!" > "$SQUAD_BASE/backend-child"
+exit 1
 SH
   chmod +x "$dir/bin/tmux"
 
@@ -547,19 +548,29 @@ SH
     SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" begin 2>&1) || rc=$?
   elapsed=$(( $(date +%s) - started_at ))
   [ "$rc" -eq 3 ] || fail "the return did not gate on timed-out backend cleanup (rc=$rc): $out"
-  assert_contains "$out" 'backend entered' 'the real launcher did not reach the stalled backend'
+  descendant=$(< "$dir/home/backend-child")
+  status=$(ps -o stat= -p "$descendant" 2>/dev/null) || true
+  [[ -z "$status" || "$status" = Z* ]] || fail 'the backend child survived the outer deadline'
   assert_contains "$out" 'catch-up exceeded its 3s budget' 'the backend escaped the return deadline'
   [ -s "$dir/home/state/.afk-return-catchup" ] || fail 'the backend timeout did not retain the gate'
   [ "$elapsed" -lt 10 ] || fail "the backend held return output open for ${elapsed}s after the shutdown deadline"
   [ -e "$dir/home/state/.afk" ] && [ -e "$dir/home/state/.afk-daemon-terminal" ] \
     || fail 'the timed-out backend lost its lifecycle state'
   rc=0
-  out=$(env PATH="$dir/bin:$PATH" MOCK_TERMINAL_DIRECT=1 SQUAD_AFK_RETURN_LOCK_SECS=6 SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 \
+  rm -f "$dir/home/backend-child"
+  out=$(env PATH="$dir/bin:$PATH" SQUAD_AFK_RETURN_LOCK_SECS=6 SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 \
     SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" check 2>&1) || rc=$?
   [ "$rc" -eq 3 ] || fail "the nested backend cap did not gate the retry (rc=$rc): $out"
   assert_contains "$out" 'return catch-up gate phase: shutdown-failed' 'the nested backend ignored its shorter cap'
   assert_not_contains "$out" 'catch-up exceeded' 'the nested backend spent the whole return budget'
-  pass 'the return deadline contains the real launcher without disabling its backend cap'
+  descendant=$(< "$dir/home/backend-child")
+  status=$(ps -o stat= -p "$descendant" 2>/dev/null) || true
+  [[ -z "$status" || "$status" = Z* ]] || fail 'the backend child survived the shorter backend deadline'
+  [ -e "$dir/home/state/.afk-daemon-terminal" ] || fail 'the incomplete probe discarded the terminal record'
+  out=$(env PATH="$dir/bin:$PATH" MOCK_TERMINAL_ABSENT=1 SQUAD_AFK_RETURN_LOCK_SECS=6 SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 \
+    SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" check 2>&1) || fail "confirmed absence did not clear return: $out"
+  assert_contains "$out" 'catch-up clear' 'the retry did not confirm terminal absence'
+  pass 'both return and backend deadlines contain a child holding the probe output open'
 }
 
 # Finding: when the evidence merge failed after the queue was consumed, the gate
@@ -899,7 +910,45 @@ test_summary_write_failure_preserves_evidence() (
   pass 'return retries an undelivered summary without losing its evidence'
 )
 
+test_check_reports_wake_from_killed_drain() {
+  local dir state out rc=0
+  dir="$TMP_ROOT/killed-drain-check"
+  install_runner "$dir"
+  install_real_drain "$dir"
+  state="$dir/home/state"
+  printf '1784074300\t1\tcheck\ttask.status\tcheck: recovered ordinary wake details\n' > "$state/.stand-to-queue"
+  export REAL_MV
+  REAL_MV=$(command -v mv)
+  cat > "$dir/bin/mv" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  */raw.pending) kill -KILL "$PPID"; exit 1 ;;
+esac
+exec "$REAL_MV" "$@"
+SH
+  chmod +x "$dir/bin/mv"
+  out=$(PATH="$dir/bin:$PATH" run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 3 ] || fail "the killed drain did not gate return (rc=$rc): $out"
+  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'the killed drain did not leave an unpublished batch'
+  rm -f "$dir/bin/mv"
+
+  rc=0
+  SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" check >&- 2> "$dir/error" || rc=$?
+  [ "$rc" -eq 1 ] || fail "the recovered wake advanced without presentation (rc=$rc)"
+  out=$(< "$dir/error")
+  assert_contains "$out" 'could not confirm catch-up presentation' 'the failed check did not explain why it refused to advance'
+  [ -s "$state/.afk-return-catchup" ] || fail 'the failed check cleared the recovered evidence'
+
+  out=$(run_return "$dir" check) || fail "the recovered wake could not be presented: $out"
+  assert_contains "$out" 'task.status check: recovered ordinary wake details' 'check did not present the recovered wake payload'
+  [ ! -e "$state/.afk-return-catchup" ] || fail 'the reported wake did not clear the gate'
+  out=$(run_return "$dir" check) || fail "clean check failed: $out"
+  assert_not_contains "$out" 'recovered ordinary wake details' 'clean check replayed the reported wake'
+  pass 'return check gates an unreported recovered wake and presents its details on retry'
+}
+
 test_real_drain_preserves_wakes_across_return_failures
+test_check_reports_wake_from_killed_drain
 test_retry_preserves_checkpoint_published_during_merge
 test_summary_write_failure_preserves_evidence
 test_shutdown_step_is_bounded_and_retains_lifecycle

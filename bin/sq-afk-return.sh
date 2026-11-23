@@ -236,7 +236,7 @@ print_summary() {  # <evidence-file>
   local escalated=0 routine=0 notice=0 queued=0 suppressed=0
   local notices='' display_rows filtered builtin_time=0
   filtered=$(summary_evidence "$file") || return 1
-  local -a rows=() wedges=() events=() urls=() statuses=()
+  local -a rows=() wedges=() events=() urls=() statuses=() wake_details=()
   re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
   afk_re='^([0-9]+) [0-9]+ check afk-[A-Za-z0-9._-]+ (.*)$'
   # One linear pass. Rows are collected in arrays, never by re-concatenating a
@@ -267,6 +267,7 @@ print_summary() {  # <evidence-file>
           rows+=("${BASH_REMATCH[1]}"$'\t'"daemon-notice"$'\t'"${BASH_REMATCH[2]}")
         elif [[ $text =~ $re ]]; then
           queued=$((queued + 1))
+          wake_details+=("    ${text}")
         else
           case "$text" in 'wake annotation:'*|'') ;; *) notices="${notices}  ${text}"$'\n' ;; esac
         fi
@@ -285,7 +286,11 @@ print_summary() {  # <evidence-file>
   if [ "$routine" -gt "$MAX_ROUTINE_EVENTS" ]; then
     suppressed=$(( routine - MAX_ROUTINE_EVENTS ))
   fi
-  [ "$queued" -eq 0 ] || notices="  queued wake records drained: ${queued}"$'\n'"${notices}"
+  if [ "$queued" -gt 0 ]; then
+    local rendered_wakes
+    printf -v rendered_wakes '%s\n' "${wake_details[@]}" || return 1
+    notices="  queued wake records drained: ${queued}"$'\n'"${rendered_wakes}${notices}"
+  fi
   if [ $((escalated + routine + notice)) -eq 0 ]; then
     # No away-mode events: only live open items remain, shown without the absence
     # summary header so a re-run never presents the summary again.
@@ -489,7 +494,10 @@ return_reconcile() {
     return 3
   fi
 
-  print_summary "$GATE" || return 1
+  if ! (trap '' PIPE; print_summary "$GATE"); then
+    printf 'sq-afk-return: could not confirm catch-up presentation; queued wake details and other evidence remain in the gate\n' >&2
+    return 1
+  fi
   clear_delivery_artifacts && rm -f "$GATE" || return 1
   printf 'sq-afk-return: catch-up clear; ordinary commander work may proceed\n'
   return 0
