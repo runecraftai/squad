@@ -459,6 +459,22 @@ fm_lock_acquire_wait() {
   done
 }
 
+# fm_lock_acquire_wait_bounded <lockdir> [seconds] -> 0 acquired, 1 timed out.
+# The unbounded wait above suits callers whose caller already owns a deadline;
+# a path that must always hand control back to a person - the away-mode return
+# catch-up, for example - uses this one so a lock left behind by a killed run
+# reports a timeout instead of spinning forever.
+fm_lock_acquire_wait_bounded() {
+  local lockdir=$1 secs=${2:-30} deadline
+  case "$secs" in ''|*[!0-9]*) secs=30 ;; esac
+  deadline=$(( $(date +%s) + secs ))
+  while ! fm_lock_try_acquire "$lockdir"; do
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    sleep 0.1
+  done
+  return 0
+}
+
 fm_lock_release() {
   local lockdir=$1 pid current ownerdir
   current=${BASHPID:-$$}

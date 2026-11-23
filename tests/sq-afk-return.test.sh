@@ -300,6 +300,127 @@ test_undeliverable_ledger_item_reaches_the_summary() {
   pass "an item the ledger could not record reaches the return summary once"
 }
 
+# The 2026-11-22 non-termination. A gate left in its fail-closed seed phase plus a
+# ledger a repeating wake had inflated made `check` run for minutes: the evidence
+# merge rescanned the whole growing file once per candidate line, and the summary
+# rebuilt a growing string once per event. Both are linear now, the routine class
+# is presented under a documented limit, and the run finishes inside the bound.
+seed_stuck_gate() {  # <case-dir> [evidence-lines]
+  local dir=$1 lines=${2:-0}
+  {
+    printf 'schema\tsq-afk-return.v1\n'
+    printf 'started\t%s\n' "$(( $(date +%s) - 600 ))"
+    printf 'phase\tstopping-and-draining\n'
+    awk -v n="$lines" 'BEGIN {
+      for (i = 1; i <= n; i++) printf "evidence\tescalation\t1700000000|escalation|held-%d: done: PR https://example.test/pr/%d\n", i, i
+    }'
+  } > "$dir/home/state/.afk-return-catchup"
+}
+
+seed_routine_ledger() {  # <case-dir> <lines> <duplicates|distinct>
+  local dir=$1 lines=$2 shape=$3
+  awk -v n="$lines" -v distinct="$shape" 'BEGIN {
+    for (i = 1; i <= n; i++) {
+      if (distinct == "distinct") {
+        printf "1700000001|routine|gone-task.status -> self|stale tick %d: no activity\n", i
+      } else {
+        printf "1700000001|routine|gone-task.status -> self|stale: tmux:sq-gone-task (idle 600s): no activity\n"
+      }
+    }
+  }' > "$dir/home/state/.subsuper-routine"
+}
+
+test_pathological_ledger_terminates_within_bound() {
+  local dir out rc shape
+  for shape in duplicates distinct; do
+    dir="$TMP_ROOT/pathological-$shape"
+    install_runner "$dir"
+    seed_stuck_gate "$dir" 200
+    if [ "$shape" = distinct ]; then
+      seed_routine_ledger "$dir" 8000 distinct
+    else
+      seed_routine_ledger "$dir" 12000 duplicates
+    fi
+    set +e
+    out=$(timeout 45 env SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" check 2>&1)
+    rc=$?
+    set -e
+    [ "$rc" -ne 124 ] || fail "the $shape-ledger return did not terminate inside the 45s bound"
+    [ "$rc" -eq 0 ] || fail "the $shape-ledger return failed (rc=$rc): $(printf '%s' "$out" | tail -3)"
+    [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "the $shape-ledger return left the stuck gate behind"
+    [ "$(printf '%s' "$out" | grep -c 'catch-up summary')" -eq 1 ] \
+      || fail "the $shape-ledger return did not present exactly one summary"
+    assert_contains "$out" 'resuming a catch-up found in phase stopping-and-draining' \
+      "the $shape-ledger return did not name the phase it resumed"
+    assert_contains "$out" 'held-1: done: PR https://example.test/pr/1' \
+      "the $shape-ledger return lost a preserved escalation"
+  done
+  pass "an inflated away-mode ledger returns inside the bound instead of stalling the commander"
+}
+
+test_stuck_gate_names_its_phase_and_the_supported_recovery() {
+  local dir out rc gate
+  dir="$TMP_ROOT/stuck-gate"
+  install_runner "$dir"
+  seed_stuck_gate "$dir" 3
+  gate="$dir/home/state/.afk-return-catchup"
+
+  set +e
+  out=$(SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" guard 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "guard should refuse ordinary work behind a stuck gate (rc=$rc): $out"
+  assert_contains "$out" 'return catch-up gate phase: stopping-and-draining' "guard did not name the phase it found"
+  assert_contains "$out" 'why it could not advance: a previous return run stopped before it could finish' \
+    "guard did not name why the gate could not advance"
+  assert_contains "$out" '3 evidence record(s)' "guard did not report what the gate holds"
+  assert_contains "$out" 'recovery is bin/sq-afk-return.sh check' "guard did not name the supported recovery"
+  assert_contains "$out" 'no state file needs to be removed by hand' "guard left hand-deleting the gate as the only way out"
+  [ -e "$gate" ] || fail "the read-only guard mutated the gate it was only supposed to report"
+
+  out=$(run_return "$dir" check) || fail "check did not resume the stuck gate: $out"
+  assert_contains "$out" 'resuming a catch-up found in phase stopping-and-draining' "check did not name the phase it resumed"
+  assert_contains "$out" 'catch-up clear' "the resumed check did not report a clear catch-up"
+  [ ! -e "$gate" ] || fail "the resumed check left the stuck gate behind"
+  pass "a stuck gate names its phase and reason and check is the supported recovery"
+}
+
+test_catchup_lock_wait_is_bounded() {
+  local dir out rc holder lock elapsed started_at
+  dir="$TMP_ROOT/lock-bound"
+  install_runner "$dir"
+  lock="$dir/home/state/.afk-return-catchup.lock"
+  seed_stuck_gate "$dir" 2
+  SQUAD_STATE_OVERRIDE="$dir/home/state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+    : > "$3"
+    while [ ! -e "$4" ]; do sleep 0.1; done
+  ' _ "$dir/bin/sq-stand-to-lib.sh" "$lock" "$dir/held" "$dir/release" &
+  holder=$!
+  local waited=0
+  while [ ! -e "$dir/held" ] && [ "$waited" -lt 100 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  [ -e "$dir/held" ] || { kill "$holder" 2>/dev/null; fail "the lock holder never acquired the catch-up lock"; }
+
+  started_at=$(date +%s)
+  set +e
+  out=$(SQUAD_AFK_RETURN_LOCK_SECS=1 timeout 30 env SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" check 2>&1)
+  rc=$?
+  set -e
+  elapsed=$(( $(date +%s) - started_at ))
+  : > "$dir/release"
+  wait "$holder" 2>/dev/null || true
+  [ "$rc" -ne 124 ] || fail "a held catch-up lock spun without a bound instead of reporting a timeout"
+  [ "$rc" -eq 3 ] || fail "a held catch-up lock should refuse with the timeout diagnosis (rc=$rc): $out"
+  assert_contains "$out" 'the return catch-up lock is still held after 1s' "the lock timeout did not name its bound"
+  assert_contains "$out" 'return catch-up gate phase: stopping-and-draining' "the lock timeout did not report the gate phase"
+  [ "$elapsed" -le 15 ] || fail "the bounded lock wait took ${elapsed}s against a 1s bound"
+  pass "a held catch-up lock reports a bounded timeout with the gate phase instead of hanging the return"
+}
+
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
@@ -308,3 +429,6 @@ test_away_ledger_while_blocked_presents_only_a_count
 test_commander_decision_does_not_masquerade_as_Squad_blocker
 test_away_reentry_refuses_pending_return_gate
 test_check_retries_recorded_terminal_teardown
+test_pathological_ledger_terminates_within_bound
+test_stuck_gate_names_its_phase_and_the_supported_recovery
+test_catchup_lock_wait_is_bounded

@@ -1312,12 +1312,80 @@ test_inject_skip_forces_self() {
   local dir state
   dir=$(make_supercase skip)
   state="$dir/state"
-  printf 'done: PR 1\n' > "$state/s1.status"
+  # A live task: a torn-down subject is deliberately never ledgered as routine
+  # (test_routine_ledger_stops_for_a_torn_down_task), so this fixture keeps a
+  # recorded task with a non-terminal status to exercise the force-self path.
+  fm_write_meta "$state/s1.meta" "window=sess:sq-s1" "backend=tmux" "kind=strike"
+  printf 'working: step one\n' > "$state/s1.status"
   SQUAD_STATE_OVERRIDE="$state" SQUAD_INJECT_SKIP="signal" handle_wake "signal: $state/s1.status" "$state"
   [ -s "$state/.subsuper-escalations" ] && fail "INJECT_SKIP=signal did not force self-handle"
   grep -F "|routine|signal: $state/s1.status -> force-self" "$state/.subsuper-routine" >/dev/null \
     || fail "INJECT_SKIP force-self wake was not ledgered as routine"
   pass "INJECT_SKIP forces self-handle, bypassing commander-relevant classification"
+}
+
+# The away-mode ledger is appended once per sentry wake, and an absence is
+# unbounded in time: a wake the sentry repeats every tick must land in the ledger
+# once, not once per tick. Removing the deduplication in ledger_add makes this
+# fixture fail with five identical lines.
+test_routine_ledger_never_records_the_same_entry_twice() {
+  local dir state win lines i
+  dir=$(make_supercase routine-dedup)
+  state="$dir/state"
+  win="sess:sq-dedup-1"
+  fm_write_meta "$state/dedup-1.meta" "window=$win" "backend=tmux" "kind=strike"
+  printf 'working: step one\n' > "$state/dedup-1.status"
+  for i in 1 2 3 4 5; do
+    SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
+      handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
+  done
+  lines=0
+  [ ! -f "$state/.subsuper-routine" ] || lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
+  [ "$lines" -eq 1 ] || fail "the same routine wake was ledgered ${lines} time(s) instead of once"
+
+  # A genuinely different event for the same task is still recorded, so the bound
+  # is deduplication, not a blanket mute.
+  printf 'working: step two\n' > "$state/dedup-1.status"
+  SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
+    handle_wake "signal: $state/dedup-1.status" "$state" >/dev/null 2>&1
+  lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
+  [ "$lines" -eq 2 ] || fail "a distinct routine event was dropped (${lines} lines, expected 2)"
+  pass "the away-mode routine ledger records one entry per distinct event and never a duplicate"
+}
+
+# A delivered task that was torn down, or whose execution is already done or
+# failed, has nothing routine left to report. This is the predicate that failed
+# on 2026-11-22: the ledger kept appending a routine line for one finished task
+# until it held about 17k duplicates.
+test_routine_ledger_stops_for_a_finished_or_torn_down_task() {
+  local dir state win lines
+  dir=$(make_supercase routine-retired)
+  state="$dir/state"
+  win="sess:sq-retired-1"
+
+  # Torn down: bin/sq-teardown.sh removes the durable record; the status lingers.
+  printf 'done: PR https://example.test/pr/1 checks green\n' > "$state/retired-1.status"
+  SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
+    handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
+  [ ! -s "$state/.subsuper-routine" ] || fail "a torn-down task still generated a routine ledger entry"
+
+  # Delivered but not yet torn down: the record exists, the status is terminal.
+  fm_write_meta "$state/retired-1.meta" "window=$win" "backend=tmux" "kind=strike"
+  SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
+    handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
+  [ ! -s "$state/.subsuper-routine" ] || fail "a finished task still generated a routine ledger entry"
+  # Its commander-relevant event is untouched: the terminal status still reaches
+  # the escalation buffer, so the return summary loses nothing that matters.
+  grep -F 'done: PR https://example.test/pr/1 checks green' "$state/.subsuper-escalations" >/dev/null \
+    || fail "suppressing the routine entry also lost the terminal escalation"
+
+  # A live task is still ledgered, so the rule is about retirement, not silence.
+  printf 'working: step one\n' > "$state/retired-1.status"
+  SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
+    handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
+  lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
+  [ "$lines" -eq 1 ] || fail "a live task's routine event was not ledgered (${lines} lines)"
+  pass "a finished or torn-down task stops generating routine ledger entries"
 }
 
 test_is_wake_reason_distinguishes_status_stdout() {
@@ -3536,3 +3604,5 @@ test_inject_msg_herdr_pane_gone_defers
 test_inject_msg_herdr_submits_through_backend_dispatch
 test_inject_msg_defers_on_dead_shell_unknown
 test_inject_msg_defers_on_unrecognized_composer_state
+test_routine_ledger_never_records_the_same_entry_twice
+test_routine_ledger_stops_for_a_finished_or_torn_down_task
