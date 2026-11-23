@@ -785,6 +785,9 @@ SH
   out=$(run_return "$dir" check) || rc=$?
   [ "$rc" -eq 3 ] || fail "the resumed cold fold did not retain the live blocker: $out"
   assert_contains "$out" 'return catch-up gate phase: blocked' 'the resumed fold lost the blocker'
+  if compgen -G "$state/.afk-return-work.*" >/dev/null || compgen -G "$state/.afk-return-drain.*" >/dev/null; then
+    fail 'the retry left behind return scratch or a drain spool'
+  fi
   printf 'resolved [key=cold-blocker]: cleared\n' >> "$state/repair-task.status"
   out=$(run_return "$dir" check) || fail "the resolved return stayed gated: $out"
   assert_contains "$out" 'cold checkpoint' 'the timed-out drain lost its queued wake'
@@ -826,14 +829,14 @@ test_retry_preserves_checkpoint_published_during_merge() (
   export LATE_CHECKPOINT="$SQUAD_STATE_OVERRIDE/.afk-return-drain.interrupted/raw"
   mkdir -p "${LATE_CHECKPOINT%/*}"
   : > "${LATE_CHECKPOINT%/*}/output"
-  printf '1784074300 1 check afk-ledger-undeliverable check: away-mode ledger could not record: late wake\n' > "$LATE_CHECKPOINT.pending"
+  printf '1784074300 1 check afk-ledger-undeliverable check: away-mode ledger could not record: late wake\n' > "$SQUAD_STATE_OVERRIDE/.late-wake-staged"
   printf '1784074300|escalation|trigger evidence merge\n' > "$SQUAD_STATE_OVERRIDE/.subsuper-escalations"
   REAL_SORT=$(command -v sort)
   export REAL_SORT
   cat > "$dir/bin/sort" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
-  *.subsuper-escalations*) mv "$LATE_CHECKPOINT.pending" "$LATE_CHECKPOINT" || exit 1 ;;
+  *.subsuper-escalations*) mv "$SQUAD_STATE_OVERRIDE/.late-wake-staged" "$LATE_CHECKPOINT" || exit 1 ;;
 esac
 exec "$REAL_SORT" "$@"
 SH

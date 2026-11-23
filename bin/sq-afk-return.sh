@@ -492,6 +492,17 @@ return_reconcile() {
   return 0
 }
 
+reclaim_return_scratch() {
+  local spool
+  rm -rf -- "$STATE"/.afk-return-work.* || return 1
+  rm -f -- "$STATE"/.afk-return-catchup.pending.* || return 1
+  for spool in "$STATE"/.afk-return-drain.*; do
+    [ -d "$spool" ] || continue
+    rm -f -- "$spool/output.pending" "$spool/raw.pending" || return 1
+    rmdir -- "$spool" 2>/dev/null || true
+  done
+}
+
 run_reconciliation() {
   local rc resumed scratch
   # The mutating begin/check paths need locks and the keyed status fold.
@@ -504,12 +515,13 @@ run_reconciliation() {
 
   mkdir -p "$STATE" || return 1
   trap 'exit 143' TERM
-  trap 'fm_lock_release "$LOCK"; if [ -n "${scratch:-}" ]; then rm -rf -- "$scratch"; fi' EXIT
   if ! fm_lock_try_acquire "$LOCK"; then
     printf 'sq-afk-return: waiting for the held return catch-up lock\n' >&2
     report_gate_phase >&2
     fm_lock_acquire_wait_bounded "$LOCK" "$LOCK_WAIT_SECS" || return 3
   fi
+  trap 'if [ -n "${scratch:-}" ]; then rm -rf -- "$scratch"; fi; fm_lock_release "$LOCK"' EXIT
+  reclaim_return_scratch || return 1
   resumed=$(gate_field phase)
   if [ -n "$resumed" ] && [ "$resumed" != blocked ]; then
     printf 'sq-afk-return: resuming a catch-up found in phase %s: %s\n' "$resumed" "$(gate_reason "$resumed")" >&2
