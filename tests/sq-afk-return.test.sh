@@ -788,6 +788,10 @@ SH
   if compgen -G "$state/.afk-return-work.*" >/dev/null || compgen -G "$state/.afk-return-drain.*" >/dev/null; then
     fail 'the retry left behind return scratch or a drain spool'
   fi
+  if compgen -G "$state/.*.open-decisions-cursor.read.*" >/dev/null ||
+     compgen -G "$state/.*.open-decisions-cursor.tmp.*" >/dev/null; then
+    fail 'the retry left behind interrupted cursor scratch'
+  fi
   printf 'resolved [key=cold-blocker]: cleared\n' >> "$state/repair-task.status"
   out=$(run_return "$dir" check) || fail "the resolved return stayed gated: $out"
   assert_contains "$out" 'cold checkpoint' 'the timed-out drain lost its queued wake'

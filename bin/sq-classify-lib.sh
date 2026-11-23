@@ -644,7 +644,7 @@ _fm_open_decisions_line_bytes() {
 status_open_decisions_incremental() (  # <status-file>
   local f=$1 cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  local chunk_bytes end start original cursor_tmp have_newline saved line_bytes
+  local chunk_bytes end start original cursor_tmp have_newline saved line_bytes scratch_prefix
   [ ! -L "$f" ] || return 0
   [ -f "$f" ] && [ -r "$f" ] || return 1
   cf=$(_fm_open_decisions_cursor_path "$f")
@@ -706,8 +706,12 @@ status_open_decisions_incremental() (  # <status-file>
     cursor_dirty=1
   fi
 
-  chunk_file="$cf.read.${BASHPID:-$$}"
-  cursor_tmp="$cf.tmp.${BASHPID:-$$}"
+  scratch_prefix=$cf
+  if [ -n "${SQUAD_OPEN_DECISIONS_SCRATCH_DIR:-}" ]; then
+    scratch_prefix="$SQUAD_OPEN_DECISIONS_SCRATCH_DIR/${cf##*/}"
+  fi
+  chunk_file="$scratch_prefix.read.${BASHPID:-$$}"
+  cursor_tmp="$scratch_prefix.tmp.${BASHPID:-$$}"
   trap 'rm -f "$chunk_file" "$cursor_tmp"' EXIT
   trap 'exit 143' TERM
   original=$offset

@@ -528,7 +528,7 @@ run_reconciliation() {
   fi
   write_pending_seed || return 1
   scratch=$(mktemp -d "$STATE/.afk-return-work.XXXXXX") || return 1
-  return_reconcile "$scratch/blockers"
+  SQUAD_OPEN_DECISIONS_SCRATCH_DIR="$scratch" return_reconcile "$scratch/blockers"
   rc=$?
   rm -rf -- "$scratch"
   if [ "$rc" -eq 1 ]; then

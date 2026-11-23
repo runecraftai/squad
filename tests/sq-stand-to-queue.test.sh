@@ -444,7 +444,7 @@ test_interruption_before_and_after_raw_commit() {
 # wake is never reported, and bin/sq-afk-return.sh would clear its return gate as
 # if nothing had happened.
 test_killed_drain_batch_is_recovered() {
-  local dir state pid count i
+  local dir state queue pid count i
   dir=$(make_case killed-batch)
   state="$dir/state"
   printf 'done: killed batch fixture\n' > "$state/task.status"
@@ -452,17 +452,19 @@ test_killed_drain_batch_is_recovered() {
 
   SQUAD_STATE_OVERRIDE="$state" SQUAD_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT=10 "$DRAIN" > "$dir/killed.out" &
   pid=$!
-  i=0
-  while [ "$i" -lt 200 ] && ! compgen -G "$state/.stand-to-queue.drain.*" >/dev/null; do
+  queue="$state/.stand-to-queue"
+  for ((i = 0; i < 200; i++)); do
+    if compgen -G "$state/.stand-to-queue.drain.*" >/dev/null && [ -f "$queue" ] && [ ! -s "$queue" ]; then
+      break
+    fi
     sleep 0.05
-    i=$((i + 1))
   done
-  compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
-    || { kill -KILL "$pid" 2>/dev/null || true; fail "the drain never rotated the queue aside"; }
+  [ "$i" -lt 200 ] \
+    || { kill -KILL "$pid" 2>/dev/null || true; fail "the drain never rotated the batch and recreated the empty queue"; }
   kill -KILL "$pid" 2>/dev/null || fail "could not kill the drain before it published its raw output"
   wait "$pid" 2>/dev/null || true
-  [ -s "$state/.stand-to-queue" ] \
-    && fail "the killed drain left records in the queue, so the fixture is not the pre-publication crash"
+  [ -f "$queue" ] && [ ! -s "$queue" ] \
+    || fail "the killed drain did not leave a recreated empty queue"
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
     || fail "the killed drain left no in-flight batch to recover"
 
