@@ -586,12 +586,17 @@ fm_wake_queued_keys_locked() {
 
 fm_wake_restore_queue() {
   local drained=$1 restore
-  restore="$STATE/.stand-to-queue.restore.$(fm_current_pid)"
-  if [ -e "$SQUAD_WAKE_QUEUE" ]; then
-    cat "$drained" "$SQUAD_WAKE_QUEUE" > "$restore" && mv "$restore" "$SQUAD_WAKE_QUEUE"
-  else
+  restore="$STATE/.stand-to-queue.restore.pending"
+  rm -f "$restore" || return 1
+  if [ ! -e "$SQUAD_WAKE_QUEUE" ]; then
     mv "$drained" "$SQUAD_WAKE_QUEUE"
+    return $?
   fi
+  if cat "$drained" "$SQUAD_WAKE_QUEUE" > "$restore" && mv "$restore" "$SQUAD_WAKE_QUEUE"; then
+    return 0
+  fi
+  rm -f "$restore"
+  return 1
 }
 
 fm_wake_print_deduped() {

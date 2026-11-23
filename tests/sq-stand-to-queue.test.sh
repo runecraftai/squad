@@ -445,6 +445,7 @@ test_interruption_before_and_after_raw_commit() {
 # if nothing had happened.
 test_killed_drain_batch_is_recovered() {
   local dir state queue pid count i
+  local -a scratch
   dir=$(make_case killed-batch)
   state="$dir/state"
   printf 'done: killed batch fixture\n' > "$state/task.status"
@@ -472,7 +473,15 @@ test_killed_drain_batch_is_recovered() {
   {
     cat <<'SH'
 #!/usr/bin/env bash
-case "$1" in *.stand-to-queue.drain.*) exit 1 ;; esac
+case "$1" in
+  *.stand-to-queue.drain.*)
+    printf 'partial restore\n'
+    if [ "${INTERRUPT_RESTORE:-0}" = 1 ]; then
+      kill -KILL "$PPID"
+    fi
+    exit 1
+    ;;
+esac
 SH
     printf "exec %q \"\$@\"\n" "$(command -v cat)"
   } > "$dir/bin/cat"
@@ -483,6 +492,16 @@ SH
   [ ! -s "$dir/failed.out" ] || fail 'a failed restore reported a wake as delivered'
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null || fail 'a failed restore removed the abandoned batch'
 
+  for i in 1 2; do
+    if INTERRUPT_RESTORE=1 SQUAD_STATE_OVERRIDE="$state" PATH="$dir/bin:$PATH" \
+      "$DRAIN" > "$dir/interrupted-$i.out" 2> "$dir/interrupted-$i.err"; then
+      fail 'an interrupted restore reported success'
+    fi
+    [ ! -s "$dir/interrupted-$i.out" ] || fail 'an interrupted restore reported a wake as delivered'
+  done
+  scratch=("$state"/.stand-to-queue.restore.*)
+  [ "${#scratch[@]}" -eq 1 ] && [ -s "${scratch[0]}" ] || fail 'restore attempts did not reuse one scratch path'
+
   SQUAD_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/recovered.out" 2> "$dir/recovered.err" \
     || fail "the drain after a killed batch failed"
   count=$(awk -F '\t' 'NF == 5 { count++ } END { print count + 0 }' "$dir/recovered.out")
@@ -492,6 +511,8 @@ SH
     || fail "the recovered wake lost its payload"
   compgen -G "$state/.stand-to-queue.drain.*" >/dev/null \
     && fail "the recovered batch was left in place for the next drain to replay"
+  compgen -G "$state/.stand-to-queue.restore.*" >/dev/null \
+    && fail 'unpublished scratch remained after recovery'
   grep -F 'recovered an interrupted drain batch' "$dir/recovered.err" >/dev/null \
     || fail "the recovery was not reported"
 

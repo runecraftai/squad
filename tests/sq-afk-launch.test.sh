@@ -336,6 +336,49 @@ unit_signal_exits_with_lock_cleanup() {
   rm -rf "$st"
 }
 
+unit_herdr_server_outlives_backend_request_timeout() {
+  local st i
+  st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-herdr-server.XXXXXX")
+  mkdir -p "$st/bin"
+  cat > "$st/bin/herdr" <<'SH'
+#!/usr/bin/env bash
+[ "$HERDR_SESSION" = lab ] && [ "${*: -2}" = '--session lab' ] || exit 1
+case "$1" in
+  status)
+    if [ -f "$SQUAD_BASE/ready" ]; then
+      printf '%s\n' '{"server":{"running":true}}'
+    else
+      printf '%s\n' '{"server":{"running":false}}'
+    fi
+    ;;
+  server)
+    : > "$SQUAD_BASE/ready"
+    sleep 3
+    : > "$SQUAD_BASE/survived"
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$st/bin/herdr"
+  if PATH="$st/bin:$PATH" SQUAD_BASE="$st" SQUAD_AFK_BACKEND_TIMEOUT_SECS=1 bash -c '
+    . "$1"
+    fm_backend_source herdr && fm_backend_herdr_server_ensure lab
+  ' _ "$LAUNCH"; then
+    for ((i = 0; i < 50; i++)); do
+      [ ! -f "$st/survived" ] || break
+      sleep 0.1
+    done
+    if [ -f "$st/survived" ]; then
+      pass "herdr server: survives the backend request deadline"
+    else
+      fail "herdr server: startup put the headless server under a request deadline"
+    fi
+  else
+    fail "herdr server: could not start the headless server"
+  fi
+  rm -rf "$st"
+}
+
 unit_herdr_partial_create_recovery() {
   local st recorded
   st=$(mktemp -d "${TMPDIR:-/tmp}/sq-afk-herdr-partial.XXXXXX")
@@ -1368,6 +1411,7 @@ unit_failed_start_rolls_back_state
 unit_concurrent_start_serialized
 unit_lock_initialization_grace
 unit_signal_exits_with_lock_cleanup
+unit_herdr_server_outlives_backend_request_timeout
 unit_herdr_partial_create_recovery
 unit_herdr_error_with_exact_ids_closes_exact
 unit_herdr_run_failure_preserves_unconfirmed_record
