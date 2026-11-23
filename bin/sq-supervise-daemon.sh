@@ -922,9 +922,11 @@ routine_subject_retired() {  # <reason> <state>
   return 1
 }
 
-routine_add() {  # <state> <reason> <distilled-item>
-  local state=$1 reason=$2
-  routine_subject_retired "$reason" "$state" && return 0
+routine_add() {  # <state> <reason> <distilled-item> [busy-handoff]
+  local state=$1 reason=$2 busy_handoff=${4:-0}
+  if [ "$busy_handoff" = 0 ] && routine_subject_retired "$reason" "$state"; then
+    return 0
+  fi
   ledger_add "$state" routine "$reason -> $3"
 }
 
@@ -1666,7 +1668,7 @@ handle_wake() {  # <reason> <state>
   # heartbeat tick, which is not an event. Escalations are ledgered below.
   case "$action" in
     escalate|finished) ;;
-    *) [ "${reason%%:*}" = heartbeat ] || routine_add "$state" "$reason" "$distilled" ;;
+    *) [ "${reason%%:*}" = heartbeat ] || routine_add "$state" "$reason" "$distilled" "$busy_handoff" ;;
   esac
   case "$action" in
     escalate)

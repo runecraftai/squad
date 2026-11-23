@@ -648,6 +648,10 @@ afk_busy_daemon_case() {  # <case> - real detector/daemon episode and transition
     LOG="$dir/daemon.log" SQUAD_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
   )
   [ -e "$state/.subsuper-stale-$key" ] || fail "$case_name: daemon did not record a stale marker for the busy handoff"
+  if [ "$case_name" = old-terminal ]; then
+    grep -F "|routine|stale: $win (busy expired without activity) ->" "$state/.subsuper-routine" >/dev/null \
+      || fail "busy handoff with an old terminal status was not ledgered as routine"
+  fi
   PATH="$fakebin:$PATH" SQUAD_FAKE_TMUX_WINDOW="$win" SQUAD_FAKE_TMUX_CAPTURE="$pane" \
     SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$fakebin/sq-crew-state.sh" \
     SQUAD_STALE_ESCALATE_SECS=240 housekeeping "$state"
