@@ -81,46 +81,29 @@ clean_field() {
   LC_ALL=C tr '\t\r\n' '   '
 }
 
-# evidence_records: render <text>'s lines as evidence records on stdout. One awk
-# pass for the whole text: the previous per-line `printf | tr` forked a subshell
-# and a process for every candidate record, which dominates the cost on a large
-# ledger.
-evidence_records() {  # <kind> <text>
-  local kind=$1 text=$2
-  [ -n "$text" ] || return 0
-  printf '%s\n' "$text" | LC_ALL=C awk -v kind="$kind" '
-    { gsub(/[\t\r\n]/, " "); if ($0 == "") next; printf "evidence\t%s\t%s\n", kind, $0 }'
-}
-
-# evidence_dedup: keep the first occurrence of each distinct record, preserving
-# order, in one linear pass. The earlier per-line `grep -Fqx` rescanned the whole
-# growing file for every candidate record, which is quadratic in an unbounded
-# ledger and was the shape that made a return run outlive the commander's
-# patience. A non-regular destination (write_pending_seed streams to /dev/stdout)
-# is left alone.
-evidence_dedup() {  # <file>
-  local file=$1 pending
-  [ -f "$file" ] || return 0
-  [ -s "$file" ] || return 0
-  pending=$(mktemp "$STATE/.afk-evidence.XXXXXX") || return 1
-  if ! awk '!seen[$0]++' "$file" > "$pending"; then
-    rm -f "$pending"
-    return 1
+merge_evidence() {
+  local source
+  local -a sources=("$GATE" kind=wake) ledgers=()
+  for source in "$STATE"/.afk-return-drain.*/{raw,output}; do
+    [ ! -f "$source" ] || sources+=("$source")
+  done
+  if [ -f "$STATE/.subsuper-inject-wedged" ]; then
+    sources+=(kind=wedge "$STATE/.subsuper-inject-wedged")
   fi
-  mv "$pending" "$file"
-}
-
-append_evidence() {  # <kind> <text> <file>
-  local kind=$1 text=$2 file=$3
-  [ -n "$text" ] || return 0
-  evidence_records "$kind" "$text" >> "$file" || return 1
-  evidence_dedup "$file"
-}
-
-preserve_evidence() {  # <destination>
-  local destination=$1
-  [ -f "$GATE" ] || return 0
-  grep '^evidence'"$TAB" "$GATE" >> "$destination" 2>/dev/null || true
+  for source in "$STATE"/.subsuper-{routine,escalations}; do
+    [ ! -f "$source" ] || ledgers+=("$source")
+  done
+  (
+    set -o pipefail
+    if [ -n "${ledgers[0]:-}" ]; then
+      sort -s -t'|' -k1,1n "${ledgers[@]}"
+    fi | LC_ALL=C awk -F '\t' '
+      kind == "" { if ($1 == "evidence" && !seen[$0]++) print; next }
+      { gsub(/[\t\r]/, " "); if ($0 == "") next
+        row = "evidence\t" kind "\t" $0
+        if (!seen[row]++) print row }
+    ' "${sources[@]}" kind=escalation -
+  )
 }
 
 scan_open_blockers() {  # -> tab-separated blocker rows
@@ -148,25 +131,20 @@ write_pending_seed() {  # Fail-closed marker before any lifecycle mutation.
   [ -n "$started" ] || started=$(date +%s)
   pending=$(mktemp "$STATE/.afk-return-catchup.pending.XXXXXX") || return 1
   {
-    printf 'schema\tsq-afk-return.v1\n'
-    printf 'started\t%s\n' "$started"
-    printf 'phase\tstopping-and-draining\n'
-    preserve_evidence /dev/stdout
+    printf 'schema\tsq-afk-return.v1\nstarted\t%s\nphase\tstopping-and-draining\n' "$started" &&
+      { [ ! -f "$GATE" ] || awk -F '\t' '$1 == "evidence"' "$GATE"; }
   } > "$pending" || { rm -f "$pending"; return 1; }
   mv "$pending" "$GATE"
 }
 
-write_gate() {  # <evidence-file> <blockers-file>
-  local evidence=$1 blockers=$2 pending started
+write_gate() {  # <blockers-file> <phase>
+  local blockers=$1 phase=$2 pending started
   pending=$(mktemp "$STATE/.afk-return-catchup.pending.XXXXXX") || return 1
   started=$(awk -F '\t' '$1 == "started" { print $2; exit }' "$GATE" 2>/dev/null || true)
   [ -n "$started" ] || started=$(date +%s)
   {
-    printf 'schema\tsq-afk-return.v1\n'
-    printf 'started\t%s\n' "$started"
-    printf 'phase\tblocked\n'
-    cat "$evidence" 2>/dev/null || true
-    cat "$blockers" 2>/dev/null || true
+    printf 'schema\tsq-afk-return.v1\nstarted\t%s\nphase\t%s\n' "$started" "$phase" &&
+      merge_evidence && cat "$blockers"
   } > "$pending" || { rm -f "$pending"; return 1; }
   mv "$pending" "$GATE"
 }
@@ -187,29 +165,46 @@ fmt_epoch() {  # <epoch> -> local "MM-DD HH:MM" (bash builtin, then GNU date, th
 # a drained record already carries the same notice. Other queued wake records and drain sections (open
 # decisions, pending teardown, guard notices) are open items, not away-mode events.
 # Prints nothing when there is nothing to present.
-notice_key() {  # <notice text> -> identity shared by a queued afk-* record and its marker line
-  local text=$1 rest
-  case "$text" in
-    'check: away-mode ledger could not record: '*)
-      printf 'u:%s' "${text#check: away-mode ledger could not record: }" ;;
-    'away-mode ledger undeliverable as of '*': '*)
-      rest=${text#away-mode ledger undeliverable as of }
-      printf 'u:%s' "${rest#*: }" ;;
-    'check: away-mode escalations held '*'s past max-defer'*)
-      rest=${text#check: away-mode escalations held }
-      printf 'p:%s' "${rest%%s past max-defer*}" ;;
-    'away-mode ledger held '*'s past max-defer'*)
-      rest=${text#away-mode ledger held }
-      printf 'p:%s' "${rest%%s past max-defer*}" ;;
-    *) printf 'x:%s' "$text" ;;
-  esac
+summary_evidence() {
+  LC_ALL=C awk -F '\t' '
+    function identity(text) {
+      if (sub(/^check: away-mode ledger could not record: /, "", text) ||
+          sub(/^away-mode ledger undeliverable as of [^ ]+: /, "", text)) return "u:" text
+      if (text ~ /s past max-defer/ &&
+          sub(/^(check: away-mode escalations|away-mode ledger) held /, "", text)) {
+        sub(/s past max-defer.*/, "", text)
+        return "p:" text
+      }
+      return "x:" text
+    }
+    $1 != "evidence" { next }
+    $2 == "wake" && $3 ~ /^[0-9]+ [0-9]+ check afk-[A-Za-z0-9._-]+ / {
+      item = $3
+      sub(/^[^ ]+ [^ ]+ check [^ ]+ /, "", item)
+      key = identity(item)
+      if (!render) { queued[key] = 1; next }
+      if (seen[key]++) next
+    }
+    render && $2 == "wedge" {
+      key = identity($3)
+      if (queued[key] || seen[key]++) next
+    }
+    render { print }
+  ' "$1" render=1 "$1"
+}
+
+format_summary_times() {
+  perl -MPOSIX=strftime -pe '
+    s/^([0-9]+)(?=\t)/$1 == 0 ? "0" : (eval { strftime("%m-%d %H:%M", localtime($1)) } || $1)/e;
+  '
 }
 
 print_summary() {  # <evidence-file>
   local file=$1 tag kind text ts cls item label when re afk_re seq=0 absence locators status_lines
   local escalated=0 routine=0 notice=0 queued=0 suppressed=0
-  local afk_keys='' wedges='' notices=''
-  local -a rows=() events=() urls=() statuses=()
+  local notices='' display_rows filtered builtin_time=0
+  filtered=$(summary_evidence "$file") || return 1
+  local -a rows=() wedges=() events=() urls=() statuses=()
   re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
   afk_re='^([0-9]+) [0-9]+ check afk-[A-Za-z0-9._-]+ (.*)$'
   # One linear pass. Rows are collected in arrays, never by re-concatenating a
@@ -238,7 +233,6 @@ print_summary() {  # <evidence-file>
         if [[ $text =~ $afk_re ]]; then
           notice=$((notice + 1))
           rows+=("${BASH_REMATCH[1]}"$'\t'"daemon-notice"$'\t'"${BASH_REMATCH[2]}")
-          afk_keys="${afk_keys}$(notice_key "${BASH_REMATCH[2]}")"$'\n'
         elif [[ $text =~ $re ]]; then
           queued=$((queued + 1))
         else
@@ -246,18 +240,12 @@ print_summary() {  # <evidence-file>
         fi
         ;;
       wedge)
-        wedges="${wedges}${text}"$'\n'
+        notice=$((notice + 1))
+        wedges+=("0"$'\t'"daemon-notice"$'\t'"${text}")
         ;;
     esac
-  done < "$file"
-  if [ -n "$wedges" ]; then
-    while IFS= read -r item; do
-      [ -n "$item" ] || continue
-      printf '%s' "$afk_keys" | grep -Fqx -- "$(notice_key "$item")" && continue
-      notice=$((notice + 1))
-      rows+=("0"$'\t'"daemon-notice"$'\t'"${item}")
-    done <<< "$wedges"
-  fi
+  done <<< "$filtered"
+  rows+=( ${wedges[@]+"${wedges[@]}"} )
   # Bound the one class a repeating wake can inflate. Each distinct routine event
   # still occupies the ledger and is still counted below, but presentation stops
   # at the documented limit so a pathological ledger cannot stall the return.
@@ -274,19 +262,26 @@ print_summary() {  # <evidence-file>
   fi
   local sorted_rows=''
   if [ -n "${rows[0]:-}" ]; then
-    sorted_rows=$(printf '%s\n' "${rows[@]}" | sort -s -t "$TAB" -k1,1n)
+    sorted_rows=$(printf '%s\n' "${rows[@]}" | sort -s -t "$TAB" -k1,1n) || return 1
+  fi
+  display_rows=$sorted_rows
+  if printf -v when '%(%m-%d %H:%M)T' 0 2>/dev/null; then
+    builtin_time=1
+  elif [ -n "$sorted_rows" ] && command -v perl >/dev/null 2>&1; then
+    display_rows=$(format_summary_times <<< "$sorted_rows") || return 1
   fi
   while IFS="$TAB" read -r ts label item; do
     [ -n "$label" ] || continue
     seq=$((seq + 1))
     when=''
     if [ "$ts" != 0 ]; then
-      # Builtin first so a long summary never forks once per row.
-      printf -v when '%(%m-%d %H:%M)T ' "$ts" 2>/dev/null || when=''
-      [ -n "$when" ] || when="$(fmt_epoch "$ts") "
+      when="$ts "
+      if [ "$builtin_time" -eq 1 ]; then
+        printf -v when '%(%m-%d %H:%M)T ' "$ts" 2>/dev/null || when="$ts "
+      fi
     fi
     events+=("  ${seq}. ${when}[${label}] ${item}")
-  done <<< "$sorted_rows"
+  done <<< "$display_rows"
   # One scan for every link and status path the summary lists, rather than a pair
   # of greps per event row.
   if [ -n "$sorted_rows" ]; then
@@ -349,16 +344,16 @@ gate_evidence_count() {  # -> number of evidence records the gate holds
   awk -F '\t' '$1 == "evidence" { n++ } END { print n + 0 }' "$GATE" 2>/dev/null || printf '0'
 }
 
-# The reason a gate could not advance, derived from the phase it is stuck in.
-# Only the two phases this script writes are known: stopping-and-draining is the
-# fail-closed seed written before any lifecycle mutation, and blocked is written
-# once the reconcile finished with blockers. A gate still in the seed phase means
-# the run that wrote it never reached the end of the reconcile, so the gate names
-# that instead of guessing at a blocker.
 gate_reason() {  # <phase>
   case "$1" in
     stopping-and-draining)
       printf 'a previous return run stopped before it could finish (interrupted, killed, or still running), so the gate never advanced past the drain' ;;
+    shutdown-failed)
+      printf 'away-mode shutdown failed; lifecycle state was preserved for retry' ;;
+    drain-failed)
+      printf 'durable wake drain failed or its queue lock did not become available' ;;
+    presenting)
+      printf 'catch-up evidence was recorded but presentation or cleanup did not finish' ;;
     blocked)
       printf 'the catch-up finished with Squad-actionable blockers that are still open' ;;
     *) printf 'the gate holds a phase this script does not recognise' ;;
@@ -385,82 +380,61 @@ report_gate_phase() {
       printf 'sq-afk-return: gate opened %s (%ss ago) holding %s evidence record(s)\n' \
         "$(fmt_epoch "$started")" "$age" "$count" ;;
   esac
+  if [ "$phase" = blocked ]; then
+    printf 'sq-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason\n'
+  fi
   printf 'sq-afk-return: recovery is bin/sq-afk-return.sh check; no state file needs to be removed by hand\n'
 }
 
 return_guard() {
-  if [ -e "$STATE/.afk" ]; then
-    printf 'sq-afk-return: away mode is still active; run bin/sq-afk-return.sh before ordinary commander work\n' >&2
-    return 3
-  fi
   if [ -e "$GATE" ]; then
-    printf 'sq-afk-return: return catch-up is pending; remediate or durably reclassify every listed blocker, then run bin/sq-afk-return.sh check\n' >&2
+    printf 'sq-afk-return: return catch-up is pending\n' >&2
     report_gate_phase >&2
     print_blockers "$GATE" >&2
+    return 3
+  fi
+  if [ -e "$STATE/.afk" ]; then
+    printf 'sq-afk-return: away mode is still active; run bin/sq-afk-return.sh before ordinary commander work\n' >&2
     return 3
   fi
   return 0
 }
 
 return_reconcile() {
-  local evidence blockers drained wedge escalations lifecycle_ok=1 resumed
-  evidence=$(mktemp "$STATE/.afk-return-evidence.XXXXXX") || return 1
-  blockers=$(mktemp "$STATE/.afk-return-blockers.XXXXXX") || { rm -f "$evidence"; return 1; }
-  # Resuming a seed-phase gate is normal recovery, not a failure: say out loud
-  # which phase was found and why it was still there, so a commander sees the
-  # reason their return had not completed instead of an unexplained refusal.
-  resumed=$(gate_field phase)
-  if [ "$resumed" = stopping-and-draining ]; then
-    printf 'sq-afk-return: resuming a catch-up found in phase stopping-and-draining: %s\n' \
-      "$(gate_reason stopping-and-draining)" >&2
-  fi
-  preserve_evidence "$evidence"
-
+  local blockers=$1 deadline=$2 phase='' spool remaining
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-daemon-terminal" ]; then
-    if ! "$SCRIPT_DIR/sq-afk-launch.sh" stop; then
-      lifecycle_ok=0
-      append_evidence lifecycle 'away-mode shutdown failed; lifecycle state preserved for retry' "$evidence"
-    fi
+    "$SCRIPT_DIR/sq-afk-launch.sh" stop || phase=shutdown-failed
+  fi
+  if [ -z "$phase" ]; then
+    spool=$(mktemp -d "$STATE/.afk-return-drain.XXXXXX") || return 1
+    remaining=$((deadline - $(date +%s)))
+    [ "$remaining" -ge 0 ] || remaining=0
+    SQUAD_WAKE_DRAIN_LOCK_SECS=$remaining SQUAD_WAKE_DRAIN_CHECKPOINT="$spool/raw" \
+      "$SCRIPT_DIR/sq-stand-to-drain.sh" > "$spool/output" || phase=drain-failed
   fi
 
-  drained=$("$SCRIPT_DIR/sq-stand-to-drain.sh") || {
-    append_evidence lifecycle 'durable wake drain failed; retry catch-up before ordinary work' "$evidence"
-    lifecycle_ok=0
-    drained=""
-  }
-  append_evidence wake "$drained" "$evidence"
-
-  if [ -s "$STATE/.subsuper-inject-wedged" ]; then
-    wedge=$(cat "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
-    append_evidence wedge "$wedge" "$evidence"
+  scan_open_blockers > "$blockers" || return 1
+  if [ -z "$phase" ] && [ -s "$blockers" ]; then
+    phase=blocked
   fi
-  if [ -s "$STATE/.subsuper-escalations" ] || [ -s "$STATE/.subsuper-routine" ]; then
-    escalations=$(cat "$STATE/.subsuper-routine" "$STATE/.subsuper-escalations" 2>/dev/null | sort -s -t'|' -k1,1n || true)
-    append_evidence escalation "$escalations" "$evidence"
-  fi
-
-  evidence_dedup "$evidence"
-  scan_open_blockers > "$blockers"
-  if [ "$lifecycle_ok" -ne 1 ] || [ -s "$blockers" ]; then
-    write_gate "$evidence" "$blockers" || { rm -f "$evidence" "$blockers"; return 1; }
+  write_gate "$blockers" "${phase:-presenting}" || return 1
+  rm -rf -- "$STATE"/.afk-return-drain.*/ || return 1
+  if [ -n "$phase" ]; then
     printf 'sq-afk-return: catch-up must finish before the commander request\n' >&2
     printf 'sq-afk-return: %s away-mode event(s) are held in the catch-up record; one summary is presented once the blockers clear\n' "$(grep -c "^evidence"$'\t'"escalation"$'\t' "$GATE" 2>/dev/null || true)" >&2
+    report_gate_phase >&2
     print_blockers "$GATE" >&2
-    printf 'sq-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/sq-afk-return.sh check\n' >&2
-    rm -f "$evidence" "$blockers"
     return 3
   fi
 
-  print_summary "$evidence"
-  rm -f "$GATE"
-  clear_delivery_artifacts
-  rm -f "$evidence" "$blockers"
+  print_summary "$GATE" || return 1
+  clear_delivery_artifacts && rm -f "$GATE" || return 1
   printf 'sq-afk-return: catch-up clear; ordinary commander work may proceed\n'
   return 0
 }
 
 main() {
-  local mode=${1:-begin} rc
+  local mode=${1:-begin} rc resumed deadline scratch
   case "$mode" in
     begin|check) ;;
     guard) return_guard; return ;;
@@ -479,6 +453,7 @@ main() {
   mkdir -p "$STATE" || return 1
   # A bounded wait, not an unbounded spin: a lock left behind by a killed run must
   # report itself to the commander instead of hanging the return.
+  deadline=$(( $(date +%s) + LOCK_WAIT_SECS ))
   if ! fm_lock_acquire_wait_bounded "$LOCK" "$LOCK_WAIT_SECS"; then
     printf 'sq-afk-return: catch-up did not start: the return catch-up lock is still held after %ss\n' "$LOCK_WAIT_SECS" >&2
     report_gate_phase >&2
@@ -486,11 +461,18 @@ main() {
     return 3
   fi
   trap 'fm_lock_release "$LOCK"' EXIT
-  write_pending_seed || { fm_lock_release "$LOCK"; trap - EXIT; return 1; }
-  return_reconcile
+  resumed=$(gate_field phase)
+  if [ -n "$resumed" ] && [ "$resumed" != blocked ]; then
+    printf 'sq-afk-return: resuming a catch-up found in phase %s: %s\n' "$resumed" "$(gate_reason "$resumed")" >&2
+  fi
+  write_pending_seed || return 1
+  scratch=$(mktemp -d "$STATE/.afk-return-work.XXXXXX") || return 1
+  return_reconcile "$scratch/blockers" "$deadline"
   rc=$?
-  fm_lock_release "$LOCK"
-  trap - EXIT
+  rm -rf -- "$scratch"
+  if [ "$rc" -eq 1 ]; then
+    printf 'sq-afk-return: catch-up did not commit; retry bin/sq-afk-return.sh check\n' >&2
+  fi
   return "$rc"
 }
 

@@ -1342,7 +1342,7 @@ test_routine_ledger_never_records_the_same_entry_twice() {
   printf 'working: step one\n' > "$state/dedup-1.status"
   for i in 1 2 3 4 5; do
     SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
-      handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
+      handle_wake "stale: $win (idle $((500 + i))s, possible wedge)" "$state" >/dev/null 2>&1
   done
   lines=0
   [ ! -f "$state/.subsuper-routine" ] || lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
@@ -1357,7 +1357,21 @@ test_routine_ledger_never_records_the_same_entry_twice() {
   done
   lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
   [ "$lines" -eq 2 ] || fail "routine event with a literal escape should be recorded once ($lines total lines, expected 2)"
-  pass "the away-mode routine ledger records one entry per distinct event and never a duplicate"
+  printf 'paused: waiting for review\n' > "$state/dedup-1.status"
+  for i in 601 701; do
+    SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
+      handle_wake "stale: $win (paused ${i}s, awaiting external)" "$state" >/dev/null 2>&1
+  done
+  lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
+  [ "$lines" -eq 3 ] || fail "an unchanged pause was recorded more than once ($lines total lines)"
+
+  awk 'BEGIN { for (i = 1; i <= 1000; i++) print "1784074300|routine|earlier event " i }' > "$state/.subsuper-routine"
+  SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" SQUAD_INJECT_SKIP=signal \
+    handle_wake "signal: $state/dedup-1.status" "$state" >/dev/null 2>&1
+  lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
+  [ "$lines" -le 1000 ] || fail "distinct routine events exceeded the retention budget"
+  grep -F 'force-self' "$state/.subsuper-routine" >/dev/null || fail "full ledger dropped its newest event"
+  pass "the away-mode routine ledger deduplicates rechecks and retains bounded recent evidence"
 }
 
 # A delivered task that was torn down, or whose execution is already done or
@@ -1371,12 +1385,13 @@ test_routine_ledger_stops_for_a_finished_or_torn_down_task() {
   win="sess:sq-retired-1"
 
   # Torn down: bin/sq-teardown.sh removes the durable record; the status lingers.
-  printf 'done: PR https://example.test/pr/1 checks green\n' > "$state/retired-1.status"
+  printf 'working: old step\n' > "$state/retired-1.status"
   SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
-    handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
+    handle_wake "signal: $state/retired-1.status" "$state" >/dev/null 2>&1
   [ ! -s "$state/.subsuper-routine" ] || fail "a torn-down task still generated a routine ledger entry"
 
   # Delivered but not yet torn down: the record exists, the status is terminal.
+  printf 'done: PR https://example.test/pr/1 checks green\n' > "$state/retired-1.status"
   fm_write_meta "$state/retired-1.meta" "window=$win" "backend=tmux" "kind=strike"
   SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
     handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
@@ -1392,7 +1407,12 @@ test_routine_ledger_stops_for_a_finished_or_torn_down_task() {
     handle_wake "stale: $win (idle 500s, possible wedge)" "$state" >/dev/null 2>&1
   lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
   [ "$lines" -eq 1 ] || fail "a live task's routine event was not ledgered (${lines} lines)"
-  pass "a finished or torn-down task stops generating routine ledger entries"
+  printf 'working: old step\n' > "$state/gone.status"
+  SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" SQUAD_INJECT_SKIP=signal \
+    handle_wake "signal: $state/gone.status $state/retired-1.status" "$state" >/dev/null 2>&1
+  lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
+  [ "$lines" -eq 2 ] || fail "a retired task masked a live task in a batched signal"
+  pass "retired subjects do not generate routine events or mask live subjects"
 }
 
 test_is_wake_reason_distinguishes_status_stdout() {

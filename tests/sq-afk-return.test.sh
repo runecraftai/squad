@@ -208,6 +208,12 @@ test_check_retries_recorded_terminal_teardown() {
   [ -e "$gate" ] || fail "failed terminal teardown cleared the return gate"
   [ -e "$dir/home/state/.afk-daemon-terminal" ] || fail "failed terminal teardown discarded its durable record"
   [ ! -e "$dir/home/state/.afk" ] || fail "failed terminal teardown did not preserve stop ordering"
+  assert_not_contains "$out" 'resuming a catch-up' "fresh return reported an interrupted drain"
+  touch "$dir/home/state/.afk"
+  rc=0; out=$(run_return "$dir" guard) || rc=$?
+  [ "$rc" -eq 3 ] || fail "guard did not refuse while shutdown was pending"
+  assert_contains "$out" 'return catch-up gate phase: shutdown-failed' "away mode masked the lifecycle diagnosis"
+  assert_not_contains "$out" 'handle each blocker' "lifecycle failure was attributed to blockers"
 
   out=$(run_return "$dir" check) || fail "check did not retry recorded terminal teardown: $out"
   [ ! -e "$dir/home/state/.afk-daemon-terminal" ] || fail "successful check left the terminal teardown record behind"
@@ -307,6 +313,7 @@ test_undeliverable_ledger_item_reaches_the_summary() {
   {
     printf 'away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000: escalation: fake-c4: failed: lint\n'
     printf 'away-mode ledger undeliverable as of 2026-01-01T10:05:00+0000: escalation: fake-c5: done: PR https://example.test/pr/88\n'
+    printf 'away-mode ledger undeliverable as of 2026-01-01T10:06:00+0000: escalation: fake-c4: failed: lint\n'
   } > "$dir/home/state/.subsuper-inject-wedged"
   printf '1784074300\t7\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: escalation: fake-c5: done: PR https://example.test/pr/88\n' \
     > "$dir/home/state/.fake-drain"
@@ -461,6 +468,45 @@ test_catchup_lock_wait_is_bounded() {
   pass "a held catch-up lock reports a bounded timeout with the gate phase instead of hanging the return"
 }
 
+test_real_drain_preserves_wakes_across_return_failures() (
+  dir="$TMP_ROOT/real-drain"
+  install_runner "$dir"
+  cp "$ROOT/bin/sq-stand-to-drain.sh" "$ROOT/bin/sq-line-cap-lib.sh" "$dir/bin/"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/sq-guard.sh"
+  chmod +x "$dir/bin/sq-guard.sh"
+  export SQUAD_STATE_OVERRIDE="$dir/home/state"
+  . "$dir/bin/sq-stand-to-lib.sh"
+  fm_wake_append check afk-ledger-undeliverable 'check: away-mode ledger could not record: retained wake' || fail 'could not seed the queue'
+  printf '1784074300|escalation|retained escalation\n' > "$SQUAD_STATE_OVERRIDE/.subsuper-escalations"
+  fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
+  rc=0
+  out=$(fm_run_timed 15 env SQUAD_AFK_RETURN_LOCK_SECS=1 SQUAD_BASE="$dir/home" "$dir/bin/sq-afk-return.sh" begin 2>&1) || rc=$?
+  fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
+  [ "$rc" -eq 3 ] || fail "held queue lock did not return a bounded refusal: $rc: $out"
+  assert_contains "$out" 'return catch-up gate phase: drain-failed' 'queue lock failure did not name its phase'
+  grep -q 'retained wake' "$SQUAD_WAKE_QUEUE" || fail 'timed-out drain consumed its queue'
+
+  REAL_SORT=$(command -v sort)
+  export REAL_SORT
+  cat > "$dir/bin/sort" <<'SH'
+#!/usr/bin/env bash
+case "$*" in *.subsuper-escalations*) exit 1 ;; esac
+exec "$REAL_SORT" "$@"
+SH
+  chmod +x "$dir/bin/sort"
+  rc=0
+  out=$(PATH="$dir/bin:$PATH" run_return "$dir" check) || rc=$?
+  [ "$rc" -eq 1 ] || fail "failed evidence merge was not surfaced: $rc: $out"
+  [ ! -s "$SQUAD_WAKE_QUEUE" ] || fail 'successful drain did not advance its queue'
+  [ -s "$SQUAD_STATE_OVERRIDE/.subsuper-escalations" ] || fail 'failed merge cleared the ledger'
+  [ -s "$SQUAD_STATE_OVERRIDE/.afk-return-catchup" ] || fail 'failed merge cleared the gate'
+  out=$(run_return "$dir" check) || fail "merge retry did not recover: $out"
+  assert_contains "$out" '[escalation] retained escalation' 'retry lost the ledger escalation'
+  assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: retained wake' 'retry lost the drained queue record'
+  pass 'return bounds the real drain lock wait and retries failed evidence merges without losing wakes'
+)
+
+test_real_drain_preserves_wakes_across_return_failures
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason

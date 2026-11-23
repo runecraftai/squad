@@ -844,17 +844,12 @@ busy_stale_recheck() {  # <window> <state> <task> <marker> <age>
 # An append that fails is undeliverable, so the item goes to the durable stand-to
 # queue instead.
 #
-# The routine buffer is bounded by construction, because it is written once per
-# sentry wake and an absence can last days: the same <class>|<item> never lands
-# twice, and a subject that is finished or torn down never lands at all (see
-# routine_subject_retired). Escalations keep their own dedup, mark_escalated_seen
-# and the .subsuper-seen-status markers, which already bound them.
 ledger_add() {  # <state> <class> <distilled-item>
   local state=$1 cls=$2 item buf
   item=$(printf '%s' "$3" | LC_ALL=C tr '\t\r\n' '   ')
   if [ "$cls" = routine ]; then
-    buf="$state/.subsuper-routine"
-    ledger_has_entry "$buf" "$cls" "$item" && return 0
+    routine_ledger_append "$state" "$item" || ledger_undeliverable "$state" "routine: $item"
+    return
   else
     buf="$state/.subsuper-escalations"
     [ -s "$buf" ] || _now > "${buf}.since"
@@ -864,24 +859,42 @@ ledger_add() {  # <state> <class> <distilled-item>
   fi
 }
 
-# 0 when <file> already holds this exact <class>|<item> entry. The epoch prefix is
-# stripped before comparing, so one event recurring on a later tick is recognised
-# as the entry already recorded rather than as a new one.
-ledger_has_entry() {  # <file> <class> <item>
-  [ -s "$1" ] || return 1
-  LEDGER_ENTRY="$2|$3" awk '
-    { rest = $0; sub(/^[0-9]+\|/, "", rest); if (rest == ENVIRON["LEDGER_ENTRY"]) { found = 1; exit } }
-    END { exit !found }' "$1" 2>/dev/null
+routine_ledger_append() {
+  local buf="$1/.subsuper-routine" item=$2 result pending limit=1000
+  if [ -s "$buf" ]; then
+    result=$(LEDGER_ENTRY="$item" LC_ALL=C awk '
+      function identity(text) {
+        if (text ~ /^stale: [^ ]+ \((paused|idle) [0-9]+s,/) {
+          sub(/ [0-9]+s,/, " [age],", text)
+        }
+        return text
+      }
+      BEGIN { key = identity(ENVIRON["LEDGER_ENTRY"]) }
+      { sub(/^[0-9]+\|routine\|/, ""); if (identity($0) == key) found = 1 }
+      END { print NR, found + 0 }
+    ' "$buf") || return 1
+    if [ "${result% *}" -ge "$limit" ]; then
+      if [ "${result##* }" = 1 ] && [ "${result% *}" -eq "$limit" ]; then
+        return 0
+      fi
+      pending=$(mktemp "$1/.subsuper-routine.pending.XXXXXX") || return 1
+      if tail -n "$((limit - 1))" "$buf" > "$pending" &&
+        printf '%s|routine|%s\n' "$(_now)" "$item" >> "$pending" && mv "$pending" "$buf"; then
+        return 0
+      fi
+      rm -f "$pending"
+      return 1
+    fi
+    [ "${result##* }" = 0 ] || return 0
+  fi
+  printf '%s|routine|%s\n' "$(_now)" "$item" >> "$buf"
 }
 
 escalate_add() {  # <state> <distilled-item>
   ledger_add "$1" escalation "$2"
 }
 
-# The task id a wake reason names, or nothing when it names none. Only routine
-# ledgering consults it, so an unrecognised shape simply returns nothing rather
-# than guessing.
-wake_subject() {  # <reason> <state>
+wake_subjects() {  # <reason> <state>
   local reason=$1 state=$2 win f
   local -a paths=()
   case "$reason" in
@@ -898,8 +911,7 @@ wake_subject() {  # <reason> <state>
         f=${f##*/}
         f=${f%.status}
         f=${f%.turn-ended}
-        printf '%s' "$f"
-        return 0
+        printf '%s\n' "$f"
       done
       ;;
   esac
@@ -912,14 +924,16 @@ wake_subject() {  # <reason> <state>
 # base's own files, so the routine path never pays the current-state fork the
 # classifiers reserve for first-sighting wakes.
 routine_subject_retired() {  # <reason> <state>
-  local reason=$1 state=$2 task last
-  task=$(wake_subject "$reason" "$state")
-  [ -n "$task" ] || return 1
-  [ -f "$state/$task.meta" ] || return 0
-  last=$(last_status_state_line "$state/$task.status")
-  [ -n "$last" ] || return 1
-  case "$(status_line_verb "$last")" in done|failed) return 0 ;; esac
-  return 1
+  local reason=$1 state=$2 task last subjects
+  subjects=$(wake_subjects "$reason" "$state")
+  [ -n "$subjects" ] || return 1
+  while IFS= read -r task; do
+    [ -f "$state/$task.meta" ] || continue
+    last=$(last_status_state_line "$state/$task.status")
+    [ -n "$last" ] || return 1
+    case "$(status_line_verb "$last")" in done|failed) ;; *) return 1 ;; esac
+  done <<< "$subjects"
+  return 0
 }
 
 routine_add() {  # <state> <reason> <distilled-item> [busy-handoff]

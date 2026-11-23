@@ -168,7 +168,11 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
+if [ -n "${SQUAD_WAKE_DRAIN_LOCK_SECS:-}" ]; then
+  fm_lock_acquire_wait_bounded "$SQUAD_WAKE_QUEUE_LOCK" "$SQUAD_WAKE_DRAIN_LOCK_SECS" || exit 3
+else
+  fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
+fi
 DRAIN_LOCK_HELD=true
 
 if [ ! -s "$SQUAD_WAKE_QUEUE" ]; then
@@ -195,7 +199,12 @@ esac
 if [ -n "$RAW_ROWS" ]; then
   # Print-before-delete is the deliberate at-least-once no-loss boundary: a
   # crash in this micro-gap may replay a wake, and annotations stay outside it.
-  printf '%s\n' "$RAW_ROWS" || exit "$?"
+  if [ -n "${SQUAD_WAKE_DRAIN_CHECKPOINT:-}" ]; then
+    printf '%s\n' "$RAW_ROWS" > "${SQUAD_WAKE_DRAIN_CHECKPOINT}.pending" &&
+      mv "${SQUAD_WAKE_DRAIN_CHECKPOINT}.pending" "$SQUAD_WAKE_DRAIN_CHECKPOINT" || exit 1
+  else
+    printf '%s\n' "$RAW_ROWS" || exit "$?"
+  fi
 fi
 rm -f "$DRAIN_TMP" || exit "$?"
 DRAIN_TMP=
