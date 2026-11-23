@@ -251,8 +251,8 @@ print_summary() {  # <evidence-file>
   # still occupies the ledger and is still counted below, but presentation stops
   # at the documented limit so a pathological ledger cannot stall the return.
   # Escalations and daemon notices are never truncated: they are the contract.
-  if [ "${#routine_rows[@]}" -gt "$MAX_ROUTINE_EVENTS" ]; then
-    suppressed=$(( ${#routine_rows[@]} - MAX_ROUTINE_EVENTS ))
+  if [ "$routine" -gt "$MAX_ROUTINE_EVENTS" ]; then
+    suppressed=$(( routine - MAX_ROUTINE_EVENTS ))
     routine_rows=("${routine_rows[@]:0:$MAX_ROUTINE_EVENTS}")
   fi
   [ "$queued" -eq 0 ] || notices="  queued wake records drained: ${queued}"$'\n'"${notices}"
@@ -262,11 +262,11 @@ print_summary() {  # <evidence-file>
     [ -z "$notices" ] || printf 'catch-up open items (still open at return):\n%s' "$notices"
     return 0
   fi
-  for row in "${hard_rows[@]}" "${routine_rows[@]}"; do
+  for row in ${hard_rows[@]+"${hard_rows[@]}"} ${routine_rows[@]+"${routine_rows[@]}"}; do
     [ -n "$row" ] && rows+=("$row")
   done
   local sorted_rows=''
-  if [ "${#rows[@]}" -gt 0 ]; then
+  if [ -n "${rows[0]:-}" ]; then
     sorted_rows=$(printf '%s\n' "${rows[@]}" | sort -s -t "$TAB" -k1,1n)
   fi
   while IFS="$TAB" read -r ts label item; do
@@ -295,13 +295,13 @@ print_summary() {  # <evidence-file>
   if [ "$suppressed" -gt 0 ]; then
     printf '  routine entries past the first %d are counted but not listed; lower or raise the limit with SQUAD_AFK_RETURN_MAX_ROUTINE_EVENTS\n' "$MAX_ROUTINE_EVENTS"
   fi
-  [ "${#events[@]}" -eq 0 ] || printf '  events in order:\n%s\n' "$(printf '%s\n' "${events[@]}")"
+  [ -z "${events[0]:-}" ] || printf '  events in order:\n%s\n' "$(printf '%s\n' "${events[@]}")"
   locators=''
-  if [ "${#urls[@]}" -gt 0 ]; then
+  if [ -n "${urls[0]:-}" ]; then
     locators=$(printf '%s\n' "${urls[@]}" | sed '/^$/d' | sort -u | sed 's/^/    /')
   fi
   status_lines=''
-  if [ "${#statuses[@]}" -gt 0 ]; then
+  if [ -n "${statuses[0]:-}" ]; then
     status_lines=$(printf '%s\n' "${statuses[@]}" | sed '/^$/d' | sort -u | sed 's#^#    state/#')
   fi
   absence=$(find "$SQUAD_BASE/data" -maxdepth 1 -name 'absence-*.md' 2>/dev/null | sort | tail -1 || true)

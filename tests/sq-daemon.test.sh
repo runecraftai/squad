@@ -251,7 +251,7 @@ test_stale_finished_state_self_handles() {
   state="$dir/state"
   win="sess:sq-fin-state"
   printf 'window=%s\nkind=strike\n' "$win" > "$state/fin-state.meta"
-  printf 'done: PR https://example.test/pr/7 checks green\n' > "$state/fin-state.status"
+  printf 'working: checking the PR\n' > "$state/fin-state.status"
   key=$(printf '%s' 'fin-state' | tr ':/.' '___')
   date +%s > "$state/.subsuper-stale-$key"
   export SQUAD_FAKE_CREW_STATE='state: done · source: run-step · checks green, awaiting merge'
@@ -260,6 +260,7 @@ test_stale_finished_state_self_handles() {
   SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" handle_wake "stale: $win" "$state"
   [ ! -e "$state/.subsuper-stale-$key" ] || fail "finished stale marker was retained"
   [ ! -s "$state/.subsuper-escalations" ] || fail "finished stale was escalated"
+  [ ! -s "$state/.subsuper-routine" ] || fail "finished stale was recorded as routine"
   unset SQUAD_FAKE_CREW_STATE
   pass "current finished state clears stale tracking without escalation"
 }
@@ -1345,11 +1346,13 @@ test_routine_ledger_never_records_the_same_entry_twice() {
 
   # A genuinely different event for the same task is still recorded, so the bound
   # is deduplication, not a blanket mute.
-  printf 'working: step two\n' > "$state/dedup-1.status"
-  SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
-    handle_wake "signal: $state/dedup-1.status" "$state" >/dev/null 2>&1
+  printf '%s\n' 'working: step two with literal \n' > "$state/dedup-1.status"
+  for i in 1 2; do
+    SQUAD_STATE_OVERRIDE="$state" LOG="$dir/daemon.log" \
+      handle_wake "signal: $state/dedup-1.status" "$state" >/dev/null 2>&1
+  done
   lines=$(wc -l < "$state/.subsuper-routine" | tr -d ' ')
-  [ "$lines" -eq 2 ] || fail "a distinct routine event was dropped (${lines} lines, expected 2)"
+  [ "$lines" -eq 2 ] || fail "routine event with a literal escape should be recorded once ($lines total lines, expected 2)"
   pass "the away-mode routine ledger records one entry per distinct event and never a duplicate"
 }
 

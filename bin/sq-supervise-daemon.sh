@@ -869,8 +869,8 @@ ledger_add() {  # <state> <class> <distilled-item>
 # as the entry already recorded rather than as a new one.
 ledger_has_entry() {  # <file> <class> <item>
   [ -s "$1" ] || return 1
-  awk -v key="$2|$3" '
-    { rest = $0; sub(/^[0-9]+\|/, "", rest); if (rest == key) { found = 1; exit } }
+  LEDGER_ENTRY="$2|$3" awk '
+    { rest = $0; sub(/^[0-9]+\|/, "", rest); if (rest == ENVIRON["LEDGER_ENTRY"]) { found = 1; exit } }
     END { exit !found }' "$1" 2>/dev/null
 }
 
@@ -1664,9 +1664,10 @@ handle_wake() {  # <reason> <state>
   [ "$kind" = signal ] && sync_pause_markers_from_signal "$state" "$arg"
   # Every self-handled wake is ledgered for the return summary, except a bare
   # heartbeat tick, which is not an event. Escalations are ledgered below.
-  if [ "$action" != escalate ] && [ "${reason%%:*}" != heartbeat ]; then
-    routine_add "$state" "$reason" "$distilled"
-  fi
+  case "$action" in
+    escalate|finished) ;;
+    *) [ "${reason%%:*}" = heartbeat ] || routine_add "$state" "$reason" "$distilled" ;;
+  esac
   case "$action" in
     escalate)
       log "escalate: $reason -> $distilled"

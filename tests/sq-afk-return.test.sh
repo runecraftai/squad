@@ -237,6 +237,25 @@ test_away_ledger_is_presented_once_and_never_repeated() {
   pass "away-mode ledger is presented once as one summary and a re-run never repeats it"
 }
 
+test_single_class_ledger_clears_return_gate() {
+  local dir out class counts ledger
+  for class in routine escalation; do
+    dir="$TMP_ROOT/ledger-$class-only"
+    install_runner "$dir"
+    date +%s > "$dir/home/state/.afk"
+    case "$class" in
+      routine) ledger=routine; counts='escalation=0 routine=1' ;;
+      escalation) ledger=escalations; counts='escalation=1 routine=0' ;;
+    esac
+    printf '1784074271|%s|task update\n' "$class" > "$dir/home/state/.subsuper-$ledger"
+    out=$(run_return "$dir" begin) || fail "$class-only return failed: $out"
+    assert_contains "$out" "counts: $counts" "$class-only return reported incorrect counts"
+    assert_contains "$out" "[$class] task update" "$class-only return omitted the event"
+    [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "$class-only return left the gate behind"
+  done
+  pass "routine-only and escalation-only ledgers both clear the return gate"
+}
+
 test_away_ledger_while_blocked_presents_only_a_count() {
   local dir out
   dir="$TMP_ROOT/ledger-blocked"
@@ -425,6 +444,7 @@ test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
 test_away_ledger_is_presented_once_and_never_repeated
+test_single_class_ledger_clears_return_gate
 test_away_ledger_while_blocked_presents_only_a_count
 test_commander_decision_does_not_masquerade_as_Squad_blocker
 test_away_reentry_refuses_pending_return_gate
