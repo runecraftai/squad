@@ -5,10 +5,21 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestMain lets the test binary act as the unit's helper, exactly as
+// systemd-run would start it.
+func TestMain(m *testing.M) {
+	if os.Getenv("SQ_SUPERVISOR_EXEC_ENV_CHILD") == "1" {
+		os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	}
+	os.Exit(m.Run())
+}
 
 func runFake(t *testing.T, m manager, operationID, stateDir string) (outcome, int, string) {
 	t.Helper()
@@ -40,11 +51,12 @@ func runFake(t *testing.T, m manager, operationID, stateDir string) (outcome, in
 }
 
 // A contained operation is a drop-in for the caller's own command, so the
-// manager must receive the caller's environment and working directory rather
-// than a clean execution environment.
+// manager must receive the caller's working directory and a path to the
+// caller's recorded environment, never the values themselves.
 func TestOperationSpecRelaysTheCallersEnvironmentAndDirectory(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("SQ_SUPERVISOR_RELAY_PROBE", "relayed value")
+	const sentinel = "relayed value %p\nwith \"quotes\" and $HOME"
+	t.Setenv("SQ_SUPERVISOR_RELAY_PROBE", sentinel)
 	m := &fakeManager{
 		version: "262.1-1-arch",
 		state:   unitState{LoadState: "loaded", ActiveState: "inactive", Result: "success"},
@@ -59,20 +71,58 @@ func TestOperationSpecRelaysTheCallersEnvironmentAndDirectory(t *testing.T) {
 	if m.spec.WorkingDirectory != cwd {
 		t.Errorf("working directory = %q, want the caller's %q", m.spec.WorkingDirectory, cwd)
 	}
-	found := false
-	for _, assignment := range m.spec.Environment {
-		if assignment == "SQ_SUPERVISOR_RELAY_PROBE=relayed value" {
-			found = true
+	wantEnvFile := filepath.Join(dir, "relay.env")
+	if m.spec.EnvironmentFile != wantEnvFile {
+		t.Fatalf("environment file = %q, want %q", m.spec.EnvironmentFile, wantEnvFile)
+	}
+	if m.spec.Helper == "" {
+		t.Error("the unit must start the helper that exec()s the operation")
+	}
+	if m.envFileMode != 0o600 {
+		t.Errorf("the environment file mode = %o, want 0600", m.envFileMode)
+	}
+	if !strings.Contains(string(m.envFileBody), "SQ_SUPERVISOR_RELAY_PROBE="+sentinel+"\x00") {
+		t.Errorf("the environment file does not relay the caller's value byte-exactly: %q", m.envFileBody)
+	}
+	// No environment value may be visible on the manager's command line.
+	argv := strings.Join(m.spec.Command, "\x00")
+	for _, fragment := range []string{"relayed value", "%p", "$HOME", "quotes"} {
+		if strings.Contains(argv, fragment) {
+			t.Errorf("the operation argv carries an environment value (%q): %q", fragment, m.spec.Command)
 		}
 	}
-	if !found {
-		t.Errorf("the caller's environment was not relayed; got %d assignments", len(m.spec.Environment))
+	if strings.Join(m.spec.Command, " ") != "/bin/true" {
+		t.Errorf("command = %q, want the caller's argv", m.spec.Command)
 	}
 	if !m.spec.NoExpandEnv {
 		t.Error("a manager that supports --expand-environment=no must be told to stop expanding the caller's argv")
 	}
-	if strings.Join(m.spec.Command, " ") != "/bin/true" {
-		t.Errorf("command = %q, want the caller's argv", m.spec.Command)
+}
+
+// The recorded environment must reach the operation byte-exactly, including the
+// `%` specifiers and newlines a value can legitimately contain, and the file
+// must not outlive the launch.
+func TestEnvironmentFileRelaysValuesByteExactToTheChild(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "child.env")
+	tricky := "50% %p %40\nsecond line ' \" $HOME ${not-a-var}"
+	if err := writeEnvironmentFile(envFile, []string{
+		"SQ_RELAY_TRICKY=" + tricky,
+		"PATH=" + os.Getenv("PATH"),
+	}); err != nil {
+		t.Fatalf("writeEnvironmentFile: %v", err)
+	}
+	cmd := exec.Command(os.Args[0], envRelayMode, envFile, "sh", "-c", `printf '%s' "$SQ_RELAY_TRICKY"`)
+	cmd.Env = []string{"SQ_SUPERVISOR_EXEC_ENV_CHILD=1"}
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("the relayed child failed: %v", err)
+	}
+	if string(out) != tricky {
+		t.Fatalf("child saw %q, want %q", out, tricky)
+	}
+	if _, err := os.Stat(envFile); !os.IsNotExist(err) {
+		t.Fatalf("the environment file must be unlinked once the unit starts, stat err = %v", err)
 	}
 }
 
@@ -150,33 +200,30 @@ func TestStartFailureCauseReachesTheOutcome(t *testing.T) {
 	}
 }
 
-// The durable record is what a later recovery reads, so it must agree with the
-// object the caller was handed.
+// The durable record is what a later recovery reads, so its own fields - not a
+// second read of itself - must carry the reported outcome.
 func TestDurableOutcomeRecordMatchesReportedOutcome(t *testing.T) {
 	dir := t.TempDir()
 	m := &fakeManager{
-		version: "262.1-1-arch",
-		state:   unitState{LoadState: "loaded", ActiveState: "inactive", Result: "success"},
+		version:    "262.1-1-arch",
+		startDelay: 5 * time.Millisecond,
+		state:      unitState{LoadState: "loaded", ActiveState: "inactive", Result: "success"},
 	}
 	oc, code, _ := runFake(t, m, "durable", dir)
 	if code != exitCompleted {
 		t.Fatalf("exit = %d, want %d", code, exitCompleted)
 	}
-	if oc.OutcomeRecord == "" {
-		t.Fatal("the reported outcome must name its durable record")
+	wantPath := filepath.Join(dir, "durable.outcome.json")
+	if oc.OutcomeRecord != wantPath {
+		t.Errorf("outcome_record = %q, want the durable %q", oc.OutcomeRecord, wantPath)
 	}
-	body, err := os.ReadFile(oc.OutcomeRecord)
-	if err != nil {
-		t.Fatalf("read the durable outcome: %v", err)
+	if oc.DurationMS <= 0 {
+		t.Errorf("duration_ms = %d, want the measured duration", oc.DurationMS)
 	}
-	var durable outcome
-	if err := json.Unmarshal(body, &durable); err != nil {
-		t.Fatalf("the durable outcome is not JSON: %v", err)
+	if oc.State != stateCompleted {
+		t.Errorf("state = %q, want %q", oc.State, stateCompleted)
 	}
-	if durable.OutcomeRecord != oc.OutcomeRecord {
-		t.Errorf("durable outcome_record = %q, want %q", durable.OutcomeRecord, oc.OutcomeRecord)
-	}
-	if durable.DurationMS != oc.DurationMS {
-		t.Errorf("durable duration_ms = %d, want the reported %d", durable.DurationMS, oc.DurationMS)
+	if oc.ExitCode == nil || *oc.ExitCode != 0 {
+		t.Errorf("exit_code = %v, want the command's own 0", oc.ExitCode)
 	}
 }

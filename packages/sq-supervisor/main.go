@@ -19,9 +19,18 @@
 // environment, working directory and stdin/stdout/stderr, and writes one JSON
 // outcome record to <state-dir>/<operation-id>.outcome.json. Its own stdout and
 // stderr carry the operation's bytes and nothing else. Its exit status is from
-// the outcome enum below. It never reports a completed operation without the
-// unit's own durable completion record, and never reports a timed-out operation
-// as the command's own exit status.
+// the outcome enum below. A completed operation is reported from the unit's own
+// completion record when the manager still has it, and from the manager's own
+// start status when the unit succeeded and was already collected; a timed-out
+// operation is never reported as the command's own exit status.
+//
+// The caller's environment is relayed through <state-dir>/<operation-id>.env,
+// created 0600 and removed once the unit has started; it never enters this
+// process's argv or a unit property, so no value is visible to a local reader of
+// the manager's command line. The intent and outcome records live only as long
+// as --state-dir does: bin/sq-op-contain.sh creates a temporary directory and
+// removes it on exit unless the caller passes --state-dir, so a caller that must
+// reconcile the two records later has to supply a durable directory.
 //
 // Exit status:
 //
@@ -64,6 +73,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "run":
 		return runOperation(args[1:], stdout, stderr)
+	case envRelayMode:
+		return runExecEnv(args[1:], stderr)
 	case "capabilities":
 		return reportCapabilities(stdout, stderr)
 	case "--version", "version":

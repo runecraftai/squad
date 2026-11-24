@@ -54,7 +54,10 @@ group. Both columns describe this branch, not the intended end state.
 a deadline and a kernel-owned containment domain without a call-site change: the
 operation runs in the caller's working directory, with the caller's environment,
 and with its stdout and stderr relayed, so a per-command assignment, a `$(...)`
-capture and a stderr read all keep working. `fm_run_timed` still answers with the
+capture and a stderr read all keep working. The environment is relayed through a
+0600 file that the unit's helper reads and unlinks before it execs the command,
+so a value containing `%`, a newline or a quote round-trips byte-exactly and no
+value appears on the manager's command line. `fm_run_timed` still answers with the
 command's own status or 124; the richer outcomes are `fm_run_contained`'s own
 contract. A user manager older than systemd 254 cannot disable argument
 expansion, so on those hosts `$` text inside a command's own arguments is

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -26,6 +28,11 @@ const (
 )
 
 const outcomeSchema = "sq-supervisor.operation.v1"
+
+// envRelayMode is the helper entry point a unit starts with. It replaces its own
+// environment from the operation's recorded file and exec()s the operation, so
+// the unit's main pid stays the operation's and its result keeps describing it.
+const envRelayMode = "_exec-env"
 
 // managerProbeBound bounds the capability probe so a wedged bus cannot hang a
 // caller that asked for a bounded operation.
@@ -104,6 +111,11 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "sq-supervisor: the caller's working directory could not be read: %v\n", err)
 		return exitUsage
 	}
+	helper, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(stderr, "sq-supervisor: the running binary's path could not be read: %v\n", err)
+		return exitUsage
+	}
 
 	started := time.Now().UTC()
 	manager := newManager(stdout, stderr)
@@ -131,12 +143,20 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 		return exitUnknownResult
 	}
 
+	environmentFile := filepath.Join(*stateDir, *operationID+".env")
+	if err := writeEnvironmentFile(environmentFile, relayableEnvironment(os.Environ())); err != nil {
+		fmt.Fprintf(stderr, "sq-supervisor: cannot record the operation environment: %v\n", err)
+		return exitUnknownResult
+	}
+	defer func() { _ = os.Remove(environmentFile) }()
+
 	spec := unitSpec{
 		Unit:             unit,
 		Deadline:         *deadline,
 		StopGrace:        *stopGrace,
 		WorkingDirectory: workingDirectory,
-		Environment:      relayableEnvironment(os.Environ()),
+		Helper:           helper,
+		EnvironmentFile:  environmentFile,
 		NoExpandEnv:      supportsExpandEnvironment(managerVersion),
 		Command:          command,
 	}
@@ -381,10 +401,10 @@ func validateOperation(operationID, stateDir string, deadline, stopGrace time.Du
 	return nil
 }
 
-// relayableEnvironment keeps the caller's assignments that a manager accepts.
-// An exported bash function lands in the environment under a name containing
-// `%%`, which systemd rejects outright; dropping such entries keeps the launch
-// working while every ordinary variable is relayed verbatim.
+// relayableEnvironment keeps the caller's assignments this runner relays. An
+// exported bash function lands in the environment under a name containing
+// `%%`, which is not a portable variable name; dropping such entries keeps the
+// launch working while every ordinary variable is relayed verbatim.
 func relayableEnvironment(environ []string) []string {
 	relayed := make([]string, 0, len(environ))
 	for _, assignment := range environ {
@@ -422,6 +442,114 @@ func validOperationID(s string) bool {
 		}
 	}
 	return true
+}
+
+// writeEnvironmentFile records the caller's environment for the unit's helper.
+// Records are NUL-separated, so a value may hold any byte except NUL - newlines,
+// quotes, `$` and `%` included - and reaches the operation byte-exactly. The
+// file is created unreadable to anyone else and removed once the unit starts.
+func writeEnvironmentFile(path string, environ []string) (err error) {
+	_ = os.Remove(path)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = os.Remove(path)
+		}
+	}()
+	if err = file.Chmod(0o600); err != nil {
+		return err
+	}
+	var body []byte
+	for _, assignment := range environ {
+		body = append(body, assignment...)
+		body = append(body, 0)
+	}
+	if _, err = file.Write(body); err != nil {
+		return err
+	}
+	return file.Sync()
+}
+
+// readEnvironmentFile reads the assignments writeEnvironmentFile recorded.
+func readEnvironmentFile(path string) ([]string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	environ := make([]string, 0, bytes.Count(body, []byte{0}))
+	for _, record := range bytes.Split(body, []byte{0}) {
+		if len(record) == 0 {
+			continue
+		}
+		environ = append(environ, string(record))
+	}
+	return environ, nil
+}
+
+// runExecEnv is the unit's entry point. It replaces its own environment with the
+// operation's recorded one and exec()s the operation, so the process image is
+// the operation while the unit's main pid stays the same. The file is unlinked
+// before the exec so the recorded values do not outlive the launch.
+func runExecEnv(args []string, stderr io.Writer) int {
+	if len(args) < 2 {
+		fmt.Fprintf(stderr, "sq-supervisor: %s requires an environment file and a command\n", envRelayMode)
+		return exitUsage
+	}
+	environmentFile, command := args[0], args[1:]
+	environ, err := readEnvironmentFile(environmentFile)
+	if err != nil {
+		fmt.Fprintf(stderr, "sq-supervisor: cannot read the operation environment: %v\n", err)
+		return 126
+	}
+	if err := os.Remove(environmentFile); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(stderr, "sq-supervisor: cannot remove the operation environment file: %v\n", err)
+	}
+	path, err := lookPath(command[0], environmentValue(environ, "PATH"))
+	if err != nil {
+		fmt.Fprintf(stderr, "sq-supervisor: %v\n", err)
+		return 127
+	}
+	if err := syscall.Exec(path, command, environ); err != nil {
+		fmt.Fprintf(stderr, "sq-supervisor: cannot execute %s: %v\n", command[0], err)
+		return 126
+	}
+	return exitCompleted
+}
+
+// lookPath resolves the operation's program against the relayed PATH, not the
+// helper's own, so a call site that set PATH for one command still resolves it.
+func lookPath(file, pathEnv string) (string, error) {
+	if strings.ContainsRune(file, '/') {
+		return file, nil
+	}
+	for _, dir := range strings.Split(pathEnv, ":") {
+		if dir == "" {
+			dir = "."
+		}
+		candidate := filepath.Join(dir, file)
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		return candidate, nil
+	}
+	return "", fmt.Errorf("%s: executable file not found in the relayed PATH", file)
+}
+
+func environmentValue(environ []string, name string) string {
+	prefix := name + "="
+	for _, assignment := range environ {
+		if strings.HasPrefix(assignment, prefix) {
+			return assignment[len(prefix):]
+		}
+	}
+	return ""
 }
 
 // unitName derives a unique, valid systemd unit name. The random suffix keeps a

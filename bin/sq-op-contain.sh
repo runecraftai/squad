@@ -14,8 +14,10 @@
 #
 # The operation is a drop-in for the command itself: it runs in the caller's
 # working directory, with the caller's environment, with the caller's stdin, and
-# its stdout and stderr are the caller's own streams. Nothing here copies or
-# replays the operation's output.
+# its stdout and stderr are the caller's own streams. The environment is relayed
+# through a 0600 file the unit reads before it execs the command, so no value is
+# visible in a process command line. Nothing here copies or replays the
+# operation's output.
 #
 # Exit status:
 #   A completed operation's own status is passed through verbatim, including a
@@ -40,6 +42,9 @@
 #     `$VAR` text inside the command's own arguments is expanded by the manager
 #     before the command sees it on those hosts. Newer managers get
 #     --expand-environment=no.
+#   - Without --state-dir the intent and outcome records live in a temporary
+#     directory removed on exit, so a caller that must reconcile them later has
+#     to pass a durable --state-dir.
 #
 # SQUAD_OP_REPORT_STATE=<file> is an internal seam for bin/sq-timeout-lib.sh:
 # when set, the outcome state (completed, timeout, unknown-result,
@@ -63,7 +68,7 @@ while [ "$#" -gt 0 ]; do
     --state-dir) STATE_DIR=${2:?--state-dir requires a value}; shift 2 ;;
     --stop-grace) STOP_GRACE=${2:?--stop-grace requires a value}; shift 2 ;;
     -h|--help)
-      sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,56p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     --) shift; break ;;

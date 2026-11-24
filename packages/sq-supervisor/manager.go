@@ -47,9 +47,13 @@ type unitSpec struct {
 	Deadline         time.Duration
 	StopGrace        time.Duration
 	WorkingDirectory string
-	Environment      []string
-	NoExpandEnv      bool
-	Command          []string
+	// Helper and EnvironmentFile name the binary and the recorded environment
+	// the unit starts with. The caller's environment reaches the operation
+	// through that file only, so no value ever enters this argv.
+	Helper          string
+	EnvironmentFile string
+	NoExpandEnv     bool
+	Command         []string
 }
 
 // unitState is the manager's own record of how the unit ended.
@@ -101,11 +105,13 @@ func boundedRunner(ctx context.Context, name string, args []string, env []string
 }
 
 // streamRunner runs the operation's own manager call with the caller's streams
-// attached, so the operation's stdout and stderr are relayed as they are
+// attached, so the operation's stdin, stdout and stderr are relayed as they are
 // produced. The manager speaks through those same streams under --pipe, so the
 // relayed bytes cannot be attributed to the manager and are never kept here.
 func streamRunner(ctx context.Context, name string, args []string, stdout, stderr io.Writer) (commandResult, error) {
-	return finishRun(ctx, name, commandFor(ctx, name, args, nil, stdout, stderr))
+	cmd := commandFor(ctx, name, args, nil, stdout, stderr)
+	cmd.Stdin = os.Stdin
+	return finishRun(ctx, name, cmd)
 }
 
 // systemdManager is the real manager: systemd --user transient services.
@@ -174,10 +180,14 @@ func startArgs(spec unitSpec) []string {
 	if spec.NoExpandEnv {
 		args = append(args, "--expand-environment=no")
 	}
-	for _, assignment := range spec.Environment {
-		args = append(args, "--setenv="+assignment)
-	}
 	args = append(args, "--")
+	// The unit's main process is the helper, which replaces its environment
+	// from the recorded file and exec()s the operation. The pid therefore stays
+	// the operation's, so Result and ExecMainStatus describe it, and the
+	// environment values never appear in this argv or in a unit property.
+	if spec.EnvironmentFile != "" {
+		args = append(args, spec.Helper, envRelayMode, spec.EnvironmentFile)
+	}
 	return append(args, spec.Command...)
 }
 

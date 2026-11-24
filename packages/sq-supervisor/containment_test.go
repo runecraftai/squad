@@ -119,31 +119,41 @@ sleep 300
 	t.Logf("contained by %s on systemd %s in %s; descendant pid %d is gone", oc.Cgroup, oc.Manager, elapsed, descendant)
 }
 
-// TestContainmentCoversSecondGroupInSameSession is the round-5 finding: bash job
-// control starts a child in a new process group inside the same session.
+// TestContainmentCoversSecondGroupInSameSession is the incident case where bash
+// job control starts a child in a new process group inside the same session.
+// The backend records both processes' group and session, so this case proves a
+// second group was really created instead of assuming it.
 func TestContainmentCoversSecondGroupInSameSession(t *testing.T) {
 	requireManager(t)
 	dir := t.TempDir()
-	pidFile := filepath.Join(dir, "descendant.pid")
+	descendantFile := filepath.Join(dir, "descendant.txt")
+	backendFile := filepath.Join(dir, "backend.txt")
 	body := fmt.Sprintf(`#!/bin/bash
 set -m
-bash -c 'trap "" TERM; exec sleep 300' &
-echo "$!" > %q
+bash -c 'trap "" TERM; printf "%%s %%s %%s\n" "$$" "$(ps -o pgid= -p $$)" "$(ps -o sid= -p $$)" > %q; exec sleep 300' &
 set +m
+printf "%%s %%s %%s\n" "$$" "$(ps -o pgid= -p $$)" "$(ps -o sid= -p $$)" > %q
 trap "" TERM
 sleep 300
-`, pidFile)
+`, descendantFile, backendFile)
 	script := filepath.Join(dir, "backend.sh")
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatalf("write backend: %v", err)
 	}
 	oc, code := runContained(t, dir, 2*time.Second, 2*time.Second, script)
-	descendant, _ := strconv.Atoi(strings.TrimSpace(readFileOrEmpty(pidFile)))
-	if descendant == 0 {
-		t.Fatalf("the backend never recorded its descendant pid; outcome detail=%q", oc.Detail)
-	}
+	descendant, descendantGroup, descendantSession := readProcessTriple(t, descendantFile)
+	backend, backendGroup, backendSession := readProcessTriple(t, backendFile)
 	if code != exitTimeout || !oc.Contained || len(oc.Survivors) != 0 {
 		t.Fatalf("state=%q exit=%d contained=%v survivors=%v", oc.State, code, oc.Contained, oc.Survivors)
+	}
+	if descendantGroup != descendant {
+		t.Fatalf("the descendant (pid %d) leads its own group, got %d; this case proves nothing otherwise", descendant, descendantGroup)
+	}
+	if descendantGroup == backendGroup {
+		t.Fatalf("the descendant (pid %d, group %d) shares the backend's group (pid %d, group %d); job control produced no second group", descendant, descendantGroup, backend, backendGroup)
+	}
+	if descendantSession != backendSession {
+		t.Fatalf("the descendant (session %d) must stay in the backend's session %d", descendantSession, backendSession)
 	}
 	if alive(descendant) {
 		_ = syscall.Kill(descendant, syscall.SIGKILL)
@@ -180,14 +190,16 @@ func TestCompletedOperationPreservesExitStatus(t *testing.T) {
 
 // TestContainedOperationKeepsTheCallersDirectoryAndEnvironment is the drop-in
 // case: a call site that assigns a variable for one command, or that relies on
-// its own working directory, must see the same values inside the unit.
+// its own working directory, must see the same values inside the unit, including
+// a value the manager would otherwise re-parse.
 func TestContainedOperationKeepsTheCallersDirectoryAndEnvironment(t *testing.T) {
 	requireManager(t)
 	dir := t.TempDir()
 	report := filepath.Join(dir, "report.txt")
-	t.Setenv("SQ_SUPERVISOR_PROBE", "relayed-value")
+	tricky := "50% %p %40 and a newline\nwith ' \" $HOME"
+	t.Setenv("SQ_SUPERVISOR_PROBE", tricky)
 	script := filepath.Join(dir, "probe.sh")
-	body := "#!/bin/bash\nprintf '%s\\n%s\\n' \"$SQ_SUPERVISOR_PROBE\" \"$PWD\" >> " + report + "\n"
+	body := "#!/bin/bash\nprintf '%s\\0%s\\0' \"$SQ_SUPERVISOR_PROBE\" \"$PWD\" > " + report + "\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
@@ -195,9 +207,9 @@ func TestContainedOperationKeepsTheCallersDirectoryAndEnvironment(t *testing.T) 
 	if code != exitCompleted {
 		t.Fatalf("exit = %d, want %d (detail=%q)", code, exitCompleted, oc.Detail)
 	}
-	got := strings.Split(strings.TrimSpace(readFileOrEmpty(report)), "\n")
-	if len(got) != 2 || got[0] != "relayed-value" {
-		t.Fatalf("the unit did not inherit the caller's environment: %q", got)
+	got := strings.Split(readFileOrEmpty(report), "\x00")
+	if len(got) < 2 || got[0] != tricky {
+		t.Fatalf("the unit did not inherit the caller's environment byte-exactly: %q", got)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -206,6 +218,24 @@ func TestContainedOperationKeepsTheCallersDirectoryAndEnvironment(t *testing.T) 
 	if got[1] != cwd {
 		t.Errorf("the unit ran in %q, want the caller's %q", got[1], cwd)
 	}
+}
+
+func readProcessTriple(t *testing.T, path string) (pid, pgid, sid int) {
+	t.Helper()
+	body := readFileOrEmpty(path)
+	fields := strings.Fields(body)
+	if len(fields) != 3 {
+		t.Fatalf("%s: want \"pid pgid sid\", got %q", path, body)
+	}
+	values := make([]int, 3)
+	for i, field := range fields {
+		value, err := strconv.Atoi(field)
+		if err != nil {
+			t.Fatalf("%s: %q is not a process id: %v", path, field, err)
+		}
+		values[i] = value
+	}
+	return values[0], values[1], values[2]
 }
 
 // TestMissingManagerRefusesBeforeLaunch is D1=O1: strict mode refuses rather than

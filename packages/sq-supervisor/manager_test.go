@@ -19,6 +19,9 @@ type fakeManager struct {
 	startRes commandResult
 	startErr error
 
+	// startDelay lets a test measure a non-zero duration.
+	startDelay time.Duration
+
 	state    unitState
 	stateErr error
 
@@ -26,6 +29,11 @@ type fakeManager struct {
 	cgroupErr error
 
 	spec unitSpec
+
+	// envFileMode and envFileBody are what Start saw on disk while the unit was
+	// launching, before the helper or the runner removed the file.
+	envFileMode os.FileMode
+	envFileBody []byte
 
 	cgroupCalls int
 
@@ -38,6 +46,15 @@ func (f *fakeManager) Version(context.Context) (string, error) {
 
 func (f *fakeManager) Start(_ context.Context, spec unitSpec) (commandResult, error) {
 	f.spec = spec
+	if f.startDelay > 0 {
+		time.Sleep(f.startDelay)
+	}
+	if spec.EnvironmentFile != "" {
+		if info, err := os.Stat(spec.EnvironmentFile); err == nil {
+			f.envFileMode = info.Mode().Perm()
+		}
+		f.envFileBody, _ = os.ReadFile(spec.EnvironmentFile)
+	}
 	return f.startRes, f.startErr
 }
 
@@ -61,7 +78,8 @@ func TestStartPassesTheContainmentContract(t *testing.T) {
 		Deadline:         30 * time.Second,
 		StopGrace:        5 * time.Second,
 		WorkingDirectory: "/work/here",
-		Environment:      []string{"PATH=/usr/bin", "CLAUDE_CONFIG_DIR=/cfg"},
+		Helper:           "/usr/libexec/sq-supervisor",
+		EnvironmentFile:  "/state/op.env",
 		NoExpandEnv:      true,
 		Command:          []string{"/bin/echo", "$HOME ${content%$'\\036'}"},
 	}
@@ -80,12 +98,14 @@ func TestStartPassesTheContainmentContract(t *testing.T) {
 		"--property=CollectMode=inactive",
 		"--property=WorkingDirectory=/work/here",
 		"--expand-environment=no",
-		"--setenv=PATH=/usr/bin",
-		"--setenv=CLAUDE_CONFIG_DIR=/cfg",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("systemd-run argv is missing %q; got %q", want, joined)
 		}
+	}
+	// The caller's environment reaches the unit only through the recorded file.
+	if strings.Contains(joined, "--setenv") {
+		t.Errorf("environment values must not be handed to the manager as argv: %q", joined)
 	}
 	// A collected unit loses Result and ExecMainStatus, which are the only
 	// durable proof of how the operation ended.
@@ -106,9 +126,9 @@ func TestStartPassesTheContainmentContract(t *testing.T) {
 	if commandStart < 0 {
 		t.Fatalf("the command must be separated from manager flags by --, got %q", args)
 	}
-	wantCommand := strings.Join(spec.Command, "\x00")
+	wantCommand := strings.Join(append([]string{spec.Helper, envRelayMode, spec.EnvironmentFile}, spec.Command...), "\x00")
 	if got := strings.Join(args[commandStart+1:], "\x00"); got != wantCommand {
-		t.Errorf("command after -- = %q, want the caller's argv verbatim without manager expansion", args[commandStart+1:])
+		t.Errorf("command after -- = %q, want the helper, the environment file and the caller's argv verbatim", args[commandStart+1:])
 	}
 }
 
@@ -174,7 +194,8 @@ func TestStartLaunchesTheDropInUnitThroughTheManager(t *testing.T) {
 		Deadline:         time.Second,
 		StopGrace:        time.Second,
 		WorkingDirectory: "/tmp",
-		Environment:      []string{"FOO=bar"},
+		Helper:           "/usr/libexec/sq-supervisor",
+		EnvironmentFile:  "/tmp/op.env",
 		NoExpandEnv:      true,
 		Command:          []string{"/bin/echo", "hi"},
 	}
@@ -182,10 +203,18 @@ func TestStartLaunchesTheDropInUnitThroughTheManager(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"--pipe", "--unit=sq-op-demo.service", "--setenv=FOO=bar", "--property=WorkingDirectory=/tmp", "/bin/echo hi"} {
+	for _, want := range []string{
+		"--pipe",
+		"--unit=sq-op-demo.service",
+		"--property=WorkingDirectory=/tmp",
+		"/usr/libexec/sq-supervisor _exec-env /tmp/op.env /bin/echo hi",
+	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the manager was not handed %q; got %q", want, got)
 		}
+	}
+	if strings.Contains(got, "--setenv") {
+		t.Errorf("the manager was handed environment text: %q", got)
 	}
 }
 
