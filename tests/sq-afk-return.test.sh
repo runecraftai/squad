@@ -17,8 +17,7 @@ install_runner() {  # <case-dir>
   local dir=$1
   mkdir -p "$dir/bin" "$dir/home/state" "$dir/home/data" "$dir/home/config"
   cp "$ROOT/bin/sq-afk-return.sh" "$dir/bin/"
-  cp "$ROOT/bin/sq-stand-to-lib.sh" "$dir/bin/"
-  cp "$ROOT/bin/sq-classify-lib.sh" "$dir/bin/"
+  cp "$ROOT/bin/"sq-{stand-to-drain,stand-to-lib,classify-lib,line-cap-lib}.sh "$dir/bin/"
   cat > "$dir/bin/sq-afk-launch.sh" <<'SH'
 #!/usr/bin/env bash
 [ "${1:-}" = stop ] || exit 2
@@ -30,18 +29,24 @@ if [ -e "$SQUAD_BASE/state/.fail-terminal-stop-once" ]; then
 fi
 rm -f "$SQUAD_BASE/state/.afk-daemon-terminal"
 SH
-  cat > "$dir/bin/sq-stand-to-drain.sh" <<'SH'
-#!/usr/bin/env bash
-file="$SQUAD_BASE/state/.fake-drain"
-[ -f "$file" ] && cat "$file"
-: > "$file"
-SH
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/sq-guard.sh"
   chmod +x "$dir/bin/"*.sh
 }
 
 run_return() {  # <case-dir> <mode>
-  local dir=$1 mode=$2
-  SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" "$mode" 2>&1
+  local dir=$1
+  shift
+  SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" "$dir/bin/sq-afk-return.sh" "$@" 2>&1
+}
+
+stored_identity() {
+  awk -F '\t' -v key="${2:-id}" '$1 == key { print $2; exit }' "$1"
+}
+
+ack_return() {
+  local dir=$1 id
+  id=$(stored_identity "$dir/home/state/.afk-receipt") || return 1
+  run_return "$dir" ack "$id"
 }
 
 seed_live_blocker() {  # <case-dir> <backend> <key>
@@ -66,10 +71,7 @@ test_return_gate_orders_catchup_before_bearings() {
   date +%s > "$dir/home/state/.afk"
   printf 'repair-task.status: blocked synthetic dependency\n' > "$dir/home/state/.subsuper-escalations"
   printf 'fm away-mode inject WEDGED: 4555s undelivered\n' > "$dir/home/state/.subsuper-inject-wedged"
-  {
-    printf '1784074271\t2\tsignal\trepair-task.status\tsignal: synthetic status\n'
-    printf 'wake annotation: latest wake-EVENT observed at drain, not current state: repair-task.status: blocked synthetic dependency\n'
-  } > "$dir/home/state/.fake-drain"
+  printf '1784074271\t2\tsignal\trepair-task.status\tsignal: synthetic status\n' > "$dir/home/state/.stand-to-queue"
 
   set +e
   out=$(run_return "$dir" begin)
@@ -80,7 +82,7 @@ test_return_gate_orders_catchup_before_bearings() {
   [ -s "$gate" ] || fail "return begin did not persist its fail-closed catch-up gate"
   assert_contains "$out" 'Squad-actionable blocker: repair-task [key=synthetic-dependency]' "return output did not assign blocker remediation to Squad"
   grep -F $'evidence\twake\t1784074271' "$gate" >/dev/null || fail "drained wake evidence was not retained in the durable gate"
-  grep -F $'evidence\twake\twake annotation: latest wake-EVENT observed at drain, not current state: repair-task.status: blocked synthetic dependency' "$gate" >/dev/null \
+  grep -F $'evidence\twake\twake annotation: latest wake-EVENT observed at drain, not current state' "$gate" >/dev/null \
     || fail "the separate drain annotation was not retained as away-return evidence"
   grep -F $'evidence\twedge\tfm away-mode inject WEDGED: 4555s undelivered' "$gate" >/dev/null || fail "wedge evidence was not retained in the durable gate"
   grep -F $'evidence\tescalation\trepair-task.status: blocked synthetic dependency' "$gate" >/dev/null || fail "buffered escalation evidence was not retained in the durable gate"
@@ -110,7 +112,9 @@ test_return_gate_orders_catchup_before_bearings() {
 
   printf 'resolved [key=synthetic-dependency]: refreshed the synthetic token and resumed the task\n' >> "$dir/home/state/repair-task.status"
   out=$(run_return "$dir" check) || fail "resolved blocker did not clear return catch-up: $out"
-  assert_contains "$out" 'catch-up clear' "successful check did not announce that ordinary work may proceed"
+  assert_contains "$out" 'catch-up summary' "successful check did not present the catch-up summary"
+  out=$(ack_return "$dir") || fail "receipt acknowledgement failed: $out"
+  assert_contains "$out" 'catch-up clear' "ack did not announce that ordinary work may proceed"
   [ ! -e "$gate" ] || fail "successful check left the return gate behind"
   [ ! -e "$dir/home/state/.subsuper-escalations" ] || fail "successful check left delivered escalation state behind"
   [ ! -e "$dir/home/state/.subsuper-inject-wedged" ] || fail "successful check left the wedge marker behind"
@@ -127,7 +131,7 @@ test_explicit_reclassification_requires_durable_reason() {
     install_runner "$dir"
     seed_live_blocker "$dir" "$backend" vendor-release
     date +%s > "$dir/home/state/.afk"
-    : > "$dir/home/state/.fake-drain"
+    : > "$dir/home/state/.stand-to-queue"
     set +e
     out=$(run_return "$dir" begin)
     rc=$?
@@ -146,6 +150,7 @@ test_explicit_reclassification_requires_durable_reason() {
     printf 'resolved [key=vendor-release]: reclassified as an external wait because the synthetic vendor owns the next event\n' >> "$dir/home/state/repair-task.status"
     printf 'paused [key=vendor-release]: waiting for the synthetic vendor window\n' >> "$dir/home/state/repair-task.status"
     out=$(run_return "$dir" check) || fail "$backend durable reclassification did not clear the return gate: $out"
+    [ ! -f "$dir/home/state/.afk-receipt" ] || ack_return "$dir" >/dev/null || fail "ack after reclassification failed"
     [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "$backend reclassification left a gate behind"
   done
   pass "tmux and Herdr blockers require the same explicit durable reclassification before ordinary work"
@@ -162,15 +167,12 @@ kind=strike
 EOF
   printf 'needs-decision [key=api-shape]: commander must choose the synthetic API shape\n' > "$dir/home/state/decision-task.status"
   date +%s > "$dir/home/state/.afk"
-  {
-    printf '1784074271\t1\tsignal\tdecision-task.status\tsignal: synthetic decision\n'
-    printf 'OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):\n'
-    printf 'decision-task [key=api-shape] needs-decision: commander must choose the synthetic API shape\n'
-  } > "$dir/home/state/.fake-drain"
+  printf '1784074271\t1\tsignal\tdecision-task.status\tsignal: synthetic decision\n' > "$dir/home/state/.stand-to-queue"
   out=$(run_return "$dir" begin) || fail "approval decision should not be treated as a Squad blocker: $out"
   assert_contains "$out" 'queued wake records drained: 1' "approval decision wake record was not listed as an open item"
   assert_not_contains "$out" 'catch-up summary' "queued wake records alone presented an away-mode summary"
   assert_contains "$out" 'OPEN DECISIONS' "approval decision was not surfaced as an open item in the summary"
+  ack_return "$dir" >/dev/null || fail "open-item receipt was not acknowledgeable"
   [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "approval decision incorrectly opened a Squad blocker gate"
   pass "needs-decision remains reportable without masquerading as a Squad-actionable blocker"
 }
@@ -229,6 +231,7 @@ test_away_ledger_is_presented_once_and_never_repeated() {
   assert_contains "$out" 'never executed while you were away' "summary did not state what was never executed"
   count=$(printf '%s' "$out" | grep -c 'catch-up summary' || true)
   [ "$count" -eq 1 ] || fail "summary presented $count times in one return"
+  ack_return "$dir" >/dev/null || fail "ledger receipt acknowledgement failed"
   [ ! -e "$dir/home/state/.subsuper-escalations" ] && [ ! -e "$dir/home/state/.subsuper-routine" ] || fail "clear left the ledger behind"
   out=$(run_return "$dir" begin) || fail "re-run of a cleared catch-up failed: $out"
   assert_not_contains "$out" 'catch-up summary' "re-run duplicated the away-mode summary"
@@ -262,7 +265,7 @@ test_undeliverable_ledger_item_reaches_the_summary() {
   {
     printf '1784074290\t5\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: escalation: fake-c2: done: PR https://example.test/pr/77\n'
     printf '1784074295\t6\tsignal\tfake-c2.status\tsignal: fake-c2.status\n'
-  } > "$dir/home/state/.fake-drain"
+  } > "$dir/home/state/.stand-to-queue"
   out=$(run_return "$dir" begin) || fail "undeliverable return should clear: $out"
   assert_contains "$out" 'catch-up summary' "undeliverable ledger item did not open the away-mode summary"
   assert_contains "$out" '[daemon-notice] check: away-mode ledger could not record: escalation: fake-c2: done: PR https://example.test/pr/77' \
@@ -278,6 +281,7 @@ test_undeliverable_ledger_item_reaches_the_summary() {
   out=$(run_return "$dir" begin) || fail "wedge-only return should clear: $out"
   assert_contains "$out" '[daemon-notice] away-mode ledger undeliverable as of now: escalation: fake-c3: failed: build' \
     "wedge marker was not presented when no queued record survived"
+  ack_return "$dir" >/dev/null || fail "wedge-only acknowledgement failed"
   out=$(run_return "$dir" begin) || fail "wedge-only re-run failed: $out"
   assert_not_contains "$out" 'catch-up summary' "re-run duplicated the wedge notice summary"
 
@@ -289,7 +293,7 @@ test_undeliverable_ledger_item_reaches_the_summary() {
     printf 'away-mode ledger undeliverable as of 2026-01-01T10:05:00+0000: escalation: fake-c5: done: PR https://example.test/pr/88\n'
   } > "$dir/home/state/.subsuper-inject-wedged"
   printf '1784074300\t7\tcheck\tafk-ledger-undeliverable\tcheck: away-mode ledger could not record: escalation: fake-c5: done: PR https://example.test/pr/88\n' \
-    > "$dir/home/state/.fake-drain"
+    > "$dir/home/state/.stand-to-queue"
   out=$(run_return "$dir" begin) || fail "partially drained undeliverable return should clear: $out"
   assert_contains "$out" 'daemon-notice=2' "partially drained undeliverable items were not both counted"
   assert_contains "$out" '[daemon-notice] away-mode ledger undeliverable as of 2026-01-01T10:00:00+0000: escalation: fake-c4: failed: lint' \
@@ -302,35 +306,38 @@ test_undeliverable_ledger_item_reaches_the_summary() {
 
 # The origin fix for the 2026-11-24 repeat: a notification about a window whose
 # task already finished names no new work, so the ledger must not grow with it.
-# This fixture seeds a 20,000-row ledger of that exact line and proves the return
-# path counts it honestly, presents a bounded slice, and says what it skipped.
 test_pathological_ledger_is_counted_and_bounded() {
-  local dir out events
+  local dir out events started elapsed
   dir="$TMP_ROOT/ledger-pathological"
   install_runner "$dir"
   date +%s > "$dir/home/state/.afk"
   awk 'BEGIN {
-    for (i = 0; i < 20000; i++)
+    for (i = 0; i < 25087; i++)
       printf "179551%04d|routine|stale: squad:0a5b0c1f -> task already finished: done: PR https://example.test/pr/12\n", i % 9000
   }' > "$dir/home/state/.subsuper-routine"
   printf '1795517952|escalation|pantheon-v2-front-2: done: PR https://example.test/pr/12 checks green\n' \
     > "$dir/home/state/.subsuper-escalations"
   printf '20087\n' > "$dir/home/state/.subsuper-dropped-finished-repeat"
 
-  out=$(run_return "$dir" begin) || fail "a pathological ledger should still clear the return: $out"
+  started=$SECONDS
+  out=$(SQUAD_AFK_SUMMARY_MAX_EVENTS_DEFAULT=9999 SQUAD_AFK_SUMMARY_MAX_LEDGER_ROWS=9999 \
+    SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$dir/home/state" \
+    perl -e 'alarm shift; exec @ARGV or die $!' 15 "$dir/bin/sq-afk-return.sh" begin) ||
+    fail "pathological ledger did not return within 15 seconds: $out"
+  elapsed=$((SECONDS - started))
   assert_contains "$out" 'catch-up summary' "pathological ledger did not present a summary"
-  assert_contains "$out" 'counts: escalation=1 routine=20000' \
-    "the summary did not count the whole retained window instead of only what it listed"
+  assert_contains "$out" 'counts: escalation=1 routine=1999' "class counts did not match the bounded read"
+  assert_contains "$out" '25088 rows counted, 2000 read, 23088 not read' "the summary did not account for unread rows"
   assert_contains "$out" 'coverage: these counts cover only the retained away-mode window' \
     "the summary did not state that its counts cover the retained window, not the whole absence"
-  assert_contains "$out" 'presentation bound: 201 of 20001 retained ledger entries listed, 19800 counted but not listed' \
-    "the summary did not name what the presentation bound skipped"
+  assert_contains "$out" '201 listed, 0 duplicate collapses, 1799 cap omissions' "the summary did not name what the presentation bound skipped"
   assert_contains "$out" 'dropped before the ledger: finished-repeat=20087' \
     "the summary did not report the repetitions dropped at origin"
   assert_contains "$out" 'https://example.test/pr/12 checks green' \
     "the bounded presentation dropped the escalation a commander has to read"
   events=$(printf '%s' "$out" | grep -cE '^  [0-9]+\. ' || true)
   [ "$events" -le 201 ] || fail "the presentation listed $events events instead of its bound"
+  ack_return "$dir" >/dev/null || fail "bounded receipt acknowledgement failed"
   [ ! -e "$dir/home/state/.subsuper-routine" ] || fail "the bounded return left the ledger behind"
 
   # An absence whose only content was finished-window repeats still reports them:
@@ -338,55 +345,81 @@ test_pathological_ledger_is_counted_and_bounded() {
   dir="$TMP_ROOT/ledger-drops-only"
   install_runner "$dir"
   date +%s > "$dir/home/state/.afk"
-  printf '25028\n' > "$dir/home/state/.subsuper-dropped-finished-repeat"
-  out=$(run_return "$dir" begin) || fail "a drops-only return should clear: $out"
-  assert_contains "$out" 'dropped before the ledger: finished-repeat=25028' \
+  printf '25028\n' > "$dir/home/state/.sentry-dropped-finished-repeat"
+  out=$(run_return "$dir" begin) || fail "a drops-only return should present: $out"
+  assert_contains "$out" 'dropped before the ledger: sentry-finished-repeat=25028' \
     "an absence made only of repeats reported no drop at all"
   assert_contains "$out" 'counts: escalation=0 routine=0 daemon-notice=0' \
     "a drops-only summary did not state its empty counts"
-  pass "a pathological ledger is counted in full, presented within its bound, and names what it skipped"
+  ack_return "$dir" >/dev/null || fail "drops-only receipt acknowledgement failed"
+  [ ! -e "$dir/home/state/.sentry-dropped-finished-repeat" ] || fail "ack did not clear the sentry drop counter"
+  pass "25,087 routine rows plus one escalation: ${elapsed}s (15s deadline), 2,000 parsed, 23,088 not read"
 }
 
 # A crash between building the summary and the commander seeing it must neither
 # lose the summary nor double it, and the replay must keep one identity.
 test_return_receipt_survives_a_crash_without_doubling() {
-  local dir out rc id ack count
+  local dir state out rc id ack count
   dir="$TMP_ROOT/receipt-crash"
+  state="$dir/home/state"
   install_runner "$dir"
-  date +%s > "$dir/home/state/.afk"
-  printf '1784074271|routine|fake-c1.status -> working: step one\n' > "$dir/home/state/.subsuper-routine"
-  printf '1784074280|escalation|fake-c1: done: PR https://example.test/pr/300\n' > "$dir/home/state/.subsuper-escalations"
+  date +%s > "$state/.afk"
+  printf '%s\n' '1784074271|routine|identical event' '1784074271|routine|identical event' > "$state/.subsuper-routine"
+  printf '1784074280\t2\tcheck\tafk-ledger-undeliverable\tcheck: queue-only escalation\n' > "$state/.stand-to-queue"
 
-  set +e
-  out=$(SQUAD_AFK_RETURN_CRASH=receipt run_return "$dir" begin)
-  rc=$?
-  set -e
-  [ "$rc" -eq 9 ] || fail "the receipt crash seam should stop the return (rc=$rc): $out"
-  assert_not_contains "$out" 'catch-up summary' "a summary was presented before its receipt was durable"
-  [ -s "$dir/home/state/.afk-receipt" ] || fail "a crash between building and presenting lost the summary"
-  id=$(awk -F"$(printf '\t')" '$1 == "id" { print $2; exit }' "$dir/home/state/.afk-receipt")
-  [ -n "$id" ] || fail "the durable receipt carries no identity"
-  [ -s "$dir/home/state/.subsuper-routine" ] || fail "the crash cleared the ledger before anything was presented"
+  rc=0
+  out=$(SQUAD_AFK_RETURN_CRASH=drained run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 9 ] && [ ! -s "$state/.stand-to-queue" ] || fail "crash did not follow queue consumption: $out"
+  [ ! -e "$state/.afk-receipt" ] || fail "drain unexpectedly built a receipt before the crash"
 
-  set +e
-  out=$(SQUAD_AFK_RETURN_CRASH=presented run_return "$dir" begin)
-  rc=$?
-  set -e
-  [ "$rc" -eq 9 ] || fail "the presented crash seam should stop the replay (rc=$rc): $out"
-  assert_contains "$out" 'catch-up summary' "the replay lost the built summary"
-  assert_contains "$out" 'https://example.test/pr/300' "the replay lost the escalation link"
+  mkdir "$state/.afk-receipt"
+  rc=0
+  out=$(run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 1 ] || fail "receipt publication failure was not reported: $out"
+  assert_contains "$out" 'could not publish receipt' "publication failure had no diagnostic"
+  assert_not_contains "$out" 'catch-up summary' "publication failure presented an unrecorded summary"
+  [ -s "$state/.subsuper-routine" ] && [ -s "$state/.afk-return-catchup" ] || fail "publication failure cleared inputs"
+  rmdir "$state/.afk-receipt"
+
+  rc=0
+  out=$(SQUAD_AFK_RETURN_CRASH=receipt run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 9 ] || fail "crash after build did not stop the return: $out"
+  assert_not_contains "$out" 'catch-up summary' "summary presented before the replay"
+  id=$(stored_identity "$state/.afk-receipt")
+  [ -n "$id" ] && [ ! -e "$state/.afk-receipt.ack" ] || fail "the built receipt did not remain pending"
+  printf 'crash after build: presented=0 pending=%s\n' "$id"
+
+  if SQUAD_BASE="$dir/home" SQUAD_STATE_OVERRIDE="$state" "$dir/bin/sq-afk-return.sh" begin >&- 2>/dev/null; then
+    fail "receipt presentation to closed stdout succeeded"
+  fi
+  [ "$(stored_identity "$state/.afk-receipt")" = "$id" ] && [ ! -e "$state/.afk-receipt.ack" ] || fail "failed write consumed the receipt"
+  rc=0
+  out=$(run_return "$dir" guard) || rc=$?
+  [ "$rc" -eq 3 ] || fail "guard admitted ordinary work before acknowledgement: $out"
+  if run_return "$dir" ack wrong-id >/dev/null; then fail "ack accepted an unrelated identity"; fi
+
+  out=$(run_return "$dir" begin) || fail "replay failed: $out"
+  assert_contains "$out" "Receipt $id: bin/sq-afk-return.sh ack $id" "the replay did not identify the stored receipt"
+  assert_contains "$out" 'queue-only escalation' "the replay lost already-consumed queue evidence"
+  assert_contains "$out" '1 listed, 1 duplicate collapses, 0 cap omissions' "duplicate ledger accounting did not match rendered rows"
   count=$(printf '%s' "$out" | grep -c 'catch-up summary' || true)
   [ "$count" -eq 1 ] || fail "the replay presented the summary $count times"
-  ack=$(awk -F"$(printf '\t')" '$1 == "ack" { print $2; exit }' "$dir/home/state/.afk-receipt.ack")
-  [ "$ack" = "$id" ] || fail "the replay acknowledged a different identity ($ack != $id)"
+  [ ! -e "$state/.afk-receipt.ack" ] || fail "presentation acknowledged its own receipt"
+  printf 'replay: presented=%s pending=%s\n' "$count" "$id"
 
-  out=$(run_return "$dir" begin) || fail "the return after the presented crash should clear: $out"
-  assert_not_contains "$out" 'catch-up summary' "an already acknowledged receipt was presented a second time"
-  assert_contains "$out" "the return summary was already presented as $id" \
-    "the replay did not name the identity it refused to duplicate"
-  [ ! -e "$dir/home/state/.afk-receipt" ] || fail "the acknowledged receipt was left behind"
-  [ ! -e "$dir/home/state/.subsuper-routine" ] || fail "the cleared return left the ledger behind"
-  pass "a crash before presentation replays the same receipt once, and never duplicates it"
+  rc=0
+  out=$(SQUAD_AFK_RETURN_CRASH=acknowledged run_return "$dir" ack "$id") || rc=$?
+  ack=$(stored_identity "$state/.afk-receipt.ack" ack)
+  [ "$rc" -eq 9 ] && [ "$ack" = "$id" ] && [ -s "$state/.subsuper-routine" ] || fail "ack did not land before cleanup: $out"
+  printf 'ack: consumed=%s (cleanup interrupted)\n' "$ack"
+
+  out=$(run_return "$dir" begin) || fail "ack cleanup did not resume: $out"
+  assert_not_contains "$out" 'catch-up summary' "ack cleanup presented a replacement summary"
+  [ ! -e "$state/.afk-receipt" ] && [ ! -e "$state/.afk-receipt.ack" ] || fail "ack cleanup left receipt state behind"
+  [ ! -e "$state/.subsuper-routine" ] || fail "ack cleanup left the ledger behind"
+  out=$(run_return "$dir" check) || fail "a later return failed: $out"
+  assert_not_contains "$out" 'catch-up summary' "later return presented the acknowledged receipt"
+  pass "post-ack cleanup and later return: presented=0"
 }
 
 test_failed_ledger_selection_preserves_catchup() {
@@ -407,7 +440,7 @@ SH
   row='1784074290|routine|synthetic ledger event'
   wake=$'1784074271\t2\tsignal\trepair-task.status\tsignal: synthetic status'
   printf '%s\n' "$row" > "$state/.subsuper-routine"
-  printf '%s\n' "$wake" > "$state/.fake-drain"
+  printf '%s\n' "$wake" > "$state/.stand-to-queue"
 
   rc=0
   out=$(PATH="$dir/bin:$PATH" REAL_AWK="$real_awk" run_return "$dir" begin) || rc=$?
@@ -417,10 +450,11 @@ SH
   [ -s "$state/.afk-return-catchup" ] || fail "failed ledger collection cleared the catch-up gate"
   [ ! -e "$state/.afk-receipt" ] || fail "failed ledger collection wrote a receipt"
   [ "$(<"$state/.subsuper-routine")" = "$row" ] || fail "failed ledger collection changed the source ledger"
-  [ "$(<"$state/.fake-drain")" = "$wake" ] || fail "failed ledger collection consumed pending wake evidence"
+  [ "$(<"$state/.stand-to-queue")" = "$wake" ] || fail "failed ledger collection consumed pending wake evidence"
 
   out=$(run_return "$dir" check) || fail "retry did not clear catch-up: $out"
   assert_contains "$out" 'synthetic ledger event' "retry did not present the retained ledger event"
+  ack_return "$dir" >/dev/null || fail "receipt acknowledgement after retry failed"
   [ ! -e "$state/.afk-return-catchup" ] || fail "successful retry left catch-up pending"
   pass "failed ledger selection leaves catch-up inputs intact for retry"
 }

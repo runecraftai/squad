@@ -11,6 +11,9 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/stand-to-helpers.sh"
 
 DAEMON="$ROOT/bin/sq-supervise-daemon.sh"
+if [ "${1:-}" = --finished-repeat-fixture ] && [ "$#" -eq 2 ]; then
+  DAEMON=$2
+fi
 AFK_START="$ROOT/bin/sq-afk-start.sh"
 # Source the daemon's pure functions once. Its main loop is skipped under sourcing
 # via a BASH_SOURCE guard, so only classify_*/housekeeping/escalate_*/afk_* and the
@@ -246,7 +249,7 @@ test_stale_terminal_escalates() {
 }
 
 test_stale_finished_state_self_handles() {
-  local dir state out key win drops
+  local dir state out key win drops rows=0 baseline=${1:-}
   dir=$(make_case stale-finished-state)
   state="$dir/state"
   win="sess:sq-fin-state"
@@ -264,15 +267,17 @@ test_stale_finished_state_self_handles() {
   # and again became one ledger row each time, 25,028 of them in one absence.
   # The rule is that it is dropped where it is produced and only counted, so this
   # fixture fails the moment that drop is removed.
-  [ ! -s "$state/.subsuper-routine" ] || fail "a finished stale wake was written to the ledger"
-  [ "$(cat "$state/.subsuper-dropped-finished-repeat" 2>/dev/null)" = 1 ] || fail "the dropped finished repeat was not counted"
   SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" handle_wake "stale: $win" "$state"
   SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" handle_wake "stale: $win" "$state"
-  [ ! -s "$state/.subsuper-routine" ] || fail "repeated finished stale wakes grew the ledger"
-  drops=$(cat "$state/.subsuper-dropped-finished-repeat" 2>/dev/null)
-  [ "$drops" = 3 ] || fail "repeated finished stale wakes were counted $drops times instead of 3"
+  if [ -f "$state/.subsuper-routine" ]; then rows=$(wc -l < "$state/.subsuper-routine"); fi
+  drops=$(cat "$state/.subsuper-dropped-finished-repeat" 2>/dev/null) || drops=0
   unset SQUAD_FAKE_CREW_STATE
-  pass "current finished state clears stale tracking, escalates nothing, and never grows the ledger"
+  if [ "$baseline" = baseline ]; then
+    [ "$rows" -eq 3 ] && [ "$drops" = 0 ] || fail "baseline: expected three ledger rows and no drops"
+  else
+    [ "$rows" -eq 0 ] && [ "$drops" = 3 ] || fail "fixed: expected zero ledger rows and three drops"
+  fi
+  pass "${baseline:-fixed} three-wake fixture: ledger rows=$((rows)), counted drops=$drops"
 }
 
 # A DECLARED external-wait pause (paused:) is neither a wedge nor a terminal
@@ -3422,6 +3427,11 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
   ) || fail "unrecognized composer-state inject_msg subshell failed"
   pass "inject_msg: unrecognized composer states defer by default"
 }
+
+if [ "${1:-}" = --finished-repeat-fixture ]; then
+  if [ "$#" -eq 2 ]; then test_stale_finished_state_self_handles baseline; else test_stale_finished_state_self_handles; fi
+  exit 0
+fi
 
 test_afk_start_refuses_when_flag_cannot_be_written
 test_afk_start_ignores_stale_pidfile_without_lock

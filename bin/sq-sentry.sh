@@ -577,6 +577,19 @@ pipeline_step_quiet_check() {  # <window> <task> <key>
   wake "$reason"
 }
 
+count_finished_repeat() {
+  local file="$STATE/.sentry-dropped-finished-repeat" n
+  fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
+  if afk_present; then
+    n=$(cat "$file" 2>/dev/null) || n=0
+    [[ $n =~ ^(0|[1-9][0-9]{0,14})$ ]] || n=0
+    if [ "$n" -lt 999999999999999 ]; then
+      printf '%s\n' "$((n + 1))" > "$file" || triage_log "could not count finished-window drop"
+    fi
+  fi
+  fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
+}
+
 busy_static_absorb_finished() {  # <window> <task> <since-file> <escalation-file> <suppressor-file>
   operator_is_finished "$2" || return 1
   # Never latch a finished result: the next poll checks current state again.
@@ -1743,6 +1756,7 @@ EOF
           if [ "$hash_changed" = 1 ] && operator_is_finished "$task"; then
             printf '%s' "$h" > "$sf"
             rm -f "$ssf" "$ewf"
+            count_finished_repeat
             triage_log "absorbed stale (task already finished, away mode): $w"
           elif pause_era_evidence_tracking "$key"; then
             pause_era_deferral_note "$w" "$key" plain

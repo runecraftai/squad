@@ -104,12 +104,14 @@ No `/back` is needed. The first genuine message is the return signal:
 
 - A message **without** the current operational prefix or a legacy bare marker, and **not** starting with `/afk` -> the commander is back.
   Run `bin/sq-afk-return.sh` before acting on the message that brought the commander back.
-  That script owns correct-ordered daemon shutdown, durable wake draining, the return-catch-up gate, and the one consolidated summary of everything the away-mode ledger held (counts per class, the events in order, the links and paths to act on, and what was never executed while he was away).
+  That script owns ordered daemon shutdown, durable wake draining, the return-catch-up gate, and the consolidated ledger summary with selected events in order, links and paths to act on, and what was never executed while the commander was away.
   The summary is a durable receipt: it is landed in an outbox record with one identity before the ledger it was built from is cleared, replayed byte-for-byte under that same identity until an acknowledgement names it, and never presented twice once acknowledged, so a crash while returning neither loses nor duplicates it.
-  Its presentation is bounded, its counts cover only the retained window it names, and it reports both the entries it did not list and the repeats it discarded at origin, so a pathological absence still returns quickly and honestly.
+  Present the receipt to the commander under its printed identity, treating replay under that identity as the same receipt, not another summary.
+  Only after consumption is confirmed, run the printed `bin/sq-afk-return.sh ack <receipt-id>` command.
+  The summary reports the retained ledger total, the bounded subset parsed for class counts, all omissions, and the repeats discarded at origin.
   If it reports a Squad-actionable `blocked:` event, remediate it immediately through the normal lifecycle, or explicitly reclassify it with a durable reason and close its decision key with `resolved [key=...]`, then run `bin/sq-afk-return.sh check`.
   Once the daemon stops, resume full per-wake responsiveness through the emitted primary-harness supervision protocol while blocker handling proceeds, so the gate never creates a blind wait.
-  Do not answer a Sitrep request or perform any other ordinary commander work until the check exits successfully.
+  Do not answer a Sitrep request or perform any other ordinary commander work until `bin/sq-afk-return.sh guard` succeeds.
 - A message **with** the current operational prefix (`SQUAD_OPERATIONAL_PREFIX`, U+2063 INVISIBLE SEPARATOR followed by `SQUAD_OP: `), or a legacy bare `SQUAD_INJECT_MARK` daemon escalation -> stay afk and process it.
 - Re-invoking `/afk` while already away -> stay afk (refresh the flag); this
   does **not** trigger an exit.

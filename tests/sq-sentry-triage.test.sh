@@ -2858,8 +2858,8 @@ test_afk_finished_task_never_enters_the_stale_clock() {
   [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "a finished task's static pane queued a stale wake"; }
   [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "a finished task entered the stale clock"; }
   [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "a finished task counted a wedge escalation"; }
-  grep -F "absorbed stale (task already finished, away mode)" "$state/.sentry-triage.log" >/dev/null 2>&1 \
-    || { reap "$pid"; fail "the away-mode absorption of the finished pane was not recorded"; }
+  [ "$(cat "$state/.sentry-dropped-finished-repeat" 2>/dev/null)" = 1 ] \
+    || { reap "$pid"; fail "the away-mode absorption of the finished pane was not counted exactly once"; }
   reap "$pid"
   pass "a finished task's static pane is absorbed in away mode and never enters the stale clock"
 }
@@ -4775,6 +4775,11 @@ test_error_dialog_requires_bottom_affordance() {
   [ -z "$sig" ] || fail "old dialog above blank viewport space became a bottom-region dialog: $sig"
   pass "built-in error dialogs require a message and active retry affordance in the bottom viewport region"
 }
+
+if [ "${1:-}" = --finished-repeat-fixture ]; then
+  test_afk_finished_task_never_enters_the_stale_clock
+  exit 0
+fi
 
 test_error_dialog_requires_bottom_affordance
 test_paused_scrollback_error_stays_quiet_until_age_out

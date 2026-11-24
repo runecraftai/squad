@@ -96,8 +96,8 @@ state/               volatile runtime signals; gitignored
   .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
   .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by sq-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
-  .afk-receipt .afk-receipt.ack  the return summary's durable outbox record and its consumption acknowledgement; the record carries one identity that a replay keeps until the acknowledgement names it, and bin/sq-afk-return.sh clears both only after presentation
-  .subsuper-dropped-*  per-class count of notifications the away-mode daemon discarded at origin because the named window's task had already finished; reported as dropped by bin/sq-afk-return.sh and cleared with the ledger
+  .afk-receipt .afk-receipt.ack  the durable return receipt and its consumption acknowledgement; replay keeps the same identity until bin/sq-afk-return.sh ack <receipt-id> confirms consumption
+  .subsuper-dropped-* .sentry-dropped-*  per-class counts of notifications discarded at origin because the named task had already finished; reported at return and cleared with the ledger
   .orca-tab-<id> .orca-tab-<id>.lock  Orca mission-tab close receipt and its per-task close lock; only a confirmed close is recorded, a runtime error preserves the record for a retry, and teardown removes both (docs/orca-backend.md "Current lifecycle and safety")
   window-states      derived per-window tmux sidebar truth, one TSV line per tmux task window; contract owned by bin/sq-window-state.sh (docs/configuration.md "Operational base layout and state")
   .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
@@ -735,7 +735,8 @@ SQUAD_SUPERVISOR_HARNESS=             # optional Orca receiver adapter selector;
 SQUAD_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
 SQUAD_ESCALATE_BATCH_SECS=90          # ledger age before the housekeeping pass retires an acknowledged native handoff; 0 = every pass; nothing is delivered to the pane while away
 SQUAD_MAX_DEFER_SECS=300              # max parked ledger age before one durable stand-to notice per absence, and the active-alert rate-limit window; 0 disables the notice
-SQUAD_AFK_SUMMARY_MAX_EVENTS_DEFAULT=200  # ledger entries of each class the return summary lists in full; the whole retained window is still counted, and the summary names what it counted but did not list
+SQUAD_AFK_SUMMARY_MAX_EVENTS_DEFAULT=200  # ledger entries listed per class; can be lowered
+SQUAD_AFK_SUMMARY_MAX_LEDGER_ROWS=2000    # ledger rows parsed, escalation ledger first; can be lowered
 SQUAD_WEDGE_ALARM_CHANNEL=            # override config/wedge-alarm with one active-alert directive for the wedge alarm; off|auto|osascript|herdr|command:<cmd>; absent = auto (macOS -> an OS notification)
 SQUAD_WEDGE_ALARM_EXEC=              # notifier seam: route every channel (osascript, herdr, command:) through this command as `<cmd> <channel> <summary>`; "discard" fires nothing; unset in production; the daemon defaults it to "discard" when sourced so no test posts a real notification (docs/wedge-alarm.md)
 SQUAD_WEDGE_ALARM_TIMEOUT_SECS=10    # maximum seconds for each osascript, herdr, override, or command: notifier before its watchdog terminates it and continues to the next channel; invalid or zero values use 10
