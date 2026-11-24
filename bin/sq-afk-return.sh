@@ -137,7 +137,8 @@ notice_key() {  # <notice text> -> identity shared by a queued afk-* record and 
 }
 
 print_summary() {  # <evidence-file>
-  local file=$1 tag kind text ts cls item label when re afk_re seq=0 absence locators
+  local file=$1 tag kind text ts cls item label when re afk_re seq=0 absence locators record receipt
+  local data="${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}"
   local escalated=0 routine=0 notice=0 queued=0 rows='' afk_keys='' wedges='' notices='' urls='' statuses='' events=''
   re='^[0-9]+ [0-9]+ (signal|stale|check|heartbeat) '
   afk_re='^([0-9]+) [0-9]+ check afk-[A-Za-z0-9._-]+ (.*)$'
@@ -202,7 +203,13 @@ print_summary() {  # <evidence-file>
   [ -z "$events" ] || printf '  events in order:\n%s' "$events"
   locators=$(printf '%s\n' "$urls" | sed '/^$/d' | sort -u | sed 's/^/    /')
   statuses=$(printf '%s\n' "$statuses" | sed '/^$/d' | sort -u | sed 's#^#    state/#')
-  absence=$(find "$SQUAD_BASE/data" -maxdepth 1 -name 'absence-*.md' 2>/dev/null | sort | tail -1 || true)
+  record=$(open_absence_records "$data")
+  case "$record" in ''|*$'\n'*) record='' ;; esac
+  if [ -n "$record" ]; then
+    absence="$data/$record"
+  else
+    absence=$(find "$data" -maxdepth 1 -name 'absence-*.md' 2>/dev/null | sort | tail -1 || true)
+  fi
   if [ -n "$locators$statuses$absence" ]; then
     printf '  links and paths:\n'
     [ -z "$locators" ] || printf '%s\n' "$locators"
@@ -212,9 +219,13 @@ print_summary() {  # <evidence-file>
   # The opt-in queue pilot's durable receipt: when it dispatched, it names the
   # exact task and the verification, whether or not the daemon survived long
   # enough to ledger that outcome.
-  if [ -f "$STATE/queue-pilot.intent" ]; then
-    printf '  queue pilot receipt:\n    %s\n' "$STATE/queue-pilot.intent"
-    sed -n 's/^\(task\|outcome\|detail\)=/    \1=/p' "$STATE/queue-pilot.intent" 2>/dev/null || true
+  if [ -n "$record" ] && [ -f "$STATE/queue-pilot.intent" ]; then
+    receipt=$(awk -v generation="${record%.md}" '
+      $0 == ("absence_generation=" generation) { matches = 1 }
+      /^(task|outcome|detail)=/ { fields = fields "    " $0 "\n" }
+      END { if (matches) printf "%s", fields }
+    ' "$STATE/queue-pilot.intent" 2>/dev/null) || receipt=''
+    [ -z "$receipt" ] || printf '  queue pilot receipt:\n    %s\n%s\n' "$STATE/queue-pilot.intent" "$receipt"
   fi
   printf '  never executed while you were away: any merge outside the grant quoted in the absence record, destructive or irreversible actions, security-sensitive choices, and anything outside the accepted scope of the judge; each waits for you.\n'
   [ -z "$notices" ] || printf '  open items at return:\n%s' "$notices"
@@ -314,6 +325,8 @@ main() {
   . "$SCRIPT_DIR/sq-stand-to-lib.sh"
   # shellcheck source=bin/sq-classify-lib.sh
   . "$SCRIPT_DIR/sq-classify-lib.sh"
+  # shellcheck source=bin/sq-absence-lib.sh
+  . "$SCRIPT_DIR/sq-absence-lib.sh"
 
   mkdir -p "$STATE" || return 1
   fm_lock_acquire_wait "$LOCK"

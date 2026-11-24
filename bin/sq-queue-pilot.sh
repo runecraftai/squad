@@ -164,15 +164,8 @@ acquire_lock() {
 # --- absence record --------------------------------------------------------
 # A record is open while it carries no Retorno: line, and its file name is its
 # generation. Exactly one may be open, and the grant must name that one.
-open_absence_records() {
-  local f
-  shopt -s nullglob
-  for f in "$DATA"/absence-*.md; do
-    grep -qE '^#*[[:space:]]*Retorno:' "$f" 2>/dev/null && continue
-    basename "$f"
-  done
-  shopt -u nullglob
-}
+# shellcheck source=bin/sq-absence-lib.sh
+. "$SCRIPT_DIR/sq-absence-lib.sh"
 
 record_names_task() {  # <record-basename> <task-id>
   local record="$DATA/$1" task=$2
@@ -384,7 +377,7 @@ admit() {
   esac
 
   # The absence record: exactly one open, and exactly the one the grant names.
-  open=$(open_absence_records)
+  open=$(open_absence_records "$DATA")
   record_count=$(printf '%s\n' "$open" | grep -c . || true)
   [ -n "$open" ] || { refuse "no-open-absence-record"; return 0; }
   [ "$record_count" -eq 1 ] || { refuse "multiple-open-absence-records:$(printf '%s' "$open" | tr '\n' ',')"; return 0; }
@@ -470,7 +463,7 @@ admit() {
   # last point before the effect rather than only at entry.
   [ -e "$STATE/.afk" ] || { refuse "away-mode-off"; return 0; }
   [ "$(grant_get revoked)" != 1 ] || { refuse "grant-revoked"; return 0; }
-  [ "$(open_absence_records)" = "$RECORD" ] || { refuse "absence-record-mismatch:changed"; return 0; }
+  [ "$(open_absence_records "$DATA")" = "$RECORD" ] || { refuse "absence-record-mismatch:changed"; return 0; }
   [ ! -e "$STATE/.afk-return-gate" ] || { refuse "return-in-progress"; return 0; }
   [ ! -e "$INTENT" ] || { refuse "intent-spent:task=$(intent_get task)"; return 0; }
 
@@ -584,7 +577,7 @@ cmd_arm() {
   [ -d "$project" ] || die "--project is not a directory: $project"
   [ ! -e "$GRANT" ] || die "a grant already exists; revoke it before arming another ($GRANT)"
 
-  open=$(open_absence_records)
+  open=$(open_absence_records "$DATA")
   record_count=$(printf '%s\n' "$open" | grep -c . || true)
   [ "$record_count" -eq 1 ] || die "arming needs exactly one open absence record (found $record_count)"
   record_names_task "$open" "$task" || die "the open absence record $open does not name $task"

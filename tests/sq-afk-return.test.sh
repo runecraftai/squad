@@ -16,7 +16,7 @@ TMP_ROOT=$(fm_test_tmproot sq-afk-return-tests)
 install_runner() {  # <case-dir>
   local dir=$1
   mkdir -p "$dir/bin" "$dir/home/state" "$dir/home/data" "$dir/home/config"
-  cp "$ROOT/bin/sq-afk-return.sh" "$dir/bin/"
+  cp "$ROOT/bin/sq-afk-return.sh" "$ROOT/bin/sq-absence-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/sq-stand-to-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/sq-classify-lib.sh" "$dir/bin/"
   cat > "$dir/bin/sq-afk-launch.sh" <<'SH'
@@ -237,6 +237,28 @@ test_away_ledger_is_presented_once_and_never_repeated() {
   pass "away-mode ledger is presented once as one summary and a re-run never repeats it"
 }
 
+test_pilot_receipt_belongs_to_one_absence() {
+  local dir="$TMP_ROOT/receipt-generation" state data out
+  install_runner "$dir"
+  state="$dir/home/state"
+  data="$dir/home/data"
+  printf 'Departed\n' > "$data/absence-first.md"
+  printf '# Retorno: earlier\n' > "$data/absence-z-closed.md"
+  printf '%s\n' 'absence_generation=absence-first' 'task=pilot-task' 'outcome=dispatched' > "$state/queue-pilot.intent"
+  printf '1784074271|routine|first return\n' > "$state/.subsuper-routine"
+  out=$(run_return "$dir" begin)
+  assert_contains "$out" 'task=pilot-task' 'the matching receipt was not presented'
+
+  printf 'Retorno: now\n' >> "$data/absence-first.md"
+  printf 'Departed\n' > "$data/absence-next.md"
+  printf '1784074272|routine|next return\n' > "$state/.subsuper-routine"
+  out=$(run_return "$dir" begin)
+  assert_contains "$out" 'next return' 'the later absence summary was not presented'
+  assert_not_contains "$out" 'queue pilot receipt' 'the later absence presented a stale receipt'
+  assert_present "$state/queue-pilot.intent" 'the durable receipt was removed'
+  pass 'the durable pilot receipt is presented only for its absence'
+}
+
 test_away_ledger_while_blocked_presents_only_a_count() {
   local dir out
   dir="$TMP_ROOT/ledger-blocked"
@@ -304,6 +326,7 @@ test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
 test_away_ledger_is_presented_once_and_never_repeated
+test_pilot_receipt_belongs_to_one_absence
 test_away_ledger_while_blocked_presents_only_a_count
 test_commander_decision_does_not_masquerade_as_Squad_blocker
 test_away_reentry_refuses_pending_return_gate

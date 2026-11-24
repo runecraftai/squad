@@ -876,11 +876,14 @@ routine_add() {  # <state> <distilled-item>
 # bin/sq-queue-pilot.sh's header owns the admission sequence and refusals, and
 # docs/configuration.md owns the grant schema.
 queue_pilot_reap() {  # <state>
-  local state=$1 pid out
-  pid=$(cat "$state/.queue-pilot.pid" 2>/dev/null || true)
-  [ -n "$pid" ] || return 0
-  kill -0 "$pid" 2>/dev/null && return 0
-  rm -f "$state/.queue-pilot.pid"
+  local state=$1 pid identity out
+  if [ -e "$state/.queue-pilot.pid" ]; then
+    IFS=$'\t' read -r pid identity 2>/dev/null < "$state/.queue-pilot.pid" || true
+    if [ -n "${identity:-}" ] && [ "$(fm_pid_identity "$pid" 2>/dev/null)" = "$identity" ]; then
+      return 0
+    fi
+    rm -f "$state/.queue-pilot.pid"
+  fi
   [ -s "$state/.queue-pilot.outcome" ] || return 0
   out=$(cat "$state/.queue-pilot.outcome" 2>/dev/null || true)
   rm -f "$state/.queue-pilot.outcome"
@@ -891,13 +894,13 @@ queue_pilot_reap() {  # <state>
 }
 
 queue_pilot_trigger() {  # <state>
-  local state=$1 size=0
+  local state=$1 size=0 pid identity
   queue_pilot_reap "$state"
   [ -e "$state/.afk" ] || return 0
   # No armed grant, no check: never pay a subprocess for an idle pilot.
   [ -f "$state/queue-pilot.grant" ] || return 0
   # One in-flight check owns the admission boundary.
-  [ -z "$(cat "$state/.queue-pilot.pid" 2>/dev/null || true)" ] || return 0
+  [ ! -e "$state/.queue-pilot.pid" ] || return 0
   if [ -f "$state/.queue-pilot.log" ]; then
     size=$(wc -c < "$state/.queue-pilot.log" 2>/dev/null || printf 0)
     [ "$size" -lt 65536 ] || : > "$state/.queue-pilot.log"
@@ -905,10 +908,18 @@ queue_pilot_trigger() {  # <state>
   # The child writes its one outcome line where the reap reads it once the child
   # has exited, so a reader never sees a half line.
   rm -f "$state/.queue-pilot.outcome"
-  SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$state" \
-    "$SQUAD_DAEMON_DIR/sq-queue-pilot.sh" check \
-    >"$state/.queue-pilot.outcome" 2>>"$state/.queue-pilot.log" &
-  printf '%s\n' "$!" > "$state/.queue-pilot.pid"
+  (
+    SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$state" \
+      "$SQUAD_DAEMON_DIR/sq-queue-pilot.sh" check
+    exit "$?"
+  ) >"$state/.queue-pilot.outcome" 2>>"$state/.queue-pilot.log" &
+  pid=$!
+  if identity=$(fm_pid_identity "$pid" 2>/dev/null) && [ -n "$identity" ] &&
+    printf '%s\t%s\n' "$pid" "$identity" > "$state/.queue-pilot.pid"; then
+    return 0
+  fi
+  wait "$pid" || true
+  queue_pilot_reap "$state"
 }
 
 # Canonical single-line digest of the first <lines> buffered escalations. It is

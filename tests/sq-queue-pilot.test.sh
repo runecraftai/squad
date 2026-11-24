@@ -430,15 +430,18 @@ assert_contains "$status" "intent: unspent" "status reports an unspent intent"
   SQUAD_DAEMON_DIR="$ROOT/bin" . "$ROOT/bin/sq-supervise-daemon.sh"
 
   new_base daemonreap
-  printf '%s\n' "$$" > "$STATE/.queue-pilot.pid"
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  SQUAD_STATE_OVERRIDE="$STATE" . "$ROOT/bin/sq-stand-to-lib.sh"
+  identity=$(fm_pid_identity "$$") || fail "could not identify the live test process"
+  printf '%s\t%s\n' "$$" "$identity" > "$STATE/.queue-pilot.pid"
   printf 'routine|queue-pilot: dispatched %s\n' "$TASK" > "$STATE/.queue-pilot.outcome"
   # A live pid means the check is still in flight: nothing is ledgered yet.
   queue_pilot_reap "$STATE"
   [ ! -e "$STATE/.subsuper-routine" ] || fail "an in-flight check ledgered early"
 
-  # A dead pid releases the outcome into the ledger exactly once.
-  printf '%s\n' 999999 > "$STATE/.queue-pilot.pid"
+  printf '%s\t%s\n' "$$" "stale:$identity" > "$STATE/.queue-pilot.pid"
   queue_pilot_reap "$STATE"
+  assert_absent "$STATE/.queue-pilot.pid" "a reused pid no longer occupies the pilot slot"
   assert_grep "routine|queue-pilot: dispatched $TASK" "$STATE/.subsuper-routine" \
     "the daemon ledgers the pilot outcome"
   queue_pilot_reap "$STATE"
