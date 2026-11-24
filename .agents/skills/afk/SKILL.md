@@ -105,6 +105,8 @@ No `/back` is needed. The first genuine message is the return signal:
 - A message **without** the current operational prefix or a legacy bare marker, and **not** starting with `/afk` -> the commander is back.
   Run `bin/sq-afk-return.sh` before acting on the message that brought the commander back.
   That script owns correct-ordered daemon shutdown, durable wake draining, the return-catch-up gate, and the one consolidated summary of everything the away-mode ledger held (counts per class, the events in order, the links and paths to act on, and what was never executed while he was away).
+  The summary is a durable receipt: it is landed in an outbox record with one identity before the ledger it was built from is cleared, replayed byte-for-byte under that same identity until an acknowledgement names it, and never presented twice once acknowledged, so a crash while returning neither loses nor duplicates it.
+  Its presentation is bounded, its counts cover only the retained window it names, and it reports both the entries it did not list and the repeats it discarded at origin, so a pathological absence still returns quickly and honestly.
   If it reports a Squad-actionable `blocked:` event, remediate it immediately through the normal lifecycle, or explicitly reclassify it with a durable reason and close its decision key with `resolved [key=...]`, then run `bin/sq-afk-return.sh check`.
   Once the daemon stops, resume full per-wake responsiveness through the emitted primary-harness supervision protocol while blocker handling proceeds, so the gate never creates a blind wait.
   Do not answer a Sitrep request or perform any other ordinary commander work until the check exits successfully.
@@ -154,6 +156,7 @@ In afk mode the composer guard is belt-and-suspenders (no human is typing), but 
 
 **Max-defer notice (the daemon must never silently wedge).**
 While away, a ledger entry parked past `SQUAD_MAX_DEFER_SECS` (default 300) is expected, because nothing reaches the pane.
+A notification about a window whose task already finished names no new work, so the daemon discards it at origin and keeps only a count, and the sentry never queues such a wake for an away-mode window in the first place; the return summary reports the count as dropped.
 The daemon raises one durable escalation per absence on Squad's stand-to queue (a `check:` record keyed `afk-parked-escalations`) and writes `state/.subsuper-inject-wedged` as its marker, so a stalled absence stays visible to Squad without touching the commander's pane.
 A ledger write that fails is undeliverable: the item goes to the same durable queue, and the configurable active alert (`docs/wedge-alarm.md` owns the channel setup) fires, rate-limited to one per max-defer window.
 The marker is cleared by the return catch-up.

@@ -1733,9 +1733,20 @@ EOF
           esac
         elif afk_present; then
           # Daemon owns triage: one-shot per distinct stale hash, as before.
-          if pause_era_evidence_tracking "$key"; then
+          # A window whose task already finished names no new work, so it is
+          # absorbed HERE, before the hashes that change on every poll of a static
+          # finished pane can hand the daemon an endless run of identical notices:
+          # nothing is queued, the stale clock is cleared, and the hash becomes the
+          # one already classified so the same pane is not re-read every poll.
+          hash_changed=0
+          [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ] && hash_changed=1
+          if [ "$hash_changed" = 1 ] && operator_is_finished "$task"; then
+            printf '%s' "$h" > "$sf"
+            rm -f "$ssf" "$ewf"
+            triage_log "absorbed stale (task already finished, away mode): $w"
+          elif pause_era_evidence_tracking "$key"; then
             pause_era_deferral_note "$w" "$key" plain
-          elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
+          elif [ "$hash_changed" = 1 ]; then
             fm_wake_append stale "$w" "stale: $w" || exit 1
             printf '%s' "$h" > "$sf"
             date +%s > "$ssf"

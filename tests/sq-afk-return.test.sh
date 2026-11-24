@@ -300,6 +300,95 @@ test_undeliverable_ledger_item_reaches_the_summary() {
   pass "an item the ledger could not record reaches the return summary once"
 }
 
+# The origin fix for the 2026-11-24 repeat: a notification about a window whose
+# task already finished names no new work, so the ledger must not grow with it.
+# This fixture seeds a 20,000-row ledger of that exact line and proves the return
+# path counts it honestly, presents a bounded slice, and says what it skipped.
+test_pathological_ledger_is_counted_and_bounded() {
+  local dir out events
+  dir="$TMP_ROOT/ledger-pathological"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  awk 'BEGIN {
+    for (i = 0; i < 20000; i++)
+      printf "179551%04d|routine|stale: squad:0a5b0c1f -> task already finished: done: PR https://example.test/pr/12\n", i % 9000
+  }' > "$dir/home/state/.subsuper-routine"
+  printf '1795517952|escalation|pantheon-v2-front-2: done: PR https://example.test/pr/12 checks green\n' \
+    > "$dir/home/state/.subsuper-escalations"
+  printf '20087\n' > "$dir/home/state/.subsuper-dropped-finished-repeat"
+
+  out=$(run_return "$dir" begin) || fail "a pathological ledger should still clear the return: $out"
+  assert_contains "$out" 'catch-up summary' "pathological ledger did not present a summary"
+  assert_contains "$out" 'counts: escalation=1 routine=20000' \
+    "the summary did not count the whole retained window instead of only what it listed"
+  assert_contains "$out" 'coverage: these counts cover only the retained away-mode window' \
+    "the summary did not state that its counts cover the retained window, not the whole absence"
+  assert_contains "$out" 'presentation bound: 201 of 20001 retained ledger entries listed, 19800 counted but not listed' \
+    "the summary did not name what the presentation bound skipped"
+  assert_contains "$out" 'dropped before the ledger: finished-repeat=20087' \
+    "the summary did not report the repetitions dropped at origin"
+  assert_contains "$out" 'https://example.test/pr/12 checks green' \
+    "the bounded presentation dropped the escalation a commander has to read"
+  events=$(printf '%s' "$out" | grep -cE '^  [0-9]+\. ' || true)
+  [ "$events" -le 201 ] || fail "the presentation listed $events events instead of its bound"
+  [ ! -e "$dir/home/state/.subsuper-routine" ] || fail "the bounded return left the ledger behind"
+
+  # An absence whose only content was finished-window repeats still reports them:
+  # the drop is the account of what the window held, not a silent zero.
+  dir="$TMP_ROOT/ledger-drops-only"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  printf '25028\n' > "$dir/home/state/.subsuper-dropped-finished-repeat"
+  out=$(run_return "$dir" begin) || fail "a drops-only return should clear: $out"
+  assert_contains "$out" 'dropped before the ledger: finished-repeat=25028' \
+    "an absence made only of repeats reported no drop at all"
+  assert_contains "$out" 'counts: escalation=0 routine=0 daemon-notice=0' \
+    "a drops-only summary did not state its empty counts"
+  pass "a pathological ledger is counted in full, presented within its bound, and names what it skipped"
+}
+
+# A crash between building the summary and the commander seeing it must neither
+# lose the summary nor double it, and the replay must keep one identity.
+test_return_receipt_survives_a_crash_without_doubling() {
+  local dir out rc id ack count
+  dir="$TMP_ROOT/receipt-crash"
+  install_runner "$dir"
+  date +%s > "$dir/home/state/.afk"
+  printf '1784074271|routine|fake-c1.status -> working: step one\n' > "$dir/home/state/.subsuper-routine"
+  printf '1784074280|escalation|fake-c1: done: PR https://example.test/pr/300\n' > "$dir/home/state/.subsuper-escalations"
+
+  set +e
+  out=$(SQUAD_AFK_RETURN_CRASH=receipt run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 9 ] || fail "the receipt crash seam should stop the return (rc=$rc): $out"
+  assert_not_contains "$out" 'catch-up summary' "a summary was presented before its receipt was durable"
+  [ -s "$dir/home/state/.afk-receipt" ] || fail "a crash between building and presenting lost the summary"
+  id=$(awk -F"$(printf '\t')" '$1 == "id" { print $2; exit }' "$dir/home/state/.afk-receipt")
+  [ -n "$id" ] || fail "the durable receipt carries no identity"
+  [ -s "$dir/home/state/.subsuper-routine" ] || fail "the crash cleared the ledger before anything was presented"
+
+  set +e
+  out=$(SQUAD_AFK_RETURN_CRASH=presented run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 9 ] || fail "the presented crash seam should stop the replay (rc=$rc): $out"
+  assert_contains "$out" 'catch-up summary' "the replay lost the built summary"
+  assert_contains "$out" 'https://example.test/pr/300' "the replay lost the escalation link"
+  count=$(printf '%s' "$out" | grep -c 'catch-up summary' || true)
+  [ "$count" -eq 1 ] || fail "the replay presented the summary $count times"
+  ack=$(awk -F"$(printf '\t')" '$1 == "ack" { print $2; exit }' "$dir/home/state/.afk-receipt.ack")
+  [ "$ack" = "$id" ] || fail "the replay acknowledged a different identity ($ack != $id)"
+
+  out=$(run_return "$dir" begin) || fail "the return after the presented crash should clear: $out"
+  assert_not_contains "$out" 'catch-up summary' "an already acknowledged receipt was presented a second time"
+  assert_contains "$out" "the return summary was already presented as $id" \
+    "the replay did not name the identity it refused to duplicate"
+  [ ! -e "$dir/home/state/.afk-receipt" ] || fail "the acknowledged receipt was left behind"
+  [ ! -e "$dir/home/state/.subsuper-routine" ] || fail "the cleared return left the ledger behind"
+  pass "a crash before presentation replays the same receipt once, and never duplicates it"
+}
+
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
@@ -308,3 +397,5 @@ test_away_ledger_while_blocked_presents_only_a_count
 test_commander_decision_does_not_masquerade_as_Squad_blocker
 test_away_reentry_refuses_pending_return_gate
 test_check_retries_recorded_terminal_teardown
+test_pathological_ledger_is_counted_and_bounded
+test_return_receipt_survives_a_crash_without_doubling

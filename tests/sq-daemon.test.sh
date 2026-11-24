@@ -246,7 +246,7 @@ test_stale_terminal_escalates() {
 }
 
 test_stale_finished_state_self_handles() {
-  local dir state out key win
+  local dir state out key win drops
   dir=$(make_case stale-finished-state)
   state="$dir/state"
   win="sess:sq-fin-state"
@@ -260,8 +260,19 @@ test_stale_finished_state_self_handles() {
   SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" handle_wake "stale: $win" "$state"
   [ ! -e "$state/.subsuper-stale-$key" ] || fail "finished stale marker was retained"
   [ ! -s "$state/.subsuper-escalations" ] || fail "finished stale was escalated"
+  # The 2026-11-24 origin defect: the same finished-window notice arriving again
+  # and again became one ledger row each time, 25,028 of them in one absence.
+  # The rule is that it is dropped where it is produced and only counted, so this
+  # fixture fails the moment that drop is removed.
+  [ ! -s "$state/.subsuper-routine" ] || fail "a finished stale wake was written to the ledger"
+  [ "$(cat "$state/.subsuper-dropped-finished-repeat" 2>/dev/null)" = 1 ] || fail "the dropped finished repeat was not counted"
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" handle_wake "stale: $win" "$state"
+  SQUAD_STATE_OVERRIDE="$state" SQUAD_CREW_STATE_BIN="$dir/fakebin/sq-crew-state.sh" handle_wake "stale: $win" "$state"
+  [ ! -s "$state/.subsuper-routine" ] || fail "repeated finished stale wakes grew the ledger"
+  drops=$(cat "$state/.subsuper-dropped-finished-repeat" 2>/dev/null)
+  [ "$drops" = 3 ] || fail "repeated finished stale wakes were counted $drops times instead of 3"
   unset SQUAD_FAKE_CREW_STATE
-  pass "current finished state clears stale tracking without escalation"
+  pass "current finished state clears stale tracking, escalates nothing, and never grows the ledger"
 }
 
 # A DECLARED external-wait pause (paused:) is neither a wedge nor a terminal

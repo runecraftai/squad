@@ -865,6 +865,21 @@ routine_add() {  # <state> <distilled-item>
   ledger_add "$1" routine "$2"
 }
 
+# A notification about a window whose task already finished names no new work, so
+# it is dropped where it is produced instead of becoming a ledger row. Only the
+# count survives, in a fixed one-line file per class, and bin/sq-afk-return.sh
+# reports it as dropped so the decision stays visible. This is the origin fix for
+# the 25,028-entry repeat of a single finished-window notice: the ledger cannot
+# grow with repetitions that carry no new information, and the bounded presentation
+# downstream is a separate, second bound rather than the only one.
+drop_count_add() {  # <state> <class>
+  local state=$1 cls=${2//[!A-Za-z0-9-]/_} n file
+  file="$state/.subsuper-dropped-$cls"
+  n=$(cat "$file" 2>/dev/null || true)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  printf '%s\n' "$((n + 1))" > "$file" 2>/dev/null || true
+}
+
 # Canonical single-line digest of the first <lines> buffered escalations. It is
 # used both to build a flush and to prove that a native handoff's acknowledged
 # message still describes exactly the buffer prefix it covered.
@@ -1600,9 +1615,15 @@ handle_wake() {  # <reason> <state>
   distilled=${decision#*|}
   [ "$kind" = signal ] && sync_pause_markers_from_signal "$state" "$arg"
   # Every self-handled wake is ledgered for the return summary, except a bare
-  # heartbeat tick, which is not an event. Escalations are ledgered below.
+  # heartbeat tick, which is not an event, and a notification about an already
+  # finished window, which is dropped here and only counted. Escalations are
+  # ledgered below.
   if [ "$action" != escalate ] && [ "${reason%%:*}" != heartbeat ]; then
-    routine_add "$state" "$reason -> $distilled"
+    if [ "$action" = finished ]; then
+      drop_count_add "$state" finished-repeat
+    else
+      routine_add "$state" "$reason -> $distilled"
+    fi
   fi
   case "$action" in
     escalate)
@@ -1634,7 +1655,8 @@ handle_wake() {  # <reason> <state>
       ;;
     finished)
       # A finished current-state result outranks an old terminal status line.
-      # Drop all daemon-side stale tracking without creating a new escalation.
+      # Drop all daemon-side stale tracking without creating a new escalation or a
+      # ledger row: the wake named no new work, and the caller already counted it.
       if [ "$kind" = "stale" ]; then
         clear_pause_tracking "$arg" "$state"
       fi

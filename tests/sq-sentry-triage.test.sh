@@ -2834,6 +2834,36 @@ test_busy_tall_pane_above_tail_progress_resets_expiry() {
 # AFK hands a static busy pane to the daemon exactly like a static idle stale
 # pane: one stale wake per distinct unchanged hash, no wedge timer, no escalation
 # counter growth on repeated polls of the same frozen pane.
+# The 2026-11-24 repeat at its source: a finished task whose static pane keeps
+# hashing differently used to hand the away-mode daemon one stale wake per poll,
+# 25,028 of them in one absence. A finished window is absorbed before any wake is
+# queued and leaves no stale clock behind.
+test_afk_finished_task_never_enters_the_stale_clock() {
+  local dir state fakebin out capture_file window key sig pid
+  dir=$(make_case afk-finished-stale); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:sq-afk-finished"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'idle\n > \n' > "$capture_file"
+  printf 'window=%s\nkind=strike\nharness=pi\n' "$window" > "$state/afk-finished.meta"
+  printf 'done: PR https://example.test/pr/12 checks green\n' > "$state/afk-finished.status"
+  sig=$(seen_sig "$state/afk-finished.status"); printf '%s' "$sig" > "$state/.seen-afk-finished_status"
+  date '+%s' > "$state/.afk"
+
+  watch_bg "$state" "$fakebin" "$out" env SQUAD_FAKE_TMUX_WINDOW="$window" \
+    SQUAD_FAKE_TMUX_CAPTURE="$capture_file" SQUAD_STALE_ESCALATE_SECS=1 \
+    SQUAD_FAKE_CREW_STATE='state: done · source: run-step · checks green, awaiting merge'
+  pid=$!
+  wait_live "$pid" 40 || { reap "$pid"; fail "a finished task's static pane woke the away-mode supervisor: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "a finished task's static pane produced a stale wake: $(cat "$out")"; }
+  [ ! -s "$state/.stand-to-queue" ] || { reap "$pid"; fail "a finished task's static pane queued a stale wake"; }
+  [ ! -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "a finished task entered the stale clock"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "a finished task counted a wedge escalation"; }
+  grep -F "absorbed stale (task already finished, away mode)" "$state/.sentry-triage.log" >/dev/null 2>&1 \
+    || { reap "$pid"; fail "the away-mode absorption of the finished pane was not recorded"; }
+  reap "$pid"
+  pass "a finished task's static pane is absorbed in away mode and never enters the stale clock"
+}
+
 test_busy_static_afk_hands_off_once_per_hash() {
   local dir state fakebin out capture_file window key sig pid
   dir=$(make_case busy-static-afk); state="$dir/state"; fakebin="$dir/fakebin"
@@ -4805,6 +4835,7 @@ test_busy_static_pane_escalates_without_turn_age
 test_busy_changing_pane_resets_expiry
 test_busy_tall_pane_above_tail_progress_resets_expiry
 test_busy_static_afk_hands_off_once_per_hash
+test_afk_finished_task_never_enters_the_stale_clock
 test_busy_static_afk_run_step_defers_handoff
 test_busy_static_to_idle_surfaces_without_busy_timer_delay
 test_busy_static_pane_defers_while_run_step_active
