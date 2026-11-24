@@ -38,6 +38,8 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
 | `sq-install-oxlint.sh`   | Install CI's exact-version oxlint with npm tarball URL, SHA-256 pin, and platform binding |
 | `sq-install-fob.sh`| Build and install the vendored packages/fob from source for real-Herdr E2E that needs spawn worktrees |
+| `sq-install-supervisor.sh` | Build and install the vendored `packages/sq-supervisor` containment runner with a pinned toolchain and atomic replace |
+| `sq-op-contain.sh` | Run one external operation inside its own systemd user transient service and report whether it stayed contained |
 | `sq-herdr-ci-cleanup.sh` | Snapshot and tear down only job-owned `sq-lab-*` sessions in the Herdr CI lane       |
 | `sq-test-run.sh`         | Behavior-test runner: selection, portable lanes, proven-isolated `--jobs`, coverage guard, timing/JSON |
 | `sq-test-isolation-proof.sh` | Concurrent isolation proof and proven-isolated candidate set owner |
@@ -108,7 +110,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-policy-lab.sh`     | Private non-promoting comparison laboratory for validating, running, and reporting policy candidate experiments |
 | `sq-drill-run-lib.sh`       | Shared drill run attribution and current-run lifecycle                        |
 | `sq-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
-| `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
+| `sq-timeout-lib.sh`      | Single owner of hard-bounded command execution, its fallback watchdog, and the containment mode switch |
 | `sq-timing-lib.sh`       | Single owner of the deferred network stage's per-step elapsed-time records, inert unless a run asks for them |
 | `sq-supervision-lib.sh`  | Shared in-flight-work-without-fresh-sentry-beacon predicate                         |
 | `sq-ff-lib.sh`           | Shared guarded fast-forward helper for origin pulls and local XO syncs       |

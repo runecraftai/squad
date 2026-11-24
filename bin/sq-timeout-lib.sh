@@ -15,16 +15,34 @@
 #       except 124, which means the bound was hit (GNU timeout's convention,
 #       reproduced by the perl and bash fallbacks).
 #
+#   fm_containment_mode
+#       Prints the containment mechanism this host will use: "systemd" when
+#       SQUAD_OP_CONTAINMENT=systemd, otherwise "legacy".
+#
+#   fm_run_contained <seconds> <command> [args...]
+#       Runs the command with the same bound and exit contract as fm_run_timed,
+#       inside its own systemd user transient service (bin/sq-op-contain.sh), so
+#       descendants that change session or process group stay in one kernel-owned
+#       cgroup. Adds 125 for an unknown outcome or a group that stayed populated,
+#       and 78 when strict mode cannot be honoured on this host.
+#
 # A non-positive bound is not a bound: `timeout 0` and the perl fallback's
 # `alarm 0` both disable the deadline, so callers must reject 0 before calling.
 #
-# All four mechanisms terminate the whole process GROUP, not just the direct
+# The legacy mechanisms terminate the whole process GROUP, not just the direct
 # child, so a hung grandchild (a vendor CLI spawned by a wrapper script, a git
-# fetch spawned by a sweep) cannot outlive the bound. GNU/BSD `timeout` does
-# this by default because it does not run the command in the foreground process
-# group; the perl fallback does it explicitly with setpgrp plus a negative pid,
-# and the bash fallback uses monitor mode to give the bounded child its own
-# process group before signaling its negative pid.
+# fetch spawned by a sweep) cannot outlive the bound on those paths. GNU/BSD
+# `timeout` does this by default because it does not run the command in the
+# foreground process group; the perl fallback does it explicitly with setpgrp
+# plus a negative pid, and the bash fallback uses monitor mode to give the
+# bounded child its own process group before signaling its negative pid.
+#
+# That group is not a containment domain: a descendant that starts a second group
+# inside the session, or its own session, escapes a negative-pid kill entirely.
+# Closing that gap needs a kernel-owned membership domain, which is what
+# fm_run_contained provides. Squad's containment-backed path is opt-in per
+# SQUAD_OP_CONTAINMENT=systemd until the away-mode migration proves it on a base;
+# until then the legacy group kill is what runs, and its limit is real.
 set -u
 
 fm_timeout_mechanism() {
@@ -115,9 +133,44 @@ fm_run_external_timeout() {
   esac
 }
 
+fm_containment_mode() {
+  if [ "${SQUAD_OP_CONTAINMENT:-}" = systemd ]; then
+    printf 'systemd\n'
+  else
+    printf 'legacy\n'
+  fi
+}
+
+fm_op_contain() {
+  local script_dir
+  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  "$script_dir/sq-op-contain.sh" --stop-grace "${SQUAD_OP_STOP_GRACE:-2}" "$@"
+}
+
+fm_run_contained() {  # <seconds> <command...>
+  local seconds=$1 rc previous
+  shift
+  [ "$seconds" -gt 0 ] 2>/dev/null || return 124
+  previous=${SQUAD_OP_CONTAINMENT_ACTIVE:-}
+  SQUAD_OP_CONTAINMENT_ACTIVE=1
+  export SQUAD_OP_CONTAINMENT_ACTIVE
+  fm_op_contain "$seconds" "$@"
+  rc=$?
+  if [ -n "$previous" ]; then
+    SQUAD_OP_CONTAINMENT_ACTIVE=$previous
+  else
+    unset SQUAD_OP_CONTAINMENT_ACTIVE
+  fi
+  return "$rc"
+}
+
 fm_run_timed() {  # <seconds> <command...>
   local seconds=$1
   shift
+  if [ "${SQUAD_OP_CONTAINMENT_ACTIVE:-}" != 1 ] && [ "$(fm_containment_mode)" = systemd ]; then
+    fm_run_contained "$seconds" "$@"
+    return $?
+  fi
   case "$(fm_timeout_mechanism)" in
     timeout) fm_run_external_timeout timeout "$seconds" "$@" ;;
     gtimeout) fm_run_external_timeout gtimeout "$seconds" "$@" ;;

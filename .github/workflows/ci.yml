@@ -393,7 +393,7 @@ jobs:
           }
 
   go-build-test:
-    name: Go packages build + test (fob, drill)
+    name: Go packages build + test (fob, drill, sq-supervisor)
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -410,11 +410,22 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build fob + drill
         run: bun x turbo run build --filter=@runecraft/fob --filter=@runecraft/drill
+      - name: Build sq-supervisor from vendored source
+        run: |
+          set -eu
+          # The containment runner is a stdlib-only Go module with its own
+          # go.mod, so it is built by this repo's install script rather than by
+          # the bun workspace. The same script is what a base uses, so CI proves
+          # the exact build path instead of an ad-hoc go build.
+          mkdir -p "$RUNNER_TEMP/bin"
+          bin/sq-install-supervisor.sh "$RUNNER_TEMP/bin"
+          "$RUNNER_TEMP/bin/sq-supervisor" --version
       - name: Go test per package
         run: |
           set -eu
           (cd packages/fob && go test ./...)
           (cd packages/drill && go test ./...)
+          (cd packages/sq-supervisor && go test ./...)
 
   sq-tasks:
     name: sq-tasks fork build + test

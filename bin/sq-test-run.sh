@@ -947,6 +947,14 @@ families_for_changed_path() {
       printf '%s\n' snapshot-sitrep
       printf '%s\n' pure-contract-unit
       printf '%s\n' XO
+      # The containment seam and its runner have exactly one real-surface test.
+      printf '%s\n' "__script__:sq-op-contain.test.sh"
+      ;;
+    bin/sq-op-contain.sh|bin/sq-install-supervisor.sh|packages/sq-supervisor/*)
+      printf '%s\n' "__script__:sq-op-contain.test.sh"
+      ;;
+    tests/fixtures/supervision-out-of-shell/*)
+      printf '%s\n' "__script__:sq-supervision-fixture.test.sh"
       ;;
     bin/sq-pr-*|bin/sq-merge-local.sh|bin/sq-teardown.sh|bin/sq-review-diff.sh|\
     bin/sq-check*)
