@@ -151,14 +151,13 @@ escalate() {  # <text>
 }
 
 # --- serialized admission boundary ----------------------------------------
-# One base-wide owner of the admission decision, so two triggers, a return and a
-# revocation cannot interleave inside it. mkdir is atomic and portable (flock is
-# absent on macOS). A held lock means another check owns the boundary, so this
-# trigger does nothing rather than queueing a second one.
+# A held lock means another check owns the boundary, so this trigger does
+# nothing rather than queueing a second one.
 acquire_lock() {
-  mkdir "$LOCK" 2>/dev/null || return 1
-  trap 'rm -rf "$LOCK"' EXIT
-  return 0
+  # shellcheck source=bin/sq-stand-to-lib.sh
+  SQUAD_STATE_OVERRIDE="$STATE" . "$SCRIPT_DIR/sq-stand-to-lib.sh"
+  fm_lock_try_acquire "$LOCK" || return 1
+  trap 'fm_lock_release "$LOCK"' EXIT
 }
 
 # --- absence record --------------------------------------------------------
@@ -381,6 +380,7 @@ admit() {
   record_count=$(printf '%s\n' "$open" | grep -c . || true)
   [ -n "$open" ] || { refuse "no-open-absence-record"; return 0; }
   [ "$record_count" -eq 1 ] || { refuse "multiple-open-absence-records:$(printf '%s' "$open" | tr '\n' ',')"; return 0; }
+  [ "$open" = "${SQUAD_QUEUE_PILOT_EXPECTED_RECORD-$open}" ] || { refuse "absence-record-mismatch:trigger"; return 0; }
   [ "$open" = "$RECORD" ] || { refuse "absence-record-mismatch:$open"; return 0; }
   [ "${RECORD%.md}" = "$GENERATION" ] || { refuse "absence-generation-mismatch:${RECORD%.md}"; return 0; }
 
@@ -508,8 +508,8 @@ cmd_check() {
   [ -f "$GRANT" ] || return 0
   acquire_lock || return 0
   admit
+  fm_lock_release "$LOCK"
   trap - EXIT
-  rm -rf "$LOCK"
   return 0
 }
 

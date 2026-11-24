@@ -875,18 +875,30 @@ routine_add() {  # <state> <distilled-item>
 # heartbeat, which returns before classification), and on the housekeeping tick.
 # bin/sq-queue-pilot.sh's header owns the admission sequence and refusals, and
 # docs/configuration.md owns the grant schema.
+# shellcheck source=bin/sq-absence-lib.sh
+. "$SQUAD_DAEMON_DIR/sq-absence-lib.sh"
+
+queue_pilot_open_record() {
+  local records
+  records=$(open_absence_records "${SQUAD_DATA_OVERRIDE:-$SQUAD_BASE/data}")
+  case "$records" in ''|*$'\n'*) return 1 ;; esac
+  printf '%s\n' "$records"
+}
+
 queue_pilot_reap() {  # <state>
-  local state=$1 pid identity out
+  local state=$1 pid identity actual record out
   if [ -e "$state/.queue-pilot.pid" ]; then
-    IFS=$'\t' read -r pid identity 2>/dev/null < "$state/.queue-pilot.pid" || true
-    if [ -n "${identity:-}" ] && [ "$(fm_pid_identity "$pid" 2>/dev/null)" = "$identity" ]; then
-      return 0
+    IFS=$'\t' read -r pid identity _ 2>/dev/null < "$state/.queue-pilot.pid" || true
+    if [ -n "${identity:-}" ] && fm_pid_alive "$pid"; then
+      actual=$(fm_pid_identity "$pid" 2>/dev/null) || return 0
+      [ "$actual" != "$identity" ] || return 0
     fi
     rm -f "$state/.queue-pilot.pid"
   fi
-  [ -s "$state/.queue-pilot.outcome" ] || return 0
-  out=$(cat "$state/.queue-pilot.outcome" 2>/dev/null || true)
+  [ -f "$state/.queue-pilot.outcome" ] || return 0
+  { IFS= read -r record && IFS= read -r out; } < "$state/.queue-pilot.outcome" || out=
   rm -f "$state/.queue-pilot.outcome"
+  [ -n "$out" ] && [ -n "$record" ] && [ "$(queue_pilot_open_record)" = "$record" ] || return 0
   case "$out" in
     escalation\|*) ledger_add "$state" escalation "${out#escalation|}" ;;
     routine\|*) ledger_add "$state" routine "${out#routine|}" ;;
@@ -894,7 +906,7 @@ queue_pilot_reap() {  # <state>
 }
 
 queue_pilot_trigger() {  # <state>
-  local state=$1 size=0 pid identity
+  local state=$1 size=0 pid identity record registration i token outcome
   queue_pilot_reap "$state"
   [ -e "$state/.afk" ] || return 0
   # No armed grant, no check: never pay a subprocess for an idle pilot.
@@ -905,21 +917,33 @@ queue_pilot_trigger() {  # <state>
     size=$(wc -c < "$state/.queue-pilot.log" 2>/dev/null || printf 0)
     [ "$size" -lt 65536 ] || : > "$state/.queue-pilot.log"
   fi
-  # The child writes its one outcome line where the reap reads it once the child
-  # has exited, so a reader never sees a half line.
-  rm -f "$state/.queue-pilot.outcome"
+  record=$(queue_pilot_open_record) || record=
+  registration=$(mktemp "$state/.queue-pilot.pid.XXXXXX") || return 0
   (
-    SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$state" \
-      "$SQUAD_DAEMON_DIR/sq-queue-pilot.sh" check
+    for ((i=0; i<40; i++)); do
+      [ -e "$registration" ] || break
+      sleep 0.05
+    done
+    [ ! -e "$registration" ] || exit 0
+    IFS=$'\t' read -r _ _ token 2>/dev/null < "$state/.queue-pilot.pid" || exit 0
+    [ "$token" = "${registration##*/}" ] || exit 0
+    outcome=$(mktemp "$state/.queue-pilot.outcome.XXXXXX") || exit 1
+    {
+      printf '%s\n' "$record"
+      SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$state" \
+        SQUAD_QUEUE_PILOT_EXPECTED_RECORD="$record" "$SQUAD_DAEMON_DIR/sq-queue-pilot.sh" check
+    } > "$outcome"
+    mv -f "$outcome" "$state/.queue-pilot.outcome"
     exit "$?"
-  ) >"$state/.queue-pilot.outcome" 2>>"$state/.queue-pilot.log" &
+  ) 2>>"$state/.queue-pilot.log" &
   pid=$!
   if identity=$(fm_pid_identity "$pid" 2>/dev/null) && [ -n "$identity" ] &&
-    printf '%s\t%s\n' "$pid" "$identity" > "$state/.queue-pilot.pid"; then
+    printf '%s\t%s\t%s\n' "$pid" "$identity" "${registration##*/}" > "$registration" &&
+    mv -f "$registration" "$state/.queue-pilot.pid"; then
     return 0
   fi
-  wait "$pid" || true
-  queue_pilot_reap "$state"
+  rm -f "$registration"
+  log "queue-pilot: could not publish check ownership"
 }
 
 # Canonical single-line digest of the first <lines> buffered escalations. It is

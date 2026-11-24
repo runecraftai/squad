@@ -98,7 +98,7 @@ state/               volatile runtime signals; gitignored
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
   queue-pilot.grant  the opt-in away queue pilot's authority record, written only by bin/sq-queue-pilot.sh arm and marked revoked=1 by its revoke command; absent means the pilot is off (docs/configuration.md "Away queue pilot")
   queue-pilot.intent the pilot's one-use attempt receipt, written before any launch and never removed, so a repeated trigger always finds it spent
-  .queue-pilot.pid .queue-pilot.outcome .queue-pilot.log .queue-pilot-reason .queue-pilot.lock  pilot scheduling and budget internals; never touch - the daemon owns the pid and outcome files, and the pilot owns the lock, the last-refusal record, and the bounded log
+  .queue-pilot.pid .queue-pilot.outcome .queue-pilot.log .queue-pilot-reason queue-pilot.lock  pilot internals; never touch - the daemon owns the pid, absence-scoped outcome and bounded log, and the pilot owns the admission lock and last-refusal record
   .orca-tab-<id> .orca-tab-<id>.lock  Orca mission-tab close receipt and its per-task close lock; only a confirmed close is recorded, a runtime error preserves the record for a retry, and teardown removes both (docs/orca-backend.md "Current lifecycle and safety")
   window-states      derived per-window tmux sidebar truth, one TSV line per tmux task window; contract owned by bin/sq-window-state.sh (docs/configuration.md "Operational base layout and state")
   .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks

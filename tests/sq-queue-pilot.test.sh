@@ -196,8 +196,14 @@ assert_present "$STATE/queue-pilot.grant" "the grant is durable"
 assert_grep "task=$TASK" "$STATE/queue-pilot.grant" "the grant records the exact task"
 assert_grep "brief_sha256=" "$STATE/queue-pilot.grant" "the grant binds the prepared brief"
 
+( exit 0 ) &
+dead_owner=$!
+wait "$dead_owner"
+mkdir "$STATE/queue-pilot.lock"
+printf '%s\n' "$dead_owner" > "$STATE/queue-pilot.lock/pid"
+
 out=$(run_pilot "$BASE" check 2>&1)
-expect_code 0 $? "check exits zero"
+expect_code 0 $? "check recovers an abandoned admission lock"
 assert_contains "$out" "routine|queue-pilot: dispatched $TASK" "the happy path dispatches the named task"
 assert_contains "$out" "endpoint=alive" "delivery verification is quoted"
 assert_contains "$out" "marked in flight" "the start transition is reported"
@@ -427,14 +433,17 @@ assert_contains "$status" "intent: unspent" "status reports an unspent intent"
 # daemon appends it to the away-mode routine buffer when it reaps the child.
 (
   # shellcheck source=bin/sq-supervise-daemon.sh
-  SQUAD_DAEMON_DIR="$ROOT/bin" . "$ROOT/bin/sq-supervise-daemon.sh"
+  . "$ROOT/bin/sq-supervise-daemon.sh"
 
   new_base daemonreap
   # shellcheck source=bin/sq-stand-to-lib.sh
+  SQUAD_BASE="$BASE"
+  SQUAD_DATA_OVERRIDE="$DATA"
   SQUAD_STATE_OVERRIDE="$STATE" . "$ROOT/bin/sq-stand-to-lib.sh"
+  write_absence "$RECORD" "$TASK"
   identity=$(fm_pid_identity "$$") || fail "could not identify the live test process"
   printf '%s\t%s\n' "$$" "$identity" > "$STATE/.queue-pilot.pid"
-  printf 'routine|queue-pilot: dispatched %s\n' "$TASK" > "$STATE/.queue-pilot.outcome"
+  printf '%s\nroutine|queue-pilot: dispatched %s\n' "$RECORD" "$TASK" > "$STATE/.queue-pilot.outcome"
   # A live pid means the check is still in flight: nothing is ledgered yet.
   queue_pilot_reap "$STATE"
   [ ! -e "$STATE/.subsuper-routine" ] || fail "an in-flight check ledgered early"
@@ -449,12 +458,35 @@ assert_contains "$status" "intent: unspent" "status reports an unspent intent"
 
   # An escalation outcome goes to the commander-relevant buffer.
   printf '%s\n' 999999 > "$STATE/.queue-pilot.pid"
-  printf 'escalation|queue-pilot: launched %s but delivery is unverified\n' "$TASK" \
+  printf '%s\nescalation|queue-pilot: launched %s but delivery is unverified\n' "$RECORD" "$TASK" \
     > "$STATE/.queue-pilot.outcome"
   queue_pilot_reap "$STATE"
   assert_grep "escalation|queue-pilot: launched" "$STATE/.subsuper-escalations" \
     "an ambiguous launch is escalated, not absorbed"
-)
+
+  write_record "$TASK" queued
+  ready_task "$TASK"
+  write_brief "$TASK" direct-PR
+  arm_grant >/dev/null || fail "arm before daemon trigger"
+  (
+    fm_pid_identity() { return 1; }
+    queue_pilot_trigger "$STATE"
+    wait
+    assert_absent "$STATE/.queue-pilot.pid" "failed ownership publication leaves no check registered"
+    assert_absent "$STATE/queue-pilot.intent" "an unregistered check cannot spend the grant"
+    [ ! -s "$SQ_FAKE_SPAWN_LOG" ] || fail "an unregistered check must not launch"
+  ) || exit 1
+  queue_pilot_trigger "$STATE"
+  wait
+  assert_present "$STATE/queue-pilot.intent" "a registered check ran: $(<"$STATE/.queue-pilot.log")"
+  assert_present "$STATE/.queue-pilot.outcome" "the registered check published its outcome"
+  printf '\n## Retorno: closed\n' >> "$DATA/$RECORD"
+  write_absence absence-2026-11-25-0100.md "$TASK"
+  queue_pilot_reap "$STATE"
+  assert_absent "$STATE/.queue-pilot.outcome" "the previous absence's outcome is discarded"
+  [ "$(wc -l < "$STATE/.subsuper-routine")" -eq 1 ] || fail "late outcome leaked into the next absence"
+  [ "$(wc -l < "$STATE/.subsuper-escalations")" -eq 1 ] || fail "late escalation leaked into the next absence"
+) || exit 1
 
 # With no armed grant the trigger never starts a check, so an idle pilot costs
 # no subprocess.
