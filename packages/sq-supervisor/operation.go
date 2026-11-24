@@ -182,13 +182,8 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 	}
 
 	oc.State, oc.ExitCode, oc.Signal, oc.Detail = classify(startRes, startErr, unitRecord, showErr)
-	// The manager's own launch diagnostic is the only operator-visible cause when
-	// a unit never starts, so it must reach the outcome instead of being lost.
-	if startErr != nil || oc.State == stateUnknownResult || oc.State == stateCleanupPending {
-		if diagnostic := strings.TrimSpace(startRes.Stderr); diagnostic != "" {
-			oc.Detail = appendDetail(oc.Detail, diagnostic)
-		}
-	}
+	// The manager's streams are the operation's streams under --pipe, so nothing
+	// it wrote there is attributable to the manager; only the call itself is.
 	if startErr != nil {
 		oc.Detail = appendDetail(oc.Detail, startErr.Error())
 	}

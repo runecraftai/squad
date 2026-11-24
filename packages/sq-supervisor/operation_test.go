@@ -112,22 +112,23 @@ func TestCompletedOperationReportsItsOwnStatus(t *testing.T) {
 	}
 }
 
-// The manager's own launch diagnostic is the only operator-visible cause when a
-// unit never starts, so it must reach the outcome rather than be discarded.
-func TestStartDiagnosticReachesTheOutcome(t *testing.T) {
+// The manager and the operation share their streams under --pipe, so a streamed
+// tail cannot be attributed to the manager and must never be copied into the
+// durable record as the operation's command output.
+func TestStreamedOutputIsNotCopiedIntoTheOutcome(t *testing.T) {
 	dir := t.TempDir()
-	diagnostic := "Failed to start transient service unit: WorkingDirectory does not exist"
+	leaked := "a line the command wrote that belongs only on its own stderr"
 	m := &fakeManager{
 		version:  "262.1-1-arch",
-		startRes: commandResult{ExitCode: 1, Stderr: diagnostic},
+		startRes: commandResult{ExitCode: 1, Stderr: leaked},
 		state:    unitState{LoadState: "not-found"},
 	}
 	oc, code, _ := runFake(t, m, "diagnostic", dir)
 	if code != exitUnknownResult {
 		t.Fatalf("exit = %d, want %d", code, exitUnknownResult)
 	}
-	if !strings.Contains(oc.Detail, diagnostic) {
-		t.Fatalf("detail = %q, want it to quote the manager diagnostic", oc.Detail)
+	if strings.Contains(oc.Detail, leaked) {
+		t.Fatalf("detail = %q, want the operation's output kept out of the record", oc.Detail)
 	}
 }
 

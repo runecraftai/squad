@@ -241,14 +241,17 @@ rc=$?
 [ "$rc" -eq 124 ] || fail "a delegated bound must still report 124, got $rc"
 pass "strict mode keeps fm_run_timed's 124 bound contract"
 
-write_backend() {  # <path> <pid-file> <second mode>
-  cat > "$1" <<SH
+write_backend() {  # <path>
+  cat > "$1" <<'SH'
 #!/usr/bin/env bash
-case "$3" in
-  session) setsid bash -c 'trap "" TERM; exec sleep 300' & ;;
-  group) set -m; bash -c 'trap "" TERM; exec sleep 300' & set +m ;;
+# <pid-file> <session|group>: the descendant records the pid and the session it
+# really had when it started, so the session premise stays provable after the
+# bound has killed it.
+pid_file=$1
+case "$2" in
+  session) setsid bash -c 'trap "" TERM; printf "%s %s\n" "$$" "$(ps -o sid= -p $$)" > "$1"; exec sleep 300' _ "$pid_file" & ;;
+  group) set -m; bash -c 'trap "" TERM; printf "%s %s\n" "$$" "$(ps -o sid= -p $$)" > "$1"; exec sleep 300' _ "$pid_file" & set +m ;;
 esac
-printf '%s\n' "\$!" > "$2"
 trap '' TERM
 sleep 300
 SH
@@ -266,19 +269,22 @@ wait_for_file() {  # <path> <ticks>
 
 for variant in session group; do
   descendant_file="$TMP_ROOT/$variant.pid"
-  write_backend "$TMP_ROOT/backend-$variant.sh" "$descendant_file" "$variant"
+  write_backend "$TMP_ROOT/backend-$variant.sh"
   start=$(date +%s)
   SQUAD_SUPERVISOR_BIN="$SUPERVISOR" "$RUNNER" --stop-grace 1 2 "$TMP_ROOT/backend-$variant.sh" \
-    >"$TMP_ROOT/$variant.out" 2>"$TMP_ROOT/$variant.err"
+    "$descendant_file" "$variant" >"$TMP_ROOT/$variant.out" 2>"$TMP_ROOT/$variant.err"
   rc=$?
   elapsed=$(( $(date +%s) - start ))
   wait_for_file "$descendant_file" 5 || fail "$variant: the backend never recorded its descendant"
-  descendant=$(cat "$descendant_file")
+  read -r descendant descendant_sid < "$descendant_file"
   SPAWNED_PIDS="$SPAWNED_PIDS $descendant"
   [ "$rc" -eq 124 ] || fail "$variant: a bounded operation must report 124, got $rc ($(cat "$TMP_ROOT/$variant.err"))"
   if [ "$variant" = session ]; then
-    [ "$(pid_session "$descendant")" != "$(pid_session $$)" ] \
-      || fail "session: the descendant must be in its own session for this proof to mean anything"
+    [ -n "$descendant_sid" ] || fail "session: the backend never recorded the descendant's session"
+    [ "$descendant_sid" = "$descendant" ] \
+      || fail "session: the descendant must lead its own session (pid $descendant, sid $descendant_sid)"
+    [ "$descendant_sid" != "$(pid_session $$)" ] \
+      || fail "session: the descendant's own session must differ from the test's session"
   fi
   pid_alive "$descendant" && fail "$variant: the TERM-resistant descendant (pid $descendant) outlived the operation"
   [ "$elapsed" -le 15 ] || fail "$variant: the operation took ${elapsed}s, want it bounded near deadline+grace"
@@ -304,13 +310,13 @@ wait_for_child() {  # <parent-pid> <name>
 
 # The runner is not the owner: killing it must not release the operation.
 kill_runner_file="$TMP_ROOT/killed.pid"
-write_backend "$TMP_ROOT/backend-killed.sh" "$kill_runner_file" session
+write_backend "$TMP_ROOT/backend-killed.sh"
 SQUAD_SUPERVISOR_BIN="$SUPERVISOR" "$RUNNER" --stop-grace 1 3 "$TMP_ROOT/backend-killed.sh" \
-  >"$TMP_ROOT/killed.out" 2>"$TMP_ROOT/killed.err" &
+  "$kill_runner_file" session >"$TMP_ROOT/killed.out" 2>"$TMP_ROOT/killed.err" &
 shim_pid=$!
 SPAWNED_PIDS="$SPAWNED_PIDS $shim_pid"
 wait_for_file "$kill_runner_file" 50 || fail "killed: the backend never recorded its descendant"
-survivor=$(cat "$kill_runner_file")
+read -r survivor _ < "$kill_runner_file"
 SPAWNED_PIDS="$SPAWNED_PIDS $survivor"
 # The exact child this shim started, never an arbitrary process with the same
 # name: another supervisor on the host may be running a real operation.

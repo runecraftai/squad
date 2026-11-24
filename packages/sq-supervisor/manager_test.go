@@ -137,7 +137,8 @@ func TestStartArgsOnlyDisableExpansionWhenTheManagerSupportsIt(t *testing.T) {
 }
 
 // The operation's own streams must reach the caller, not a manager-opened file,
-// and its exit status must come back as the start status.
+// and its exit status must come back as the start status. The manager shares
+// those streams under --pipe, so it must not keep a copy of them either.
 func TestStreamRunnerRelaysTheOperationsStreams(t *testing.T) {
 	var out, errb strings.Builder
 	res, err := streamRunner(context.Background(), "/bin/sh", []string{"-c", "echo out line; echo err line >&2; exit 7"}, &out, &errb)
@@ -153,8 +154,8 @@ func TestStreamRunnerRelaysTheOperationsStreams(t *testing.T) {
 	if !strings.Contains(errb.String(), "err line") {
 		t.Errorf("relayed stderr = %q", errb.String())
 	}
-	if !strings.Contains(res.Stderr, "err line") {
-		t.Errorf("the diagnostic tail = %q, want the manager's own stderr kept for the record", res.Stderr)
+	if res.Stderr != "" {
+		t.Errorf("the runner kept a copy of the operation's stderr: %q", res.Stderr)
 	}
 }
 

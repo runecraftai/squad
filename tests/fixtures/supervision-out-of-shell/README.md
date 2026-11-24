@@ -54,7 +54,7 @@ pins, and where each case lives:
 | second process group | `tests/sq-op-contain.test.sh` (`group` variant) | containment |
 | own session | `tests/sq-op-contain.test.sh` (`session` variant) | containment |
 | TERM-ignoring child | `tests/sq-op-contain.test.sh` (both variants trap TERM) | containment |
-| inherited stdout holding the bound open | covered: the unit's own stdio goes to files, never an inherited pipe | containment |
+| inherited stdout holding the bound open | `tests/sq-op-contain.test.sh` (`session` and `group` variants: the resisting descendant inherits the relayed streams and the operation still returns inside its bound) | containment |
 | runner killed mid-operation | `tests/sq-op-contain.test.sh` | containment |
 | manager unavailable | Go test `TestMissingManagerRefusesBeforeLaunch` | containment |
 | reply lost after the backend accepted the action | Go test `TestUnknownResultIsNotRetried` | containment |

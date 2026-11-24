@@ -18,7 +18,10 @@
 # replays the operation's output.
 #
 # Exit status:
-#   0-122  the command's own status
+#   A completed operation's own status is passed through verbatim, including a
+#   status that collides with one of the runner's codes below. These codes
+#   describe the runner's own outcomes and are only returned when the operation
+#   did not complete:
 #   78     strict Linux mode was requested and can never be honoured on this host
 #   124    the bound was reached and the operation's whole group was stopped
 #   125    the outcome is unknown or its group was still populated (never success)
@@ -60,7 +63,7 @@ while [ "$#" -gt 0 ]; do
     --state-dir) STATE_DIR=${2:?--state-dir requires a value}; shift 2 ;;
     --stop-grace) STOP_GRACE=${2:?--stop-grace requires a value}; shift 2 ;;
     -h|--help)
-      sed -n '2,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,51p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     --) shift; break ;;

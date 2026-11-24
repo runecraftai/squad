@@ -61,27 +61,7 @@ type unitState struct {
 	ExecMainStatus int
 }
 
-// diagnosticLimit bounds the launch diagnostic kept in memory. The operation's
-// own output is streamed to the caller and never held here.
-const diagnosticLimit = 4096
-
-// tailBuffer keeps the last bytes written to it, so a streamed diagnostic can be
-// recorded without buffering the whole stream.
-type tailBuffer struct {
-	max int
-	buf []byte
-}
-
-func (b *tailBuffer) Write(p []byte) (int, error) {
-	b.buf = append(b.buf, p...)
-	if b.max > 0 && len(b.buf) > b.max {
-		b.buf = b.buf[len(b.buf)-b.max:]
-	}
-	return len(p), nil
-}
-
-func (b *tailBuffer) String() string { return string(b.buf) }
-
+// commandFor builds one manager program invocation with the caller's streams.
 func commandFor(ctx context.Context, name string, args, env []string, stdout, stderr io.Writer) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if len(env) > 0 {
@@ -122,13 +102,10 @@ func boundedRunner(ctx context.Context, name string, args []string, env []string
 
 // streamRunner runs the operation's own manager call with the caller's streams
 // attached, so the operation's stdout and stderr are relayed as they are
-// produced instead of being copied through a file or buffered whole. Only the
-// tail of the manager's diagnostic is kept for the durable outcome record.
+// produced. The manager speaks through those same streams under --pipe, so the
+// relayed bytes cannot be attributed to the manager and are never kept here.
 func streamRunner(ctx context.Context, name string, args []string, stdout, stderr io.Writer) (commandResult, error) {
-	diagnostic := &tailBuffer{max: diagnosticLimit}
-	res, err := finishRun(ctx, name, commandFor(ctx, name, args, nil, stdout, io.MultiWriter(stderr, diagnostic)))
-	res.Stderr = diagnostic.String()
-	return res, err
+	return finishRun(ctx, name, commandFor(ctx, name, args, nil, stdout, stderr))
 }
 
 // systemdManager is the real manager: systemd --user transient services.
