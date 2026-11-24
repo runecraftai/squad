@@ -389,6 +389,42 @@ test_return_receipt_survives_a_crash_without_doubling() {
   pass "a crash before presentation replays the same receipt once, and never duplicates it"
 }
 
+test_failed_ledger_selection_preserves_catchup() {
+  local dir state out rc real_awk row wake
+  dir="$TMP_ROOT/ledger-selection-failure"
+  state="$dir/home/state"
+  install_runner "$dir"
+  real_awk=$(command -v awk)
+  cat > "$dir/bin/awk" <<'SH'
+#!/usr/bin/env bash
+if [ "${!#}" = "$SQUAD_STATE_OVERRIDE/.subsuper-routine" ]; then
+  printf 'rows=1 escalation=0 routine=1 listed=0 oldest= newest=\n'
+  exit 1
+fi
+exec "$REAL_AWK" "$@"
+SH
+  chmod +x "$dir/bin/awk"
+  row='1784074290|routine|synthetic ledger event'
+  wake=$'1784074271\t2\tsignal\trepair-task.status\tsignal: synthetic status'
+  printf '%s\n' "$row" > "$state/.subsuper-routine"
+  printf '%s\n' "$wake" > "$state/.fake-drain"
+
+  rc=0
+  out=$(PATH="$dir/bin:$PATH" REAL_AWK="$real_awk" run_return "$dir" begin) || rc=$?
+  [ "$rc" -eq 1 ] || fail "failed ledger collection did not fail closed (rc=$rc): $out"
+  assert_contains "$out" 'could not collect the away-mode ledger' "return did not report the ledger failure"
+  assert_not_contains "$out" 'catch-up summary' "failed ledger collection published a partial summary"
+  [ -s "$state/.afk-return-catchup" ] || fail "failed ledger collection cleared the catch-up gate"
+  [ ! -e "$state/.afk-receipt" ] || fail "failed ledger collection wrote a receipt"
+  [ "$(<"$state/.subsuper-routine")" = "$row" ] || fail "failed ledger collection changed the source ledger"
+  [ "$(<"$state/.fake-drain")" = "$wake" ] || fail "failed ledger collection consumed pending wake evidence"
+
+  out=$(run_return "$dir" check) || fail "retry did not clear catch-up: $out"
+  assert_contains "$out" 'synthetic ledger event' "retry did not present the retained ledger event"
+  [ ! -e "$state/.afk-return-catchup" ] || fail "successful retry left catch-up pending"
+  pass "failed ledger selection leaves catch-up inputs intact for retry"
+}
+
 test_return_gate_orders_catchup_before_bearings
 test_undeliverable_ledger_item_reaches_the_summary
 test_explicit_reclassification_requires_durable_reason
@@ -399,3 +435,4 @@ test_away_reentry_refuses_pending_return_gate
 test_check_retries_recorded_terminal_teardown
 test_pathological_ledger_is_counted_and_bounded
 test_return_receipt_survives_a_crash_without_doubling
+test_failed_ledger_selection_preserves_catchup

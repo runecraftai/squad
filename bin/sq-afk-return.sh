@@ -58,13 +58,13 @@ clean_field() {
 }
 
 append_evidence() {  # <kind> <text> <file>
-  local kind=$1 text=$2 file=$3 clean record
+  local kind=$1 text=$2 file=$3 line clean record
   [ -n "$text" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     [ -n "$line" ] || continue
-    clean=$(printf '%s' "$line" | clean_field)
-    record=$(printf 'evidence\t%s\t%s' "$kind" "$clean")
-    grep -Fqx "$record" "$file" 2>/dev/null || printf '%s\n' "$record" >> "$file"
+    clean=$(printf '%s' "$line" | clean_field) || return 1
+    record=$(printf 'evidence\t%s\t%s' "$kind" "$clean") || return 1
+    grep -Fqx "$record" "$file" 2>/dev/null || printf '%s\n' "$record" >> "$file" || return 1
   done <<EOF
 $text
 EOF
@@ -166,6 +166,7 @@ select_ledger() {  # <out-file>
       else if (kept_escalation < max) { print > out; kept_escalation++; listed++ }
     }
     END {
+      if (listed && close(out) != 0) exit 1
       printf "rows=%d escalation=%d routine=%d listed=%d oldest=%s newest=%s\n", \
         rows, escalation, routine, listed, oldest, newest
     }
@@ -418,7 +419,7 @@ return_guard() {
 }
 
 return_reconcile() {
-  local evidence blockers drained wedge escalations lifecycle_ok=1
+  local evidence blockers drained wedge ledger_sample ledger_rows ledger_totals lifecycle_ok=1
   local body id ack_id replayed=0
   evidence=$(mktemp "$STATE/.afk-return-evidence.XXXXXX") || return 1
   blockers=$(mktemp "$STATE/.afk-return-blockers.XXXXXX") || { rm -f "$evidence"; return 1; }
@@ -440,6 +441,19 @@ return_reconcile() {
     fi
   fi
 
+  if [ -s "$STATE/.subsuper-routine" ] || [ -s "$STATE/.subsuper-escalations" ]; then
+    if ! ledger_sample=$(mktemp "$STATE/.afk-return-ledger.XXXXXX") ||
+       ! ledger_totals=$(select_ledger "$ledger_sample") ||
+       ! ledger_rows=$(cat "$ledger_sample") ||
+       ! append_evidence ledger-totals "$ledger_totals" "$evidence" ||
+       ! append_evidence escalation "$ledger_rows" "$evidence"; then
+      printf 'sq-afk-return: could not collect the away-mode ledger; catch-up remains pending\n' >&2
+      rm -f "$ledger_sample" "$evidence" "$blockers"
+      return 1
+    fi
+    rm -f "$ledger_sample"
+  fi
+
   drained=$("$SCRIPT_DIR/sq-stand-to-drain.sh") || {
     append_evidence lifecycle 'durable wake drain failed; retry catch-up before ordinary work' "$evidence"
     lifecycle_ok=0
@@ -450,12 +464,6 @@ return_reconcile() {
   if [ -s "$STATE/.subsuper-inject-wedged" ]; then
     wedge=$(cat "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
     append_evidence wedge "$wedge" "$evidence"
-  fi
-  if [ -s "$STATE/.subsuper-routine" ] || [ -s "$STATE/.subsuper-escalations" ]; then
-    escalations=$(mktemp "$STATE/.afk-return-ledger.XXXXXX") || return 1
-    append_evidence ledger-totals "$(select_ledger "$escalations")" "$evidence"
-    append_evidence escalation "$(cat "$escalations")" "$evidence"
-    rm -f "$escalations"
   fi
 
   scan_open_blockers > "$blockers"
