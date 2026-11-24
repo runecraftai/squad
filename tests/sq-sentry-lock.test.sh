@@ -329,6 +329,26 @@ test_lock_does_not_steal_live_lock() {
   pass "live-held lock is not stolen"
 }
 
+test_lock_without_pid_identity() {
+  local dir state lockdir
+  dir=$(make_case lock-no-identity)
+  state="$dir/state"
+  lockdir="$state/.contend.lock"
+  SQUAD_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_pid_identity() { return 1; }
+    fm_lock_try_acquire "$2" || exit 1
+    owner=${BASHPID:-$$}
+    (
+      if fm_lock_try_acquire "$2"; then exit 1; fi
+      [ "${SQUAD_LOCK_HELD_PID:-}" = "$owner" ]
+    ) || exit 1
+    fm_lock_release "$2"
+    [ ! -e "$2" ] && [ ! -L "$2" ]
+  ' _ "$LIB" "$lockdir" || fail "PID-only lock did not acquire, exclude a contender, and release"
+  pass "lock remains usable when process identity is unavailable"
+}
+
 test_lock_empty_pid_uses_minimum_grace() {
   local dir state lockdir out
   dir=$(make_case lock-empty-grace)
@@ -1045,6 +1065,7 @@ test_lock_steals_dead_pid_lock
 test_lock_stale_steal_single_winner_under_concurrency
 test_lock_live_steal_mutex_is_not_reclaimed
 test_lock_does_not_steal_live_lock
+test_lock_without_pid_identity
 test_lock_empty_pid_uses_minimum_grace
 test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal

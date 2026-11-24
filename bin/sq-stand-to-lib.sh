@@ -238,9 +238,9 @@ fm_lock_owner_dir() {
 fm_lock_prepare_owner() {
   local ownerdir=$1 mypid back identity
   mypid=${BASHPID:-$$}
-  identity=$(fm_pid_identity "$mypid") || return 1
-  [ -n "$identity" ] || return 1
-  printf '%s\n' "$identity" > "$ownerdir/owner-identity" 2>/dev/null || return 1
+  if identity=$(fm_pid_identity "$mypid") && [ -n "$identity" ]; then
+    printf '%s\n' "$identity" > "$ownerdir/owner-identity" 2>/dev/null || return 1
+  fi
   printf '%s\n' "$mypid" > "$ownerdir/pid" 2>/dev/null || return 1
   back=$(cat "$ownerdir/pid" 2>/dev/null || true)
   [ "$back" = "$mypid" ]
