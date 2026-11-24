@@ -5,7 +5,7 @@ are the oracle for the state-owner steps, not a description of desired
 behaviour: they record what a real absence produced so a later step can prove a
 different result on the same input.
 
-Provenance: `data/squad-away-supervision-out-of-shell/evidence.md` in the primary
+Provenance: `data/squad-supervision-out-of-shell/report.md` in the primary
 base, and the preserved return log `/tmp/pi-bg/34545-bg23.log` from the
 2026-11-24 return.
 

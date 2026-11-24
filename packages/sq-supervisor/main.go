@@ -8,11 +8,12 @@
 // owned here.
 //
 // Usage:
-//   sq-supervisor run --operation-id <id> --state-dir <dir> \
-//                     --deadline <duration> --stop-grace <duration> \
-//                     --stdout <file> --stderr <file> -- <command> [args...]
-//   sq-supervisor capabilities
-//   sq-supervisor --version
+//
+//	sq-supervisor run --operation-id <id> --state-dir <dir> \
+//	                  --deadline <duration> --stop-grace <duration> \
+//	                  --stdout <file> --stderr <file> -- <command> [args...]
+//	sq-supervisor capabilities
+//	sq-supervisor --version
 //
 // `run` prints one JSON outcome object on stdout and exits with a status from
 // the outcome enum below. It never reports a completed operation without the
@@ -20,12 +21,13 @@
 // as the command's own exit status.
 //
 // Exit status:
-//   0   operation completed; the command's own status is in the outcome record
-//   2   usage error
-//   3   the deadline was reached and the operation was stopped by the manager
-//   4   the unit's result could not be read (unknown-result; do not retry blind)
-//   5   the unit's group still holds processes after the stop grace
-//   78  strict Linux mode is required and no working systemd user manager exists
+//
+//	0   operation completed; the command's own status is in the outcome record
+//	2   usage error
+//	3   the deadline was reached and the operation was stopped by the manager
+//	4   the unit's result could not be read (unknown-result; do not retry blind)
+//	5   the unit's group still holds processes after the stop grace
+//	78  strict Linux mode is required and no working systemd user manager exists
 package main
 
 import (

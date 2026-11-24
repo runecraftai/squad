@@ -40,32 +40,110 @@ case "$notice" in
 esac
 pass "the pinned notice matches the closed-window ledger shape"
 
-# Measured counts from that single return. They must keep adding up: the routine
-# total is the sum of its distinct bodies, and the duplicate share is what the
-# follow-up has to reduce to one entry.
-REPEATED=25028
-ROUTINE=25087
-ESCALATION=1
-DISTINCT_OTHER=$((ROUTINE - REPEATED))
-[ $((REPEATED + DISTINCT_OTHER)) -eq "$ROUTINE" ] \
-  || fail "the pinned counts no longer partition the routine ledger"
-duplicate_percent=$((REPEATED * 1000 / ROUTINE))
-[ "$duplicate_percent" -ge 995 ] \
-  || fail "the pinned duplicate share ($duplicate_percent per mille) no longer describes the incident"
+# Parsed evidence. The README is the pinned record for this step, so the counts
+# asserted below are read out of it rather than restated as constants here: a
+# record that stops adding up, or a notice that stops matching its own row, must
+# fail rather than agree with itself.
+read -r pinned_routine pinned_escalation <<< "$(awk '
+  /^counts: / {
+    if (match($0, /routine=[0-9]+/)) routine = substr($0, RSTART + 8, RLENGTH - 8)
+    if (match($0, /escalation=[0-9]+/)) escalation = substr($0, RSTART + 11, RLENGTH - 11)
+  }
+  END { printf "%s %s\n", routine, escalation }
+' "$FIXTURES/README.md")"
+case "$pinned_routine" in ''|*[!0-9]*) fail "the pinned record no longer states its routine count" ;; esac
+case "$pinned_escalation" in ''|*[!0-9]*) fail "the pinned record no longer states its escalation count" ;; esac
+
+routine_rows=$(awk '
+  /^\| Occurrences \| Routine body \|/ { in_table = 1; next }
+  in_table && /^\|/ {
+    line = $0
+    gsub(/^\| /, "", line)
+    gsub(/ \|$/, "", line)
+    n = split(line, parts, /[[:space:]]*\|[[:space:]]*/)
+    if (n >= 2 && parts[1] ~ /^[0-9]+$/) printf "%s\t%s\n", parts[1], parts[2]
+    next
+  }
+  in_table && NF > 0 { in_table = 0 }
+' "$FIXTURES/README.md")
+[ -n "$routine_rows" ] || fail "the pinned record no longer partitions the routine ledger into distinct bodies"
+
+routine_sum=0
+repeated=
+largest=0
+while IFS=$'\t' read -r count body; do
+  [ -n "$count" ] || continue
+  routine_sum=$((routine_sum + count))
+  [ "$count" -gt "$largest" ] && largest=$count
+  case "$body" in
+    *closed-window*) repeated=$count ;;
+  esac
+done <<< "$routine_rows"
+[ -n "$repeated" ] || fail "no pinned row describes the repeated closed-window notice"
+[ "$routine_sum" -eq "$pinned_routine" ] \
+  || fail "the pinned bodies sum to $routine_sum, not the recorded routine total $pinned_routine"
+[ "$repeated" -eq "$largest" ] \
+  || fail "the closed-window notice is no longer the largest pinned routine body"
+duplicate_per_mille=$((repeated * 1000 / pinned_routine))
+[ "$duplicate_per_mille" -ge 995 ] \
+  || fail "the pinned duplicate share ($duplicate_per_mille per mille) no longer describes the incident"
 printf 'ok - the incident ledger is %d rows: %d the same closed-window notice (%.1f%%), %d other routine, %d escalation\n' \
-  "$((ROUTINE + ESCALATION))" "$REPEATED" "$(awk -v p="$duplicate_percent" 'BEGIN{printf "%.1f", p/10}')" \
-  "$DISTINCT_OTHER" "$ESCALATION"
+  "$((pinned_routine + pinned_escalation))" "$repeated" \
+  "$(awk -v p="$duplicate_per_mille" 'BEGIN{printf "%.1f", p/10}')" \
+  "$((pinned_routine - repeated))" "$pinned_escalation"
 
 if [ -f "$LOG" ]; then
   from_log=$(grep -m1 'task already finished' "$LOG" 2>/dev/null | sed 's/^ *[0-9]*\. [0-9-]* [0-9:]* \[routine\] //')
   [ "$from_log" = "$notice" ] \
     || fail "the pinned notice differs from the preserved log line: '${from_log}' != '${notice}'"
   pass "the pinned notice is byte-identical to the preserved log line"
+  logged_occurrences=$(awk -v notice="$notice" '
+    {
+      line = $0
+      sub(/^ *[0-9]+\. [0-9-]+ [0-9:]+ \[routine\] /, "", line)
+      if (line == notice) count++
+    }
+    END { print count + 0 }
+  ' "$LOG")
+  [ "$logged_occurrences" -eq "$repeated" ] \
+    || fail "the log repeats the notice $logged_occurrences times, not the pinned $repeated"
+  pass "the pinned occurrence count matches the preserved log"
 else
   printf 'skip: preserved incident log not present at %s\n' "$LOG"
 fi
 
-# The fixture matrix record must stay honest about what is not pinned yet.
-grep -Fq 'not pinned' "$FIXTURES/README.md" \
-  || fail "the fixture record must name the cases that are still unpinned"
-pass "the fixture record names the unpinned adversarial cases"
+# The fixture matrix is the step's coverage record: every adversarial case must
+# carry an owner and a pinned/not-pinned state, every pinned test reference must
+# exist, and the record must still be honest about what is not pinned yet.
+matrix_rows=$(awk '
+  /^\| Case \| Pinned now \| Owner \|/ { in_table = 1; next }
+  in_table && /^\|/ {
+    line = $0
+    gsub(/^\| /, "", line)
+    gsub(/ \|$/, "", line)
+    n = split(line, parts, /[[:space:]]*\|[[:space:]]*/)
+    if (n >= 3 && parts[1] != "" && parts[1] !~ /^-+$/) printf "%s\t%s\t%s\n", parts[1], parts[2], parts[3]
+    next
+  }
+  in_table && NF > 0 { in_table = 0 }
+' "$FIXTURES/README.md")
+[ -n "$matrix_rows" ] || fail "the fixture record no longer carries a case matrix"
+
+matrix_cases=0
+unpinned=0
+while IFS=$'\t' read -r case pinned owner; do
+  [ -n "$case" ] || continue
+  matrix_cases=$((matrix_cases + 1))
+  [ -n "$owner" ] || fail "fixture matrix case '$case' has no owner"
+  [ -n "$pinned" ] || fail "fixture matrix case '$case' has no pinned state"
+  case "$pinned" in
+    'not pinned') unpinned=$((unpinned + 1)) ;;
+  esac
+  for ref in $(printf '%s\n' "$pinned" | grep -oE 'tests/[A-Za-z0-9._/-]+' | sort -u); do
+    [ -f "$ROOT/$ref" ] || fail "fixture matrix case '$case' points at missing $ref"
+  done
+done <<< "$matrix_rows"
+[ "$matrix_cases" -ge 5 ] || fail "the fixture matrix shrank to $matrix_cases cases"
+[ "$unpinned" -ge 1 ] \
+  || fail "the fixture matrix must still name the cases that are not pinned"
+pass "the fixture matrix names $matrix_cases owned cases, $unpinned still unpinned"

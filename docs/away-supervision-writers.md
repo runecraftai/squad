@@ -3,7 +3,7 @@
 Inventory of what the away-mode lifecycle writes and what it calls outward,
 measured against the tree as of the `sq/squad-supervisor-implementation` branch.
 It exists so the state-owner steps of the
-[`squad-supervision-out-of-shell`](../../data/squad-supervision-out-of-shell/report.md)
+[`squad-supervision-out-of-shell`](../data/squad-supervision-out-of-shell/report.md)
 migration convert every writer and every call, rather than the ones that were
 easy to find.
 

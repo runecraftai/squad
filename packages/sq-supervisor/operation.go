@@ -137,9 +137,10 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 	// The manager clears ControlGroup once the unit is dead, so membership can
 	// only be proved empty by a path captured while the unit was alive. The
 	// capture therefore runs beside the blocking start, never before it.
-	capture := startControlGroupCapture(manager, unit)
+	budget := *deadline + *stopGrace + stopSlack
+	capture := startControlGroupCapture(manager, unit, budget)
 
-	runCtx, cancelRun := context.WithTimeout(context.Background(), *deadline+*stopGrace+stopSlack)
+	runCtx, cancelRun := context.WithTimeout(context.Background(), budget)
 	startRes, startErr := manager.Start(runCtx, spec)
 	cancelRun()
 
@@ -153,42 +154,43 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 	_ = manager.Forget(forgetCtx, unit)
 	cancelForget()
 
-	members, _, membersErr := cgroupMembers(cgroup)
-	if membersErr != nil && members == nil {
-		// The cgroup listing itself failed. That is not proof of containment.
-		cgroupErr = membersErr
+	members, seen, membersErr := cgroupMembers(cgroup)
+	inspectionErr := cgroupErr
+	if membersErr != nil {
+		inspectionErr = membersErr
 	}
 
 	oc := outcome{
-		Schema:        outcomeSchema,
-		OperationID:   *operationID,
-		Unit:          unit,
-		Manager:       managerVersion,
-		StartedAt:     started.Format(time.RFC3339Nano),
-		EndedAt:       time.Now().UTC().Format(time.RFC3339Nano),
-		Cgroup:        cgroup,
-		IntentRecord:  intentPath,
-		Survivors:     members,
-		Contained:     len(members) == 0,
-		UnitResult:    unitRecord.Result,
+		Schema:       outcomeSchema,
+		OperationID:  *operationID,
+		Unit:         unit,
+		Manager:      managerVersion,
+		StartedAt:    started.Format(time.RFC3339Nano),
+		EndedAt:      time.Now().UTC().Format(time.RFC3339Nano),
+		Cgroup:       cgroup,
+		IntentRecord: intentPath,
+		Survivors:    members,
+		Contained:    false,
+		UnitResult:   unitRecord.Result,
 	}
 
 	oc.State, oc.ExitCode, oc.Signal, oc.Detail = classify(startRes, startErr, unitRecord, showErr)
+	if startErr != nil || startRes.ExitCode != 0 {
+		if diagnostic := strings.TrimSpace(startRes.Stderr); diagnostic != "" {
+			oc.Detail = appendDetail(oc.Detail, diagnostic)
+		}
+	}
 
-	// Containment is claimed only from evidence. A captured cgroup that the kernel
-	// has already removed, or one whose membership is empty, proves it; a unit the
-	// manager no longer knows also owns no cgroup. Anything else stays unproven and
-	// is reported as such rather than assumed.
+	// Containment is claimed only from evidence. A captured cgroup whose
+	// membership was inspected and is empty proves it; so does a captured cgroup
+	// the kernel has removed, but only under a real cgroup v2 root and only when
+	// the unit itself is gone. A unit the manager no longer knows also owns no
+	// cgroup. Anything else stays unproven rather than assumed.
 	unitGone := unitRecord.LoadState == "not-found" ||
 		unitRecord.ActiveState == "inactive" || unitRecord.ActiveState == "failed"
-	oc.Contained = (cgroup != "" && len(members) == 0) || (cgroup == "" && unitGone && membersErr == nil)
-	if cgroup == "" && oc.Contained {
-		oc.Detail = appendDetail(oc.Detail, "the unit cgroup was already collected, so containment is proved by the unit being gone rather than by an inspected membership")
-	}
-	if cgroupErr != nil {
-		oc.Contained = false
-		oc.Detail = appendDetail(oc.Detail, "the unit control group could not be inspected: "+cgroupErr.Error())
-	}
+	contained, containmentDetail := containmentProved(cgroup, members, seen, unitGone, unifiedCgroupRoot(), inspectionErr)
+	oc.Contained = contained
+	oc.Detail = appendDetail(oc.Detail, containmentDetail)
 	if len(members) > 0 {
 		oc.Contained = false
 		if oc.State == stateCompleted || oc.State == stateTimeout {
@@ -198,11 +200,11 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 	}
 
 	outcomePath := filepath.Join(*stateDir, *operationID+".outcome.json")
+	oc.OutcomeRecord = outcomePath
+	oc.DurationMS = time.Since(started).Milliseconds()
 	if err := writeJSONRecord(outcomePath, oc); err != nil {
 		fmt.Fprintf(stderr, "sq-supervisor: cannot record the operation outcome: %v\n", err)
 	}
-	oc.OutcomeRecord = outcomePath
-	oc.DurationMS = time.Since(started).Milliseconds()
 
 	emit(oc, stdout)
 	return exitForState(oc.State)
@@ -285,15 +287,24 @@ type controlGroupResult struct {
 	err  error
 }
 
-func startControlGroupCapture(m manager, unit string) *controlGroupCapture {
+// capturePollStart and capturePollMax bound the poll rate: a manager that keeps
+// reporting an empty path must not cost one subprocess per tick for the whole
+// operation.
+const (
+	capturePollStart = 50 * time.Millisecond
+	capturePollMax   = 2 * time.Second
+)
+
+func startControlGroupCapture(m manager, unit string, budget time.Duration) *controlGroupCapture {
 	capture := &controlGroupCapture{
 		stopPoller: make(chan struct{}),
 		result:     make(chan controlGroupResult, 1),
 	}
 	go func() {
 		var lastErr error
-		ticker := time.NewTicker(50 * time.Millisecond)
-		defer ticker.Stop()
+		gaveUp := time.NewTimer(budget)
+		defer gaveUp.Stop()
+		interval := capturePollStart
 		for {
 			ctx, cancel := context.WithTimeout(context.Background(), managerProbeBound)
 			path, err := m.ControlGroup(ctx, unit)
@@ -304,11 +315,21 @@ func startControlGroupCapture(m manager, unit string) *controlGroupCapture {
 				capture.result <- controlGroupResult{path: path}
 				return
 			}
+			delay := time.NewTimer(interval)
 			select {
 			case <-capture.stopPoller:
+				delay.Stop()
 				capture.result <- controlGroupResult{err: lastErr}
 				return
-			case <-ticker.C:
+			case <-gaveUp.C:
+				delay.Stop()
+				capture.result <- controlGroupResult{err: lastErr}
+				return
+			case <-delay.C:
+			}
+			interval *= 2
+			if interval > capturePollMax {
+				interval = capturePollMax
 			}
 		}
 	}()
@@ -351,6 +372,9 @@ func validateOperation(operationID, stateDir string, deadline, stopGrace time.Du
 	}
 	if stdoutPath == "" || stderrPath == "" {
 		return errors.New("--stdout and --stderr are required")
+	}
+	if !filepath.IsAbs(stdoutPath) || !filepath.IsAbs(stderrPath) {
+		return errors.New("--stdout and --stderr must be absolute paths")
 	}
 	if len(command) == 0 {
 		return errors.New("a command is required after --")
@@ -412,10 +436,46 @@ func exitForState(state string) int {
 }
 
 func appendDetail(existing, extra string) string {
+	if extra == "" {
+		return existing
+	}
 	if existing == "" {
 		return extra
 	}
 	return existing + "; " + extra
+}
+
+// unifiedCgroupRoot reports whether the unit cgroup paths the manager reports
+// live under a real unified cgroup v2 root. Without that, a missing unit path
+// proves nothing: it may simply not exist on this mount.
+func unifiedCgroupRoot() bool {
+	_, err := os.Stat(filepath.Join(cgroupRootDir, "cgroup.controllers"))
+	return err == nil
+}
+
+// containmentProved decides, from recorded evidence only, whether the unit's
+// group provably holds no process. An uninspected group is never treated as
+// empty.
+func containmentProved(cgroup string, members []int, seen, unitGone, unifiedRoot bool, inspectionErr error) (bool, string) {
+	if inspectionErr != nil {
+		return false, "the unit control group could not be inspected: " + inspectionErr.Error()
+	}
+	if len(members) > 0 {
+		return false, ""
+	}
+	if cgroup == "" {
+		if unitGone {
+			return true, "the unit cgroup was already collected, so containment is proved by the unit being gone rather than by an inspected membership"
+		}
+		return false, ""
+	}
+	if seen {
+		return true, ""
+	}
+	if unitGone && unifiedRoot {
+		return true, "the unit cgroup was already removed by the kernel, so containment is proved by the unit being gone rather than by an inspected membership"
+	}
+	return false, "the captured unit cgroup was never inspected on this host, so containment is unproven"
 }
 
 func intPtr(v int) *int { return &v }
@@ -464,11 +524,11 @@ func reportCapabilities(stdout, stderr io.Writer) int {
 	defer cancel()
 	version, err := manager.Version(ctx)
 	caps := map[string]any{
-		"schema":     "sq-supervisor.capabilities.v1",
-		"platform":   platformName(),
-		"strict":     strictPlatform(),
-		"available":  err == nil,
-		"manager":    version,
+		"schema":    "sq-supervisor.capabilities.v1",
+		"platform":  platformName(),
+		"strict":    strictPlatform(),
+		"available": err == nil,
+		"manager":   version,
 		"containment": map[string]any{
 			"mechanism":       "systemd-user-transient-service",
 			"kill_mode":       "control-group",

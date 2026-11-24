@@ -106,9 +106,16 @@ if [ -z "$STATE_DIR" ]; then
   }
   trap 'rm -rf "$STATE_DIR"' EXIT
 fi
+case "$STATE_DIR" in
+  /*) ;;
+  *) STATE_DIR="$PWD/$STATE_DIR" ;;
+esac
 
 operation_id="op-$(date +%s)-$$-$(printf '%s' "$bound $*" | cksum | cut -d' ' -f1)"
 outcome=$(mktemp "${TMPDIR:-/tmp}/sq-op-outcome.XXXXXX") || exit 125
+stdout_path="$STATE_DIR/$operation_id.stdout"
+stderr_path="$STATE_DIR/$operation_id.stderr"
+diagnostic_path="$STATE_DIR/$operation_id.diagnostic"
 
 status=0
 "$binary" run \
@@ -116,9 +123,9 @@ status=0
   --state-dir "$STATE_DIR" \
   --deadline "${bound}s" \
   --stop-grace "${STOP_GRACE}s" \
-  --stdout "$STATE_DIR/stdout" \
-  --stderr "$STATE_DIR/stderr" \
-  -- "$@" > "$outcome" 2>"$STATE_DIR/diagnostic" || status=$?
+  --stdout "$stdout_path" \
+  --stderr "$stderr_path" \
+  -- "$@" > "$outcome" 2>"$diagnostic_path" || status=$?
 
 report_state() {
   # One line, only when the caller must not treat this as success.
@@ -136,8 +143,8 @@ report_state() {
       printf "sq-op-contain.sh: operation %s%s\n", state, (detail == "" ? "" : ": " detail)
     }
   ' "$outcome" >&2
-  if [ -s "$STATE_DIR/diagnostic" ]; then
-    sed 's/^/sq-op-contain.sh: /' "$STATE_DIR/diagnostic" >&2
+  if [ -s "$diagnostic_path" ]; then
+    sed 's/^/sq-op-contain.sh: /' "$diagnostic_path" >&2
   fi
 }
 
@@ -147,8 +154,8 @@ report_state() {
 # removes the inherited-descriptor leak, because a descendant holding the
 # operation's output open can no longer hold the caller open.
 relay_streams() {
-  [ ! -s "$STATE_DIR/stdout" ] || cat "$STATE_DIR/stdout"
-  [ ! -s "$STATE_DIR/stderr" ] || cat "$STATE_DIR/stderr" >&2
+  [ ! -s "$stdout_path" ] || cat "$stdout_path"
+  [ ! -s "$stderr_path" ] || cat "$stderr_path" >&2
 }
 
 relay_streams

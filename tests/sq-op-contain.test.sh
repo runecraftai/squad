@@ -27,7 +27,7 @@ cleanup_extra() {
   for pid in ${SPAWNED_PIDS:-}; do
     kill -KILL "$pid" 2>/dev/null || true
   done
-  systemctl --user list-units 'sq-op-sqtest-*' --all --no-legend 2>/dev/null \
+  systemctl --user list-units 'sq-op-*' --all --no-legend 2>/dev/null \
     | awk '{print $1}' | xargs -r systemctl --user reset-failed 2>/dev/null || true
   fm_test_cleanup
 }
@@ -197,6 +197,19 @@ printf '%s' "$(cat "$TMP_ROOT/session.err")" | grep -Fq 'timeout' \
   || fail "the timeout must be named on stderr, got: $(cat "$TMP_ROOT/session.err")"
 pass "the timeout reason is reported, not implied"
 
+wait_for_child() {  # <parent-pid> <name>
+  local child _
+  for _ in $(seq 1 100); do
+    child=$(pgrep -P "$1" -x "$2" 2>/dev/null | head -1)
+    if [ -n "$child" ]; then
+      printf '%s\n' "$child"
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 # The runner is not the owner: killing it must not release the operation.
 kill_runner_file="$TMP_ROOT/killed.pid"
 write_backend "$TMP_ROOT/backend-killed.sh" "$kill_runner_file" session
@@ -207,8 +220,10 @@ SPAWNED_PIDS="$SPAWNED_PIDS $shim_pid"
 wait_for_file "$kill_runner_file" 50 || fail "killed: the backend never recorded its descendant"
 survivor=$(cat "$kill_runner_file")
 SPAWNED_PIDS="$SPAWNED_PIDS $survivor"
-runner_pid=$(pgrep -x sq-supervisor 2>/dev/null | head -1)
-[ -n "$runner_pid" ] || fail "killed: the sq-supervisor runner was not visible to inspection"
+# The exact child this shim started, never an arbitrary process with the same
+# name: another supervisor on the host may be running a real operation.
+runner_pid=$(wait_for_child "$shim_pid" sq-supervisor) \
+  || fail "killed: the sq-supervisor child of this runner was not visible to inspection"
 pid_session "$runner_pid" >/dev/null 2>&1 || fail "killed: cannot inspect the runner's session"
 kill -KILL "$runner_pid" 2>/dev/null || true
 kill -KILL "$shim_pid" 2>/dev/null || true

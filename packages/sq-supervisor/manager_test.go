@@ -23,6 +23,8 @@ type fakeManager struct {
 	cgroup    string
 	cgroupErr error
 
+	cgroupCalls int
+
 	forgotten []string
 }
 
@@ -39,6 +41,7 @@ func (f *fakeManager) Show(context.Context, string) (unitState, error) {
 }
 
 func (f *fakeManager) ControlGroup(context.Context, string) (string, error) {
+	f.cgroupCalls++
 	return f.cgroup, f.cgroupErr
 }
 
@@ -81,8 +84,8 @@ func TestStartPassesTheContainmentContract(t *testing.T) {
 		"--property=RuntimeMaxSec=30s",
 		"--property=TimeoutStopSec=5s",
 		"--property=CollectMode=inactive",
-		"--property=StandardOutput=file:/tmp/out",
-		"--property=StandardError=file:/tmp/err",
+		"--property=StandardOutput=truncate:/tmp/out",
+		"--property=StandardError=truncate:/tmp/err",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("systemd-run argv is missing %q; got %q", want, joined)
@@ -151,18 +154,18 @@ func TestClassify(t *testing.T) {
 			wantState: stateTimeout,
 		},
 		{
-			name:      "signal",
-			state:     unitState{LoadState: "loaded", ActiveState: "failed", Result: "signal", ExecMainCode: 2, ExecMainStatus: 9},
-			wantState: stateCompleted,
-			wantExit:  137,
+			name:       "signal",
+			state:      unitState{LoadState: "loaded", ActiveState: "failed", Result: "signal", ExecMainCode: 2, ExecMainStatus: 9},
+			wantState:  stateCompleted,
+			wantExit:   137,
 			wantSignal: 9,
 		},
 		{
-			name:       "success unit collected before its record",
-			startRes:   commandResult{ExitCode: 0},
-			state:      unitState{LoadState: "not-found"},
-			wantState:  stateCompleted,
-			wantExit:   0,
+			name:      "success unit collected before its record",
+			startRes:  commandResult{ExitCode: 0},
+			state:     unitState{LoadState: "not-found"},
+			wantState: stateCompleted,
+			wantExit:  0,
 		},
 		{
 			name:      "collected failed unit is unknown, never success",
@@ -171,10 +174,10 @@ func TestClassify(t *testing.T) {
 			wantState: stateUnknownResult,
 		},
 		{
-			name:       "still active means cleanup pending",
-			startRes:   commandResult{ExitCode: 1},
-			state:      unitState{LoadState: "loaded", ActiveState: "deactivating"},
-			wantState:  stateCleanupPending,
+			name:      "still active means cleanup pending",
+			startRes:  commandResult{ExitCode: 1},
+			state:     unitState{LoadState: "loaded", ActiveState: "deactivating"},
+			wantState: stateCleanupPending,
 		},
 		{
 			name:      "unreadable record is unknown",
@@ -226,8 +229,8 @@ func TestParseUnitState(t *testing.T) {
 
 func TestDurationSpec(t *testing.T) {
 	cases := map[time.Duration]string{
-		0:                    "infinity",
-		30 * time.Second:     "30s",
+		0:                       "infinity",
+		30 * time.Second:        "30s",
 		1500 * time.Millisecond: "1.500s",
 	}
 	for in, want := range cases {
@@ -274,5 +277,95 @@ func TestOperationIDsAndUnitNames(t *testing.T) {
 	}
 	if a, b := unitName("same"), unitName("same"); a == b {
 		t.Errorf("two attempts must not share a unit name: %q", a)
+	}
+}
+
+func TestContainmentNeedsInspectedOrRemovedMembership(t *testing.T) {
+	cases := []struct {
+		name          string
+		cgroup        string
+		members       []int
+		seen          bool
+		unitGone      bool
+		unifiedRoot   bool
+		inspectionErr error
+		want          bool
+	}{
+		{
+			name:        "inspected empty group proves containment",
+			cgroup:      "/user.slice/unit.service",
+			seen:        true,
+			unifiedRoot: true,
+			want:        true,
+		},
+		{
+			name:        "removed group under a unified root with the unit gone proves containment",
+			cgroup:      "/user.slice/unit.service",
+			unitGone:    true,
+			unifiedRoot: true,
+			want:        true,
+		},
+		{
+			name:        "missing group under a non-unified root proves nothing",
+			cgroup:      "/user.slice/unit.service",
+			unitGone:    true,
+			unifiedRoot: false,
+			want:        false,
+		},
+		{
+			name:        "missing group with the unit still active proves nothing",
+			cgroup:      "/user.slice/unit.service",
+			unifiedRoot: true,
+			want:        false,
+		},
+		{
+			name:        "remaining members are never containment",
+			cgroup:      "/user.slice/unit.service",
+			members:     []int{12},
+			seen:        true,
+			unifiedRoot: true,
+			want:        false,
+		},
+		{
+			name:          "an inspection failure is never containment",
+			cgroup:        "/user.slice/unit.service",
+			seen:          true,
+			unifiedRoot:   true,
+			inspectionErr: os.ErrPermission,
+			want:          false,
+		},
+		{
+			name:     "no captured group with the unit gone proves containment",
+			unitGone: true,
+			want:     true,
+		},
+		{
+			name: "no captured group with the unit still active proves nothing",
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := containmentProved(tc.cgroup, tc.members, tc.seen, tc.unitGone, tc.unifiedRoot, tc.inspectionErr)
+			if got != tc.want {
+				t.Fatalf("containmentProved = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestControlGroupCaptureBacksOffAndGivesUp(t *testing.T) {
+	m := &fakeManager{}
+	capture := startControlGroupCapture(m, "sq-op-test.service", 600*time.Millisecond)
+	// Let the budget expire with a manager that never reports a path.
+	time.Sleep(700 * time.Millisecond)
+	path, err := capture.stop()
+	if path != "" || err != nil {
+		t.Fatalf("capture = (%q, %v), want an empty path and no error", path, err)
+	}
+	// A fixed 50ms tick would be about thirteen probes in this window; the
+	// backed-off capture makes a handful.
+	if m.cgroupCalls < 2 || m.cgroupCalls > 6 {
+		t.Fatalf("ControlGroup was probed %d times, want a backed-off handful", m.cgroupCalls)
 	}
 }

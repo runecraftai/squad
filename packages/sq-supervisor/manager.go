@@ -136,8 +136,8 @@ func (m *systemdManager) Start(ctx context.Context, spec unitSpec) (commandResul
 		"--property=RuntimeMaxSec=" + durationSpec(spec.Deadline),
 		"--property=TimeoutStopSec=" + durationSpec(spec.StopGrace),
 		"--property=CollectMode=inactive",
-		"--property=StandardOutput=file:" + spec.Stdout,
-		"--property=StandardError=file:" + spec.Stderr,
+		"--property=StandardOutput=truncate:" + spec.Stdout,
+		"--property=StandardError=truncate:" + spec.Stderr,
 		"--",
 	}
 	args = append(args, spec.Command...)
@@ -216,10 +216,14 @@ func durationSpec(d time.Duration) string {
 	return fmt.Sprintf("%.3fs", d.Seconds())
 }
 
+// cgroupRootDir is the unified cgroup v2 mount the manager's unit paths live
+// under on a host that can honour strict Linux mode.
+const cgroupRootDir = "/sys/fs/cgroup"
+
 // cgroupMembers lists the pids still in a unit cgroup. A path the kernel has
 // already removed is empty by construction.
 func cgroupMembers(cgroupPath string) ([]int, bool, error) {
-	return cgroupMembersAt("/sys/fs/cgroup", cgroupPath)
+	return cgroupMembersAt(cgroupRootDir, cgroupPath)
 }
 
 func cgroupMembersAt(root, cgroupPath string) ([]int, bool, error) {
