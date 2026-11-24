@@ -94,6 +94,20 @@ printf 'spawned %s harness=fake window=Squad:sq-%s\n' "$id" "$id"
 SH
 chmod +x "$FAKEBIN/fake-spawn"
 
+PS_BIN=$(fm_fakebin "$TMP_ROOT/ps-bin")
+cat > "$PS_BIN/ps" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'Tue Nov 24 01:00:00 2026 bash'
+SH
+chmod +x "$PS_BIN/ps"
+
+write_proc_identity() {
+  local root=$1 pid=$2 start=$3
+  mkdir -p "$root/$pid"
+  printf '%s\n' "$pid (bash) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 $start 20" > "$root/$pid/stat"
+  printf 'bash\0' > "$root/$pid/cmdline"
+}
+
 new_base() {  # <name>
   BASE="$TMP_ROOT/$1"
   STATE="$BASE/state"
@@ -215,9 +229,11 @@ lock="$STATE/queue-pilot.lock"
 (
   export SQUAD_STATE_OVERRIDE="$STATE"
   . "$ROOT/bin/sq-stand-to-lib.sh"
-  fm_lock_try_acquire "$lock" || fail "could not acquire admission lock"
-  run_pilot "$BASE" check || fail "could not check with a live lock owner"
-  [ ! -e "$STATE/queue-pilot.intent" ] || fail "check stole a live owner's lock"
+  write_proc_identity "$BASE/proc" "${BASHPID:-$$}" 1234
+  SQUAD_PROC_ROOT_OVERRIDE="$BASE/proc" fm_lock_try_acquire "$lock" || fail "could not acquire admission lock"
+  SQUAD_PROC_ROOT_OVERRIDE="$BASE/no-proc" PATH="$PS_BIN:$PATH" run_pilot "$BASE" check ||
+    fail "could not check with a live lock owner"
+  [ ! -e "$STATE/queue-pilot.intent" ] || fail "check stole a live owner's lock across identity providers"
   [ ! -s "$SQ_FAKE_SPAWN_LOG" ] || fail "check launched while the lock was held"
   fm_lock_release "$lock"
 ) || fail "live lock case failed"
@@ -482,15 +498,19 @@ assert_contains "$status" "intent: unspent" "status reports an unspent intent"
   SQUAD_DATA_OVERRIDE="$DATA"
   SQUAD_STATE_OVERRIDE="$STATE" . "$ROOT/bin/sq-stand-to-lib.sh"
   write_absence "$RECORD" "$TASK"
-  identity=$(fm_pid_identity "$$") || fail "could not identify the live test process"
+  write_proc_identity "$BASE/proc" "$$" 1234
+  identity=$(SQUAD_PROC_ROOT_OVERRIDE="$BASE/proc" fm_pid_identity "$$") || fail "could not identify the live test process"
   printf '%s\t%s\n' "$$" "$identity" > "$STATE/.queue-pilot.pid"
   printf '%s\nroutine|queue-pilot: dispatched %s\n' "$RECORD" "$TASK" > "$STATE/.queue-pilot.outcome"
   # A live pid means the check is still in flight: nothing is ledgered yet.
-  queue_pilot_reap "$STATE"
+  SQUAD_PROC_ROOT_OVERRIDE="$BASE/proc" queue_pilot_reap "$STATE"
   [ ! -e "$STATE/.subsuper-routine" ] || fail "an in-flight check ledgered early"
+  SQUAD_PROC_ROOT_OVERRIDE="$BASE/no-proc" PATH="$PS_BIN:$PATH" queue_pilot_reap "$STATE"
+  assert_present "$STATE/.queue-pilot.pid" "a live check stays registered across identity providers"
+  [ ! -e "$STATE/.subsuper-routine" ] || fail "a provider change ledgered an in-flight check"
 
-  printf '%s\t%s\n' "$$" "stale:$identity" > "$STATE/.queue-pilot.pid"
-  queue_pilot_reap "$STATE"
+  write_proc_identity "$BASE/proc" "$$" 1235
+  SQUAD_PROC_ROOT_OVERRIDE="$BASE/proc" queue_pilot_reap "$STATE"
   assert_absent "$STATE/.queue-pilot.pid" "a reused pid no longer occupies the pilot slot"
   assert_grep "routine|queue-pilot: dispatched $TASK" "$STATE/.subsuper-routine" \
     "the daemon ledgers the pilot outcome"

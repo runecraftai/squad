@@ -64,6 +64,22 @@ fm_pid_identity() {
   printf '%s\n' "$out" | sed 's/^[[:space:]]*//'
 }
 
+fm_pid_identity_provider() {
+  case "$1" in
+    linux-starttime=*) printf '%s\n' linux-starttime ;;
+    proc-starttime=*) printf '%s\n' proc-starttime ;;
+    'Mon '*|'Tue '*|'Wed '*|'Thu '*|'Fri '*|'Sat '*|'Sun '*) printf '%s\n' ps ;;
+    *) return 1 ;;
+  esac
+}
+
+fm_pid_identity_changed() {
+  local pid=$1 expected=$2 actual provider
+  provider=$(fm_pid_identity_provider "$expected") || return 1
+  actual=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
+  [ "$actual" != "$expected" ] && [ "$(fm_pid_identity_provider "$actual")" = "$provider" ]
+}
+
 fm_path_mtime() {
   if [ "$_SQUAD_UNAME" = Darwin ]; then
     stat -f %m "$1" 2>/dev/null
@@ -366,12 +382,10 @@ fm_lock_mid_acquire_is_fresh() {
 }
 
 fm_lock_owner_is_live() {
-  local lockdir=$1 pid=$2 expected actual
+  local lockdir=$1 pid=$2 expected
   fm_pid_alive "$pid" || return 1
   expected=$(cat "$lockdir/owner-identity" 2>/dev/null || true)
-  [ -n "$expected" ] || return 0
-  actual=$(fm_pid_identity "$pid") || return 0
-  [ -z "$actual" ] || [ "$actual" = "$expected" ]
+  ! fm_pid_identity_changed "$pid" "$expected"
 }
 
 fm_lock_recheck_stale_owner() {

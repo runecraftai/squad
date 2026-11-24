@@ -886,12 +886,11 @@ queue_pilot_open_record() {
 }
 
 queue_pilot_reap() {  # <state>
-  local state=$1 pid identity actual record out
+  local state=$1 pid identity record out
   if [ -e "$state/.queue-pilot.pid" ]; then
     IFS=$'\t' read -r pid identity _ 2>/dev/null < "$state/.queue-pilot.pid" || true
-    if [ -n "${identity:-}" ] && fm_pid_alive "$pid"; then
-      actual=$(fm_pid_identity "$pid" 2>/dev/null) || return 0
-      [ "$actual" != "$identity" ] || return 0
+    if [ -n "${identity:-}" ] && fm_pid_alive "$pid" && ! fm_pid_identity_changed "$pid" "$identity"; then
+      return 0
     fi
     rm -f "$state/.queue-pilot.pid"
   fi
