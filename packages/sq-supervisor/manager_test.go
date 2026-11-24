@@ -227,6 +227,14 @@ func TestVersionRefusesWithoutAnAnsweringManager(t *testing.T) {
 	if err == nil {
 		t.Fatal("Version accepted a manager that did not answer")
 	}
+	if !strictPlatform() {
+		// Version refuses a non-Linux host before it ever looks at the bus, so
+		// the platform refusal is the correct one here and it must name it.
+		if !strings.Contains(err.Error(), "requires linux") {
+			t.Errorf("the refusal must name the missing platform, got %v", err)
+		}
+		return
+	}
 	if _, statErr := os.Stat("/run/systemd/system"); statErr != nil {
 		// This host has no booted systemd at all, so the missing marker is the
 		// correct refusal here and it must still name it.

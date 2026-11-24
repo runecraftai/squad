@@ -74,13 +74,17 @@ func alive(pid int) bool {
 func TestContainmentSurvivesSecondSessionAndGroup(t *testing.T) {
 	requireManager(t)
 	dir := t.TempDir()
-	pidFile := filepath.Join(dir, "descendant.pid")
+	descendantFile := filepath.Join(dir, "descendant.txt")
+	backendFile := filepath.Join(dir, "backend.txt")
+	// The descendant records its own identity from inside itself: the pid the
+	// backend sees from "$!" may be a short-lived setsid(1) wrapper that has
+	// already exited, which would leave this proof inspecting a stale pid.
 	body := fmt.Sprintf(`#!/bin/bash
-setsid bash -c 'trap "" TERM; exec sleep 300' &
-echo "$!" > %q
+setsid bash -c 'trap "" TERM; printf "%%s %%s %%s\n" "$$" "$(ps -o pgid= -p $$)" "$(ps -o sid= -p $$)" > %q; exec sleep 300' &
+printf "%%s %%s %%s\n" "$$" "$(ps -o pgid= -p $$)" "$(ps -o sid= -p $$)" > %q
 trap "" TERM
 sleep 300
-`, pidFile)
+`, descendantFile, backendFile)
 	script := filepath.Join(dir, "backend.sh")
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatalf("write backend: %v", err)
@@ -90,9 +94,13 @@ sleep 300
 	oc, code := runContained(t, dir, 2*time.Second, 2*time.Second, script)
 	elapsed := time.Since(started)
 
-	descendant, _ := strconv.Atoi(strings.TrimSpace(readFileOrEmpty(pidFile)))
-	if descendant == 0 {
-		t.Fatalf("the backend never recorded its descendant pid; outcome detail=%q", oc.Detail)
+	descendant, descendantGroup, descendantSession := readProcessTriple(t, descendantFile)
+	backend, _, backendSession := readProcessTriple(t, backendFile)
+	if descendantGroup != descendant {
+		t.Fatalf("the descendant (pid %d) does not lead its own group (pgid %d); this case proves nothing otherwise", descendant, descendantGroup)
+	}
+	if descendantSession == backendSession {
+		t.Fatalf("the descendant (session %d) shares the backend's session (pid %d, session %d); setsid produced no second session", descendantSession, backend, backendSession)
 	}
 	if code != exitTimeout || oc.State != stateTimeout {
 		t.Fatalf("state = %q (exit %d), want timeout", oc.State, code)
