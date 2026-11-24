@@ -88,6 +88,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-afk-pi-handoff.sh`   | Publish a durable Pi-native away-mode handoff request and observe its consumption acknowledgement |
 | `sq-afk-tuios-lab.sh`    | Guarded opt-in disposable TUIOS/Pi live verification for away-mode delivery and the blocked-operator answer path |
 | `sq-afk-return.sh`       | Own deterministic return shutdown, catch-up evidence, and the Squad-actionable blocker gate |
+| `sq-queue-pilot.sh`      | Opt-in away queue pilot: `arm` freezes the open absence record's named pilot fields into a durable one-use intent, and `check` revalidates the sixteen guards, spends the intent, launches exactly that one filed task through `sq-spawn.sh`, and verifies delivery; it never creates, edits, holds, completes, merges, registers, or steers anything |
 | `sq-supervisor-native.sh` | Backend-neutral native supervisor delivery contract: endpoint binding, readiness, request submission, and consumed-ack retirement |
 | `sq-supervisor-target-lib.sh` | Resolve and validate the shared supervisor target and backend for the daemon and launcher |
 | `sq-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, hold every wake in the away-mode ledger without touching the commander's pane, alert on an undeliverable ledger write |
