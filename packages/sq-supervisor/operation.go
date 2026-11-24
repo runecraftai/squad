@@ -76,9 +76,11 @@ type intentRecord struct {
 
 // newManager builds the operation's manager. It is a variable so the refusal and
 // recovery paths can be exercised against a scripted manager.
-var newManager = func() manager { return newSystemdManager() }
+var newManager = func(stdout, stderr io.Writer) manager { return newSystemdManager(stdout, stderr) }
 
-// runOperation implements `sq-supervisor run`.
+// runOperation implements `sq-supervisor run`. The operation's own streams are
+// the caller's streams: nothing but the operation's bytes reach stdout, and the
+// outcome is reported through its durable record and this process's exit status.
 func runOperation(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -86,27 +88,31 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 	stateDir := fs.String("state-dir", "", "directory for intent and outcome records")
 	deadline := fs.Duration("deadline", 0, "hard bound for the operation")
 	stopGrace := fs.Duration("stop-grace", 0, "TERM grace before SIGKILL")
-	stdoutPath := fs.String("stdout", "", "file receiving the operation's stdout")
-	stderrPath := fs.String("stderr", "", "file receiving the operation's stderr")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 	command := fs.Args()
 
-	if err := validateOperation(*operationID, *stateDir, *deadline, *stopGrace, *stdoutPath, *stderrPath, command); err != nil {
+	if err := validateOperation(*operationID, *stateDir, *deadline, *stopGrace, command); err != nil {
 		fmt.Fprintf(stderr, "sq-supervisor: %s\n", err)
 		usage(stderr)
 		return exitUsage
 	}
 
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(stderr, "sq-supervisor: the caller's working directory could not be read: %v\n", err)
+		return exitUsage
+	}
+
 	started := time.Now().UTC()
-	manager := newManager()
+	manager := newManager(stdout, stderr)
 
 	probeCtx, cancelProbe := context.WithTimeout(context.Background(), managerProbeBound)
 	managerVersion, probeErr := manager.Version(probeCtx)
 	cancelProbe()
 	if probeErr != nil {
-		return emitRefusal(*operationID, probeErr, started, stdout, stderr)
+		return emitRefusal(*operationID, *stateDir, probeErr, started, stderr)
 	}
 
 	unit := unitName(*operationID)
@@ -126,12 +132,13 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 	}
 
 	spec := unitSpec{
-		Unit:      unit,
-		Deadline:  *deadline,
-		StopGrace: *stopGrace,
-		Stdout:    *stdoutPath,
-		Stderr:    *stderrPath,
-		Command:   command,
+		Unit:             unit,
+		Deadline:         *deadline,
+		StopGrace:        *stopGrace,
+		WorkingDirectory: workingDirectory,
+		Environment:      relayableEnvironment(os.Environ()),
+		NoExpandEnv:      supportsExpandEnvironment(managerVersion),
+		Command:          command,
 	}
 
 	// The manager clears ControlGroup once the unit is dead, so membership can
@@ -175,10 +182,18 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 	}
 
 	oc.State, oc.ExitCode, oc.Signal, oc.Detail = classify(startRes, startErr, unitRecord, showErr)
-	if startErr != nil || startRes.ExitCode != 0 {
+	// The manager's own launch diagnostic is the only operator-visible cause when
+	// a unit never starts, so it must reach the outcome instead of being lost.
+	if startErr != nil || oc.State == stateUnknownResult || oc.State == stateCleanupPending {
 		if diagnostic := strings.TrimSpace(startRes.Stderr); diagnostic != "" {
 			oc.Detail = appendDetail(oc.Detail, diagnostic)
 		}
+	}
+	if startErr != nil {
+		oc.Detail = appendDetail(oc.Detail, startErr.Error())
+	}
+	if len(members) == 0 {
+		oc.Survivors = []int{}
 	}
 
 	// Containment is claimed only from evidence. A captured cgroup whose
@@ -206,35 +221,30 @@ func runOperation(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "sq-supervisor: cannot record the operation outcome: %v\n", err)
 	}
 
-	emit(oc, stdout)
 	return exitForState(oc.State)
 }
 
 // emitRefusal reports strict-mode refusal. Nothing was launched, so there is no
-// unit and no intent record: the caller keeps its old behaviour reachable.
-func emitRefusal(operationID string, reason error, started time.Time, stdout, stderr io.Writer) int {
+// unit and no intent record: the caller keeps its old behaviour reachable. The
+// refusal itself is still recorded, so the reason survives the caller.
+func emitRefusal(operationID, stateDir string, reason error, started time.Time, stderr io.Writer) int {
 	oc := outcome{
-		Schema:      outcomeSchema,
-		OperationID: operationID,
-		State:       stateManagerDisabled,
-		Contained:   false,
-		Survivors:   []int{},
-		StartedAt:   started.Format(time.RFC3339Nano),
-		EndedAt:     time.Now().UTC().Format(time.RFC3339Nano),
-		Detail:      reason.Error(),
+		Schema:        outcomeSchema,
+		OperationID:   operationID,
+		State:         stateManagerDisabled,
+		Contained:     false,
+		Survivors:     []int{},
+		StartedAt:     started.Format(time.RFC3339Nano),
+		EndedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+		DurationMS:    time.Since(started).Milliseconds(),
+		OutcomeRecord: filepath.Join(stateDir, operationID+".outcome.json"),
+		Detail:        reason.Error(),
 	}
 	fmt.Fprintf(stderr, "sq-supervisor: %s\n", reason.Error())
-	emit(oc, stdout)
-	return exitManagerUnavailable
-}
-
-func emit(oc outcome, w io.Writer) {
-	body, err := json.Marshal(oc)
-	if err != nil {
-		fmt.Fprintf(w, `{"schema":%q,"state":%q}`+"\n", outcomeSchema, oc.State)
-		return
+	if err := writeJSONRecord(oc.OutcomeRecord, oc); err != nil {
+		fmt.Fprintf(stderr, "sq-supervisor: cannot record the operation outcome: %v\n", err)
 	}
-	fmt.Fprintf(w, "%s\n", body)
+	return exitManagerUnavailable
 }
 
 // classify reads the manager's own completion record. The start call's exit
@@ -348,7 +358,7 @@ func (c *controlGroupCapture) stop() (string, error) {
 	}
 }
 
-func validateOperation(operationID, stateDir string, deadline, stopGrace time.Duration, stdoutPath, stderrPath string, command []string) error {
+func validateOperation(operationID, stateDir string, deadline, stopGrace time.Duration, command []string) error {
 	if operationID == "" {
 		return errors.New("--operation-id is required")
 	}
@@ -370,16 +380,38 @@ func validateOperation(operationID, stateDir string, deadline, stopGrace time.Du
 	if stopGrace <= 0 {
 		return errors.New("--stop-grace must be positive")
 	}
-	if stdoutPath == "" || stderrPath == "" {
-		return errors.New("--stdout and --stderr are required")
-	}
-	if !filepath.IsAbs(stdoutPath) || !filepath.IsAbs(stderrPath) {
-		return errors.New("--stdout and --stderr must be absolute paths")
-	}
 	if len(command) == 0 {
 		return errors.New("a command is required after --")
 	}
 	return nil
+}
+
+// relayableEnvironment keeps the caller's assignments that a manager accepts.
+// An exported bash function lands in the environment under a name containing
+// `%%`, which systemd rejects outright; dropping such entries keeps the launch
+// working while every ordinary variable is relayed verbatim.
+func relayableEnvironment(environ []string) []string {
+	relayed := make([]string, 0, len(environ))
+	for _, assignment := range environ {
+		name, _, ok := strings.Cut(assignment, "=")
+		if !ok || !validEnvironmentName(name) {
+			continue
+		}
+		relayed = append(relayed, assignment)
+	}
+	return relayed
+}
+
+func validEnvironmentName(name string) bool {
+	for i, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r == '_':
+		case i > 0 && r >= '0' && r <= '9':
+		default:
+			return false
+		}
+	}
+	return name != ""
 }
 
 func validOperationID(s string) bool {
@@ -519,7 +551,7 @@ func writeJSONRecord(path string, value any) error {
 // reportCapabilities answers whether strict Linux mode can be honoured here. It
 // mutates nothing and is safe to call from a health check.
 func reportCapabilities(stdout, stderr io.Writer) int {
-	manager := newManager()
+	manager := newManager(io.Discard, io.Discard)
 	ctx, cancel := context.WithTimeout(context.Background(), managerProbeBound)
 	defer cancel()
 	version, err := manager.Version(ctx)

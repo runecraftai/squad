@@ -27,8 +27,12 @@ cleanup_extra() {
   for pid in ${SPAWNED_PIDS:-}; do
     kill -KILL "$pid" 2>/dev/null || true
   done
-  systemctl --user list-units 'sq-op-*' --all --no-legend 2>/dev/null \
-    | awk '{print $1}' | xargs -r systemctl --user reset-failed 2>/dev/null || true
+  # --plain prints the unit name without the state bullet that a failed unit
+  # carries; the field filter keeps the name even on a systemctl that still
+  # prefixes it, so exactly the rows this resets are the ones that parse.
+  systemctl --user list-units 'sq-op-*' --all --no-legend --plain 2>/dev/null \
+    | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^sq-op-.*\.service$/) { print $i; break } }' \
+    | xargs -r systemctl --user reset-failed 2>/dev/null || true
   fm_test_cleanup
 }
 trap cleanup_extra EXIT
@@ -65,29 +69,53 @@ pass "strict mode is selected only by explicit opt-in"
 
 out=$(SQUAD_SUPERVISOR_BIN="$TMP_ROOT/absent" libprobe systemd 'fm_run_timed 5 /bin/true' 2>&1)
 rc=$?
-[ "$rc" -eq 78 ] || fail "strict mode without the binary must refuse with 78, got $rc"
+[ "$rc" -eq 124 ] || fail "fm_run_timed must report a strict-mode refusal as 124, got $rc"
 printf '%s' "$out" | grep -Fq 'sq-install-supervisor.sh' \
   || fail "the refusal must name how to install the binary, got: $out"
+SQUAD_SUPERVISOR_BIN="$TMP_ROOT/absent" libprobe systemd 'fm_run_contained 5 /bin/true' >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 78 ] || fail "fm_run_contained must keep its 78 refusal, got $rc"
 pass "strict mode refuses instead of silently degrading when the binary is absent"
 
 # Outcome-state mapping: the shim owns the caller-facing status contract while
-# the binary owns the outcome states.
-make_stub() {  # <path> <exit-status> <json>
+# the binary owns the outcome states and their durable record.
+make_stub() {  # <path> <exit-status> <json-record>
   cat > "$1" <<SH
 #!/usr/bin/env bash
-printf '%s\n' '$3'
+# The runner's internal state seam must not reach the operation it runs.
+if [ -n "\${SQUAD_OP_REPORT_STATE:-}" ]; then
+  printf 'leaked SQUAD_OP_REPORT_STATE\n' >&2
+  exit 99
+fi
+state_dir=
+operation_id=
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    --state-dir) state_dir="\$2"; shift 2 ;;
+    --operation-id) operation_id="\$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '%s\n' '$3' > "\$state_dir/\$operation_id.outcome.json"
 exit $2
 SH
   chmod +x "$1"
 }
 
-make_stub "$TMP_ROOT/stub-ok" 0 '{"state":"completed","exit_code":42}'
+make_stub "$TMP_ROOT/stub-ok" 0 '
+  "state": "completed",
+  "exit_code": 42,
+  "detail": ""
+'
 SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-ok" "$RUNNER" 5 /bin/true >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 42 ] || fail "a completed outcome must report the command's own status, got $rc"
 pass "a completed operation reports the command's own exit status"
 
-make_stub "$TMP_ROOT/stub-timeout" 3 '{"state":"timeout","detail":"deadline reached"}'
+make_stub "$TMP_ROOT/stub-timeout" 3 '
+  "state": "timeout",
+  "detail": "deadline reached"
+'
 err=$(SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-timeout" "$RUNNER" 5 /bin/true 2>&1 >/dev/null)
 rc=$?
 
@@ -95,18 +123,82 @@ rc=$?
 printf '%s' "$err" | grep -Fq 'operation timeout' || fail "a timeout must be named, got: $err"
 pass "a timeout maps to 124 and names itself"
 
-make_stub "$TMP_ROOT/stub-unknown" 4 '{"state":"unknown-result","detail":"result unreadable"}'
+make_stub "$TMP_ROOT/stub-unknown" 4 '
+  "state": "unknown-result",
+  "detail": "result unreadable"
+'
 err=$(SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-unknown" "$RUNNER" 5 /bin/true 2>&1 >/dev/null)
 rc=$?
 [ "$rc" -eq 125 ] || fail "an unknown outcome must be 125, never success, got $rc"
 printf '%s' "$err" | grep -Fq 'unknown-result' || fail "an unknown outcome must be named, got: $err"
 pass "an unknown outcome is reported as failed, never as success"
 
-make_stub "$TMP_ROOT/stub-pending" 5 '{"state":"cleanup-pending","detail":"2 processes remained"}'
+make_stub "$TMP_ROOT/stub-pending" 5 '
+  "state": "cleanup-pending",
+  "detail": "2 processes remained"
+'
 SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-pending" "$RUNNER" 5 /bin/true >/dev/null 2>&1
 rc=$?
 [ "$rc" -eq 125 ] || fail "a still-populated group must be 125, got $rc"
 pass "a group that stayed populated is reported as failure"
+
+# fm_run_timed keeps its own contract (the command's own status, or 124) while
+# fm_run_contained carries the richer outcome statuses. An outcome that could not
+# establish the command's own status is reported to fm_run_timed callers as 124,
+# never as a status the command itself could have chosen.
+make_stub "$TMP_ROOT/stub-manager" 78 '
+  "state": "manager-unavailable",
+  "detail": "no user manager"
+'
+err=$(SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-manager" libprobe systemd 'fm_run_timed 5 /bin/true' 2>&1 >/dev/null)
+rc=$?
+[ "$rc" -eq 124 ] || fail "fm_run_timed must report a missing manager as 124, got $rc"
+printf '%s' "$err" | grep -Fq 'manager-unavailable' || fail "fm_run_timed must still name the concrete reason, got: $err"
+pass "fm_run_timed maps a missing manager to 124 and names the reason"
+
+SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-manager" libprobe systemd 'fm_run_contained 5 /bin/true' >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 78 ] || fail "fm_run_contained must keep its own 78 for a missing manager, got $rc"
+pass "fm_run_contained keeps the richer status its own contract documents"
+
+for pair in 4:125 5:125 2:126; do
+  runner_status=${pair%%:*}
+  contained_status=${pair##*:}
+  make_stub "$TMP_ROOT/stub-$runner_status" "$runner_status" '
+  "state": "unknown-result",
+  "detail": "not the command status"
+'
+  SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-$runner_status" libprobe systemd 'fm_run_contained 5 /bin/true' >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq "$contained_status" ] \
+    || fail "fm_run_contained must report $contained_status for runner status $runner_status, got $rc"
+  SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-$runner_status" libprobe systemd 'fm_run_timed 5 /bin/true' >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 124 ] || fail "fm_run_timed must report runner status $runner_status as 124, got $rc"
+done
+pass "fm_run_timed collapses every non-command contained outcome to 124"
+
+# A command that really chose one of the runner's own outcome statuses must keep
+# it: the reported state, not the status alone, decides.
+for own_status in 78 125 126; do
+  make_stub "$TMP_ROOT/stub-own-$own_status" 0 "
+  \"state\": \"completed\",
+  \"exit_code\": $own_status,
+  \"detail\": \"\"
+"
+  SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-own-$own_status" libprobe systemd 'fm_run_timed 5 /bin/true' >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq "$own_status" ] || fail "fm_run_timed must keep a command's own $own_status, got $rc"
+done
+pass "fm_run_timed keeps a command's own status even when it collides with an outcome code"
+
+# A runner that refuses the operation before launching it cannot share status 2
+# with a command that really exited 2.
+make_stub "$TMP_ROOT/stub-refused" 2 ''
+SQUAD_SUPERVISOR_BIN="$TMP_ROOT/stub-refused" "$RUNNER" 5 /bin/true >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 126 ] || fail "a runner usage refusal must be 126, got $rc"
+pass "a runner usage refusal is distinguishable from the command's own status"
 
 # The legacy mechanism keeps its own contract when strict mode is not selected.
 libprobe '' 'fm_run_timed 1 /bin/sleep 30'

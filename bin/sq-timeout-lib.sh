@@ -11,20 +11,26 @@
 #       to force the dependency-free fallback.
 #
 #   fm_run_timed <seconds> <command> [args...]
-#       Runs the command with a hard bound. Exit status is the command's own,
-#       except 124, which means the bound was hit (GNU timeout's convention,
-#       reproduced by the perl and bash fallbacks).
+#       Runs the command with a hard bound and relays its stdout and stderr. Exit
+#       status is the command's own, or 124: 124 means the bound was hit
+#       (GNU timeout's convention, reproduced by the perl and bash fallbacks) and
+#       is also returned when the contained path cannot establish the command's
+#       own status at all. The concrete reason is printed on stderr, so 124 is
+#       never a silent answer.
 #
 #   fm_containment_mode
 #       Prints the containment mechanism this host will use: "systemd" when
 #       SQUAD_OP_CONTAINMENT=systemd, otherwise "legacy".
 #
 #   fm_run_contained <seconds> <command> [args...]
-#       Runs the command with the same bound and exit contract as fm_run_timed,
-#       inside its own systemd user transient service (bin/sq-op-contain.sh), so
+#       Runs the command with the same bound and streams as fm_run_timed, inside
+#       its own systemd user transient service (bin/sq-op-contain.sh), so
 #       descendants that change session or process group stay in one kernel-owned
-#       cgroup. Adds 125 for an unknown outcome or a group that stayed populated,
-#       and 78 when strict mode cannot be honoured on this host.
+#       cgroup. This is the richer contract: besides the command's own status and
+#       124, it returns 125 for an unknown outcome or a group that stayed
+#       populated, 126 when the runner refused before launching, and 78 when
+#       strict mode cannot be honoured on this host. fm_run_timed collapses each
+#       of those to 124 rather than exposing them to its callers.
 #
 # A non-positive bound is not a bound: `timeout 0` and the perl fallback's
 # `alarm 0` both disable the deadline, so callers must reject 0 before calling.
@@ -165,11 +171,31 @@ fm_run_contained() {  # <seconds> <command...>
 }
 
 fm_run_timed() {  # <seconds> <command...>
-  local seconds=$1
+  local seconds=$1 rc state_file state
   shift
   if [ "${SQUAD_OP_CONTAINMENT_ACTIVE:-}" != 1 ] && [ "$(fm_containment_mode)" = systemd ]; then
+    # fm_run_timed promises only the command's own status or 124. A completed or
+    # timed-out operation had a status of its own; every other outcome means the
+    # contained path could not establish one, which callers already treat as a
+    # bound. The reported state says which, so a command that really exited 125
+    # is not mistaken for an unestablished result.
+    state_file=$(mktemp "${TMPDIR:-/tmp}/sq-op-state.XXXXXX" 2>/dev/null) || state_file=
+    if [ -n "$state_file" ]; then
+      SQUAD_OP_REPORT_STATE=$state_file fm_run_contained "$seconds" "$@"
+      rc=$?
+      state=$(cat "$state_file" 2>/dev/null || true)
+      rm -f "$state_file" 2>/dev/null || true
+      case "$state" in
+        completed|timeout) return "$rc" ;;
+        *) return 124 ;;
+      esac
+    fi
     fm_run_contained "$seconds" "$@"
-    return $?
+    rc=$?
+    case "$rc" in
+      78|125|126) return 124 ;;
+      *) return "$rc" ;;
+    esac
   fi
   case "$(fm_timeout_mechanism)" in
     timeout) fm_run_external_timeout timeout "$seconds" "$@" ;;

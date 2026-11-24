@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,12 +43,13 @@ type manager interface {
 // unitSpec is one transient service definition. Every field here is part of the
 // containment contract: the group is killed as a unit, never as a process group.
 type unitSpec struct {
-	Unit      string
-	Deadline  time.Duration
-	StopGrace time.Duration
-	Stdout    string
-	Stderr    string
-	Command   []string
+	Unit             string
+	Deadline         time.Duration
+	StopGrace        time.Duration
+	WorkingDirectory string
+	Environment      []string
+	NoExpandEnv      bool
+	Command          []string
 }
 
 // unitState is the manager's own record of how the unit ended.
@@ -59,17 +61,40 @@ type unitState struct {
 	ExecMainStatus int
 }
 
-// boundedRunner runs a program with the caller's context as the only deadline.
-func boundedRunner(ctx context.Context, name string, args []string, env []string) (commandResult, error) {
+// diagnosticLimit bounds the launch diagnostic kept in memory. The operation's
+// own output is streamed to the caller and never held here.
+const diagnosticLimit = 4096
+
+// tailBuffer keeps the last bytes written to it, so a streamed diagnostic can be
+// recorded without buffering the whole stream.
+type tailBuffer struct {
+	max int
+	buf []byte
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.buf = append(b.buf, p...)
+	if b.max > 0 && len(b.buf) > b.max {
+		b.buf = b.buf[len(b.buf)-b.max:]
+	}
+	return len(p), nil
+}
+
+func (b *tailBuffer) String() string { return string(b.buf) }
+
+func commandFor(ctx context.Context, name string, args, env []string, stdout, stderr io.Writer) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	var out, errb strings.Builder
-	cmd.Stdout = &out
-	cmd.Stderr = &errb
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd
+}
+
+func finishRun(ctx context.Context, name string, cmd *exec.Cmd) (commandResult, error) {
+	var res commandResult
 	err := cmd.Run()
-	res := commandResult{Stdout: out.String(), Stderr: errb.String()}
 	if err == nil {
 		return res, nil
 	}
@@ -86,13 +111,35 @@ func boundedRunner(ctx context.Context, name string, args []string, env []string
 	return res, fmt.Errorf("%s: %w", name, err)
 }
 
-// systemdManager is the real manager: systemd --user transient services.
-type systemdManager struct {
-	run commandRunner
+// boundedRunner runs a program with the caller's context as the only deadline.
+func boundedRunner(ctx context.Context, name string, args []string, env []string) (commandResult, error) {
+	var out, errb strings.Builder
+	res, err := finishRun(ctx, name, commandFor(ctx, name, args, env, &out, &errb))
+	res.Stdout = out.String()
+	res.Stderr = errb.String()
+	return res, err
 }
 
-func newSystemdManager() *systemdManager {
-	return &systemdManager{run: boundedRunner}
+// streamRunner runs the operation's own manager call with the caller's streams
+// attached, so the operation's stdout and stderr are relayed as they are
+// produced instead of being copied through a file or buffered whole. Only the
+// tail of the manager's diagnostic is kept for the durable outcome record.
+func streamRunner(ctx context.Context, name string, args []string, stdout, stderr io.Writer) (commandResult, error) {
+	diagnostic := &tailBuffer{max: diagnosticLimit}
+	res, err := finishRun(ctx, name, commandFor(ctx, name, args, nil, stdout, io.MultiWriter(stderr, diagnostic)))
+	res.Stderr = diagnostic.String()
+	return res, err
+}
+
+// systemdManager is the real manager: systemd --user transient services.
+type systemdManager struct {
+	run    commandRunner
+	stdout io.Writer
+	stderr io.Writer
+}
+
+func newSystemdManager(stdout, stderr io.Writer) *systemdManager {
+	return &systemdManager{run: boundedRunner, stdout: stdout, stderr: stderr}
 }
 
 // Version proves the host can honour strict Linux mode. It requires Linux, a
@@ -125,23 +172,36 @@ func (m *systemdManager) Version(ctx context.Context) (string, error) {
 // a collected unit loses Result and ExecMainStatus, which are the only durable
 // proof of how the operation ended.
 func (m *systemdManager) Start(ctx context.Context, spec unitSpec) (commandResult, error) {
+	return streamRunner(ctx, "systemd-run", startArgs(spec), m.stdout, m.stderr)
+}
+
+// startArgs spells the transient service. A contained operation must be a drop-in
+// for the caller's own command, so it runs in the caller's working directory,
+// with the caller's environment, and with its streams connected to the caller's
+// through --pipe rather than to manager-opened files.
+func startArgs(spec unitSpec) []string {
 	args := []string{
 		"--user",
 		"--unit=" + spec.Unit,
 		"--quiet",
 		"--wait",
+		"--pipe",
 		"--property=Type=exec",
 		"--property=KillMode=control-group",
 		"--property=SendSIGKILL=yes",
 		"--property=RuntimeMaxSec=" + durationSpec(spec.Deadline),
 		"--property=TimeoutStopSec=" + durationSpec(spec.StopGrace),
 		"--property=CollectMode=inactive",
-		"--property=StandardOutput=truncate:" + spec.Stdout,
-		"--property=StandardError=truncate:" + spec.Stderr,
-		"--",
+		"--property=WorkingDirectory=" + spec.WorkingDirectory,
 	}
-	args = append(args, spec.Command...)
-	return m.run(ctx, "systemd-run", args, nil)
+	if spec.NoExpandEnv {
+		args = append(args, "--expand-environment=no")
+	}
+	for _, assignment := range spec.Environment {
+		args = append(args, "--setenv="+assignment)
+	}
+	args = append(args, "--")
+	return append(args, spec.Command...)
 }
 
 // Show reads the unit's completion record. Every property is requested in one
@@ -201,6 +261,25 @@ func parseUnitState(out string) unitState {
 		}
 	}
 	return st
+}
+
+// supportsExpandEnvironment reports whether this manager understands
+// --expand-environment=no, which systemd gained in version 254. Older managers
+// expand `$VAR` text inside the command's own arguments before the command sees
+// it, so that limit is stated in the tool contract rather than assumed away.
+func supportsExpandEnvironment(version string) bool {
+	digits := 0
+	for digits < len(version) && version[digits] >= '0' && version[digits] <= '9' {
+		digits++
+	}
+	if digits == 0 {
+		return false
+	}
+	major, err := strconv.Atoi(version[:digits])
+	if err != nil {
+		return false
+	}
+	return major >= 254
 }
 
 // durationSpec spells a duration the way systemd's time parser accepts it.

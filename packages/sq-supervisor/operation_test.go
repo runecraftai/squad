@@ -1,18 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func runFake(t *testing.T, m manager, operationID, stateDir, stdoutPath, stderrPath string) (outcome, int, string) {
+func runFake(t *testing.T, m manager, operationID, stateDir string) (outcome, int, string) {
 	t.Helper()
 	previous := newManager
 	t.Cleanup(func() { newManager = previous })
-	newManager = func() manager { return m }
+	newManager = func(io.Writer, io.Writer) manager { return m }
 
 	var stdout, stderr strings.Builder
 	code := run([]string{
@@ -21,40 +23,92 @@ func runFake(t *testing.T, m manager, operationID, stateDir, stdoutPath, stderrP
 		"--state-dir", stateDir,
 		"--deadline", "5s",
 		"--stop-grace", "1s",
-		"--stdout", stdoutPath,
-		"--stderr", stderrPath,
 		"--", "/bin/true",
 	}, &stdout, &stderr)
+	body, err := os.ReadFile(filepath.Join(stateDir, operationID+".outcome.json"))
+	if err != nil {
+		t.Fatalf("read the outcome record: %v (stdout=%q stderr=%q)", err, stdout.String(), stderr.String())
+	}
 	var oc outcome
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &oc); err != nil {
-		t.Fatalf("outcome is not JSON: %v (stdout=%q stderr=%q)", err, stdout.String(), stderr.String())
+	if err := json.Unmarshal(body, &oc); err != nil {
+		t.Fatalf("outcome record is not JSON: %v (%q)", err, body)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("the runner must not print its own output on stdout, got %q", stdout.String())
 	}
 	return oc, code, stderr.String()
 }
 
-// A relative stream path is accepted by the flag set but rejected by systemd, so
-// it must be caught before anything is launched.
-func TestRelativeStreamPathsAreUsageErrors(t *testing.T) {
+// A contained operation is a drop-in for the caller's own command, so the
+// manager must receive the caller's environment and working directory rather
+// than a clean execution environment.
+func TestOperationSpecRelaysTheCallersEnvironmentAndDirectory(t *testing.T) {
 	dir := t.TempDir()
-	var stdout, stderr strings.Builder
-	code := run([]string{
-		"run",
-		"--operation-id", "relative",
-		"--state-dir", dir,
-		"--deadline", "5s",
-		"--stop-grace", "1s",
-		"--stdout", "out",
-		"--stderr", filepath.Join(dir, "err"),
-		"--", "/bin/true",
-	}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("exit = %d, want %d", code, exitUsage)
+	t.Setenv("SQ_SUPERVISOR_RELAY_PROBE", "relayed value")
+	m := &fakeManager{
+		version: "262.1-1-arch",
+		state:   unitState{LoadState: "loaded", ActiveState: "inactive", Result: "success"},
 	}
-	if !strings.Contains(stderr.String(), "absolute") {
-		t.Errorf("the usage error must name the absolute-path requirement, got %q", stderr.String())
+	if _, code, _ := runFake(t, m, "relay", dir); code != exitCompleted {
+		t.Fatalf("exit = %d, want %d", code, exitCompleted)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "relative.intent.json")); err == nil {
-		t.Fatal("a usage error must not leave an intent record")
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getcwd: %v", err)
+	}
+	if m.spec.WorkingDirectory != cwd {
+		t.Errorf("working directory = %q, want the caller's %q", m.spec.WorkingDirectory, cwd)
+	}
+	found := false
+	for _, assignment := range m.spec.Environment {
+		if assignment == "SQ_SUPERVISOR_RELAY_PROBE=relayed value" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the caller's environment was not relayed; got %d assignments", len(m.spec.Environment))
+	}
+	if !m.spec.NoExpandEnv {
+		t.Error("a manager that supports --expand-environment=no must be told to stop expanding the caller's argv")
+	}
+	if strings.Join(m.spec.Command, " ") != "/bin/true" {
+		t.Errorf("command = %q, want the caller's argv", m.spec.Command)
+	}
+}
+
+// relayableEnvironment is the boundary between the caller's environment and a
+// manager that rejects names it cannot represent.
+func TestRelayableEnvironmentKeepsEveryOrdinaryAssignment(t *testing.T) {
+	got := relayableEnvironment([]string{
+		"PATH=/usr/bin",
+		"HOME=/home/user",
+		"with_1=value=with=equals",
+		"BASH_FUNC_probe%%=() { :; }",
+		"1LEADING=bad",
+		"no separator",
+		"=empty",
+	})
+	want := []string{"PATH=/usr/bin", "HOME=/home/user", "with_1=value=with=equals"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("relayed environment = %q, want %q", got, want)
+	}
+}
+
+// A completed operation must keep the caller's own non-zero status, and it must
+// not be re-printed by the runner on stdout.
+func TestCompletedOperationReportsItsOwnStatus(t *testing.T) {
+	dir := t.TempDir()
+	m := &fakeManager{
+		version:  "262.1-1-arch",
+		startRes: commandResult{ExitCode: 42},
+		state:    unitState{LoadState: "loaded", ActiveState: "failed", Result: "exit-code", ExecMainStatus: 42},
+	}
+	oc, code, _ := runFake(t, m, "own-status", dir)
+	if code != exitCompleted {
+		t.Fatalf("exit = %d, want %d", code, exitCompleted)
+	}
+	if oc.ExitCode == nil || *oc.ExitCode != 42 {
+		t.Fatalf("reported exit = %v, want the command's own 42", oc.ExitCode)
 	}
 }
 
@@ -62,18 +116,36 @@ func TestRelativeStreamPathsAreUsageErrors(t *testing.T) {
 // unit never starts, so it must reach the outcome rather than be discarded.
 func TestStartDiagnosticReachesTheOutcome(t *testing.T) {
 	dir := t.TempDir()
-	diagnostic := "Failed to start transient service unit: Standard output type file requires an absolute path"
+	diagnostic := "Failed to start transient service unit: WorkingDirectory does not exist"
 	m := &fakeManager{
 		version:  "262.1-1-arch",
 		startRes: commandResult{ExitCode: 1, Stderr: diagnostic},
 		state:    unitState{LoadState: "not-found"},
 	}
-	oc, code, _ := runFake(t, m, "diagnostic", dir, filepath.Join(dir, "out"), filepath.Join(dir, "err"))
+	oc, code, _ := runFake(t, m, "diagnostic", dir)
 	if code != exitUnknownResult {
 		t.Fatalf("exit = %d, want %d", code, exitUnknownResult)
 	}
 	if !strings.Contains(oc.Detail, diagnostic) {
 		t.Fatalf("detail = %q, want it to quote the manager diagnostic", oc.Detail)
+	}
+}
+
+// A manager call that never returned is its own cause, and it must survive into
+// the record even when the unit is already gone.
+func TestStartFailureCauseReachesTheOutcome(t *testing.T) {
+	dir := t.TempDir()
+	m := &fakeManager{
+		version:  "262.1-1-arch",
+		startErr: context.DeadlineExceeded,
+		state:    unitState{LoadState: "not-found"},
+	}
+	oc, code, _ := runFake(t, m, "start-failure", dir)
+	if code != exitUnknownResult {
+		t.Fatalf("exit = %d, want %d", code, exitUnknownResult)
+	}
+	if !strings.Contains(oc.Detail, context.DeadlineExceeded.Error()) {
+		t.Fatalf("detail = %q, want it to carry the start failure", oc.Detail)
 	}
 }
 
@@ -85,7 +157,7 @@ func TestDurableOutcomeRecordMatchesReportedOutcome(t *testing.T) {
 		version: "262.1-1-arch",
 		state:   unitState{LoadState: "loaded", ActiveState: "inactive", Result: "success"},
 	}
-	oc, code, _ := runFake(t, m, "durable", dir, filepath.Join(dir, "out"), filepath.Join(dir, "err"))
+	oc, code, _ := runFake(t, m, "durable", dir)
 	if code != exitCompleted {
 		t.Fatalf("exit = %d, want %d", code, exitCompleted)
 	}

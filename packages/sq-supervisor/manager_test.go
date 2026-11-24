@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +25,8 @@ type fakeManager struct {
 	cgroup    string
 	cgroupErr error
 
+	spec unitSpec
+
 	cgroupCalls int
 
 	forgotten []string
@@ -32,7 +36,8 @@ func (f *fakeManager) Version(context.Context) (string, error) {
 	return f.version, f.versionErr
 }
 
-func (f *fakeManager) Start(context.Context, unitSpec) (commandResult, error) {
+func (f *fakeManager) Start(_ context.Context, spec unitSpec) (commandResult, error) {
+	f.spec = spec
 	return f.startRes, f.startErr
 }
 
@@ -51,41 +56,32 @@ func (f *fakeManager) Forget(_ context.Context, unit string) error {
 }
 
 func TestStartPassesTheContainmentContract(t *testing.T) {
-	m := newSystemdManager()
-	var gotName string
-	var gotArgs []string
-	m.run = func(_ context.Context, name string, args []string, _ []string) (commandResult, error) {
-		gotName = name
-		gotArgs = args
-		return commandResult{}, nil
-	}
 	spec := unitSpec{
-		Unit:      "sq-op-demo.service",
-		Deadline:  30 * time.Second,
-		StopGrace: 5 * time.Second,
-		Stdout:    "/tmp/out",
-		Stderr:    "/tmp/err",
-		Command:   []string{"/bin/echo", "hi"},
+		Unit:             "sq-op-demo.service",
+		Deadline:         30 * time.Second,
+		StopGrace:        5 * time.Second,
+		WorkingDirectory: "/work/here",
+		Environment:      []string{"PATH=/usr/bin", "CLAUDE_CONFIG_DIR=/cfg"},
+		NoExpandEnv:      true,
+		Command:          []string{"/bin/echo", "$HOME ${content%$'\\036'}"},
 	}
-	if _, err := m.Start(context.Background(), spec); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	if gotName != "systemd-run" {
-		t.Fatalf("manager program = %q, want systemd-run", gotName)
-	}
-	joined := strings.Join(gotArgs, " ")
+	args := startArgs(spec)
+	joined := strings.Join(args, " ")
 	for _, want := range []string{
 		"--user",
 		"--unit=sq-op-demo.service",
 		"--wait",
+		"--pipe",
 		"--property=Type=exec",
 		"--property=KillMode=control-group",
 		"--property=SendSIGKILL=yes",
 		"--property=RuntimeMaxSec=30s",
 		"--property=TimeoutStopSec=5s",
 		"--property=CollectMode=inactive",
-		"--property=StandardOutput=truncate:/tmp/out",
-		"--property=StandardError=truncate:/tmp/err",
+		"--property=WorkingDirectory=/work/here",
+		"--expand-environment=no",
+		"--setenv=PATH=/usr/bin",
+		"--setenv=CLAUDE_CONFIG_DIR=/cfg",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("systemd-run argv is missing %q; got %q", want, joined)
@@ -96,28 +92,118 @@ func TestStartPassesTheContainmentContract(t *testing.T) {
 	if strings.Contains(joined, "CollectMode=inactive-or-failed") {
 		t.Errorf("the unit must not be collected before its result is read: %q", joined)
 	}
+	// The operation's own streams must be relayed through the manager, not
+	// copied into files that a stale state directory could leave behind.
+	if strings.Contains(joined, "StandardOutput=") || strings.Contains(joined, "StandardError=") {
+		t.Errorf("the operation's output must be relayed, not captured to a file: %q", joined)
+	}
 	commandStart := -1
-	for i, a := range gotArgs {
+	for i, a := range args {
 		if a == "--" {
 			commandStart = i
 		}
 	}
 	if commandStart < 0 {
-		t.Fatalf("the command must be separated from manager flags by --, got %q", gotArgs)
+		t.Fatalf("the command must be separated from manager flags by --, got %q", args)
 	}
-	if strings.Join(gotArgs[commandStart+1:], " ") != "/bin/echo hi" {
-		t.Errorf("command after -- = %q, want the caller's argv verbatim", gotArgs[commandStart+1:])
+	wantCommand := strings.Join(spec.Command, "\x00")
+	if got := strings.Join(args[commandStart+1:], "\x00"); got != wantCommand {
+		t.Errorf("command after -- = %q, want the caller's argv verbatim without manager expansion", args[commandStart+1:])
+	}
+}
+
+func TestStartArgsOnlyDisableExpansionWhenTheManagerSupportsIt(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		want    bool
+	}{
+		{"262.1-1-arch", true},
+		{"254", true},
+		{"255.4-1ubuntu8.2", true},
+		{"253.5-1", false},
+		{"249", false},
+		{"unknown", false},
+		{"", false},
+	} {
+		got := supportsExpandEnvironment(tc.version)
+		if got != tc.want {
+			t.Errorf("supportsExpandEnvironment(%q) = %v, want %v", tc.version, got, tc.want)
+		}
+		args := strings.Join(startArgs(unitSpec{NoExpandEnv: got}), " ")
+		if expandFlag := strings.Contains(args, "--expand-environment=no"); expandFlag != tc.want {
+			t.Errorf("manager %q: --expand-environment=no present = %v, want %v", tc.version, expandFlag, tc.want)
+		}
+	}
+}
+
+// The operation's own streams must reach the caller, not a manager-opened file,
+// and its exit status must come back as the start status.
+func TestStreamRunnerRelaysTheOperationsStreams(t *testing.T) {
+	var out, errb strings.Builder
+	res, err := streamRunner(context.Background(), "/bin/sh", []string{"-c", "echo out line; echo err line >&2; exit 7"}, &out, &errb)
+	if err != nil {
+		t.Fatalf("streamRunner: %v", err)
+	}
+	if res.ExitCode != 7 {
+		t.Errorf("exit = %d, want the command's own 7", res.ExitCode)
+	}
+	if strings.TrimSpace(out.String()) != "out line" {
+		t.Errorf("relayed stdout = %q", out.String())
+	}
+	if !strings.Contains(errb.String(), "err line") {
+		t.Errorf("relayed stderr = %q", errb.String())
+	}
+	if !strings.Contains(res.Stderr, "err line") {
+		t.Errorf("the diagnostic tail = %q, want the manager's own stderr kept for the record", res.Stderr)
+	}
+}
+
+// Start must hand the manager the drop-in argv and relay whatever it writes.
+func TestStartLaunchesTheDropInUnitThroughTheManager(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "systemd-run")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nprintf 'argv:%s\\n' \"$*\"\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake manager: %v", err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	var out, errb strings.Builder
+	m := newSystemdManager(&out, &errb)
+	spec := unitSpec{
+		Unit:             "sq-op-demo.service",
+		Deadline:         time.Second,
+		StopGrace:        time.Second,
+		WorkingDirectory: "/tmp",
+		Environment:      []string{"FOO=bar"},
+		NoExpandEnv:      true,
+		Command:          []string{"/bin/echo", "hi"},
+	}
+	if _, err := m.Start(context.Background(), spec); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"--pipe", "--unit=sq-op-demo.service", "--setenv=FOO=bar", "--property=WorkingDirectory=/tmp", "/bin/echo hi"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the manager was not handed %q; got %q", want, got)
+		}
 	}
 }
 
 func TestVersionRefusesWithoutAnAnsweringManager(t *testing.T) {
-	m := newSystemdManager()
+	m := newSystemdManager(io.Discard, io.Discard)
 	m.run = func(_ context.Context, _ string, _ []string, _ []string) (commandResult, error) {
 		return commandResult{Stderr: "Failed to connect to bus: No such file or directory", ExitCode: 1}, nil
 	}
 	_, err := m.Version(context.Background())
 	if err == nil {
 		t.Fatal("Version accepted a manager that did not answer")
+	}
+	if _, statErr := os.Stat("/run/systemd/system"); statErr != nil {
+		// This host has no booted systemd at all, so the missing marker is the
+		// correct refusal here and it must still name it.
+		if !strings.Contains(err.Error(), "/run/systemd/system") {
+			t.Errorf("the refusal must name the missing systemd marker, got %v", err)
+		}
+		return
 	}
 	if !strings.Contains(err.Error(), "Failed to connect to bus") {
 		t.Errorf("the refusal must quote the manager's own diagnostic, got %v", err)

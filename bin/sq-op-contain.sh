@@ -12,12 +12,17 @@
 # cannot outlive the bound. Shell process-group kills cannot do that, which is
 # why this path is systemd-owned rather than reimplemented in shell.
 #
-# Exit status preserves bin/sq-timeout-lib.sh's contract so callers do not have
-# to change:
+# The operation is a drop-in for the command itself: it runs in the caller's
+# working directory, with the caller's environment, with the caller's stdin, and
+# its stdout and stderr are the caller's own streams. Nothing here copies or
+# replays the operation's output.
+#
+# Exit status:
 #   0-122  the command's own status
+#   78     strict Linux mode was requested and can never be honoured on this host
 #   124    the bound was reached and the operation's whole group was stopped
 #   125    the outcome is unknown or its group was still populated (never success)
-#   78     strict Linux mode was requested and can never be honoured on this host
+#   126    this script or the runner refused before launching the operation
 #
 # Honest limits, by design rather than omission:
 #   - Containment covers local descendants that stay in the cgroup. It is not a
@@ -28,6 +33,15 @@
 #   - An unavailable user manager, uninterruptible kernel I/O, or a dead storage
 #     device cannot yield a wall-clock guarantee. Strict mode refuses instead of
 #     pretending otherwise.
+#   - A user manager older than systemd 254 cannot disable argument expansion, so
+#     `$VAR` text inside the command's own arguments is expanded by the manager
+#     before the command sees it on those hosts. Newer managers get
+#     --expand-environment=no.
+#
+# SQUAD_OP_REPORT_STATE=<file> is an internal seam for bin/sq-timeout-lib.sh:
+# when set, the outcome state (completed, timeout, unknown-result,
+# cleanup-pending, manager-unavailable, refused) is written to <file>, so a
+# caller can tell an unestablished status apart from a status the command chose.
 #
 # The binary is resolved from SQUAD_SUPERVISOR_BIN, then PATH, then a repo-local
 # build under .git. A missing binary under strict mode is a refusal, never a
@@ -46,7 +60,7 @@ while [ "$#" -gt 0 ]; do
     --state-dir) STATE_DIR=${2:?--state-dir requires a value}; shift 2 ;;
     --stop-grace) STOP_GRACE=${2:?--stop-grace requires a value}; shift 2 ;;
     -h|--help)
-      sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     --) shift; break ;;
@@ -63,17 +77,17 @@ done
 
 [ -n "$bound" ] || {
   printf 'sq-op-contain.sh: a positive bound in seconds is required\n' >&2
-  exit 2
+  exit 126
 }
 case "$bound" in
   ''|*[!0-9]*|0)
     printf 'sq-op-contain.sh: bound %q is not a positive integer\n' "$bound" >&2
-    exit 2
+    exit 126
     ;;
 esac
 [ "$#" -gt 0 ] || {
   printf 'sq-op-contain.sh: a command is required\n' >&2
-  exit 2
+  exit 126
 }
 
 resolve_binary() {
@@ -102,7 +116,7 @@ binary=$(resolve_binary) || {
 if [ -z "$STATE_DIR" ]; then
   STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sq-op-containment.XXXXXX") || {
     printf 'sq-op-contain.sh: cannot create an operation record directory\n' >&2
-    exit 125
+    exit 126
   }
   trap 'rm -rf "$STATE_DIR"' EXIT
 fi
@@ -112,10 +126,12 @@ case "$STATE_DIR" in
 esac
 
 operation_id="op-$(date +%s)-$$-$(printf '%s' "$bound $*" | cksum | cut -d' ' -f1)"
-outcome=$(mktemp "${TMPDIR:-/tmp}/sq-op-outcome.XXXXXX") || exit 125
-stdout_path="$STATE_DIR/$operation_id.stdout"
-stderr_path="$STATE_DIR/$operation_id.stderr"
-diagnostic_path="$STATE_DIR/$operation_id.diagnostic"
+outcome_record="$STATE_DIR/$operation_id.outcome.json"
+# SQUAD_OP_REPORT_STATE is the seam fm_run_timed uses to tell a non-completion
+# apart from a command that really chose that status. It is consumed here and
+# never handed to the operation.
+report_state_path=${SQUAD_OP_REPORT_STATE:-}
+unset SQUAD_OP_REPORT_STATE
 
 status=0
 "$binary" run \
@@ -123,72 +139,76 @@ status=0
   --state-dir "$STATE_DIR" \
   --deadline "${bound}s" \
   --stop-grace "${STOP_GRACE}s" \
-  --stdout "$stdout_path" \
-  --stderr "$stderr_path" \
-  -- "$@" > "$outcome" 2>"$diagnostic_path" || status=$?
+  -- "$@" || status=$?
+
+# The durable outcome record is the runner's own report of what happened. The
+# operation's output is not in it and is not replayed here.
+json_field() {  # <key>
+  [ -s "$outcome_record" ] || return 0
+  awk -v key="\"$1\":" '
+    {
+      at = index($0, key)
+      if (at == 0) next
+      value = substr($0, at + length(key))
+      sub(/^[[:space:]]+/, "", value)
+      sub(/,$/, "", value)
+      sub(/^"/, "", value)
+      sub(/"$/, "", value)
+      print value
+      exit
+    }
+  ' "$outcome_record"
+}
 
 report_state() {
-  # One line, only when the caller must not treat this as success.
-  awk '
-    { line = line $0 }
-    END {
-      state = "unknown-result"
-      if (match(line, /"state":"[^"]*"/)) {
-        state = substr(line, RSTART + 9, RLENGTH - 10)
-      }
-      detail = ""
-      if (match(line, /"detail":"[^"]*"/)) {
-        detail = substr(line, RSTART + 10, RLENGTH - 11)
-      }
-      printf "sq-op-contain.sh: operation %s%s\n", state, (detail == "" ? "" : ": " detail)
-    }
-  ' "$outcome" >&2
-  if [ -s "$diagnostic_path" ]; then
-    sed 's/^/sq-op-contain.sh: /' "$diagnostic_path" >&2
-  fi
+  local state detail
+  state=$(json_field state)
+  detail=$(json_field detail)
+  [ -n "$state" ] || state=unknown-result
+  printf 'sq-op-contain.sh: operation %s%s\n' "$state" "${detail:+: $detail}" >&2
 }
 
-# Relay the operation's own streams. This is what keeps fm_run_timed's contract
-# intact when it delegates here: callers capture stdout with $(...), and a unit
-# writes to its own file rather than inheriting the caller's pipe. That also
-# removes the inherited-descriptor leak, because a descendant holding the
-# operation's output open can no longer hold the caller open.
-relay_streams() {
-  [ ! -s "$stdout_path" ] || cat "$stdout_path"
-  [ ! -s "$stderr_path" ] || cat "$stderr_path" >&2
+report_outcome_state() {  # <state>
+  [ -n "$report_state_path" ] || return 0
+  printf '%s\n' "$1" > "$report_state_path" 2>/dev/null || true
 }
-
-relay_streams
 
 case "$status" in
   0)
-    exit_code=$(awk '{ line = line $0 } END { if (match(line, /"exit_code":[0-9]+/)) print substr(line, RSTART + 12, RLENGTH - 12) }' "$outcome")
-    rm -f "$outcome"
-    exit "${exit_code:-0}"
+    exit_code=$(json_field exit_code)
+    case "$exit_code" in
+      ''|*[!0-9]*)
+        report_outcome_state unknown-result
+        printf 'sq-op-contain.sh: the completed operation did not record its exit status\n' >&2
+        exit 126
+        ;;
+    esac
+    report_outcome_state completed
+    exit "$exit_code"
     ;;
   3)
+    report_outcome_state timeout
     report_state
-    rm -f "$outcome"
     exit 124
     ;;
   4|5)
+    report_outcome_state "$(json_field state)"
     report_state
-    rm -f "$outcome"
     exit 125
     ;;
   78)
+    report_outcome_state manager-unavailable
     report_state
-    rm -f "$outcome"
     exit 78
     ;;
   2)
-    printf 'sq-op-contain.sh: usage error\n' >&2
-    rm -f "$outcome"
-    exit 2
+    report_outcome_state refused
+    printf 'sq-op-contain.sh: the runner rejected the operation; see the message above\n' >&2
+    exit 126
     ;;
   *)
+    report_outcome_state unknown-result
     report_state
-    rm -f "$outcome"
     exit 125
     ;;
 esac

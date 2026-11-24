@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,7 +16,8 @@ import (
 )
 
 // requireManager skips the suite's real-containment cases on a host that cannot
-// honour strict Linux mode. It never fakes the guarantee.
+// honour strict Linux mode or cannot prove containment from its own cgroup
+// hierarchy. It never fakes the guarantee.
 func requireManager(t *testing.T) string {
 	t.Helper()
 	if !strictPlatform() {
@@ -23,32 +25,36 @@ func requireManager(t *testing.T) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), managerProbeBound)
 	defer cancel()
-	version, err := newSystemdManager().Version(ctx)
+	version, err := newSystemdManager(io.Discard, io.Discard).Version(ctx)
 	if err != nil {
 		t.Skipf("systemd user manager unavailable: %v", err)
+	}
+	if !unifiedCgroupRoot() {
+		t.Skipf("containment is unprovable on a host whose %s is not a unified cgroup v2 root", cgroupRootDir)
 	}
 	return version
 }
 
 func runContained(t *testing.T, stateDir string, deadline, grace time.Duration, script string, args ...string) (outcome, int) {
 	t.Helper()
-	stdoutPath := filepath.Join(stateDir, "stdout.txt")
-	stderrPath := filepath.Join(stateDir, "stderr.txt")
+	operationID := "test-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	argv := append([]string{
 		"run",
-		"--operation-id", "test-" + strconv.FormatInt(time.Now().UnixNano(), 36),
+		"--operation-id", operationID,
 		"--state-dir", stateDir,
 		"--deadline", deadline.String(),
 		"--stop-grace", grace.String(),
-		"--stdout", stdoutPath,
-		"--stderr", stderrPath,
 		"--", script,
 	}, args...)
 	var stdout, stderr strings.Builder
 	code := run(argv, &stdout, &stderr)
+	body, err := os.ReadFile(filepath.Join(stateDir, operationID+".outcome.json"))
+	if err != nil {
+		t.Fatalf("read the outcome record: %v (stderr=%q)", err, stderr.String())
+	}
 	var oc outcome
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &oc); err != nil {
-		t.Fatalf("outcome is not JSON: %v (stdout=%q stderr=%q)", err, stdout.String(), stderr.String())
+	if err := json.Unmarshal(body, &oc); err != nil {
+		t.Fatalf("outcome is not JSON: %v (%q)", err, body)
 	}
 	return oc, code
 }
@@ -86,7 +92,7 @@ sleep 300
 
 	descendant, _ := strconv.Atoi(strings.TrimSpace(readFileOrEmpty(pidFile)))
 	if descendant == 0 {
-		t.Fatalf("the backend never recorded its descendant pid; stderr=%q", readFileOrEmpty(filepath.Join(dir, "stderr.txt")))
+		t.Fatalf("the backend never recorded its descendant pid; outcome detail=%q", oc.Detail)
 	}
 	if code != exitTimeout || oc.State != stateTimeout {
 		t.Fatalf("state = %q (exit %d), want timeout", oc.State, code)
@@ -134,7 +140,7 @@ sleep 300
 	oc, code := runContained(t, dir, 2*time.Second, 2*time.Second, script)
 	descendant, _ := strconv.Atoi(strings.TrimSpace(readFileOrEmpty(pidFile)))
 	if descendant == 0 {
-		t.Fatalf("the backend never recorded its descendant pid; stderr=%q", readFileOrEmpty(filepath.Join(dir, "stderr.txt")))
+		t.Fatalf("the backend never recorded its descendant pid; outcome detail=%q", oc.Detail)
 	}
 	if code != exitTimeout || !oc.Contained || len(oc.Survivors) != 0 {
 		t.Fatalf("state=%q exit=%d contained=%v survivors=%v", oc.State, code, oc.Contained, oc.Survivors)
@@ -151,7 +157,7 @@ func TestCompletedOperationPreservesExitStatus(t *testing.T) {
 	requireManager(t)
 	dir := t.TempDir()
 	script := filepath.Join(dir, "exit42.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/bash\necho out line\necho err line >&2\nexit 42\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/bash\nexit 42\n"), 0o755); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
 	oc, code := runContained(t, dir, 20*time.Second, 2*time.Second, script)
@@ -164,12 +170,6 @@ func TestCompletedOperationPreservesExitStatus(t *testing.T) {
 	if !oc.Contained {
 		t.Fatalf("outcome does not prove containment: %+v", oc)
 	}
-	if got := strings.TrimSpace(readFileOrEmpty(filepath.Join(dir, "stdout.txt"))); got != "out line" {
-		t.Errorf("captured stdout = %q", got)
-	}
-	if got := strings.TrimSpace(readFileOrEmpty(filepath.Join(dir, "stderr.txt"))); got != "err line" {
-		t.Errorf("captured stderr = %q", got)
-	}
 	if _, err := os.Stat(oc.IntentRecord); err != nil {
 		t.Errorf("the intent record must survive the operation: %v", err)
 	}
@@ -178,12 +178,42 @@ func TestCompletedOperationPreservesExitStatus(t *testing.T) {
 	}
 }
 
+// TestContainedOperationKeepsTheCallersDirectoryAndEnvironment is the drop-in
+// case: a call site that assigns a variable for one command, or that relies on
+// its own working directory, must see the same values inside the unit.
+func TestContainedOperationKeepsTheCallersDirectoryAndEnvironment(t *testing.T) {
+	requireManager(t)
+	dir := t.TempDir()
+	report := filepath.Join(dir, "report.txt")
+	t.Setenv("SQ_SUPERVISOR_PROBE", "relayed-value")
+	script := filepath.Join(dir, "probe.sh")
+	body := "#!/bin/bash\nprintf '%s\\n%s\\n' \"$SQ_SUPERVISOR_PROBE\" \"$PWD\" >> " + report + "\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	oc, code := runContained(t, dir, 20*time.Second, 2*time.Second, script)
+	if code != exitCompleted {
+		t.Fatalf("exit = %d, want %d (detail=%q)", code, exitCompleted, oc.Detail)
+	}
+	got := strings.Split(strings.TrimSpace(readFileOrEmpty(report)), "\n")
+	if len(got) != 2 || got[0] != "relayed-value" {
+		t.Fatalf("the unit did not inherit the caller's environment: %q", got)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getcwd: %v", err)
+	}
+	if got[1] != cwd {
+		t.Errorf("the unit ran in %q, want the caller's %q", got[1], cwd)
+	}
+}
+
 // TestMissingManagerRefusesBeforeLaunch is D1=O1: strict mode refuses rather than
 // silently degrading to a weaker guarantee, and it mutates nothing.
 func TestMissingManagerRefusesBeforeLaunch(t *testing.T) {
 	previous := newManager
 	defer func() { newManager = previous }()
-	newManager = func() manager {
+	newManager = func(io.Writer, io.Writer) manager {
 		return &fakeManager{versionErr: errors.New("strict Linux mode requires a working systemd user manager (Failed to connect to bus)")}
 	}
 	dir := t.TempDir()
@@ -199,16 +229,18 @@ func TestMissingManagerRefusesBeforeLaunch(t *testing.T) {
 		"--state-dir", dir,
 		"--deadline", "5s",
 		"--stop-grace", "1s",
-		"--stdout", filepath.Join(dir, "out"),
-		"--stderr", filepath.Join(dir, "err"),
 		"--", script,
 	}, &stdout, &stderr)
 
 	if code != exitManagerUnavailable {
 		t.Fatalf("exit = %d, want %d", code, exitManagerUnavailable)
 	}
+	body, err := os.ReadFile(filepath.Join(dir, "refusal.outcome.json"))
+	if err != nil {
+		t.Fatalf("the refusal must be recorded: %v", err)
+	}
 	var oc outcome
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &oc); err != nil {
+	if err := json.Unmarshal(body, &oc); err != nil {
 		t.Fatalf("outcome is not JSON: %v", err)
 	}
 	if oc.State != stateManagerDisabled || oc.Contained {
@@ -216,6 +248,9 @@ func TestMissingManagerRefusesBeforeLaunch(t *testing.T) {
 	}
 	if !strings.Contains(oc.Detail, "Failed to connect to bus") {
 		t.Errorf("the refusal must quote the manager diagnostic, got %q", oc.Detail)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("the refusal must not print its record on stdout, got %q", stdout.String())
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("strict mode launched the command without a manager")
@@ -230,7 +265,7 @@ func TestMissingManagerRefusesBeforeLaunch(t *testing.T) {
 func TestUnknownResultIsNotRetried(t *testing.T) {
 	previous := newManager
 	defer func() { newManager = previous }()
-	newManager = func() manager {
+	newManager = func(io.Writer, io.Writer) manager {
 		return &fakeManager{
 			version:  "262.1-1-arch",
 			startRes: commandResult{ExitCode: 1},
@@ -245,15 +280,17 @@ func TestUnknownResultIsNotRetried(t *testing.T) {
 		"--state-dir", dir,
 		"--deadline", "5s",
 		"--stop-grace", "1s",
-		"--stdout", filepath.Join(dir, "out"),
-		"--stderr", filepath.Join(dir, "err"),
 		"--", "/bin/true",
 	}, &stdout, &stderr)
 	if code != exitUnknownResult {
 		t.Fatalf("exit = %d, want %d", code, exitUnknownResult)
 	}
+	body, err := os.ReadFile(filepath.Join(dir, "lost.outcome.json"))
+	if err != nil {
+		t.Fatalf("read the outcome record: %v", err)
+	}
 	var oc outcome
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &oc); err != nil {
+	if err := json.Unmarshal(body, &oc); err != nil {
 		t.Fatalf("outcome is not JSON: %v", err)
 	}
 	if oc.State != stateUnknownResult || oc.ExitCode != nil {

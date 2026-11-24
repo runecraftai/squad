@@ -51,7 +51,15 @@ group. Both columns describe this branch, not the intended end state.
 `bin/sq-op-contain.sh` and `packages/sq-supervisor` are the containment owner.
 `bin/sq-timeout-lib.sh` is the single seam for bounded execution, and with
 `SQUAD_OP_CONTAINMENT=systemd` every existing `fm_run_timed` call site gains both
-a deadline and a kernel-owned containment domain without a call-site change.
+a deadline and a kernel-owned containment domain without a call-site change: the
+operation runs in the caller's working directory, with the caller's environment,
+and with its stdout and stderr relayed, so a per-command assignment, a `$(...)`
+capture and a stderr read all keep working. `fm_run_timed` still answers with the
+command's own status or 124; the richer outcomes are `fm_run_contained`'s own
+contract. A user manager older than systemd 254 cannot disable argument
+expansion, so on those hosts `$` text inside a command's own arguments is
+expanded before the command sees it; newer managers get
+`--expand-environment=no`.
 
 That covers the rows in the second table that go through `fm_run_timed`. It does
 not cover the away-lifecycle rows above, because those calls are unbounded today

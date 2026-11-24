@@ -11,11 +11,14 @@
 //
 //	sq-supervisor run --operation-id <id> --state-dir <dir> \
 //	                  --deadline <duration> --stop-grace <duration> \
-//	                  --stdout <file> --stderr <file> -- <command> [args...]
+//	                  -- <command> [args...]
 //	sq-supervisor capabilities
 //	sq-supervisor --version
 //
-// `run` prints one JSON outcome object on stdout and exits with a status from
+// `run` runs the command inside its own transient service with the caller's
+// environment, working directory and stdin/stdout/stderr, and writes one JSON
+// outcome record to <state-dir>/<operation-id>.outcome.json. Its own stdout and
+// stderr carry the operation's bytes and nothing else. Its exit status is from
 // the outcome enum below. It never reports a completed operation without the
 // unit's own durable completion record, and never reports a timed-out operation
 // as the command's own exit status.
@@ -80,7 +83,7 @@ func usage(w io.Writer) {
 	fmt.Fprint(w, `usage:
   sq-supervisor run --operation-id <id> --state-dir <dir> \
                     --deadline <duration> --stop-grace <duration> \
-                    --stdout <file> --stderr <file> -- <command> [args...]
+                    -- <command> [args...]
   sq-supervisor capabilities
   sq-supervisor --version
 `)
