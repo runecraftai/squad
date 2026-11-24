@@ -168,37 +168,47 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-drain_to_return_gate() {
-  local gate="$STATE/.afk-return-catchup" pending notices
+persist_return_evidence() {
+  local gate="$STATE/.afk-return-catchup" pending
   [ -f "$gate" ] || return 1
-  if [ -s "$SQUAD_WAKE_QUEUE" ]; then
-    RAW_ROWS=$(fm_wake_print_deduped "$SQUAD_WAKE_QUEUE") || return 1
-  fi
-  notices=$(
-    fm_wake_print_annotations "$RAW_ROWS" || true
-    print_open_decisions_section
-    print_teardown_pending_section
-  ) || return 1
   pending=$(mktemp "$STATE/.afk-return-catchup.pending.XXXXXX") || return 1
   if ! LC_ALL=C awk '
     FILENAME != "-" { print; seen[$0] = 1; next }
     { gsub(/[\t\r]/, " "); row = "evidence\twake\t" $0 }
     NF && !seen[row]++ { print row }
-  ' "$gate" - > "$pending" <<< "$RAW_ROWS"$'\n'"$notices" ||
-     ! mv "$pending" "$gate"; then
+  ' "$gate" - > "$pending" || ! mv "$pending" "$gate"; then
     rm -f "$pending"
     return 1
   fi
+}
+
+drain_to_return_gate() {
+  if [ -s "$SQUAD_WAKE_QUEUE" ]; then
+    RAW_ROWS=$(fm_wake_print_deduped "$SQUAD_WAKE_QUEUE") || return 1
+    persist_return_evidence <<< "$RAW_ROWS" || return 1
+  fi
   : > "$SQUAD_WAKE_QUEUE"
+}
+
+collect_return_notices() {
+  local notices
+  notices=$(
+    fm_wake_print_annotations "$RAW_ROWS" || true
+    print_open_decisions_section
+    print_teardown_pending_section
+  ) || return 1
+  [ -z "$notices" ] || persist_return_evidence <<< "$notices"
 }
 
 fm_lock_acquire_wait "$SQUAD_WAKE_QUEUE_LOCK"
 DRAIN_LOCK_HELD=true
 
 if [ "${1:-}" = --afk-return ]; then
+  [ -f "$STATE/.afk-return-catchup" ] || exit 1
   drain_to_return_gate || exit 1
   fm_lock_release "$SQUAD_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
+  collect_return_notices || exit 1
   assert_sentry_liveness
   exit 0
 fi

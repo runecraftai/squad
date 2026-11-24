@@ -394,6 +394,46 @@ test_slow_annotation_does_not_block_append_and_deleted_file_fails_open() {
   pass "slow annotation releases the append lock and a deleted status file fails open"
 }
 
+test_return_notice_scan_does_not_block_append() {
+  local dir state gate pid out handed_off=false
+  dir=$(make_case return-notices)
+  state="$dir/state"
+  gate="$state/.afk-return-catchup"
+  printf 'schema\tsq-afk-return.v1\n' > "$gate"
+  printf 'kind=strike\n' > "$state/finished.meta"
+  printf 'done: ready for teardown\n' > "$state/finished.status"
+  append_wake "$state" check afk-initial 'initial wake' || fail "initial wake append failed"
+  cat > "$dir/fakebin/tail" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" -eq 3 ] && [ "$3" = "$SQUAD_STATE_OVERRIDE/finished.status" ]; then
+  printf 'scanning\n' > "$SQUAD_STATE_OVERRIDE/scan-started"
+  for ((i=0; i<100; i++)); do
+    [ ! -f "$SQUAD_STATE_OVERRIDE/append-complete" ] || exec "$REAL_TAIL" "$@"
+    sleep 0.05
+  done
+  exit 1
+fi
+exec "$REAL_TAIL" "$@"
+SH
+  chmod +x "$dir/fakebin/tail"
+
+  REAL_TAIL=$(command -v tail) PATH="$dir/fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" \
+    "$DRAIN" --afk-return > "$dir/return.out" &
+  pid=$!
+  wait_for_file_text "$state/scan-started" scanning || fail "return never scanned for teardown notices"
+  if grep -F 'initial wake' "$gate" >/dev/null && [ ! -s "$state/.stand-to-queue" ]; then
+    handed_off=true
+  fi
+  append_wake "$state" check afk-concurrent 'concurrent wake' || fail "concurrent wake append failed"
+  touch "$state/append-complete"
+  wait "$pid" || fail "return drain failed"
+  [ "$handed_off" = true ] || fail "return did not commit the queue handoff before scanning notices"
+  grep -F 'finished: done: ready for teardown' "$gate" >/dev/null || fail "notice scan could not finish during a concurrent append"
+  out=$(SQUAD_STATE_OVERRIDE="$state" "$DRAIN") || fail "follow-up drain failed"
+  grep -F 'concurrent wake' <<< "$out" >/dev/null || fail "return drain discarded the concurrent wake"
+  pass "return hands off wakes before scanning notices without blocking appends"
+}
+
 test_interruption_before_and_after_raw_commit() {
   local dir state before_out after_out replay_out empty_out pid rc count i
   dir=$(make_case interruption)
@@ -449,4 +489,5 @@ test_drain_asserts_sentry_liveness
 test_structural_signal_enrichment_preserves_raw_rows
 test_enrichment_caps_and_status_file_failures
 test_slow_annotation_does_not_block_append_and_deleted_file_fails_open
+test_return_notice_scan_does_not_block_append
 test_interruption_before_and_after_raw_commit
