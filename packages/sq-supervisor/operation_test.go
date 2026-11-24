@@ -15,10 +15,17 @@ import (
 // TestMain lets the test binary act as the unit's helper, exactly as
 // systemd-run would start it.
 func TestMain(m *testing.M) {
-	if os.Getenv("SQ_SUPERVISOR_EXEC_ENV_CHILD") == "1" {
+	if helperEntry(os.Args[1:], os.Getenv("SQ_SUPERVISOR_EXEC_ENV_CHILD")) {
 		os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 	}
 	os.Exit(m.Run())
+}
+
+func helperEntry(args []string, envMarker string) bool {
+	if len(args) > 0 && args[0] == envRelayMode {
+		return true
+	}
+	return envMarker == "1"
 }
 
 func runFake(t *testing.T, m manager, operationID, stateDir string) (outcome, int, string) {
