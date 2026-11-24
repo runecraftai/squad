@@ -865,6 +865,52 @@ routine_add() {  # <state> <distilled-item>
   ledger_add "$1" routine "$2"
 }
 
+# --- away queue pilot trigger ----------------------------------------------
+# The opt-in queue pilot (bin/sq-queue-pilot.sh) is the one effect the daemon may
+# start beyond its own bookkeeping. It runs as its own child so a spawn never
+# delays wake classification or the shutdown flush, exactly one check is in
+# flight at a time, and the child's single outcome line is ledgered here - the
+# daemon keeps sole ownership of the ledger format.
+# Triggered at startup, after every recorded wake (including a force-self
+# heartbeat, which returns before classification), and on the housekeeping tick.
+# bin/sq-queue-pilot.sh's header owns the admission sequence and refusals, and
+# docs/configuration.md owns the grant schema.
+queue_pilot_reap() {  # <state>
+  local state=$1 pid out
+  pid=$(cat "$state/.queue-pilot.pid" 2>/dev/null || true)
+  [ -n "$pid" ] || return 0
+  kill -0 "$pid" 2>/dev/null && return 0
+  rm -f "$state/.queue-pilot.pid"
+  [ -s "$state/.queue-pilot.outcome" ] || return 0
+  out=$(cat "$state/.queue-pilot.outcome" 2>/dev/null || true)
+  rm -f "$state/.queue-pilot.outcome"
+  case "$out" in
+    escalation\|*) ledger_add "$state" escalation "${out#escalation|}" ;;
+    routine\|*) ledger_add "$state" routine "${out#routine|}" ;;
+  esac
+}
+
+queue_pilot_trigger() {  # <state>
+  local state=$1 size=0
+  queue_pilot_reap "$state"
+  [ -e "$state/.afk" ] || return 0
+  # No armed grant, no check: never pay a subprocess for an idle pilot.
+  [ -f "$state/queue-pilot.grant" ] || return 0
+  # One in-flight check owns the admission boundary.
+  [ -z "$(cat "$state/.queue-pilot.pid" 2>/dev/null || true)" ] || return 0
+  if [ -f "$state/.queue-pilot.log" ]; then
+    size=$(wc -c < "$state/.queue-pilot.log" 2>/dev/null || printf 0)
+    [ "$size" -lt 65536 ] || : > "$state/.queue-pilot.log"
+  fi
+  # The child writes its one outcome line where the reap reads it once the child
+  # has exited, so a reader never sees a half line.
+  rm -f "$state/.queue-pilot.outcome"
+  SQUAD_BASE="$SQUAD_BASE" SQUAD_STATE_OVERRIDE="$state" \
+    "$SQUAD_DAEMON_DIR/sq-queue-pilot.sh" check \
+    >"$state/.queue-pilot.outcome" 2>>"$state/.queue-pilot.log" &
+  printf '%s\n' "$!" > "$state/.queue-pilot.pid"
+}
+
 # Canonical single-line digest of the first <lines> buffered escalations. It is
 # used both to build a flush and to prove that a native handoff's acknowledged
 # message still describes exactly the buffer prefix it covered.
@@ -1797,12 +1843,19 @@ fm_super_main() {
   afk_active "$STATE" && afk_status="on"
   log "daemon starting (pid $$); target=$TARGET; target_source=$target_source; backend=$BACKEND; backend_source=$backend_source; afk=$afk_status; inject_skip='${SQUAD_INJECT_SKIP:-$INJECT_SKIP_DEFAULT}'; stale_escalate=${SQUAD_STALE_ESCALATE_SECS:-$STALE_ESCALATE_SECS_DEFAULT}s; batch=${SQUAD_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}s"
   migrate_sentry_pause_markers "$STATE"
+  # Startup is one of the pilot's trigger points: it recovers an outcome a
+  # previous run never ledgered and re-evaluates a clean deferral.
+  queue_pilot_trigger "$STATE"
 
   # --- shutdown: flush buffered escalations, reap child, release lock -------
   local WATCHER_PID="" CUR_TMP=""
   cleanup() {
     trap - TERM INT
     wedge_alarm_stop_active_notifier
+    # Ledger a pilot outcome that landed before this shutdown, ahead of the
+    # flush; a still-running check is left alone (its receipt is durable) and
+    # settled, never stopped.
+    queue_pilot_reap "$STATE"
     escalate_flush "$STATE" 2>/dev/null || true
     if [ -n "${WATCHER_PID:-}" ]; then
       kill "$WATCHER_PID" 2>/dev/null || true
@@ -1893,6 +1946,9 @@ fm_super_main() {
         log "wake: $reason"
         handle_wake "$reason" "$STATE"
         trim_log
+        # Outside the classification above, so a force-self heartbeat wake still
+        # gives the armed pilot its scheduled look at current state.
+        queue_pilot_trigger "$STATE"
       fi
       start_sentry || continue
     fi
@@ -1906,6 +1962,7 @@ fm_super_main() {
     if [ "$(_file_age "$STATE/.subsuper-last-housekeep")" -ge "${SQUAD_HOUSEKEEPING_TICK:-$HOUSEKEEPING_TICK_DEFAULT}" ]; then
       _now > "$STATE/.subsuper-last-housekeep"
       housekeeping "$STATE"
+      queue_pilot_trigger "$STATE"
     fi
   done
 }

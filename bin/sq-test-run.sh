@@ -208,7 +208,7 @@ family_for_basename() {
     sq-teardown.test.sh)
       printf '%s\n' pr-forge
       ;;
-    sq-afk-inject-e2e.test.sh|sq-afk-return.test.sh|sq-afk-orca.test.sh)
+    sq-afk-inject-e2e.test.sh|sq-afk-return.test.sh|sq-afk-orca.test.sh|sq-queue-pilot.test.sh)
       printf '%s\n' afk
       ;;
     sq-sitrep-snapshot.test.sh|sq-unit-snapshot-view.test.sh)
@@ -380,6 +380,7 @@ portable_serial_weight_hints() {
 tests/sq-afk-inject-e2e.test.sh 34019
 tests/sq-afk-pi-herdr-return-e2e.test.sh 42
 tests/sq-afk-return.test.sh 1105
+tests/sq-queue-pilot.test.sh 1888
 tests/sq-ask-user-authority.test.sh 68
 tests/sq-backend-cmux-smoke.test.sh 29
 tests/sq-backend-cmux.test.sh 2349

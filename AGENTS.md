@@ -375,6 +375,7 @@ The skill owns both procedures and their composition; these daemon safety facts 
 - A message beginning `/afk` refreshes away mode.
 - Any other unmarked message means the commander returned; load `/afk`, run the return owner, and do not process that message as ordinary work until its durable catch-up gate clears.
 - Away mode never expands approval authority for merges, ask-user findings, destructive actions, irreversible actions, or security-sensitive choices.
+- The opt-in queue pilot can dispatch one task the commander approved before departure, and nothing else; it is off unless a grant was armed, and `bin/sq-queue-pilot.sh` and [`docs/configuration.md`](docs/configuration.md#away-queue-pilot-statequeue-pilotgrant--statequeue-pilotintent) own its records and admission sequence.
 - Bias ambiguous input toward exit because a present commander takes precedence.
 
 ### Stuck-worker trigger

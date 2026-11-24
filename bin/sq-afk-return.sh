@@ -209,6 +209,13 @@ print_summary() {  # <evidence-file>
     [ -z "$statuses" ] || printf '%s\n' "$statuses"
     [ -z "$absence" ] || printf '    %s\n' "$absence"
   fi
+  # The opt-in queue pilot's durable receipt: when it dispatched, it names the
+  # exact task and the verification, whether or not the daemon survived long
+  # enough to ledger that outcome.
+  if [ -f "$STATE/queue-pilot.intent" ]; then
+    printf '  queue pilot receipt:\n    %s\n' "$STATE/queue-pilot.intent"
+    sed -n 's/^\(task\|outcome\|detail\)=/    \1=/p' "$STATE/queue-pilot.intent" 2>/dev/null || true
+  fi
   printf '  never executed while you were away: any merge outside the grant quoted in the absence record, destructive or irreversible actions, security-sensitive choices, and anything outside the accepted scope of the judge; each waits for you.\n'
   [ -z "$notices" ] || printf '  open items at return:\n%s' "$notices"
 }

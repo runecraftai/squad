@@ -35,6 +35,8 @@ Run these steps without asking the commander first.
    - the delivery mode and yolo posture of each project in force, copied from `data/projects.md` at absence start;
    - the resolved judge lane;
    - the daemon state, and which wake classes it absorbs and which it escalates to Squad.
+   When the commander approved one exact task for unattended dispatch, prepare it before departure and arm the opt-in queue pilot with `bin/sq-queue-pilot.sh arm`, which binds the grant to this record; see [`docs/configuration.md`](../../../docs/configuration.md#away-queue-pilot-statequeue-pilotgrant--statequeue-pilotintent).
+   The daemon then launches only that filed id, once, and nothing else; an absence with no armed grant behaves exactly as today, and refreshing `/afk` never widens or resets a grant.
 3. **Park his questions instead of asking.** Each question that belongs to him goes into the record and becomes its own backlog item held with `sq-tasks hold <id> --reason "<reason>" --kind commander`, per `AGENTS.md` section 10.
    Do not re-ask it in chat while he is away.
 4. **Keep delivering.** Dispatch, supervise, and merge through `AGENTS.md` sections 7 and 8, with merges only through `bin/sq-pr-merge.sh`; on a project where yolo is off, only a merge the record grants under step 2, and on a yolo-on project the standing merge authority of `AGENTS.md` section 7 still applies during the absence.

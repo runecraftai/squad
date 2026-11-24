@@ -96,6 +96,9 @@ state/               volatile runtime signals; gitignored
   .handoff-queue.lock .handoff-queue.seq  handoff-queue serialization and sequence records
   .<id>.open-decisions-cursor  per-task byte cursor and folded open-decision set bounding the OPEN DECISIONS scan's cost to new status-log appends; written only by sq-classify-lib.sh's status_open_decisions_incremental, removed by teardown, safe to delete (forces one full re-fold)
   .afk               durable away-mode flag; present = sub-supervisor may inject escalations (set by /afk, cleared on user return)
+  queue-pilot.grant  the opt-in away queue pilot's authority record, written only by bin/sq-queue-pilot.sh arm and marked revoked=1 by its revoke command; absent means the pilot is off (docs/configuration.md "Away queue pilot")
+  queue-pilot.intent the pilot's one-use attempt receipt, written before any launch and never removed, so a repeated trigger always finds it spent
+  .queue-pilot.pid .queue-pilot.outcome .queue-pilot.log .queue-pilot-reason .queue-pilot.lock  pilot scheduling and budget internals; never touch - the daemon owns the pid and outcome files, and the pilot owns the lock, the last-refusal record, and the bounded log
   .orca-tab-<id> .orca-tab-<id>.lock  Orca mission-tab close receipt and its per-task close lock; only a confirmed close is recorded, a runtime error preserves the record for a retry, and teardown removes both (docs/orca-backend.md "Current lifecycle and safety")
   window-states      derived per-window tmux sidebar truth, one TSV line per tmux task window; contract owned by bin/sq-window-state.sh (docs/configuration.md "Operational base layout and state")
   .sentry.lock .stand-to-queue.lock sentry singleton and queue serialization locks
@@ -227,6 +230,29 @@ It then queues the digest through that pane's own agent, and a pane TUIOS cannot
 See [`tuios-backend.md`](tuios-backend.md#away-mode-supervision).
 [`orca-backend.md`](orca-backend.md#away-mode-supervision) owns Orca's primary selection, proven harness coverage, native-only delivery, exact cleanup, and remaining verification limits.
 Selecting any other supervisor backend, including `zellij` and `cmux`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
+
+## Away queue pilot (state/queue-pilot.grant / state/queue-pilot.intent)
+
+The away-mode daemon absorbs wakes and decides nothing, so a notification alone never advances the queue; the opt-in queue pilot is the one exception and it can only dispatch.
+It exists so a task the commander approved before departure can be launched once without an awake Squad turn.
+[`bin/sq-queue-pilot.sh`](../bin/sq-queue-pilot.sh)'s header owns the admission sequence, the trigger points, and the refusal vocabulary; this section owns the two records.
+Off by default: with no grant file the pilot does nothing and costs no subprocess, and no Markdown prose can enable it.
+Only bin/sq-queue-pilot.sh writes these files, and only `arm` creates a grant.
+
+`state/queue-pilot.grant` is one `key=value` record, written atomically by `arm`:
+
+- `version=1` and `action=dispatch-once` are the schema identity; any other value refuses.
+- `base`, `absence_record`, and `absence_generation` bind the grant to this base and to exactly one open absence record (the record's file name without `.md`).
+- `task`, `project`, `repo`, `mode`, `yolo`, `harness`, and the optional `model` and `effort` are the one prepared task and its already-resolved lane; the pilot never selects a lane at execution time.
+- `max_missions` is the commander's concurrent-mission ceiling for this absence, at most the three-mission limit.
+- `expires` is an epoch-second deadline after which no launch may be admitted.
+- `created`, `brief_sha256`, and `authority` record when the grant was made, the exact prepared brief it binds, and the commander's quoted instruction.
+- `revoked=1` is terminal and is never removed by hand.
+
+`state/queue-pilot.intent` is the one-use receipt: `version`, `action`, `base`, `absence_generation`, `absence_record`, `task`, `state=spent`, `claimed_at`, `outcome` (`pending-launch`, `dispatched`, `failed`, or `ambiguous`), `outcome_at`, `detail`, and the optional `launch_rc`.
+It is written before the effect and never deleted, so its presence alone is what makes a second trigger a refusal rather than a second launch.
+A `failed` or `ambiguous` outcome is escalated for reconciliation and is never retried, relaunched, or repaired by the pilot.
+The return summary prints the receipt path and its `task`, `outcome`, and `detail` lines, so the outcome is presented even when the daemon did not survive to ledger it.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
