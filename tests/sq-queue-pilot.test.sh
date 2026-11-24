@@ -29,6 +29,9 @@ case "${1:-}" in
   update) printf '%s\n' 'usage: sq-tasks update <id> [--archive-body]' ;;
   mv) printf 'usage: sq-tasks mv <id> [<id>...]\n' ;;
   ready)
+    if [ -n "${SQ_FAKE_CLOCK:-}" ]; then
+      printf '%s\n' "$SQ_FAKE_EXPIRE_AT_READY" > "$SQ_FAKE_CLOCK"
+    fi
     ids=$(cat "${SQ_FAKE_READY:?}" 2>/dev/null || true)
     count=$(printf '%s\n' "$ids" | grep -c . || true)
     printf 'count: %s\n' "$count"
@@ -55,6 +58,18 @@ esac
 exit 0
 SH
 chmod +x "$FAKEBIN/sq-tasks"
+
+export SQ_REAL_DATE
+SQ_REAL_DATE=$(command -v date)
+cat > "$FAKEBIN/date" <<'SH'
+#!/usr/bin/env bash
+if [ -n "${SQ_FAKE_CLOCK:-}" ] && [ "$#" -eq 1 ] && [ "$1" = +%s ]; then
+  cat "$SQ_FAKE_CLOCK"
+else
+  exec "$SQ_REAL_DATE" "$@"
+fi
+SH
+chmod +x "$FAKEBIN/date"
 
 # PATH stubs for the operations the pilot must never perform. Each records its
 # invocation, so "never merges" is a behavior assertion rather than a promise.
@@ -196,14 +211,25 @@ assert_present "$STATE/queue-pilot.grant" "the grant is durable"
 assert_grep "task=$TASK" "$STATE/queue-pilot.grant" "the grant records the exact task"
 assert_grep "brief_sha256=" "$STATE/queue-pilot.grant" "the grant binds the prepared brief"
 
-( exit 0 ) &
-dead_owner=$!
-wait "$dead_owner"
-mkdir "$STATE/queue-pilot.lock"
-printf '%s\n' "$dead_owner" > "$STATE/queue-pilot.lock/pid"
+lock="$STATE/queue-pilot.lock"
+(
+  export SQUAD_STATE_OVERRIDE="$STATE"
+  . "$ROOT/bin/sq-stand-to-lib.sh"
+  fm_lock_try_acquire "$lock" || fail "could not acquire admission lock"
+  run_pilot "$BASE" check || fail "could not check with a live lock owner"
+  [ ! -e "$STATE/queue-pilot.intent" ] || fail "check stole a live owner's lock"
+  [ ! -s "$SQ_FAKE_SPAWN_LOG" ] || fail "check launched while the lock was held"
+  fm_lock_release "$lock"
+) || fail "live lock case failed"
+
+SQUAD_STATE_OVERRIDE="$STATE" bash -c '
+  . "$1"
+  fm_lock_try_acquire "$2"
+' _ "$ROOT/bin/sq-stand-to-lib.sh" "$lock" || fail "could not leave an abandoned lock"
+printf '%s\n' "$$" > "$lock/pid"
 
 out=$(run_pilot "$BASE" check 2>&1)
-expect_code 0 $? "check recovers an abandoned admission lock"
+expect_code 0 $? "check recovers an abandoned admission lock despite PID reuse"
 assert_contains "$out" "routine|queue-pilot: dispatched $TASK" "the happy path dispatches the named task"
 assert_contains "$out" "endpoint=alive" "delivery verification is quoted"
 assert_contains "$out" "marked in flight" "the start transition is reported"
@@ -226,6 +252,21 @@ assert_contains "$out" "refused: intent-spent:task=$TASK" "a repeated trigger re
 # An unchanged refusal is not recorded twice.
 out=$(run_pilot "$BASE" check 2>&1)
 [ -z "$out" ] || fail "an unchanged refusal is not repeated: $out"
+
+new_base expires-during-admission
+write_record "$TASK" queued
+ready_task "$TASK"
+write_absence "$RECORD" "$TASK"
+write_brief "$TASK" direct-PR
+expires=$(( $(date +%s) + 3600 ))
+clock="$BASE/fake-records/clock"
+printf '%s\n' "$((expires - 1))" > "$clock"
+out=$(arm_grant --expires "$expires" 2>&1) || fail "could not arm an expiring grant: $out"
+out=$(SQ_FAKE_CLOCK="$clock" SQ_FAKE_EXPIRE_AT_READY="$expires" run_pilot "$BASE" check 2>&1)
+expect_code 0 $? "expiry during admission is a refusal"
+assert_contains "$out" "refused: grant-expired" "launch commitment rechecks expiry"
+[ ! -e "$STATE/queue-pilot.intent" ] || fail "an expired grant must not be spent"
+[ ! -s "$SQ_FAKE_SPAWN_LOG" ] || fail "an expired grant must not launch"
 
 # --- no absence record: no action ----------------------------------------
 

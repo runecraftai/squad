@@ -469,6 +469,7 @@ admit() {
 
   # Durable before the effect: a crash, a replay or a second trigger inside this
   # window finds the intent spent and does nothing.
+  [ "$(now)" -lt "$expires" ] || { refuse "grant-expired"; return 0; }
   write_intent pending-launch \
     "launching $TASK in $repo ($MODE yolo=$yolo) slot=$slots available=${avail}MiB" ||
     { refuse "intent-unwritable"; return 0; }
