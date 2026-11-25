@@ -340,8 +340,8 @@ case "$PLAYBOOK@$VERSION" in
       "audit|inventory;surface|token|component"
       "token;component|layer"
       "component|anatomy;state;code|counterpart|file|path"
-      "screen|flow;state;matrix|loading|empty|error"
-      "visual|accessibility|parity;command|result|path"
+      "screen|flow;state&matrix"
+      "visual;accessibility;parity;command|result|path"
       "acceptance|criteria;verifiable|test|command|path"
     )
     ;;

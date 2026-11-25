@@ -4,7 +4,12 @@
 
 This contract accepts `strike`.
 It also accepts `recon` when the deliverable is design knowledge only and no product change is authorized; the sequence then stops at the artifacts, and any implementation is a separate, separately authorized strike.
-The registry entry shipped with this version is `strike`-scoped, so a recon brief selects no playbook identity and records the method by path: `bin/sq-brief.sh --recon --no-playbook "design-delivery@1 by reference: .agents/skills/execution-playbooks/references/design-delivery-v1.md - design knowledge only, no product change authorized"`.
+The registry entry shipped with this version is `strike`-scoped, so a recon brief selects no playbook identity and records the method by path instead.
+Both positionals are required - `<task-id>` and `<repo-name>` - and the `--no-playbook` reason is what carries the method by path, with the cited reference resolved from the Squad base:
+
+```bash
+bin/sq-brief.sh <task-id> <repo-name> --recon --no-playbook "design-delivery@1 by reference: .agents/skills/execution-playbooks/references/design-delivery-v1.md - design knowledge only, no product change authorized"
+```
 The `kind` remains the free-form `sq-tasks` dimension; this contract does not reclassify or close that field.
 
 ## Required sequence
