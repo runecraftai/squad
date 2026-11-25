@@ -31,7 +31,7 @@ Run these steps in order, and treat every correction as another pass through the
 | Verb | Shape | Use it for |
 | --- | --- | --- |
 | `info` | `info FILE [--json]` | The cheap audit: pages, node counts, top-level frames, and style, variable, and image counts, without rendering. `--json` when the numbers must be parsed. |
-| `export` | `export FILE --out DIR --scale N [--page NAME]` | One file per top-level frame of the page. `--page` names the page and defaults to the first. |
+| `export` | `export FILE --out OUT --scale N [--page NAME] [--node ID\|NAME]` | One file per top-level frame of the page. `--page` selects the page and defaults to the first, while a file-shaped `OUT` with an image extension or `--node` writes one file. |
 | `render` | `render FILE -o out.png --scale N [--page NAME]` | The whole page with its background, as png, jpg, or webp. |
 | `convert` | `convert IN OUT` | Format from the output extension: `.figcraft`, `.json`, `.svg`, `.png`, `.jpg`, `.webp`, `.pdf`, `.fig`, `.penpot`. |
 | `run` | `run SCRIPT.json --in FILE --out FILE` | Compiles a command script into the document. This is the engine of the loop above. |
@@ -44,7 +44,7 @@ Scale practice: `0.22` to `0.35` gives the overview of a page carrying dozens of
 
 - **The friction was the generator, not the CLI.** Every CLI call answered well; the failures were Python syntax errors inside the script.
   Validate the script's syntax before rendering, so a generator bug never reads as a rendering bug.
-- **`export` without `--page`** dumps the whole tree instead of the frames of one page. Export per page for per-frame delivery.
+- **`export` defaults to the first page.** Without `--page` it writes one file per top-level frame of the first page only, so a multi-page document needs `--page` named explicitly for every page you deliver, and a single image needs a file-shaped `<OUT>` with an image extension or `--node` rather than a folder.
 - **`render` without an explicit `--scale`** costs time and writes a huge PNG. Always pass the scale.
 - **`info` is the cheap audit.** It answers counts without rendering, so render only to judge composition.
 - **Fonts are not deterministic without `--no-system-fonts`**, because otherwise installed fonts are indexed the first time text is laid out.

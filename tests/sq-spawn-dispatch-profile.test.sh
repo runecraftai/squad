@@ -870,6 +870,50 @@ test_multi_phase_plan_recon_spawn_dispatches() {
   pass 'spawn dispatches a multi-phase-plan@2 recon brief with its identity and version'
 }
 
+test_registered_playbook_identities_dispatch() {
+  local rec id out status
+
+  id=visual-parity-strike
+  rec=$(make_spawn_case visual-parity-strike pi)
+  read_case_record "$rec"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook visual-parity@1 >/dev/null 2>&1 \
+    || fail "visual-parity@1 strike brief should scaffold"
+  sed -i 's/^{TASK}$/Compare the design against the shipped surface./' "$HOME_DIR/data/$id/brief.md"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "a visual-parity@1 strike brief must dispatch: $out"
+  assert_grep 'playbook=visual-parity' "$HOME_DIR/state/$id.meta" 'spawn lost the visual-parity playbook identity'
+  assert_grep 'playbook_version=1' "$HOME_DIR/state/$id.meta" 'spawn lost the visual-parity version'
+
+  id=visual-parity-recon
+  rec=$(make_spawn_case visual-parity-recon pi)
+  read_case_record "$rec"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --recon --playbook visual-parity@1 >/dev/null 2>&1 \
+    || fail "visual-parity@1 recon brief should scaffold"
+  sed -i 's/^{TASK}$/Record the current design-versus-code divergences./' "$HOME_DIR/data/$id/brief.md"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --recon)
+  status=$?
+  expect_code 0 "$status" "a visual-parity@1 recon brief must dispatch: $out"
+  assert_grep 'playbook=visual-parity' "$HOME_DIR/state/$id.meta" 'spawn lost the visual-parity recon identity'
+
+  id=perf-kind
+  rec=$(make_spawn_case perf-kind pi)
+  read_case_record "$rec"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook perf@1 >/dev/null 2>&1 \
+    || fail "perf@1 strike brief should scaffold"
+  sed -i 's/^{TASK}$/Measure the current profile./' "$HOME_DIR/data/$id/brief.md"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --recon)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a recon spawn must refuse the strike-only perf@1 brief: $out"
+  assert_contains "$out" 'perf@1 is compatible only with kind: strike' 'the single-kind refusal must name the registered kind'
+  assert_absent "$HOME_DIR/state/$id.meta" 'the perf@1 kind refusal created task metadata'
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "a perf@1 strike brief must dispatch: $out"
+  assert_grep 'playbook=perf' "$HOME_DIR/state/$id.meta" 'spawn lost the perf playbook identity'
+  pass 'spawn dispatches visual-parity@1 recon and strike and the other registered single-kind identities'
+}
+
 test_react_as_playbook_is_refused_at_spawn() {
   local rec id out status brief
   id=react-as-playbook-spawn
@@ -941,6 +985,7 @@ test_malformed_profile_identity_is_refused_at_spawn() {
 test_no_profile_keeps_claude_profile_defaults
 test_react_profile_identity_survives_spawn
 test_multi_phase_plan_recon_spawn_dispatches
+test_registered_playbook_identities_dispatch
 test_react_as_playbook_is_refused_at_spawn
 test_malformed_profile_identity_is_refused_at_spawn
 test_relative_home_overrides_launch_with_absolute_cross_process_paths

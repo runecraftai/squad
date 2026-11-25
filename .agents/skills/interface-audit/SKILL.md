@@ -49,4 +49,4 @@ Record that reason beside the recommendation, so the next reader can disagree wi
 
 Quality judgement of an artifact someone just produced belongs to the QA phase, not here.
 This skill describes what exists and where it diverges; it does not rate a fresh design.
-Generic UI review is owned by the `design-review` skill and accessibility review by `accessibility-compliance`; point at them instead of restating their checks.
+Generic UI review is owned by the `design-review` skill and accessibility review by `accessibility-compliance`, both installed as machine skills under `~/.agents/skills/` rather than shipped by this repository; point at them instead of restating their checks, and when one is absent record the capability as unavailable and stop.

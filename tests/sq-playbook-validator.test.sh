@@ -406,18 +406,42 @@ pass 'sq-playbook validator: React requires all five criteria and a deliberated 
 
 printf 'playbook=design-delivery\nplaybook_version=1\n' > "$HOME/state/design-delivery.meta"
 mkdir -p "$HOME/data/design-delivery/artifacts"
-printf '%s\n' '# design-delivery@1 checklist' '- [x] audit artifact: data/design-delivery/artifacts/01-audit.md' \
-  > "$HOME/data/design-delivery/artifacts/checks.md"
+design_delivery_proofs=(
+  'existing surface and token audit path: data/design-delivery/artifacts/01-audit.md'
+  'token and component layer path: data/design-delivery/artifacts/02-token-layer.md'
+  'component specification with anatomy, state and code counterpart path: data/design-delivery/artifacts/03-components.md'
+  'flow and screens with the full state matrix path: data/design-delivery/artifacts/04-screens.md'
+  'visual accessibility and parity QA path: data/design-delivery/artifacts/05-qa.md command: figcraft-cli render design.figcraft -o qa.png --scale 1'
+  'implementation contract with verifiable acceptance criteria path: data/design-delivery/artifacts/06-implementation-contract.md'
+)
+write_design_delivery_evidence() {
+  local omitted=${1:-0} i
+  printf '# design-delivery@1 checklist\n'
+  for ((i=0; i<${#design_delivery_proofs[@]}; i++)); do
+    printf '## Criterion %s\n' "$((i+1))"
+    [ "$((i+1))" -eq "$omitted" ] && continue
+    printf 'Proof: %s\n' "${design_delivery_proofs[$i]}"
+  done
+}
+write_design_delivery_evidence > "$HOME/data/design-delivery/artifacts/checks.md"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" design-delivery 2>&1); rc=$?
-expect_code 0 "$rc" "a registered design-delivery@1 checklist should validate"
+expect_code 0 "$rc" "a complete design-delivery@1 checklist should validate"
 assert_contains "$out" "playbook evidence valid: design-delivery@1" "design-delivery@1 validator identity missing"
+printf '# design-delivery@1 checklist\n' > "$HOME/data/design-delivery/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" design-delivery 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "a title-only design-delivery@1 checklist must not validate"
+assert_contains "$out" 'missing: criterion 1 existing surface and token audit proof' 'the vacuous design-delivery pass must name the first missing criterion'
+write_design_delivery_evidence 4 > "$HOME/data/design-delivery/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" design-delivery 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "a design-delivery@1 checklist missing a phase must fail"
+assert_contains "$out" 'missing: criterion 4 flow and screens with full state matrix proof' 'the missing-phase refusal must name the absent criterion'
 # The same id at an unregistered version stays refused, so the allowlist entry cannot
 # accept a version nobody registered.
 printf 'playbook=design-delivery\nplaybook_version=2\n' > "$HOME/state/design-delivery.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" design-delivery 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "design-delivery@2 must be refused as an unsupported identity"
 assert_contains "$out" "unsupported execution playbook identity" "design-delivery@2 refusal missing"
-pass "sq-playbook validator: design-delivery@1 is supported and an unregistered version is refused"
+pass "sq-playbook validator: design-delivery@1 requires all six phases and an unregistered version is refused"
 
 printf 'playbook=shipping\nplaybook_version=1\n' > "$HOME/state/rejected.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" rejected 2>&1); rc=$?

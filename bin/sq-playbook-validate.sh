@@ -333,6 +333,18 @@ case "$PLAYBOOK@$VERSION" in
       "verification;run|executed|result"
     )
     ;;
+  design-delivery@1)
+    CRITERIA_LABELS=("existing surface and token audit" "token and component layer" "component specification with code counterpart" "flow and screens with full state matrix" "visual, accessibility, and parity QA" "implementation contract with verifiable acceptance criteria")
+    CRITERIA_PATTERNS=("audit" "token|component" "component" "screen|flow" "qa|quality" "contract|acceptance")
+    CRITERIA_CHECKS=(
+      "audit|inventory;surface|token|component"
+      "token;component|layer"
+      "component|anatomy;state;code|counterpart|file|path"
+      "screen|flow;state;matrix|loading|empty|error"
+      "visual|accessibility|parity;command|result|path"
+      "acceptance|criteria;verifiable|test|command|path"
+    )
+    ;;
 esac
 COUNT=${#CRITERIA_LABELS[@]}
 # React criterion 3 binds routing and queries as two structured records, not a keyword-bearing proof line.

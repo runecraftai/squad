@@ -4,7 +4,7 @@
 
 This contract accepts `strike`.
 It also accepts `recon` when the deliverable is design knowledge only and no product change is authorized; the sequence then stops at the artifacts, and any implementation is a separate, separately authorized strike.
-The registry entry shipped with this version is `strike`-scoped, so a recon brief cites this contract by path instead of selecting it at scaffold.
+The registry entry shipped with this version is `strike`-scoped, so a recon brief selects no playbook identity and records the method by path: `bin/sq-brief.sh --recon --no-playbook "design-delivery@1 by reference: .agents/skills/execution-playbooks/references/design-delivery-v1.md - design knowledge only, no product change authorized"`.
 The `kind` remains the free-form `sq-tasks` dimension; this contract does not reclassify or close that field.
 
 ## Required sequence
@@ -42,11 +42,11 @@ No delivery-ready claim is made without that artifact.
 Design QA runs on tooling that is installed and exercised, never on tooling that is assumed.
 
 - `figcraft-cli render` for the design file, following `figcraft-operations`.
-- `design-review` and `accessibility-compliance` for interface and accessibility review.
+- `design-review` and `accessibility-compliance`, installed machine skills under `~/.agents/skills/` rather than files this repository ships, for interface and accessibility review.
 - `visual-parity@1` for design-versus-implementation comparison.
 
 Nothing here may invent Figma, a pixel-diff harness, or a research capability that is not installed.
-Record an unavailable capability as a finding and stop rather than weakening the check to fit the tooling.
+When one of these skills is absent, record the capability as an unavailable finding and stop rather than weakening the check to fit the tooling.
 
 ## Anti-patterns
 
