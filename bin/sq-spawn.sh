@@ -1640,6 +1640,7 @@ if [ "$PLAYBOOK_LINES" -eq 1 ]; then
     'Execution playbook: id=multi-phase-plan version=1') PLAYBOOK_META=multi-phase-plan; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
     'Execution playbook: id=multi-phase-plan version=2') PLAYBOOK_META=multi-phase-plan; PLAYBOOK_VERSION_META=2; EXPECTED_KIND=recon ;;
     'Execution playbook: id=plan-execute version=1') PLAYBOOK_META=plan-execute; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
+    'Execution playbook: id=design-delivery version=1') PLAYBOOK_META=design-delivery; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
     *) echo "error: malformed or unsupported execution playbook identity in $BRIEF" >&2; exit 1 ;;
   esac
   [ "$KIND" = "$EXPECTED_KIND" ] || { echo "error: $PLAYBOOK_META@$PLAYBOOK_VERSION_META is compatible only with kind: $EXPECTED_KIND" >&2; exit 1; }

@@ -540,6 +540,27 @@ test_remaining_lifecycle_playbooks() {
   pass "sq-brief.sh: shipping is refused and planning/evaluation methods materialize narrowly"
 }
 
+# The design-method catalog registers one wave-one playbook. It must resolve from
+# the registry, materialize its contract into the brief, and stay strike-scoped.
+test_design_delivery_playbook_materializes() {
+  local home brief out status
+  home="$TMP_ROOT/design-delivery-home"
+  mkdir -p "$home/data"
+  SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" design-delivery-strike repo --mode drill --playbook design-delivery@1 >/dev/null 2>&1 \
+    || fail "design-delivery@1 should materialize as strike"
+  brief="$home/data/design-delivery-strike/brief.md"
+  grep -qx 'Execution playbook: id=design-delivery version=1' "$brief" || fail "design-delivery@1 identity missing"
+  assert_grep "# Execution playbook: \`design-delivery@1\`" "$brief" "design-delivery contract missing"
+  assert_grep 'Every phase names the artifact it leaves' "$brief" "design-delivery contract lost the per-phase artifact rule"
+  assert_grep "title heading contains \`checklist\`" "$brief" "design-delivery contract lost the exit predicate"
+  assert_grep 'owns no delivery, merge, or review authority' "$brief" "design-delivery contract lost its no-authority statement"
+  out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" design-delivery-recon repo --recon --playbook design-delivery@1 2>&1); status=$?
+  [ "$status" -ne 0 ] || fail "design-delivery@1 must stay strike-scoped at scaffold"
+  assert_contains "$out" "accepts only kind: strike" "the recon refusal must name the registered kind"
+  assert_absent "$home/data/design-delivery-recon/brief.md" "the recon refusal left a partial brief"
+  pass "sq-brief.sh: design-delivery@1 resolves from the registry and materializes its contract"
+}
+
 test_ship_mode_is_explicit_not_registry() {
   local home brief
   home="$TMP_ROOT/explicit-over-registry-home"
@@ -1508,6 +1529,7 @@ test_wave_one_playbooks_materialize_and_enforce_forms
 test_wave_two_playbooks_materialize_and_enforce_forms
 test_absorbed_playbook_names_are_not_selectable
 test_remaining_lifecycle_playbooks
+test_design_delivery_playbook_materializes
 test_autonomous_policy_refusals_and_topology_boundaries
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs

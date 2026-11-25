@@ -404,6 +404,21 @@ out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" "$id" 2>&1); rc=$?
 assert_contains "$out" 'unsupported execution playbook identity' 'React version refusal missing'
 pass 'sq-playbook validator: React requires all five criteria and a deliberated lint proposal'
 
+printf 'playbook=design-delivery\nplaybook_version=1\n' > "$HOME/state/design-delivery.meta"
+mkdir -p "$HOME/data/design-delivery/artifacts"
+printf '%s\n' '# design-delivery@1 checklist' '- [x] audit artifact: data/design-delivery/artifacts/01-audit.md' \
+  > "$HOME/data/design-delivery/artifacts/checks.md"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" design-delivery 2>&1); rc=$?
+expect_code 0 "$rc" "a registered design-delivery@1 checklist should validate"
+assert_contains "$out" "playbook evidence valid: design-delivery@1" "design-delivery@1 validator identity missing"
+# The same id at an unregistered version stays refused, so the allowlist entry cannot
+# accept a version nobody registered.
+printf 'playbook=design-delivery\nplaybook_version=2\n' > "$HOME/state/design-delivery.meta"
+out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" design-delivery 2>&1); rc=$?
+[ "$rc" -ne 0 ] || fail "design-delivery@2 must be refused as an unsupported identity"
+assert_contains "$out" "unsupported execution playbook identity" "design-delivery@2 refusal missing"
+pass "sq-playbook validator: design-delivery@1 is supported and an unregistered version is refused"
+
 printf 'playbook=shipping\nplaybook_version=1\n' > "$HOME/state/rejected.meta"
 out=$(SQUAD_BASE="$HOME" "$ROOT/bin/sq-playbook-validate.sh" rejected 2>&1); rc=$?
 [ "$rc" -ne 0 ] || fail "rejected shipping identity should be refused"

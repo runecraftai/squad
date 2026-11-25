@@ -1567,6 +1567,18 @@
   {
    "path": "skills/knowledge-pass/assets/knowledge-pass-template.md",
    "audience": "public-product"
+  },
+  {
+   "path": ".agents/skills/figcraft-operations/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/interface-audit/SKILL.md",
+   "audience": "agent-runtime"
+  },
+  {
+   "path": ".agents/skills/execution-playbooks/references/design-delivery-v1.md",
+   "audience": "agent-runtime"
   }
  ]
 }
