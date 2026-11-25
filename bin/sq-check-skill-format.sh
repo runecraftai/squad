@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Check that a skill has SKILL.md front matter and required headings.
 # Usage: sq-check-skill-format.sh <skill-directory>
-# Exit 0 only when name and description front matter exist.
+# Exit 0 only when name and description front matter exist and, when PyYAML is
+# importable, that front matter also parses as a YAML mapping.
 # Trigger and exclusion declarations are accepted in any of:
 #   - Section headings (## Triggers / ## Do NOT use for)
 #   - Description field markers (EN triggers: / Do NOT use for)

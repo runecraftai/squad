@@ -911,7 +911,19 @@ test_registered_playbook_identities_dispatch() {
   status=$?
   expect_code 0 "$status" "a perf@1 strike brief must dispatch: $out"
   assert_grep 'playbook=perf' "$HOME_DIR/state/$id.meta" 'spawn lost the perf playbook identity'
-  pass 'spawn dispatches visual-parity@1 recon and strike and the other registered single-kind identities'
+
+  id=design-delivery-strike
+  rec=$(make_spawn_case design-delivery-strike pi)
+  read_case_record "$rec"
+  SQUAD_BASE="$HOME_DIR" "$ROOT/bin/sq-brief.sh" "$id" repo --mode drill --playbook design-delivery@1 >/dev/null 2>&1 \
+    || fail "design-delivery@1 strike brief should scaffold"
+  sed -i 's/^{TASK}$/Deliver the settings redesign through the design-delivery method./' "$HOME_DIR/data/$id/brief.md"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "a design-delivery@1 strike brief must dispatch: $out"
+  assert_grep 'playbook=design-delivery' "$HOME_DIR/state/$id.meta" 'spawn lost the design-delivery playbook identity'
+  assert_grep 'playbook_version=1' "$HOME_DIR/state/$id.meta" 'spawn lost the design-delivery version'
+  pass 'spawn dispatches visual-parity@1 recon and strike, design-delivery@1, and the other registered single-kind identities'
 }
 
 test_react_as_playbook_is_refused_at_spawn() {
