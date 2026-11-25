@@ -21,7 +21,7 @@ ARTIFACTS="$DATA/$ID/artifacts"
 PLAYBOOK=$(sed -n 's/^playbook=//p' "$META" | head -n 1)
 VERSION=$(sed -n 's/^playbook_version=//p' "$META" | head -n 1)
 case "$PLAYBOOK@$VERSION" in
-  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|multi-phase-plan@2|eval@1|plan-execute@1|react@1) ;;
+  bug-fix@1|investigation@1|feature@1|refactoring@1|prototype@1|perf@1|hillclimb@1|runtime-forensics@1|trace-forensics@1|visual-parity@1|multi-phase-plan@1|multi-phase-plan@2|eval@1|plan-execute@1|design-delivery@1|react@1) ;;
   *) echo "error: task $ID has unsupported execution playbook identity"; exit 1 ;;
 esac
 CHECKLIST=
@@ -331,6 +331,18 @@ case "$PLAYBOOK@$VERSION" in
       "steps;executed|followed"
       "acceptance;met|verified|criteria"
       "verification;run|executed|result"
+    )
+    ;;
+  design-delivery@1)
+    CRITERIA_LABELS=("existing surface and token audit" "token and component layer" "component specification with code counterpart" "flow and screens with full state matrix" "visual, accessibility, and parity QA" "implementation contract with verifiable acceptance criteria")
+    CRITERIA_PATTERNS=("audit" "token|component" "component" "screen|flow" "qa|quality" "contract|acceptance")
+    CRITERIA_CHECKS=(
+      "audit|inventory;surface|token|component"
+      "token;component|layer"
+      "component|anatomy;state;code|counterpart|file|path"
+      "screen|flow;state&matrix"
+      "visual;accessibility;parity;command|result|path"
+      "acceptance|criteria;verifiable|test|command|path"
     )
     ;;
 esac

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Check that a skill has SKILL.md front matter and required headings.
 # Usage: sq-check-skill-format.sh <skill-directory>
-# Exit 0 only when name and description front matter exist.
+# Exit 0 only when name and description front matter exist and, when PyYAML is
+# importable, that front matter also parses as a YAML mapping.
 # Trigger and exclusion declarations are accepted in any of:
 #   - Section headings (## Triggers / ## Do NOT use for)
 #   - Description field markers (EN triggers: / Do NOT use for)
@@ -68,4 +69,22 @@ for present, message in checks:
     if not present:
         print(message, file=sys.stderr)
         raise SystemExit(1)
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+if yaml is not None:
+    match = _front_matter_match(text)
+    if match:
+        try:
+            parsed = yaml.safe_load(text[match.start(1):match.end(1)])
+        except yaml.YAMLError as exc:
+            detail = " ".join(str(exc).split())
+            print(f"invalid frontmatter: {detail}", file=sys.stderr)
+            raise SystemExit(1)
+        if not isinstance(parsed, dict):
+            print("invalid frontmatter: not a mapping", file=sys.stderr)
+            raise SystemExit(1)
 PY

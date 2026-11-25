@@ -172,6 +172,9 @@ generate_skill_md() {
   local anti_lines
   anti_lines=$(generate_anti_triggers "$desc")
 
+  local description_block
+  description_block="${short_desc}. ${trigger_lines} Do NOT use for: ${anti_lines}"
+
   # Build the description field with embedded triggers and exclusions.
   # This follows the open SKILL.md format (skill-forge convention):
   # triggers and exclusions live in the description, not as separate sections.
@@ -179,7 +182,7 @@ generate_skill_md() {
 ---
 name: ${name}
 description: >-
-  ${short_desc}. ${trigger_lines} Do NOT use for: ${anti_lines}
+$(printf '%s\n' "$description_block" | sed 's/^/  /')
 user-invocable: true
 metadata:
   version: 1.0.0

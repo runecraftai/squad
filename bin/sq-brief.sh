@@ -349,7 +349,8 @@ visual-parity@1 recon|strike visual-parity-v1.md
 multi-phase-plan@1 recon multi-phase-plan-v1.md
 multi-phase-plan@2 recon multi-phase-plan-v2.md
 eval@1 recon eval-v1.md
-plan-execute@1 strike plan-execute-v1.md'
+plan-execute@1 strike plan-execute-v1.md
+design-delivery@1 strike design-delivery-v1.md'
 PROFILE_REGISTRY='react@1 strike react-v1.md'
 
 # The "<kind> <reference>" tail of a registered value, and nothing for an

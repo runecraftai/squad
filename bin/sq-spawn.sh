@@ -1631,18 +1631,28 @@ fi
 if [ "$PLAYBOOK_LINES" -eq 1 ]; then
   PLAYBOOK_LINE=$(grep '^Execution playbook: ' "$BRIEF")
   case "$PLAYBOOK_LINE" in
-    'Execution playbook: id=bug-fix version=1') PLAYBOOK_META=bug-fix; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
-    'Execution playbook: id=investigation version=1') PLAYBOOK_META=investigation; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
+    'Execution playbook: id=bug-fix version=1') PLAYBOOK_META=bug-fix; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=strike ;;
+    'Execution playbook: id=investigation version=1') PLAYBOOK_META=investigation; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=recon ;;
     'Execution playbook: id=react version=1') echo "error: react@1 is an execution profile, not a playbook; scaffold it with --playbook <id>@<version> --profile react@1 so the method owns the sequence and the profile carries the React constraints" >&2; exit 1 ;;
-    'Execution playbook: id=feature version=1') PLAYBOOK_META=feature; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
-    'Execution playbook: id=refactoring version=1') PLAYBOOK_META=refactoring; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
-    'Execution playbook: id=prototype version=1') PLAYBOOK_META=prototype; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
-    'Execution playbook: id=multi-phase-plan version=1') PLAYBOOK_META=multi-phase-plan; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=recon ;;
-    'Execution playbook: id=multi-phase-plan version=2') PLAYBOOK_META=multi-phase-plan; PLAYBOOK_VERSION_META=2; EXPECTED_KIND=recon ;;
-    'Execution playbook: id=plan-execute version=1') PLAYBOOK_META=plan-execute; PLAYBOOK_VERSION_META=1; EXPECTED_KIND=strike ;;
+    'Execution playbook: id=feature version=1') PLAYBOOK_META=feature; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=strike ;;
+    'Execution playbook: id=refactoring version=1') PLAYBOOK_META=refactoring; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=strike ;;
+    'Execution playbook: id=prototype version=1') PLAYBOOK_META=prototype; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=recon ;;
+    'Execution playbook: id=perf version=1') PLAYBOOK_META=perf; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=strike ;;
+    'Execution playbook: id=hillclimb version=1') PLAYBOOK_META=hillclimb; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=strike ;;
+    'Execution playbook: id=runtime-forensics version=1') PLAYBOOK_META=runtime-forensics; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=recon ;;
+    'Execution playbook: id=trace-forensics version=1') PLAYBOOK_META='trace-forensics'; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=recon ;;
+    'Execution playbook: id=visual-parity version=1') PLAYBOOK_META=visual-parity; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS='recon strike' ;;
+    'Execution playbook: id=multi-phase-plan version=1') PLAYBOOK_META=multi-phase-plan; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=recon ;;
+    'Execution playbook: id=multi-phase-plan version=2') PLAYBOOK_META=multi-phase-plan; PLAYBOOK_VERSION_META=2; EXPECTED_KINDS=recon ;;
+    'Execution playbook: id=eval version=1') PLAYBOOK_META='eval'; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=recon ;;
+    'Execution playbook: id=plan-execute version=1') PLAYBOOK_META=plan-execute; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=strike ;;
+    'Execution playbook: id=design-delivery version=1') PLAYBOOK_META=design-delivery; PLAYBOOK_VERSION_META=1; EXPECTED_KINDS=strike ;;
     *) echo "error: malformed or unsupported execution playbook identity in $BRIEF" >&2; exit 1 ;;
   esac
-  [ "$KIND" = "$EXPECTED_KIND" ] || { echo "error: $PLAYBOOK_META@$PLAYBOOK_VERSION_META is compatible only with kind: $EXPECTED_KIND" >&2; exit 1; }
+  case " $EXPECTED_KINDS " in
+    *" $KIND "*) ;;
+    *) echo "error: $PLAYBOOK_META@$PLAYBOOK_VERSION_META is compatible only with kind: ${EXPECTED_KINDS// / or }" >&2; exit 1 ;;
+  esac
   # shellcheck disable=SC2016 # Backticks are literal brief syntax.
   grep -q "^# Execution playbook: \`$PLAYBOOK_META@$PLAYBOOK_VERSION_META\`$" "$BRIEF" || { echo "error: $PLAYBOOK_META@$PLAYBOOK_VERSION_META identity has no materialized contract" >&2; exit 1; }
   # A plan-execute brief carries the design as a materialized plan: the structural

@@ -5,6 +5,9 @@ It is not an exhaustive repository log and does not represent a root package ver
 
 ## Unreleased
 
+- Add the wave-one design-method catalog: the selectable `design-delivery@1` execution playbook, which sequences an existing-surface audit, token and component layer, component specifications with code counterparts, screens with a full state matrix, visual/accessibility/parity QA, and an implementation contract with verifiable acceptance criteria, plus the internal `figcraft-operations` and `interface-audit` skills.
+  `bin/sq-spawn.sh` now also recognises the six already-registered playbook identities `perf@1`, `hillclimb@1`, `runtime-forensics@1`, `trace-forensics@1`, `visual-parity@1` (recon or strike), and `eval@1`, so a brief selecting one is no longer refused as an unsupported identity at dispatch.
+
 - Make away mode silent: while `state/.afk` exists the away-mode daemon writes nothing to the commander's pane, and every wake it handles goes to a durable ledger (`state/.subsuper-escalations` for commander-relevant events, `state/.subsuper-routine` for self-handled wakes).
   On return, `bin/sq-afk-return.sh` presents one consolidated summary once: counts per class, the events in order, the links and paths to act on, and an explicit statement of what was never executed while away, and a re-run after a clean return never repeats it.
   The max-defer path no longer injects: a ledger entry parked past `SQUAD_MAX_DEFER_SECS` raises one durable escalation on the stand-to queue per absence, and a failed ledger write is queued durably and raises the active alert, so a wedged or undeliverable daemon still surfaces to Squad without touching the commander's pane.
