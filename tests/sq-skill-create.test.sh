@@ -6,6 +6,7 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SCRIPT="$ROOT/bin/sq-skill-create.sh"
+FORMAT_CHECK="$ROOT/bin/sq-check-skill-format.sh"
 TMP_ROOT=$(fm_test_tmproot sq-skill-create)
 
 test_usage_no_args() {
@@ -137,6 +138,52 @@ test_skill_forge_knowledge_reference() {
   pass "generated SKILL.md follows skill-forge conventions"
 }
 
+test_format_checker_refuses_unparseable_frontmatter() {
+  local dir out rc=0
+  dir="$TMP_ROOT/bad-frontmatter"
+  mkdir -p "$dir"
+  cat > "$dir/SKILL.md" <<'MD'
+---
+name: colon-skill
+description: Operate a design document: inspect, edit, and export it.
+user-invocable: false
+metadata:
+  internal: true
+---
+
+# colon-skill
+
+Body.
+MD
+  out=$("$FORMAT_CHECK" "$dir" 2>&1) || rc=$?
+  expect_code 1 "$rc" "unparseable frontmatter is refused ($out)"
+  assert_contains "$out" "invalid frontmatter" "refusal names the frontmatter defect"
+  pass "format checker refuses frontmatter that is not valid YAML"
+}
+
+test_format_checker_accepts_folded_description() {
+  local dir out rc=0
+  dir="$TMP_ROOT/folded-frontmatter"
+  mkdir -p "$dir"
+  cat > "$dir/SKILL.md" <<'MD'
+---
+name: colon-skill
+description: >-
+  Operate a design document: inspect, edit, and export it.
+user-invocable: false
+metadata:
+  internal: true
+---
+
+# colon-skill
+
+Body.
+MD
+  out=$("$FORMAT_CHECK" "$dir" 2>&1) || rc=$?
+  expect_code 0 "$rc" "folded description parses ($out)"
+  pass "format checker accepts a folded description containing a colon"
+}
+
 # Run all tests
 test_usage_no_args
 test_usage_help_flag
@@ -149,3 +196,5 @@ test_tests_flag_creates_stub
 test_generated_skill_has_required_sections
 test_generated_skill_has_metadata
 test_skill_forge_knowledge_reference
+test_format_checker_refuses_unparseable_frontmatter
+test_format_checker_accepts_folded_description

@@ -1,6 +1,8 @@
 ---
 name: figcraft-operations
-description: Operate a .figcraft design document: inspect, create, edit, convert, export, render, and link design components to code through figcraft-cli or its MCP server. Use when the work touches the design file itself; not for judging a design or writing an implementation spec.
+description: >-
+  Operate a .figcraft design document: inspect, create, edit, convert, export, render, and link design components to code through figcraft-cli or its MCP server.
+  Use when the work touches the design file itself; not for judging a design or writing an implementation spec.
 user-invocable: false
 metadata:
   internal: true

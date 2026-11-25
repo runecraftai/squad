@@ -68,4 +68,22 @@ for present, message in checks:
     if not present:
         print(message, file=sys.stderr)
         raise SystemExit(1)
+
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
+if yaml is not None:
+    match = _front_matter_match(text)
+    if match:
+        try:
+            parsed = yaml.safe_load(text[match.start(1):match.end(1)])
+        except yaml.YAMLError as exc:
+            detail = " ".join(str(exc).split())
+            print(f"invalid frontmatter: {detail}", file=sys.stderr)
+            raise SystemExit(1)
+        if not isinstance(parsed, dict):
+            print("invalid frontmatter: not a mapping", file=sys.stderr)
+            raise SystemExit(1)
 PY
