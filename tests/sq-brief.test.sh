@@ -543,17 +543,21 @@ test_remaining_lifecycle_playbooks() {
 # The design-method catalog registers one wave-one playbook. It must resolve from
 # the registry, materialize its contract into the brief, and stay strike-scoped.
 test_design_delivery_playbook_materializes() {
-  local home brief out status
+  local home brief reference emitted out status
   home="$TMP_ROOT/design-delivery-home"
   mkdir -p "$home/data"
   SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" design-delivery-strike repo --mode drill --playbook design-delivery@1 >/dev/null 2>&1 \
     || fail "design-delivery@1 should materialize as strike"
   brief="$home/data/design-delivery-strike/brief.md"
   grep -qx 'Execution playbook: id=design-delivery version=1' "$brief" || fail "design-delivery@1 identity missing"
-  assert_grep "# Execution playbook: \`design-delivery@1\`" "$brief" "design-delivery contract missing"
-  assert_grep 'Every phase names the artifact it leaves' "$brief" "design-delivery contract lost the per-phase artifact rule"
-  assert_grep "title heading contains \`checklist\`" "$brief" "design-delivery contract lost the exit predicate"
-  assert_grep 'owns no delivery, merge, or review authority' "$brief" "design-delivery contract lost its no-authority statement"
+  reference="$ROOT/.agents/skills/execution-playbooks/references/design-delivery-v1.md"
+  emitted="$TMP_ROOT/design-delivery-emitted.md"
+  awk '/^Execution playbook: id=design-delivery version=1$/{hit=1; next} hit && /^# Setup$/{exit} hit{print}' "$brief" \
+    | awk 'NF{if (seen && blank) {for (i = 0; i < blank; i++) print ""; blank = 0}; print; seen = 1; next} {if (seen) blank++}' > "$emitted"
+  awk 'NF{if (seen && blank) {for (i = 0; i < blank; i++) print ""; blank = 0}; print; seen = 1; next} {if (seen) blank++}' "$reference" \
+    > "$TMP_ROOT/design-delivery-reference.md"
+  diff -u "$TMP_ROOT/design-delivery-reference.md" "$emitted" >/dev/null \
+    || fail "the brief must materialize the whole design-delivery-v1.md contract"
   out=$(SQUAD_BASE="$home" "$ROOT/bin/sq-brief.sh" design-delivery-recon repo --recon --playbook design-delivery@1 2>&1); status=$?
   [ "$status" -ne 0 ] || fail "design-delivery@1 must stay strike-scoped at scaffold"
   assert_contains "$out" "accepts only kind: strike" "the recon refusal must name the registered kind"
