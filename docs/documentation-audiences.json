@@ -28,6 +28,7 @@
   "docs/wedge-alarm.md",
   "docs/tmux-backend.md",
   "docs/herdr-backend.md",
+  "docs/herdr-core-backend.md",
   "docs/zellij-backend.md",
   "docs/orca-backend.md",
   "docs/cmux-backend.md",

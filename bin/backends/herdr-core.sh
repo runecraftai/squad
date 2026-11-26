@@ -32,6 +32,8 @@
 #     squad.base=<base>`), which closes nothing until that address's own labels
 #     agree, and the lab's tripwire. Both inventories are scoped by the base, so
 #     a second Squad base sharing the core is neither a duplicate nor a target.
+#     The base value is the readable base label plus a short hash of the physical
+#     base path, so two bases with the same directory name never share it.
 #     The cleanup identity is the triple (recorded address, `squad.task=<id>`
 #     label, recorded core id), plus the `squad.base=<base>` label on the
 #     failed-create recovery, checked immediately before `kill` and again
@@ -253,9 +255,24 @@ fm_backend_herdr_core_task_id_of_label() {  # <label>
 # fm_backend_herdr_core_base_name: the `squad.base` value this base writes, and
 # the value every base-scoped inventory filters on. Two bases sharing one core
 # both number their tasks from 1, so the task label alone neither proves nor
-# refutes ownership.
+# refutes ownership. Two bases can also share a directory name (the ordinary
+# `squad` clone name), so the readable base label carries a short hash of the
+# physical base path, exactly as the zellij and cmux titles are scoped.
 fm_backend_herdr_core_base_name() {
-  basename "${SQUAD_BASE:-${SQUAD_ROOT:-squad}}"
+  local raw label path hash
+  raw=${SQUAD_BASE:-${SQUAD_ROOT:-squad}}
+  path=$(cd "$raw" 2>/dev/null && pwd -P) || path=$raw
+  label=$(basename "$path" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')
+  label=${label#-}
+  [ -n "$label" ] || label=base
+  if command -v shasum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$path" | shasum -a 256 | awk '{print substr($1,1,8)}')
+  elif command -v sha256sum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$path" | sha256sum | awk '{print substr($1,1,8)}')
+  else
+    hash=$(printf '%s' "$path" | cksum | awk '{printf "%08x", $1}')
+  fi
+  printf '%s-%s' "$label" "$hash"
 }
 
 # fm_backend_herdr_core_read_core_id: one authoritative, never-cached read of
@@ -577,8 +594,26 @@ fm_backend_herdr_core_capture() {  # <target> <lines> [expected-label]
   printf '%s' "$out" | jq -jer '.text | select(type == "string")' 2>/dev/null || return 1
 }
 
+# The sentry hashes this text to expire busy claims and to compare pane
+# signatures, so an incomplete screen is worse than no screen. Only the
+# product's own envelope proves a complete viewport read: `complete` true and
+# `how` screen over non-empty text. Every other shape - history, a partial
+# read, an empty screen, a malformed record - refuses, and static-busy expiry
+# simply does not run for this backend rather than hashing unproven text.
 fm_backend_herdr_core_capture_rendered() {  # <target> [expected-label]
-  fm_backend_herdr_core_capture "${1:-}" 0 "${2:-}"
+  local target=${1:-} expected=${2:-} session address out text
+  fm_backend_herdr_core_verify "$target" "$expected" || return 1
+  session=$SQUAD_BACKEND_HERDR_CORE_SESSION
+  address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
+  out=$(fm_backend_herdr_core_cli "$session" read --json --lines 0 "$address" 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -e '
+    (.complete == true)
+    and (.how == "screen")
+    and ((.text | type) == "string")
+  ' >/dev/null 2>&1 || return 1
+  text=$(printf '%s' "$out" | jq -jer '.text' 2>/dev/null) || return 1
+  [ -n "${text//[[:space:]]/}" ] || return 1
+  printf '%s' "$text"
 }
 
 # fm_backend_herdr_core_key_name: translate Squad's tmux-shaped key names into
@@ -763,8 +798,11 @@ fm_backend_herdr_core_container_ensure() {  # <project-cwd> -> session, after th
 
 # fm_backend_herdr_core_name_for_task: the product's own terminal name, which is
 # unique only among live terminals and limited to 32 characters of
-# a-z 0-9 - _. A longer task id is truncated and disambiguated by a hash of the
-# full id, so two long ids can never collide on one name.
+# a-z 0-9 - _. The plain `sq-<id>` form is used only when the id is already its
+# own slug and carries no `sq-` prefix; every other id - a longer one, a
+# prefixed one, or one whose slug differs from it - is truncated and
+# disambiguated by a hash of the full id, so the mapping is injective: the ids
+# `demo` and `sq-demo` cannot both claim the name `sq-demo`.
 fm_backend_herdr_core_name_for_task() {  # <task-id>
   local id=${1:-} slug prefix=sq- suffix full
   slug=$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')
@@ -773,7 +811,7 @@ fm_backend_herdr_core_name_for_task() {  # <task-id>
   # A task id that already carries Squad's own `sq-` prefix is not prefixed twice.
   case "$slug" in sq-*) prefix='' ;; esac
   full="$prefix$slug"
-  if [ "${#full}" -le 32 ]; then
+  if [ "$prefix" = sq- ] && [ "$slug" = "$id" ] && [ "${#full}" -le 32 ]; then
     printf '%s' "$full"
     return 0
   fi
@@ -782,7 +820,10 @@ fm_backend_herdr_core_name_for_task() {  # <task-id>
   else
     suffix=$(printf '%s' "$id" | md5sum | cut -c1-6)
   fi
-  printf '%s-%s' "$(printf '%s' "$full" | cut -c1-25)" "$suffix"
+  if [ "${#full}" -gt 25 ]; then
+    full=$(printf '%s' "$full" | cut -c1-25)
+  fi
+  printf '%s-%s' "$full" "$suffix"
 }
 
 # fm_backend_herdr_core_labeled_addresses: every address in <session> whose own

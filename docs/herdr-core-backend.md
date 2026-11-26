@@ -58,8 +58,10 @@ It is stored verbatim and never parsed, derived, or assumed numeric: after a reg
 The shared target a reader sees is `<hc_session>:<hc_address>`, with `hc_session=default` for the default core.
 
 Task metadata therefore carries `backend=herdr-core`, `endpoint_task_id=`, `hc_session=`, `hc_address=`, and `hc_core_id=`.
-Every created terminal carries two labels: `squad.task=<task-id>` (the identity a destructive step checks) and `squad.base=<base-name>` (Squad's grouping, since herdr-core has no workspace or session layer).
-The terminal name is `sq-<task-id>`, sanitized and capped at the product's 32-character limit; a longer id is truncated and disambiguated by a hash of the full id, so two long ids never collide.
+Every created terminal carries two labels: `squad.task=<task-id>` (the identity a destructive step checks) and `squad.base=<base-label>` (Squad's grouping, since herdr-core has no workspace or session layer).
+The base label is the readable base directory name plus a short hash of the physical resolved base path, for example `squad-1a2b3c4d`, so two bases whose directory name matches (the ordinary `squad` clone name) never share one label.
+The terminal name is `sq-<task-id>` for a clean short task id that carries no `sq-` prefix.
+Every other id - a longer one, an already-prefixed one such as `sq-demo`, or one whose sanitized slug differs from it - is truncated and disambiguated by a hash of the full id, so two task ids never share one name and every name fits the product's 32-character limit of a-z 0-9 - _.
 
 ## Commands this backend runs
 
@@ -75,6 +77,7 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Inventory for a failed-create recovery | `hc ls --all --json --label squad.task=<id> --label squad.base=<base>` (live and finished) |
 | One record read (every identity and state check) | `hc get --json <t>` |
 | Screen and history | `hc read --json --lines <n> <t>` |
+| Complete rendered viewport (busy hashing) | `hc read --json --lines 0 <t>`, accepted only when `.complete` is true, `.how` is `screen`, and the text is non-empty |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
 | Deliver text | `hc send --json --if idle <t> <text>` (a program reporting `idle`), `hc send --json <t> <text>` (a program reporting `done`, or a silent one) |
 | Press one named key | `hc keys --json <t> <key>` |
@@ -146,6 +149,9 @@ Nothing is ever retyped. A send has one attempt, and the product owns its own dr
 | `idle`, `done` | `idle` |
 | absent (a program that reports nothing) | `unknown`, which falls back to the harness-scoped detection the other backends use |
 
+The sentry hashes a complete rendered viewport to expire a busy claim and to compare pane signatures, so `fm_backend_capture_rendered` accepts `hc read --json --lines 0` only when the product's own envelope proves a complete screen read: `.complete` true, `.how` equal to `screen`, and non-empty text.
+A history-shaped read, a partial read, an empty screen, a failed read, or a malformed record refuses and prints nothing, so static-busy expiry and the pane-signature check simply do not run for this backend rather than hashing unproven text.
+
 A blocked report also carries the prompt the program wrote - `kind` and a decoded `msg` - so `bin/sq-crew-state.sh` renders `state: blocked ... harness waiting on a prompt (permission: Allow rm?)` without reading the screen.
 
 The supervision producer is the sentry's ordinary poll (`fm_backend_herdr_core_poll_transition`), because native event push is a later unit.
@@ -178,7 +184,7 @@ The durable lease is returned at teardown, exactly as on every other session-pro
 The core serves the person's own terminals, the desktop app, and their phone.
 
 - Never `kill`, `rm`, or restart anything Squad did not create.
-- Every inventory is filtered by `squad.task` **and** `squad.base`, so a second Squad base on the same core is neither counted as a duplicate nor closed by this base's recovery.
+- Every inventory is filtered by `squad.task` **and** `squad.base`, so a second Squad base on the same core is neither counted as a duplicate nor closed by this base's recovery. The base label carries a short hash of the physical base path, so two bases with the same directory name are still distinguished.
 - Never a `--all` sweep, a server-global verb, or a name selector on a destructive call.
 - Never change the person's app settings, telemetry, or core configuration.
 - The adapter only writes the two Squad labels it owns, on terminals it created.

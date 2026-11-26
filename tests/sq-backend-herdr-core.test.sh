@@ -150,7 +150,12 @@ case "$cmd" in
       printf 'not json\n'
       exit 0
     fi
-    jq -cn --rawfile text "$SQUAD_HC_READ_TEXT" '{complete:true,how:"screen",text:$text}'
+    case "${SQUAD_HC_READ_SHAPE:-screen}" in
+      history) jq -cn --rawfile text "$SQUAD_HC_READ_TEXT" '{complete:true,how:"history",text:$text}' ;;
+      incomplete) jq -cn --rawfile text "$SQUAD_HC_READ_TEXT" '{complete:false,how:"screen",text:$text}' ;;
+      empty) printf '{"complete":true,"how":"screen","text":""}\n' ;;
+      *) jq -cn --rawfile text "$SQUAD_HC_READ_TEXT" '{complete:true,how:"screen",text:$text}' ;;
+    esac
     ;;
   send)
     last=${positional[${#positional[@]}-1]:-}
@@ -268,7 +273,9 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HC_HELLO SQUAD_HC_STATUS_FAIL SQUAD_HC_SCHEMA_FAIL SQUAD_HC_GET_RC
   unset SQUAD_HC_RUN_FAIL SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL SQUAD_HC_SEND_ERROR
   unset SQUAD_HC_KILL_SWAP SQUAD_HC_LIST_ALL
-  unset SQUAD_HC_LABEL_TASK SQUAD_HC_LABEL_BASE SQUAD_HC_RUN_BASE
+  unset SQUAD_HC_LABEL_TASK
+  export SQUAD_HC_LABEL_BASE="$BASE_LABEL" SQUAD_HC_RUN_BASE="$BASE_LABEL"
+  unset SQUAD_HC_READ_SHAPE
   export SQUAD_HC_CORE_ID=core-a
   printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
   write_live_terminal
@@ -307,6 +314,21 @@ export SQUAD_ROOT SQUAD_BASE SQUAD_STATE_OVERRIDE
 # shellcheck source=bin/sq-backend.sh
 . "$ROOT/bin/sq-backend.sh"
 fm_backend_source herdr-core || fail 'the dispatcher must source the herdr-core adapter'
+
+BASE_LABEL=$(fm_backend_herdr_core_base_name)
+base_label_for() {  # <base-path>
+  (
+    SQUAD_BASE=$1
+    SQUAD_ROOT=$ROOT
+    fm_backend_herdr_core_base_name
+  )
+}
+
+write_list_all() {  # <address> <state> <task> <base>
+  jq -cn --arg address "$1" --arg state "$2" --arg task "$3" --arg base "$4" '
+    {terminals:[{address:$address,state:$state,labels:{"squad.task":$task,"squad.base":$base}}]}
+  ' > "$TMP_ROOT/list-all.json"
+}
 
 call_log() { cat "$SQUAD_HC_LOG"; }
 reset_calls() { : > "$SQUAD_HC_LOG"; }
@@ -438,6 +460,20 @@ write_live_terminal t1 live pi '{"app":"pi","state":"working"}'
 fm_backend_herdr_core_busy_state 'default:t1' | grep -qx busy || fail 'a working report is busy'
 [ "$(fm_backend_herdr_core_capture 'default:t1' 10 'sq-probe')" = 'probe screen
 > ' ] || fail 'capture returns the program text'
+
+# The sentry hashes the rendered read to expire busy claims, so only the product's
+# own complete-screen envelope is accepted. A history read, a partial read, an
+# empty screen, and a failed or malformed read all refuse, and static-busy expiry
+# simply does not run rather than hashing unproven text.
+rendered=$(fm_backend_capture_rendered herdr-core 'default:t1' 'sq-probe') \
+  || fail 'a complete screen read must be accepted'
+[ "$rendered" = 'probe screen
+> ' ] || fail "a complete screen read returns the program text (got '$rendered')"
+for shape in history incomplete empty; do
+  out=$(SQUAD_HC_READ_SHAPE=$shape fm_backend_capture_rendered herdr-core 'default:t1' 'sq-probe' 2>/dev/null) && rc=0 || rc=$?
+  [ "$rc" -ne 0 ] || fail "a $shape rendered read must refuse"
+  [ -z "$out" ] || fail "a $shape rendered read must print nothing (got '$out')"
+done
 
 # A failed or malformed read must surface as a failure, never as a successful
 # empty screen: the sentry would otherwise hash "" as a static pane and start a
@@ -753,10 +789,33 @@ out=$(fm_backend_herdr_core_kill 'default:t1' '' 'sq-probe' other 2>&1) && rc=0 
 [ "$rc" -ne 0 ] || fail "a close must refuse another base's terminal"
 assert_contains "$out" "refusing to touch another base's terminal" 'the base refusal names the reason'
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a base-label mismatch must never reach kill or rm'
-fm_backend_herdr_core_kill 'default:t1' '' 'sq-probe' base >/dev/null 2>&1 \
+fm_backend_herdr_core_kill 'default:t1' '' 'sq-probe' "$BASE_LABEL" >/dev/null 2>&1 \
   || fail "a close must accept this base's own terminal"
 write_world
 pass 'a close checks the squad.base label it was scoped by'
+
+# Two bases can share the ordinary `squad` directory name, so the base label
+# itself must distinguish them: otherwise this base's failed-create recovery
+# could close the other base's terminal for the same task id.
+mkdir -p "$TMP_ROOT/one/squad" "$TMP_ROOT/two/squad"
+label_one=$(base_label_for "$TMP_ROOT/one/squad")
+label_two=$(base_label_for "$TMP_ROOT/two/squad")
+[ "$label_one" != "$label_two" ] \
+  || fail "two bases with the same directory name must get different labels (got '$label_one')"
+[ "$label_one" = "$(base_label_for "$TMP_ROOT/one/squad")" ] \
+  || fail 'a base label must be stable for one base path'
+write_world
+write_list_all t5 finished probe "$label_two"
+cp "$TMP_ROOT/list-all.json" "$TMP_ROOT/other-base-inventory.json"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+( SQUAD_BASE="$TMP_ROOT/one/squad" SQUAD_HC_LIST_ALL="$TMP_ROOT/other-base-inventory.json" \
+    fm_backend_herdr_core_close_created default probe ) >/dev/null 2>&1
+[ ! -s "$SQUAD_HC_KILL_LOG" ] \
+  || fail "a base must never close another base's terminal at the same task id (saw: $(cat "$SQUAD_HC_KILL_LOG"))"
+rm -f "$TMP_ROOT/other-base-inventory.json"
+write_world
+pass 'the base label is unique per base path and scopes the recovery close'
 
 # --- retiring a previous endpoint before a relaunch ------------------------
 
@@ -893,7 +952,8 @@ assert_contains "$run_line" '--label squad.task=probe' 'create_task labels the t
 assert_contains "$run_line" '--label squad.base=' 'create_task labels the base'
 assert_contains "$run_line" "--cwd $TMP_ROOT" 'create_task passes the recorded worktree as cwd'
 
-printf '{"terminals":[{"address":"t9","name":"sq-probe","state":"live","labels":{"squad.task":"probe","squad.base":"base"}}]}\n' > "$SQUAD_HC_LIST"
+write_list_all t9 live probe "$BASE_LABEL"
+cp "$TMP_ROOT/list-all.json" "$SQUAD_HC_LIST"
 reset_calls
 out=$(fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
 [ "$rc" -ne 0 ] || fail 'create_task must refuse a duplicate live task label'
@@ -903,7 +963,8 @@ case "$(call_log)" in *'run '* ) fail 'a duplicate refusal must not create a ter
 # Another Squad base on the same core numbers its tasks from 1 too, so a
 # terminal carrying this task id under a different squad.base is not this base's
 # duplicate and must not block the spawn.
-printf '{"terminals":[{"address":"t9","state":"live","labels":{"squad.task":"probe","squad.base":"other"}}]}\n' > "$SQUAD_HC_LIST"
+write_list_all t9 live probe other
+cp "$TMP_ROOT/list-all.json" "$SQUAD_HC_LIST"
 address=$(SQUAD_HC_NEW_ADDRESS=t8 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
   || fail "another base's terminal with the same task id is not this base's duplicate"
 [ "$address" = t8 ] || fail "create_task returns the new opaque address (got '$address')"
@@ -958,7 +1019,7 @@ assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'the terminal an unusable address hid
 # already `finished` is invisible to a live-only listing but is still recovered
 # by the same exact close.
 SQUAD_HC_LABEL_TASK=probe write_live_terminal t7 finished pi 'null'
-printf '{"terminals":[{"address":"t7","state":"finished","labels":{"squad.task":"probe","squad.base":"base"}}]}\n' > "$TMP_ROOT/list-all.json"
+write_list_all t7 finished probe "$BASE_LABEL"
 reset_calls
 : > "$SQUAD_HC_KILL_LOG"
 printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
@@ -971,7 +1032,7 @@ assert_grep 'rm t7' "$SQUAD_HC_KILL_LOG" 'a finished unrecorded terminal is remo
 
 # The recovery inventory is base-scoped: a second base's terminal that happens to
 # carry this task id is not this base's create and must never be closed.
-printf '{"terminals":[{"address":"t8","state":"finished","labels":{"squad.task":"probe","squad.base":"other"}}]}\n' > "$TMP_ROOT/list-all.json"
+write_list_all t8 finished probe other
 reset_calls
 : > "$SQUAD_HC_KILL_LOG"
 printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
@@ -979,7 +1040,7 @@ out=$(SQUAD_HC_LIST_ALL="$TMP_ROOT/list-all.json" SQUAD_HC_NEW_ADDRESS=.t8 \
   fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
 [ "$rc" -ne 0 ] || fail 'an unusable reported address must refuse'
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail "another base's terminal must never be closed by this base's recovery (saw: $(cat "$SQUAD_HC_KILL_LOG"))"
-printf '{"terminals":[{"address":"t7","state":"finished","labels":{"squad.task":"probe","squad.base":"base"}}]}\n' > "$TMP_ROOT/list-all.json"
+write_list_all t7 finished probe "$BASE_LABEL"
 
 # The address the inventory names is re-checked against its own task label, so a
 # core that recycled that address between the listing and the close leaves the
@@ -997,6 +1058,16 @@ rm -f "$TMP_ROOT/list-all.json"
 
 short_name=$(fm_backend_herdr_core_name_for_task 'short-id')
 [ "$short_name" = 'sq-short-id' ] || fail "short task ids name the terminal directly (got '$short_name')"
+# The id shapes `demo` and `sq-demo` both exist, so a bare `sq-` prefix is not
+# injective: the already-prefixed id is disambiguated by a hash, exactly as a
+# long id is.
+plain_name=$(fm_backend_herdr_core_name_for_task 'demo')
+prefixed_name=$(fm_backend_herdr_core_name_for_task 'sq-demo')
+[ "$plain_name" != "$prefixed_name" ] || fail "the ids demo and sq-demo must not share one terminal name (got '$plain_name')"
+for name in "$plain_name" "$prefixed_name"; do
+  [ "${#name}" -le 32 ] || fail "a task name must fit the 32-character limit (got '$name')"
+  case "$name" in *[!a-z0-9_-]*) fail "a name may only use a-z 0-9 - _ (got '$name')" ;; esac
+done
 long_name=$(fm_backend_herdr_core_name_for_task 'a-very-long-task-id-that-exceeds-the-limit')
 [ "${#long_name}" -le 32 ] || fail "a long task id must fit the 32-character name limit (got '$long_name')"
 other_name=$(fm_backend_herdr_core_name_for_task 'a-very-long-task-id-that-exceeds-the-limi')
@@ -1137,7 +1208,7 @@ seed_spawn_terminal() {  # <case-record>
   IFS='|' read -r dir base proj wt id <<EOF
 $1
 EOF
-  jq -cn --arg address t2 --arg id "$id" --arg base "$(basename "$base")" --arg cwd "$proj" '
+  jq -cn --arg address t2 --arg id "$id" --arg base "$(base_label_for "$base")" --arg cwd "$proj" '
     {address:$address,state:"live",
      labels:{"squad.task":$id,"squad.base":$base},
      foreground:{argv:["bash"],cwd:$cwd,name:"bash",pid:4242},
@@ -1178,7 +1249,7 @@ relaunch_record=$(spawn_case relaunch spawn-relaunch)
 IFS='|' read -r _ relaunch_base relaunch_proj relaunch_wt relaunch_id <<EOF
 $relaunch_record
 EOF
-jq -cn --arg address t2 --arg id "$relaunch_id" --arg base "$(basename "$relaunch_base")" '
+jq -cn --arg address t2 --arg id "$relaunch_id" --arg base "$(base_label_for "$relaunch_base")" '
   {address:$address,state:"finished",
    labels:{"squad.task":$id,"squad.base":$base},
    reported:false,status_ms:0,turn:0,title:"t",reason:"exited"}' > "$SQUAD_HC_GET"
@@ -1190,7 +1261,7 @@ fm_write_meta "$relaunch_base/state/$relaunch_id.meta" \
 reset_calls
 : > "$SQUAD_HC_KILL_LOG"
 spawn_out=$(SQUAD_HC_NEW_ADDRESS=t3 \
-  SQUAD_HC_RUN_GET_TASK="$relaunch_id" SQUAD_HC_RUN_GET_BASE="$(basename "$relaunch_base")" \
+  SQUAD_HC_RUN_GET_TASK="$relaunch_id" SQUAD_HC_RUN_GET_BASE="$(base_label_for "$relaunch_base")" \
   SQUAD_HC_RUN_GET_CWD="$relaunch_proj" \
   run_spawn_case "$relaunch_record" 'bash -c RELAUNCH-MARKER') && spawn_rc=0 || spawn_rc=$?
 [ "$spawn_rc" -eq 0 ] || fail "a relaunch over a retired endpoint must spawn cleanly: $spawn_out"

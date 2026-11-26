@@ -193,6 +193,13 @@ SOCKET=$(fm_lab_socket "$SESSION")
 [ "${#SOCKET}" -le 100 ] || fm_lab_fail "the private socket path is too long for the kernel limit: $SOCKET"
 LAB_BASE="$TEMP/base"
 mkdir -p "$LAB_BASE/state" "$LAB_BASE/data" || fm_lab_fail 'cannot create the lab base'
+LAB_BASE_LABEL=$(
+  SQUAD_BASE="$LAB_BASE" SQUAD_ROOT_OVERRIDE="$LAB_DIR" \
+    bash -c '. "$SQUAD_ROOT_OVERRIDE/bin/sq-backend.sh" || exit 1
+             fm_backend_source herdr-core || exit 1
+             fm_backend_herdr_core_base_name'
+) || fm_lab_fail 'cannot derive the base label'
+[ -n "$LAB_BASE_LABEL" ] || fm_lab_fail 'the base label is empty'
 fm_lab_say "lab session=$SESSION socket=$SOCKET"
 
 # --- 1. the adapter never starts a core ------------------------------------
@@ -289,7 +296,7 @@ fm_lab_say "recorded backend=herdr-core hc_session=$SESSION hc_address=$ADDRESS 
 terminal=$(hc get --json "$ADDRESS" 2>/dev/null) || fm_lab_fail "the private core does not know address $ADDRESS"
 [ "$(printf '%s' "$terminal" | jq -r '.labels["squad.task"] // ""')" = "$ID" ] \
   || fm_lab_fail 'the terminal does not carry this task label'
-[ "$(printf '%s' "$terminal" | jq -r '.labels["squad.base"] // ""')" = "$(basename "$LAB_BASE")" ] \
+[ "$(printf '%s' "$terminal" | jq -r '.labels["squad.base"] // ""')" = "$LAB_BASE_LABEL" ] \
   || fm_lab_fail 'the terminal does not carry the base label'
 fg_cwd=$(printf '%s' "$terminal" | jq -r '.foreground.cwd // ""')
 [ "$(cd "$fg_cwd" 2>/dev/null && pwd -P)" = "$(cd "$WT" && pwd -P)" ] \
