@@ -681,8 +681,7 @@ fm_backend_herdr_core_classify_process_name() {  # <path> [argv0]
 #   ambiguous  the address is live but its program cannot be attributed
 #   unreadable a read failed or contradicted itself
 fm_backend_herdr_core_agent_state() {  # <target>
-  local target=${1:-} status_json state expected label rc=0
-  expected=$(fm_backend_herdr_core_expected_label_for_target "$target" 2>/dev/null || true)
+  local target=${1:-} status_json state rc=0
   status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null) || rc=$?
   if [ "$rc" -ne 0 ]; then
     case "$rc" in
@@ -707,15 +706,6 @@ fm_backend_herdr_core_agent_state() {  # <target>
     printf 'ambiguous'
     return 0
   fi
-  # The label is this task's own identity: a live address carrying another
-  # task's label is not this task's endpoint, however healthy it looks.
-  if [ -n "$expected" ]; then
-    label=$(fm_backend_herdr_core_task_label_of_target "$target" 2>/dev/null || true)
-    if [ "$label" != "$expected" ]; then
-      printf 'missing'
-      return 0
-    fi
-  fi
   case "$(fm_backend_herdr_core_classify_process_name \
     "$(printf '%s' "$status_json" | jq -r '.name')" \
     "$(printf '%s' "$status_json" | jq -r '.argv0')" 2>/dev/null || true)" in
@@ -723,17 +713,6 @@ fm_backend_herdr_core_agent_state() {  # <target>
     shell) printf 'dead' ;;
     *) printf 'ambiguous' ;;
   esac
-}
-
-# fm_backend_herdr_core_task_label_of_target: the `squad.task` label carried by
-# <target>, or empty when it carries none or cannot be read.
-fm_backend_herdr_core_task_label_of_target() {  # <target>
-  local target=${1:-} session address json
-  fm_backend_herdr_core_parse_target "$target" || return 0
-  session=$SQUAD_BACKEND_HERDR_CORE_SESSION
-  address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
-  json=$(fm_backend_herdr_core_get_json "$session" "$address" 2>/dev/null) || return 0
-  printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" '(.labels // {})[$key] // ""'
 }
 
 # fm_backend_herdr_core_expected_label_for_target: this task's id as recorded for

@@ -842,7 +842,7 @@ spawn_abort_cleanup() {
     # Exactly the address this spawn created, verified against its own task
     # label by the adapter: no sweep, no name, and no other terminal.
     fm_backend_herdr_core_kill "$HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS" '' "sq-$ID" >/dev/null 2>&1 || \
-      echo "warning: could not close the herdr-core terminal $HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS for $ID; it is recorded by address so a later teardown can retry" >&2
+      echo "warning: could not close the herdr-core terminal $HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS for $ID; no task record names it yet, so close that exact address by hand: HC_SESSION=$HERDR_CORE_SESSION hc kill $HERDR_CORE_ADDRESS; HC_SESSION=$HERDR_CORE_SESSION hc rm $HERDR_CORE_ADDRESS" >&2
   fi
   if [ -n "${SPAWN_TUIOS_LEASE:-}" ]; then
     tuios_release_lease "$SPAWN_TUIOS_LEASE" || true

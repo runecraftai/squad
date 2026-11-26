@@ -23,6 +23,7 @@ export SQUAD_HC_SEND_RC="$TMP_ROOT/send-rc.txt"
 export SQUAD_HC_READ_TEXT="$TMP_ROOT/read.txt"
 export SQUAD_HC_KEYS_LOG="$TMP_ROOT/keys.log"
 export SQUAD_HC_KILL_LOG="$TMP_ROOT/kill.log"
+export SQUAD_HC_GET_COUNT="$TMP_ROOT/get-count.txt"
 : > "$SQUAD_HC_LOG"
 : > "$SQUAD_HC_KEYS_LOG"
 : > "$SQUAD_HC_KILL_LOG"
@@ -91,6 +92,14 @@ case "$cmd" in
     if [ "${SQUAD_HC_GET_RC:-0}" != 0 ]; then
       printf '{"error":{"kind":"not_found","message":"no terminal","hint":"hc ls --all"}}\n' >&2
       exit "${SQUAD_HC_GET_RC}"
+    fi
+    if [ -n "${SQUAD_HC_GET_COUNT:-}" ]; then
+      reads=$(( $(cat "$SQUAD_HC_GET_COUNT" 2>/dev/null || printf 0) + 1 ))
+      printf '%s' "$reads" > "$SQUAD_HC_GET_COUNT"
+      if [ -n "${SQUAD_HC_GET_FAIL_AFTER:-}" ] && [ "$reads" -gt "$SQUAD_HC_GET_FAIL_AFTER" ]; then
+        printf '{"error":{"kind":"internal","message":"core hiccup","hint":"retry"}}\n' >&2
+        exit 1
+      fi
     fi
     cat "$SQUAD_HC_GET"
     ;;
@@ -373,6 +382,15 @@ export SQUAD_HC_STATUS_FAIL=1
 [ "$(fm_backend_herdr_core_busy_state 'default:t1')" = unknown ] \
   || fail 'an unreadable core id must not report a busy verdict'
 unset SQUAD_HC_STATUS_FAIL
+# The status read is the only label authority: it proves the recorded core id
+# and the task label together, so a redundant second read that fails must never
+# turn a verified live endpoint into an absent one.
+SQUAD_HC_LABEL_TASK=status write_live_terminal t1 live pi '{"app":"pi","state":"idle"}'
+: > "$SQUAD_HC_GET_COUNT"
+verdict=$(SQUAD_HC_GET_FAIL_AFTER=1 fm_backend_herdr_core_agent_state 'default:t1' 2>/dev/null)
+unset SQUAD_HC_GET_FAIL_AFTER
+[ "$verdict" = alive ] \
+  || fail "a failed duplicate label read must not report a live endpoint as $verdict"
 rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
 write_world
 pass 'status reads are bound to the recorded core id and task label'
