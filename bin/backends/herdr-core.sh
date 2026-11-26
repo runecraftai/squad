@@ -22,10 +22,14 @@
 #     a parameter, or a feature this adapter calls. A named refusal, never a
 #     silent degradation.
 #   * ADDRESS-EXACT ONLY. Every write names one opaque address that Squad
-#     created. Never `--all`, never a server-global verb, never a name selector
-#     and never another program's terminal. The cleanup identity is the triple
-#     (recorded address, `squad.task=<id>` label, recorded core id), checked
-#     immediately before `kill` and again before `rm`.
+#     created. No destructive call ever takes `--all`, never a server-global
+#     verb, never a name selector and never another program's terminal. The
+#     only `--all` reads are label-filtered and read-only: the failed-create
+#     inventory (`hc ls --all --json --label squad.task=<id>`), which closes
+#     nothing until that address's own label agrees, and the lab's tripwire.
+#     The cleanup identity is the triple (recorded address, `squad.task=<id>`
+#     label, recorded core id), checked immediately before `kill` and again
+#     before `rm`.
 #   * Status is the program's own OSC 7501 report. `busy_state` maps it, and
 #     `blocked` is a person-needed verdict, never ordinary work. A lane that
 #     reports no status is supervised by polling exactly as a tmux lane is.
@@ -804,8 +808,9 @@ fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
 }
 
 # fm_backend_herdr_core_kill: close ONE exact address after the identity triple,
-# and confirm both destructive steps. Never `--all`, never a name, never a
-# server-global verb, and never an address whose label or core id does not match.
+# and confirm both destructive steps. This close never takes `--all`, never a
+# name, never a server-global verb, and never an address whose label or core id
+# does not match.
 # Refuses (nonzero) whenever the exact close cannot be confirmed, so a caller
 # that preserves metadata on refusal keeps a retryable record.
 fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label]
