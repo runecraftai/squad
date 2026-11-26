@@ -1480,6 +1480,86 @@ case "$(cat "$SQUAD_HC_KILL_LOG")" in
 esac
 pass 'a relaunch retires its previous endpoint before creating the replacement'
 
+# --- a cross-backend relaunch retires the old herdr-core endpoint ---------
+# The relaunch guard allows an explicit --backend switch, so the shared relaunch
+# path retires the OLD recorded endpoint through its own backend before the new
+# arm creates anything. Relaunching a dead herdr-core task onto tmux must close
+# exactly the recorded address and create no herdr-core replacement.
+
+cat > "$TMP_ROOT/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "${SQUAD_FAKE_TMUX_LOG:?}"
+case "${1:-}" in
+  new-window) printf '%%7\n' ;;
+  list-windows) : ;;
+  send-keys)
+    for a in "$@"; do
+      if [ "$a" = 'fob get' ]; then
+        printf '%s\n' "${SQUAD_FAKE_TMUX_WORKTREE:?}" > "${SQUAD_FAKE_TMUX_CWD:?}"
+      fi
+    done
+    ;;
+  display-message)
+    for a in "$@"; do
+      case "$a" in
+        '#S') printf 'Squad\n'; exit 0 ;;
+        '#{pane_current_path}') cat "${SQUAD_FAKE_TMUX_CWD:?}"; exit 0 ;;
+        '#{pane_current_command}') printf 'bash\n'; exit 0 ;;
+      esac
+    done
+    ;;
+  *) : ;;
+esac
+exit 0
+SH
+chmod +x "$TMP_ROOT/fakebin/tmux"
+
+run_cross_backend_spawn_case() {  # <case-record> <launch-command>
+  local dir base proj wt id
+  IFS='|' read -r dir base proj wt id <<EOF
+$1
+EOF
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$base" \
+    SQUAD_STATE_OVERRIDE="$base/state" SQUAD_DATA_OVERRIDE="$base/data" \
+    SQUAD_PROJECTS_OVERRIDE="$base/projects" SQUAD_CONFIG_OVERRIDE="$base/config" \
+    XDG_RUNTIME_DIR="$TMP_ROOT/r" SQUAD_SPAWN_NO_GUARD=1 \
+    SQUAD_FAKE_TMUX_LOG="$dir/tmux.log" \
+    SQUAD_FAKE_TMUX_CWD="$dir/tmux-cwd" \
+    SQUAD_FAKE_TMUX_WORKTREE="$wt" \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" "$2" --backend tmux --recon 2>&1
+}
+
+cross_record=$(spawn_case cross-backend cross-backend-relaunch)
+IFS='|' read -r cross_dir cross_base cross_proj cross_wt cross_id <<EOF
+$cross_record
+EOF
+printf '%s\n' "$cross_proj" > "$cross_dir/tmux-cwd"
+jq -cn --arg address t2 --arg id "$cross_id" --arg base "$(base_label_for "$cross_base")" '
+  {address:$address,state:"live",
+   labels:{"squad.task":$id,"squad.base":$base},
+   foreground:{argv:["bash"],cwd:"/tmp/work",name:"bash",pid:4242},
+   reported:false,status_ms:0,turn:0,title:"t"}' > "$SQUAD_HC_GET"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+fm_write_meta "$cross_base/state/$cross_id.meta" \
+  "window=default:t2" "endpoint_task_id=$cross_id" "worktree=$cross_wt" \
+  "project=$cross_proj" "harness=bash" "kind=recon" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t2" "hc_core_id=core-a"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+spawn_out=$(run_cross_backend_spawn_case "$cross_record" 'bash -c CROSS-BACKEND-MARKER') && spawn_rc=0 || spawn_rc=$?
+[ "$spawn_rc" -eq 0 ] || fail "a cross-backend relaunch over a dead endpoint must spawn cleanly: $spawn_out"
+[ "$(cat "$SQUAD_HC_KILL_LOG")" = "kill t2
+rm t2" ] \
+  || fail "the cross-backend relaunch must close exactly the recorded herdr-core address (log: $(cat "$SQUAD_HC_KILL_LOG"))"
+case "$(call_log)" in
+  *'run '*) fail 'a cross-backend relaunch must not create a herdr-core replacement' ;;
+esac
+[ -z "$(sed -n 's/^hc_address=//p' "$cross_base/state/$cross_id.meta")" ] \
+  || fail 'the tmux relaunch must not keep a herdr-core address in the replacement record'
+assert_grep 'CROSS-BACKEND-MARKER' "$cross_dir/tmux.log" 'the replacement launch goes to the new backend'
+pass 'a cross-backend relaunch retires the recorded herdr-core endpoint'
+
 # --- forced XO cleanup closes a herdr-core child as the child base --------
 # A child spawned inside an XO home records SQUAD_BASE=$home, so its terminal
 # carries that home's base label. Forced teardown must verify the close as the

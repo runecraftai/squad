@@ -97,6 +97,7 @@ Nothing outside those labels is touched, and a close that cannot be confirmed pr
 A relaunch makes a replacement terminal, so it first retires the exact address the task still records.
 A task whose harness exited on its own leaves a live but agentless shell; a core restart leaves a `finished` record.
 Both still carry this task's labels, so the relaunch closes that one address through the same identity-checked path before it creates the replacement: without it the live shell would refuse the replacement as a duplicate and the finished record would stay behind as an unmanaged terminal in the person's registry.
+This retirement runs through the recorded backend before any new terminal exists, including when the relaunch resolves to a different backend: a task moved to `tmux` still closes its exact recorded herdr-core address rather than orphaning it on the shared core.
 Only an endpoint that is confidently without an agent is retired - a read that is ambiguous or unreadable, or that still sees a live agent, refuses the relaunch rather than killing a program that may still be working.
 
 ## Address-exact operations only

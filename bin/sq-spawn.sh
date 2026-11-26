@@ -1874,6 +1874,23 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
   esac
 }
 
+# retire_previous_endpoint: retire the exact endpoint a relaunch replaces
+# through the OLD recorded backend's own identity-checked close, before any new
+# terminal exists. A task relaunched onto a different backend must not leave its
+# previous terminal unmanaged on the old provider, so this runs wherever the
+# relaunch resolved, not only when the replacement uses the same backend. An
+# endpoint the old backend authoritatively no longer has, or one that now
+# belongs to another task or base, is already retired and is left untouched.
+retire_previous_endpoint() {  # <old-backend> <old-target>
+  local backend=${1:-} target=${2:-}
+  case "$backend" in
+    herdr-core)
+      fm_backend_source herdr-core || return 1
+      fm_backend_herdr_core_retire_endpoint "$target" "sq-$ID"
+      ;;
+  esac
+}
+
 # Existing metadata is a relaunch only after the recorded endpoint is
 # authoritatively gone or agent-free. Requeue an active execution sidecar before
 # creating the replacement endpoint so claim starts a new attempt instead of
@@ -1960,6 +1977,14 @@ prepare_relaunch_execution() {
       return 1
       ;;
   esac
+  # The endpoint is accepted as replaced, so retire it through its own backend
+  # before the new arm creates anything. A herdr-core endpoint that cannot be
+  # closed refuses the relaunch, because creating a second terminal beside it
+  # would split the task or strand the old one on the shared core.
+  retire_previous_endpoint "$old_backend" "$old_target" || {
+    echo "error: could not retire the previous $old_backend endpoint $old_target for $ID; refusing relaunch" >&2
+    return 1
+  }
   previous=$("$SCRIPT_DIR/sq-exec-state.sh" get-recorded "$ID" 2>/dev/null || printf 'unclaimed\n')
   case "$previous" in
     claimed|running)
@@ -2281,17 +2306,6 @@ EOF
       echo 'error: herdr-core core identity is unreadable; refusing to create a task endpoint' >&2
       exit 1
     }
-    if [ -n "${RELAUNCH_EXISTING_META:-}" ] \
-      && [ "$(fm_backend_of_meta "$STATE/$ID.meta")" = herdr-core ]; then
-      # A relaunch retires the exact endpoint this task still owns - a finished
-      # husk from a core restart, or a live shell whose harness exited - through
-      # the same identity-checked close teardown uses, so the replacement is not
-      # refused as a duplicate and no unmanaged terminal is left on the core.
-      HERDR_CORE_PREVIOUS_TARGET=$(fm_backend_target_of_meta "$STATE/$ID.meta")
-      if [ -n "$HERDR_CORE_PREVIOUS_TARGET" ]; then
-        fm_backend_herdr_core_retire_endpoint "$HERDR_CORE_PREVIOUS_TARGET" "sq-$ID" || exit 1
-      fi
-    fi
     HERDR_CORE_ADDRESS=$(fm_backend_herdr_core_create_task "$HERDR_CORE_SESSION" "$W" "$PROJ_ABS") || exit 1
     HERDR_CORE_ABORT_CLEANUP=1
     if ! fm_backend_opaque_address_valid "$HERDR_CORE_ADDRESS"; then
