@@ -147,7 +147,7 @@ Verdicts reach `bin/sq-send.sh` unchanged:
 | `empty` | The text was pasted and submitted. |
 | `agent_blocked` | The program is blocked, so typing would answer its dialog. Nothing was typed. |
 | `not_ready` | The program's own report says it is not at rest, or its composer positively holds unsent text. Nothing was typed. |
-| `no_agent` | The core authoritatively reports the address finished or gone, or it carries another task's label. Nothing was typed. |
+| `no_agent` | The core authoritatively reports the address finished or gone, or it carries another task's or base's label, or another core id. Nothing was typed. |
 | `uncertain-delivery` | The call failed without a stable refusal kind, so bytes may have landed. Never retype; read the pane. |
 | `send-failed` | A local failure before typing: an unreadable read, a core identity this process cannot verify, or no temporary file for the product's error envelope. Nothing was typed, and a transient read is never reported as an absent agent. |
 
@@ -192,7 +192,7 @@ The durable lease is returned at teardown, exactly as on every other session-pro
 
 `fm_backend_composer_state` answers `unknown` for a reporting program, because `--if idle` replaces the question; for a silent program it reads the composer row and defers to the shared classifier in `bin/sq-composer-lib.sh`.
 `fm_backend_target_exists` is a cheap read-only presence check that never starts a core.
-`fm_backend_agent_state` reports `alive` for a verified harness, `dead` for a finished address or a live shell, `missing` for an absent address or a foreign task label, `ambiguous` for an unattributable program, and `unreadable` for a failed or contradictory read.
+`fm_backend_agent_state` reports `alive` for a verified harness, `dead` for a finished address or a live shell, `missing` for an absent address or a foreign identity, `ambiguous` for an unattributable program, and `unreadable` for a failed or contradictory read.
 
 ## Shared-core rules
 
@@ -218,4 +218,4 @@ If the core reports a protocol generation, version, method, or parameter this ad
 
 `SQUAD_HC_LAB=1 bin/sq-herdr-core-lab.sh` drives a real spawn, send, peek, crew-state, and teardown against a **private** core created by the lab itself, then proves the commander's default core is byte-identical afterwards.
 Before any tripwire read it runs the adapter's own unix-socket listener probe against the ambient `default` socket, so a socket file left behind by a dead core is a hard stop rather than the call that starts a core with the lab's environment.
-It is the only supported way to exercise this backend on a real core, and it never addresses the shared one.
+It is the only supported way to exercise this backend on a real core, and it never mutates the shared one.

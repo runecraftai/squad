@@ -297,7 +297,11 @@ emit 'state=working:app=hc-lab'
 sleep 3
 msg=$(printf 'Answer the lab question' | base64 | tr -d '\n')
 emit "state=blocked:app=hc-lab:kind=question:msg=$msg"
-sleep 4
+# The blocked window must outlast a crew-state read. On a host where only curl
+# can probe the core (a broken python3, no nc), every `hc` call pays curl's
+# two-second probe timeout, so the same read costs about fourteen seconds and a
+# four-second window ended before the adapter read the verdict.
+sleep 30
 emit 'state=working:app=hc-lab'
 sleep 3
 emit 'state=idle:app=hc-lab'

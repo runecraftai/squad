@@ -99,7 +99,7 @@ Pi's `/calm` toggle hides supported transcript chrome - including canonically cl
 
 ### More backends
 
-[tmux](docs/tmux-backend.md) is Squad's verified reference backend; Herdr, Zellij, Orca, cmux, and TUIOS are experimental, with feature support that varies by backend.
+[tmux](docs/tmux-backend.md) is Squad's verified reference backend; Herdr, Zellij, Orca, cmux, TUIOS, and herdr-core are experimental, with feature support that varies by backend.
 See [runtime backend configuration](docs/configuration.md#runtime-backend-configbackend--squad_backend) and each linked backend guide for current requirements and limits.
 
 ## Updates and releases

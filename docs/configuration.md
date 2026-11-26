@@ -167,6 +167,7 @@ Auto-detected herdr or cmux prints a stderr notice naming `config/backend` and `
 Zellij, Orca, TUIOS, and herdr-core are never auto-detected; select them by putting the name in a local `config/backend` file, by exporting `SQUAD_BACKEND=<name>`, or by telling the sergeant at arms in chat.
 Any value other than `tmux`, `herdr`, `zellij`, `orca`, `cmux`, `tuios`, or `herdr-core` is rejected until another adapter is implemented and verified.
 `sq-spawn.sh` accepts `tmux`, `herdr`, `zellij`, `orca`, `cmux`, `tuios`, and `herdr-core` for ship and recon tasks; `backend=orca`, `backend=cmux`, `backend=tuios`, and `backend=herdr-core` still refuse `--xo` until XO launch semantics are designed for each.
+A relaunch whose recorded backend differs from the one this spawn resolved is refused unless `--backend` names the target explicitly, so a changed default never silently moves an existing task to another provider; the old endpoint is retired through its recorded backend first.
 `codex-app` is not an accepted runtime backend yet; [`docs/codex-app-backend.md`](codex-app-backend.md) owns the Codex App boundary.
 The session-start XO liveness sweep uses the recovery-grade `fm_backend_agent_state` classifier where verified.
 The comment above that function in `bin/sq-backend.sh` is the single owner of its detailed state contract and recovery authorization.
