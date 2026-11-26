@@ -2283,12 +2283,10 @@ EOF
     }
     HERDR_CORE_ADDRESS=$(fm_backend_herdr_core_create_task "$HERDR_CORE_SESSION" "$W" "$PROJ_ABS") || exit 1
     HERDR_CORE_ABORT_CLEANUP=1
-    case "$HERDR_CORE_ADDRESS" in
-      ''|*[!A-Za-z0-9._-]*)
-        echo "error: herdr-core did not return a usable opaque address for $W" >&2
-        exit 1
-        ;;
-    esac
+    if ! fm_backend_opaque_address_valid "$HERDR_CORE_ADDRESS"; then
+      echo "error: herdr-core did not return a usable opaque address for $W" >&2
+      exit 1
+    fi
     T="$HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS"
     ;;
   cmux)

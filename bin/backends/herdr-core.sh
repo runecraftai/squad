@@ -143,9 +143,7 @@ fm_backend_herdr_core_parse_target() {  # <target> -> session and address global
   SQUAD_BACKEND_HERDR_CORE_ADDRESS=${target#*:}
   [ -n "$SQUAD_BACKEND_HERDR_CORE_SESSION" ] \
     && [ "$SQUAD_BACKEND_HERDR_CORE_ADDRESS" != "$target" ] \
-    && ! printf '%s' "$SQUAD_BACKEND_HERDR_CORE_ADDRESS" | grep -q ':' \
-    && printf '%s' "$SQUAD_BACKEND_HERDR_CORE_ADDRESS" \
-      | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+    && fm_backend_opaque_address_valid "$SQUAD_BACKEND_HERDR_CORE_ADDRESS"
 }
 
 # fm_backend_herdr_core_task_id_of_label: the task id a cleanup label names.
@@ -443,13 +441,13 @@ fm_backend_herdr_core_protocol_check() {  # <session>
 # --- the 16 session-provider primitives -------------------------------------
 
 fm_backend_herdr_core_capture() {  # <target> <lines> [expected-label]
-  local target=${1:-} lines=${2:-0} expected=${3:-} session address
+  local target=${1:-} lines=${2:-0} expected=${3:-} session address out
   fm_backend_herdr_core_verify "$target" "$expected" || return 1
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   case "$lines" in ''|*[!0-9]*) lines=0 ;; esac
-  fm_backend_herdr_core_cli "$session" read --json --lines "$lines" "$address" 2>/dev/null \
-    | jq -jr '.text // empty'
+  out=$(fm_backend_herdr_core_cli "$session" read --json --lines "$lines" "$address" 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -jer '.text | select(type == "string")' 2>/dev/null || return 1
 }
 
 fm_backend_herdr_core_capture_rendered() {  # <target> [expected-label]
@@ -649,12 +647,10 @@ fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
     return 1
   }
   address=$(printf '%s' "$out" | jq -r '.address // empty' 2>/dev/null) || address=
-  case "$address" in
-    ''|*[!A-Za-z0-9._-]*)
-      echo "error: herdr-core returned no usable opaque address for $label" >&2
-      return 1
-      ;;
-  esac
+  if ! fm_backend_opaque_address_valid "$address"; then
+    echo "error: herdr-core returned no usable opaque address for $label" >&2
+    return 1
+  fi
   printf '%s' "$address"
 }
 

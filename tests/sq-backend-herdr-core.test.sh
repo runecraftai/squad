@@ -104,6 +104,14 @@ case "$cmd" in
     cat "$SQUAD_HC_GET"
     ;;
   read)
+    if [ "${SQUAD_HC_READ_FAIL:-0}" = 1 ]; then
+      printf '{"error":{"kind":"internal","message":"core hiccup","hint":"retry"}}\n' >&2
+      exit 1
+    fi
+    if [ "${SQUAD_HC_READ_MALFORMED:-0}" = 1 ]; then
+      printf 'not json\n'
+      exit 0
+    fi
     jq -cn --rawfile text "$SQUAD_HC_READ_TEXT" '{complete:true,how:"screen",text:$text}'
     ;;
   send)
@@ -327,6 +335,17 @@ write_live_terminal t1 live pi '{"app":"pi","state":"working"}'
 fm_backend_herdr_core_busy_state 'default:t1' | grep -qx busy || fail 'a working report is busy'
 [ "$(fm_backend_herdr_core_capture 'default:t1' 10 'sq-probe')" = 'probe screen
 > ' ] || fail 'capture returns the program text'
+
+# A failed or malformed read must surface as a failure, never as a successful
+# empty screen: the sentry would otherwise hash "" as a static pane and start a
+# wedge timer on no data.
+reset_calls
+out=$(SQUAD_HC_READ_FAIL=1 fm_backend_capture herdr-core 'default:t1' 10 'sq-probe' 2>/dev/null) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a failed hc read must not report a successful capture'
+[ -z "$out" ] || fail "a failed hc read must not print an empty screen (got '$out')"
+out=$(SQUAD_HC_READ_MALFORMED=1 fm_backend_capture_rendered herdr-core 'default:t1' 'sq-probe' 2>/dev/null) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a malformed hc read must not report a successful rendered capture'
+[ -z "$out" ] || fail "a malformed hc read must not print an empty screen (got '$out')"
 pass 'capture and busy state come from the program report'
 
 write_live_terminal t1 live pi '{"app":"pi","state":"blocked","kind":"permission","msg":"Allow rm?"}'
@@ -638,6 +657,12 @@ printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
 out=$(fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT/missing" 2>&1) && rc=0 || rc=$?
 [ "$rc" -ne 0 ] || fail 'create_task must refuse a missing directory'
 
+export SQUAD_HC_NEW_ADDRESS=.t7
+out=$(fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'create_task must refuse an address the adapter cannot address'
+assert_contains "$out" 'usable opaque address' 'the unusable-address refusal names the reason'
+unset SQUAD_HC_NEW_ADDRESS
+
 short_name=$(fm_backend_herdr_core_name_for_task 'short-id')
 [ "$short_name" = 'sq-short-id' ] || fail "short task ids name the terminal directly (got '$short_name')"
 long_name=$(fm_backend_herdr_core_name_for_task 'a-very-long-task-id-that-exceeds-the-limit')
@@ -692,6 +717,14 @@ fm_write_meta "$meta" \
 out=$(fm_backend_validate_task_endpoint "$meta" meta 2>&1) && rc=0 || rc=$?
 [ "$rc" -ne 0 ] || fail 'an address that does not match window= must be refused'
 assert_contains "$out" 'malformed or inconsistent' 'the mismatch refusal names the shape'
+
+fm_write_meta "$meta" \
+  "window=default:.t5" "endpoint_task_id=meta" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=.t5" "hc_core_id=core-a"
+out=$(fm_backend_validate_task_endpoint "$meta" meta 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'an address the adapter cannot address must be refused'
+assert_contains "$out" 'malformed or inconsistent' 'the unusable-address refusal names the shape'
 
 fm_write_meta "$meta" \
   "window=default:t5" "endpoint_task_id=meta" "worktree=$TMP_ROOT" \

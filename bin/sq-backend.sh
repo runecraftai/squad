@@ -420,6 +420,16 @@ fm_backend_endpoint_atom_valid() {  # <value>
   esac
 }
 
+# fm_backend_opaque_address_valid: the strict grammar an opaque endpoint
+# address must satisfy to be addressable by name. It is narrower than the
+# generic atom because an adapter that treats the address as one token has no
+# way to address a value whose first character is punctuation.
+fm_backend_opaque_address_valid() {  # <value>
+  case "$1" in
+    ''|*[!A-Za-z0-9._-]*|[!A-Za-z0-9]*) return 1 ;;
+  esac
+}
+
 # fm_backend_orca_worktree_id_valid: accept both recorded Orca worktree id
 # shapes. macOS builds return a bare atom (UUID); Linux builds (verified live
 # against v1.4.188) return the composite form `<repo-id>::<absolute-path>`,
@@ -638,7 +648,7 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
       if [ -z "$recorded_session" ] || [ -z "$pane" ] || [ -z "$core_id" ] \
         || [ "$window" != "$recorded_session:$pane" ] \
         || ! fm_backend_endpoint_atom_valid "$recorded_session" \
-        || ! fm_backend_endpoint_atom_valid "$pane" \
+        || ! fm_backend_opaque_address_valid "$pane" \
         || ! fm_backend_endpoint_atom_valid "$core_id"; then
         echo "REFUSED: herdr-core endpoint metadata for task $id is malformed or inconsistent; preserving task state." >&2
         return 1
