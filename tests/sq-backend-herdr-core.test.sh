@@ -1560,6 +1560,36 @@ esac
 assert_grep 'CROSS-BACKEND-MARKER' "$cross_dir/tmux.log" 'the replacement launch goes to the new backend'
 pass 'a cross-backend relaunch retires the recorded herdr-core endpoint'
 
+# --- a refused relaunch leaves the recorded endpoint alone ----------------
+# Retirement is destructive, so it must run only after every relaunch refusal
+# has been cleared. A released task over a dead herdr-core endpoint is refused,
+# and the terminal it still records must survive that refusal.
+
+refused_record=$(spawn_case relaunch-refused-rel released-husk)
+IFS='|' read -r refused_dir refused_base refused_proj refused_wt refused_id <<EOF
+$refused_record
+EOF
+printf '%s\n' "$refused_proj" > "$refused_dir/tmux-cwd"
+jq -cn --arg address t2 --arg id "$refused_id" --arg base "$(base_label_for "$refused_base")" '
+  {address:$address,state:"finished",
+   labels:{"squad.task":$id,"squad.base":$base},
+   reported:false,status_ms:0,turn:0,title:"t",reason:"exited"}' > "$SQUAD_HC_GET"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+fm_write_meta "$refused_base/state/$refused_id.meta" \
+  "window=default:t2" "endpoint_task_id=$refused_id" "worktree=$refused_wt" \
+  "project=$refused_proj" "harness=bash" "kind=recon" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t2" "hc_core_id=core-a"
+printf 'exec_state=released\n' > "$refused_base/state/$refused_id.exec"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+spawn_out=$(run_cross_backend_spawn_case "$refused_record" 'bash -c RELEASED-REFUSED-MARKER') && spawn_rc=0 || spawn_rc=$?
+[ "$spawn_rc" -ne 0 ] || fail 'a released task must still refuse a relaunch'
+assert_contains "$spawn_out" "task $refused_id is released; refusing relaunch" 'the refused relaunch names the release'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] \
+  || fail "a refused relaunch must leave the recorded endpoint alone (log: $(cat "$SQUAD_HC_KILL_LOG"))"
+assert_grep "hc_address=t2" "$refused_base/state/$refused_id.meta" 'a refused relaunch keeps the recorded address'
+pass 'a refused relaunch leaves the recorded herdr-core endpoint in place'
+
 # --- forced XO cleanup closes a herdr-core child as the child base --------
 # A child spawned inside an XO home records SQUAD_BASE=$home, so its terminal
 # carries that home's base label. Forced teardown must verify the close as the

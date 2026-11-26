@@ -1977,14 +1977,6 @@ prepare_relaunch_execution() {
       return 1
       ;;
   esac
-  # The endpoint is accepted as replaced, so retire it through its own backend
-  # before the new arm creates anything. A herdr-core endpoint that cannot be
-  # closed refuses the relaunch, because creating a second terminal beside it
-  # would split the task or strand the old one on the shared core.
-  retire_previous_endpoint "$old_backend" "$old_target" || {
-    echo "error: could not retire the previous $old_backend endpoint $old_target for $ID; refusing relaunch" >&2
-    return 1
-  }
   previous=$("$SCRIPT_DIR/sq-exec-state.sh" get-recorded "$ID" 2>/dev/null || printf 'unclaimed\n')
   case "$previous" in
     claimed|running)
@@ -1998,6 +1990,16 @@ prepare_relaunch_execution() {
       return 1
       ;;
   esac
+  # Every refusal above leaves the recorded endpoint untouched. Only now, with
+  # the endpoint accepted as replaced and the relaunch no longer refusable,
+  # retire it through its own backend before the new arm creates anything. A
+  # herdr-core endpoint that cannot be closed refuses the relaunch, because
+  # creating a second terminal beside it would split the task or strand the old
+  # one on the shared core.
+  retire_previous_endpoint "$old_backend" "$old_target" || {
+    echo "error: could not retire the previous $old_backend endpoint $old_target for $ID; refusing relaunch" >&2
+    return 1
+  }
 }
 
 # Harness resume contract (see the header): the argument that reopens a recorded
