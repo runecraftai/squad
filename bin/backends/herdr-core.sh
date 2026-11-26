@@ -1038,6 +1038,47 @@ fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
   return 0
 }
 
+# fm_backend_herdr_core_endpoint_ownership: ONE read of a recorded endpoint,
+# classified by whether it still exists and is still the one this base recorded.
+# A core recycles an address as soon as its terminal is closed, so a readable
+# record at the recorded address is no proof that this task's endpoint is still
+# there: the identities on the record itself decide. Prints exactly one word:
+#   absent      the core authoritatively has no such address
+#   foreign     the address is readable but carries another task's or another
+#               base's labels, or another core id: this task's endpoint is gone
+#   ours        the record carries the identities this base recorded
+#   unreadable  the target, the session, the address, the core, or a recorded
+#               core id could not be read or verified
+# Only `unreadable` is a refusal: the other three are facts a caller may act on,
+# and classifying a stranger's terminal as this task's would either close it or
+# wedge the task's cleanup forever.
+fm_backend_herdr_core_endpoint_ownership() {  # <target>
+  local target=${1:-} session address json rc=0
+  if ! fm_backend_herdr_core_parse_target "$target"; then
+    printf 'unreadable'
+    return 0
+  fi
+  session=$SQUAD_BACKEND_HERDR_CORE_SESSION
+  address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
+  if ! fm_backend_herdr_core_session_ok "$session"; then
+    printf 'unreadable'
+    return 0
+  fi
+  json=$(fm_backend_herdr_core_get_json "$session" "$address") || rc=$?
+  case "$rc" in
+    0) ;;
+    3) printf 'absent'; return 0 ;;
+    *) printf 'unreadable'; return 0 ;;
+  esac
+  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || rc=$?
+  case "$rc" in
+    0) printf 'ours' ;;
+    1) printf 'foreign' ;;
+    *) printf 'unreadable' ;;
+  esac
+  return 0
+}
+
 # fm_backend_herdr_core_kill: close ONE exact address after the identity
 # quadruple, and confirm both destructive steps. This close never takes `--all`,
 # never a name, never a server-global verb, and never an address whose labels or
@@ -1084,12 +1125,14 @@ fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label] [expected-b
 # still carry this task's labels, so without this step the replacement is refused
 # as a duplicate (live shell) or the husk is left unmanaged on the shared core
 # (finished). The close is the same identity-checked one teardown uses, and an
-# address the core authoritatively no longer has is already retired.
+# address the core authoritatively no longer has, or one that now carries a
+# terminal this task does not own, is already retired.
 #
 #   0  the recorded address is gone, or was closed and confirmed
-#   1  the address is present but could not be closed: the relaunch refuses
+#   1  the address is still this task's but could not be closed: the relaunch
+#      refuses
 fm_backend_herdr_core_retire_endpoint() {  # <target> <expected-label>
-  local target=${1:-} expected=${2:-} session address state rc=0
+  local target=${1:-} expected=${2:-} session address state ownership
   fm_backend_herdr_core_parse_target "$target" || {
     echo "error: malformed herdr-core target '$target'; cannot retire the previous endpoint" >&2
     return 1
@@ -1097,10 +1140,14 @@ fm_backend_herdr_core_retire_endpoint() {  # <target> <expected-label>
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   fm_backend_herdr_core_session_ok "$session" || return 1
-  fm_backend_herdr_core_get_json "$session" "$address" >/dev/null 2>&1 || rc=$?
-  case "$rc" in
-    0) ;;
-    3) return 0 ;;
+  # An address the core authoritatively lacks, or one that now carries another
+  # task's or base's terminal, means this task's previous endpoint is already
+  # gone: there is nothing to retire and nothing this base may touch, so the
+  # relaunch creates its replacement instead of killing a stranger's terminal.
+  ownership=$(fm_backend_herdr_core_endpoint_ownership "$target")
+  case "$ownership" in
+    absent|foreign) return 0 ;;
+    ours) ;;
     *)
       echo "error: the previous herdr-core endpoint $target for $expected could not be read in session '$session'; refusing to create a replacement beside an endpoint this process cannot verify" >&2
       return 1
@@ -1124,10 +1171,16 @@ fm_backend_herdr_core_retire_endpoint() {  # <target> <expected-label>
 }
 
 # fm_backend_herdr_core_task_closed: teardown's confirmation that the exact
-# terminal this task opened is gone. Only an authoritative "no such address"
-# counts; a foreign terminal at that address, or an unreadable core, refuses.
+# terminal this task opened is gone. The endpoint is gone when the core
+# authoritatively lacks the address, and it is also gone when the address is
+# readable but carries another task's or base's labels, or another core id: the
+# core recycled the address, so nothing this task created is left there and its
+# records may be retired without touching the stranger's terminal. A record that
+# still carries this task's and this base's labels refuses, and so does an
+# unreadable core or a record whose identity cannot be verified - a transient
+# failure is never mistaken for a completed cleanup.
 fm_backend_herdr_core_task_closed() {  # <target> <task-id>
-  local target=${1:-} id=${2:-} session address rc=0
+  local target=${1:-} id=${2:-} session address ownership
   if ! fm_backend_herdr_core_parse_target "$target"; then
     echo "error: malformed herdr-core target '$target'; cannot confirm the close" >&2
     return 1
@@ -1135,17 +1188,22 @@ fm_backend_herdr_core_task_closed() {  # <target> <task-id>
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   fm_backend_herdr_core_session_ok "$session" || return 1
-  fm_backend_herdr_core_get_json "$session" "$address" >/dev/null 2>&1 || rc=$?
-  case "$rc" in
-    0) ;;
-    3) return 0 ;;
+  ownership=$(fm_backend_herdr_core_endpoint_ownership "$target")
+  case "$ownership" in
+    absent) return 0 ;;
+    foreign)
+      echo "note: herdr-core address $address now carries a terminal this task does not own (another task, base, or core id); task $id has no endpoint there, so its records are retired and that terminal is left untouched" >&2
+      return 0
+      ;;
+    ours)
+      echo "error: herdr-core address $address for task $id is still present with this task's own labels; refusing to retire its records" >&2
+      return 1
+      ;;
     *)
-      echo "error: herdr-core address $address for task $id could not be read in session '$session' (unreachable core or an inconsistent record); cannot confirm the close" >&2
+      echo "error: herdr-core address $address for task $id could not be read in session '$session' (unreachable core, unreadable record, or an identity this process cannot verify); cannot confirm the close" >&2
       return 1
       ;;
   esac
-  echo "error: herdr-core address $address for task $id is still present; refusing to retire its records" >&2
-  return 1
 }
 
 # --- the extra dispatcher operations ---------------------------------------

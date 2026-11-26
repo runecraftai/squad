@@ -885,15 +885,25 @@ SQUAD_HC_GET_RC=3 fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunc
   || fail 'an absent previous endpoint is already retired'
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'an absent previous endpoint must not be closed'
 
-# An address that now belongs to another task refuses the relaunch instead of
-# being closed.
+# An address whose terminal now belongs to another task is no longer this task's
+# previous endpoint at all: the relaunch proceeds and the stranger's terminal is
+# never closed.
 SQUAD_HC_LABEL_TASK=other write_live_terminal t1 live bash 'null'
 reset_calls
 : > "$SQUAD_HC_KILL_LOG"
-out=$(fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' 2>&1) && rc=0 || rc=$?
-[ "$rc" -ne 0 ] || fail "a previous endpoint carrying another task's label must refuse the relaunch"
-assert_contains "$out" 'could not be closed' 'the refusal says the previous endpoint could not be closed'
+fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' \
+  || fail 'a previous endpoint that another task now owns is already retired'
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail "another task's terminal must never be closed"
+
+# A core restart moves the address into a new registry, so the live terminal at
+# the recorded address is not the one this task created either.
+SQUAD_HC_LABEL_TASK=relaunch write_live_terminal t1 live bash 'null'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+SQUAD_HC_CORE_ID=core-b fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' \
+  || fail 'an endpoint recorded against another core is already retired'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail "the new core's terminal must never be closed"
+SQUAD_HC_CORE_ID=core-a
 
 # A previous endpoint that still runs a verified agent is never killed by a
 # relaunch, even when the caller asks: only a confidently agentless endpoint is
@@ -909,7 +919,13 @@ rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
 write_world
 pass 'a relaunch retires its own previous endpoint and refuses a foreign one'
 
-# teardown's confirmation: absent address passes, a present one refuses.
+# teardown's confirmation reads the address once and classifies it: an address
+# the core no longer has is closed, an address that still carries this task's own
+# labels refuses, and an address whose terminal now belongs to another task, base
+# or core is this task's endpoint being gone - teardown proceeds there and the
+# stranger's terminal is never called "still present" nor touched. An unreadable
+# core or an unverifiable identity still refuses, so a transient failure is never
+# mistaken for a completed cleanup.
 write_world
 SQUAD_HC_GET_RC=3 fm_backend_herdr_core_task_closed 'default:t1' probe \
   || fail 'an absent address counts as closed'
@@ -920,7 +936,37 @@ out=$(SQUAD_HC_GET_RC=1 fm_backend_herdr_core_task_closed 'default:t1' probe 2>&
 [ "$rc" -ne 0 ] || fail 'an unreadable address must refuse the close'
 assert_contains "$out" 'could not be read' 'an unreachable core is not reported as a present address'
 assert_not_contains "$out" 'still present' 'an unreachable core must not claim the address is still there'
-pass 'teardown confirmation separates an unreadable core from a present address'
+
+fm_write_meta "$SQUAD_STATE_OVERRIDE/recycled.meta" \
+  "window=default:t1" "endpoint_task_id=probe" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t1" "hc_core_id=core-a"
+( SQUAD_HC_LABEL_TASK=stranger write_live_terminal t1 live pi '{"app":"pi","state":"idle"}' )
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+out=$(fm_backend_herdr_core_task_closed 'default:t1' probe 2>&1) && rc=0 || rc=$?
+[ "$rc" -eq 0 ] || fail "an address recycled for another task's terminal is this task's endpoint being gone: $out"
+assert_contains "$out" 'does not own' 'the recycled-address note names the ownership, not a still-present terminal'
+assert_not_contains "$out" 'still present' "a stranger's terminal must never be called still present"
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail "teardown's confirmation must never close the stranger's terminal"
+
+( SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$label_two" \
+    write_live_terminal t1 live pi '{"app":"pi","state":"idle"}' )
+reset_calls
+out=$(fm_backend_herdr_core_task_closed 'default:t1' probe 2>&1) && rc=0 || rc=$?
+[ "$rc" -eq 0 ] || fail "an address recycled for another base's terminal is this task's endpoint being gone: $out"
+assert_not_contains "$out" 'still present' "another base's terminal must never be called still present"
+
+SQUAD_HC_LABEL_TASK=probe write_live_terminal t1 live pi '{"app":"pi","state":"idle"}'
+SQUAD_HC_CORE_ID=core-b fm_backend_herdr_core_task_closed 'default:t1' probe >/dev/null 2>&1 \
+  || fail 'a terminal in another core registry is this task endpoint being gone'
+SQUAD_HC_CORE_ID=core-a
+out=$(SQUAD_HC_STATUS_FAIL=1 fm_backend_herdr_core_task_closed 'default:t1' probe 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a recorded core id that cannot be verified must refuse the close'
+assert_contains "$out" 'could not be read' 'an unverifiable core id is not reported as a present address'
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
+write_world
+pass 'teardown confirmation classifies absent, ours, foreign and unreadable'
 
 # A recorded session other than this process die is refused, not resolved.
 write_world

@@ -113,6 +113,10 @@ Every write names one opaque address that Squad created:
 
   The same base label is required by every read and write this backend performs, so a recycled address that now carries another base's terminal is refused rather than projected or closed.
   A mismatch refuses and keeps the task metadata, so a later rerun can retry once the identity agrees. Teardown then confirms the exact address is authoritatively gone before it retires any record; a still-present address refuses the whole teardown.
+  That confirmation is ownership-aware: a core recycles an address as soon as its terminal is closed, so a readable record at the recorded address is not proof that this task's endpoint is still there.
+  The endpoint counts as gone when the core authoritatively lacks the address, and also when the record now carries another task's or another base's labels, or another core id - a stranger owns that address, so the terminal is never touched and the task's records may be retired.
+  It refuses only while the record still carries this task's and this base's labels, or when the read cannot verify the identity at all (unreachable core, unreadable or inconsistent record), so a recycled address never wedges teardown and a transient failure never erases a record that still points at a live endpoint.
+  A relaunch applies the same rule before it replaces an endpoint: it retires the exact address it still owns, and proceeds past an address the core no longer has or that a stranger now owns, without closing the stranger.
   Forced teardown of an XO closes each herdr-core child under that child home's own base label, because the child was spawned with `SQUAD_BASE` pointing at its home, and it retains the child record unless the exact address is confirmed gone.
 
 One address belongs to one core's registry, so an address is only meaningful inside the core that issued it. The recorded core id and the recorded session are both re-checked, and a task whose recorded session or core no longer matches refuses every write rather than resolving against whatever is running.

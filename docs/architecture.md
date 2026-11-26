@@ -21,7 +21,8 @@ The existing timer carries each new episode's epoch; replay cannot rewind a late
 Busy suppressors are classed in the existing stale marker so clearing busy on an unchanged viewport still surfaces the inconclusive idle transition immediately.
 A current authoritative done/failed task clears wedge tracking instead of re-arming it; current state is checked again so an old finished result cannot hide a newer active run.
 A current active run-step outranks an old terminal status and defers pane expiry in both modes, but cannot suppress the independent quiet-step reason below.
-Complete viewport reads are supported on tmux (`capture-pane` without `-S`), zellij (`dump-screen` without `--full`), tuios (`capture-pane` without `--scrollback`), and herdr-core (`hc read --lines 0`).
+Complete viewport reads are supported on tmux (`capture-pane` without `-S`), zellij (`dump-screen` without `--full`), and tuios (`capture-pane` without `--scrollback`).
+herdr-core's `hc read --lines 0` is accepted only as an envelope-gated read: it is a complete viewport only when the product's own record proves one (`.complete` true, `.how` a screen read, non-empty text), and any other shape returns cannot-evaluate, never a tail; what of that is actually measured live is recorded in [`verification/runtime-backends.md`](verification/runtime-backends.md#herdr-core), which owns that claim.
 Herdr and Orca viewport flags are unverified, and cmux has no verified complete-viewport read in this repository: these paths return cannot-evaluate, never claim static from a tail, and log a named backend limitation for a static busy episode.
 An unreadable complete viewport never proves inactivity: the daemon retains retryable ownership in the existing marker, excludes the read gap, and starts a full new static window on successful recovery.
 Idle handoffs follow the same per-episode timing rule; declared-pause cadence is unchanged, while the pause-age limit below is a separate clock.
