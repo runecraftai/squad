@@ -9,12 +9,26 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 command -v jq >/dev/null 2>&1 || { echo 'skip: jq not found'; exit 0; }
-command -v python3 >/dev/null 2>&1 || {
-  echo 'skip: python3 not found (binding the private unix socket that stands in for a listening core)'
+
+# The suite binds a private unix socket to stand in for a listening core, and the
+# adapter probes that socket before every `hc` call with a client that cannot
+# start a core. Find an interpreter that actually runs (a broken or half-installed
+# python3 on PATH is common) and put it first for both the fixture and the probe.
+PY=
+for candidate in python3 /usr/bin/python3 python; do
+  command -v "$candidate" >/dev/null 2>&1 || continue
+  "$candidate" -c 'import socket' >/dev/null 2>&1 || continue
+  PY=$candidate
+  break
+done
+[ -n "$PY" ] || {
+  echo 'skip: no working python3 (binding the private unix socket that stands in for a listening core)'
   exit 0
 }
 
 TMP_ROOT=$(fm_test_tmproot sq-backend-herdr-core-tests)
+mkdir -p "$TMP_ROOT/pybin"
+ln -sf "$(command -v "$PY")" "$TMP_ROOT/pybin/python3"
 export SQUAD_HC_LOG="$TMP_ROOT/hc.log"
 export SQUAD_HC_GET="$TMP_ROOT/get.json"
 export SQUAD_HC_LIST="$TMP_ROOT/list.json"
@@ -83,7 +97,16 @@ case "$cmd" in
     run_address=${SQUAD_HC_NEW_ADDRESS:-t1}
     if [ "${SQUAD_HC_RUN_REGISTERS:-0}" = 1 ]; then
       jq -cn --arg address "${SQUAD_HC_RUN_REGISTER_ADDRESS:-$run_address}" --arg task "${SQUAD_HC_RUN_TASK:-probe}" \
-        '{terminals:[{address:$address,state:"live",labels:{"squad.task":$task}}]}' > "$SQUAD_HC_LIST"
+        --arg base "${SQUAD_HC_RUN_BASE:-base}" \
+        '{terminals:[{address:$address,state:"live",labels:{"squad.task":$task,"squad.base":$base}}]}' > "$SQUAD_HC_LIST"
+    fi
+    if [ -n "${SQUAD_HC_RUN_GET_TASK:-}" ]; then
+      jq -cn --arg address "$run_address" --arg id "$SQUAD_HC_RUN_GET_TASK" \
+        --arg base "${SQUAD_HC_RUN_GET_BASE:-}" --arg cwd "${SQUAD_HC_RUN_GET_CWD:-/tmp}" '
+        {address:$address,state:"live",
+         labels:{"squad.task":$id,"squad.base":$base},
+         foreground:{argv:["bash"],cwd:$cwd,name:"bash",pid:4242},
+         reported:false,status_ms:0,turn:0,title:"t"}' > "$SQUAD_HC_GET"
     fi
     if [ "${SQUAD_HC_RUN_FAIL:-0}" = 1 ]; then
       printf '{"error":{"kind":"name_taken","message":"that name is taken","hint":"pick another"}}\n' >&2
@@ -130,9 +153,24 @@ case "$cmd" in
     jq -cn --rawfile text "$SQUAD_HC_READ_TEXT" '{complete:true,how:"screen",text:$text}'
     ;;
   send)
+    last=${positional[${#positional[@]}-1]:-}
+    if [ -n "${SQUAD_HC_SEND_FAIL_MATCH:-}" ]; then
+      case "$last" in
+        *"$SQUAD_HC_SEND_FAIL_MATCH"*)
+          printf '{"error":{"kind":"status_mismatch","message":"refused","hint":"wait"}}\n' >&2
+          exit 10
+          ;;
+      esac
+    fi
     if [ "${SQUAD_HC_SEND_ERROR:-0}" = 1 ]; then
       printf '{"error":{"kind":"%s","message":"refused","hint":"read it"}}\n' "$(cat "$SQUAD_HC_SEND_KIND")" >&2
       exit "$(cat "$SQUAD_HC_SEND_RC")"
+    fi
+    # A faked `fob get` moves the terminal's foreground cwd into the leased
+    # worktree, exactly as the real product reports it after the shell cds.
+    if [ -n "${SQUAD_HC_LEASE:-}" ] && [ "$last" = 'fob get' ]; then
+      jq --arg cwd "$SQUAD_HC_LEASE" '.foreground.cwd = $cwd' "$SQUAD_HC_GET" \
+        > "$SQUAD_HC_GET.next" && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
     fi
     printf '{"started":true,"status":"idle","turn":1}\n'
     ;;
@@ -162,7 +200,18 @@ case "$cmd" in
 esac
 SH
 chmod +x "$TMP_ROOT/fakebin/hc"
-PATH="$TMP_ROOT/fakebin:$PATH"
+cat > "$TMP_ROOT/fakebin/fob" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "${SQUAD_FAKE_FOB_LOG:?}"
+case "${1:-}" in
+  get) printf 'Entered worktree at %s\n' "${SQUAD_FAKE_FOB_LEASE:?}" ;;
+  *) : ;;
+esac
+exit 0
+SH
+chmod +x "$TMP_ROOT/fakebin/fob"
+PATH="$TMP_ROOT/pybin:$TMP_ROOT/fakebin:$PATH"
 export PATH
 
 # --- fake core fixtures -----------------------------------------------------
@@ -202,8 +251,9 @@ write_live_terminal() {  # [address] [label-state] [foreground-name] [status-jso
   local address=${1:-t1} state=${2:-live} name=${3:-pi}
   local status=${4:-'{"app":"pi","state":"idle"}'}
   jq -cn --arg address "$address" --arg state "$state" --arg name "$name" \
-    --argjson status "$status" --arg label "${SQUAD_HC_LABEL_TASK:-probe}" '
-    {address:$address,state:$state,labels:{("squad.task"):$label,("squad.base"):"squad"},
+    --argjson status "$status" --arg label "${SQUAD_HC_LABEL_TASK:-probe}" \
+    --arg base "${SQUAD_HC_LABEL_BASE:-base}" '
+    {address:$address,state:$state,labels:{("squad.task"):$label,("squad.base"):$base},
      foreground:{argv:[$name],cwd:"/tmp/work",name:$name,pid:4242},
      status:$status,reported:($status != null),status_ms:1234,turn:0,title:"t"}' > "$SQUAD_HC_GET"
   printf '0' > "$SQUAD_HC_SEND_RC"
@@ -218,19 +268,29 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HC_HELLO SQUAD_HC_STATUS_FAIL SQUAD_HC_SCHEMA_FAIL SQUAD_HC_GET_RC
   unset SQUAD_HC_RUN_FAIL SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL SQUAD_HC_SEND_ERROR
   unset SQUAD_HC_KILL_SWAP SQUAD_HC_LIST_ALL
+  unset SQUAD_HC_LABEL_TASK SQUAD_HC_LABEL_BASE SQUAD_HC_RUN_BASE
   export SQUAD_HC_CORE_ID=core-a
   printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
   write_live_terminal
 }
 
 # One private listening socket stands in for a running core: the adapter's only
-# precondition for any `hc` call is that this path is a socket.
-python3 - "$SOCKET" <<'PY' &
+# precondition for any `hc` call is that a listener answers on this path. It
+# accepts and closes every connection, exactly as a real core does, so the
+# adapter's probe cannot fill the accept queue over a long suite.
+"$PY" - "$SOCKET" <<'PY' &
 import socket, sys, time
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 s.bind(sys.argv[1])
-s.listen(8)
-time.sleep(300)
+s.listen(64)
+s.settimeout(0.2)
+deadline = time.time() + 300
+while time.time() < deadline:
+    try:
+        conn, _ = s.accept()
+    except OSError:
+        continue
+    conn.close()
 PY
 SOCKET_PID=$!
 restore_and_exit() { rm -rf "$TMP_ROOT"; kill "$SOCKET_PID" 2>/dev/null || true; rm -f "$SQUAD_HC_GET"; }
@@ -269,6 +329,34 @@ XDG_RUNTIME_DIR="$TMP_ROOT/empty-runtime" fm_backend_herdr_core_target_exists 'd
 [ "$target_missing_rc" -ne 0 ] || fail 'target_exists must fail when no core is listening'
 [ ! -s "$SQUAD_HC_LOG" ] || fail 'target_exists must not invoke hc without a listening core'
 pass 'never starts a core: no hc invocation without a listening socket'
+
+# A socket FILE is not a core. After an unclean core death the file survives with
+# nothing accepting on it, and the next `hc` call would start a core with Squad's
+# environment - so the gate has to prove a listener, and a stale file must refuse
+# exactly like an absent one.
+mkdir -p "$TMP_ROOT/stale-runtime/herdr-core"
+STALE_SOCKET="$TMP_ROOT/stale-runtime/herdr-core/default.sock"
+"$PY" - "$STALE_SOCKET" <<'PY'
+import socket
+import sys
+
+listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+listener.bind(sys.argv[1])
+listener.close()
+PY
+[ -S "$STALE_SOCKET" ] || fail 'the stale-socket fixture must leave a socket file with no listener'
+reset_calls
+stale_out=$(XDG_RUNTIME_DIR="$TMP_ROOT/stale-runtime" fm_backend_herdr_core_container_ensure "$TMP_ROOT" 2>&1) && stale_rc=0 || stale_rc=$?
+[ "$stale_rc" -ne 0 ] || fail 'a stale socket with nothing listening behind it must refuse'
+assert_contains "$stale_out" 'Squad never starts the core' 'the stale-socket refusal names the no-start rule'
+assert_contains "$stale_out" 'hc server start' 'the stale-socket refusal names who must start it'
+[ ! -s "$SQUAD_HC_LOG" ] || fail "a stale socket must produce zero hc invocations (saw: $(call_log))"
+reset_calls
+XDG_RUNTIME_DIR="$TMP_ROOT/stale-runtime" fm_backend_herdr_core_target_exists 'default:t1' >/dev/null 2>&1 \
+  && stale_target_rc=0 || stale_target_rc=$?
+[ "$stale_target_rc" -ne 0 ] || fail 'target_exists must fail on a stale socket'
+[ ! -s "$SQUAD_HC_LOG" ] || fail 'target_exists must not invoke hc on a stale socket'
+pass 'never starts a core: a stale socket file is not a listening core'
 
 # --- the protocol guard -----------------------------------------------------
 
@@ -448,6 +536,7 @@ fm_backend_herdr_core_target_exists 'default:t1' 'sq-sq-demo' \
 [ "$(fm_backend_herdr_core_capture 'default:t1' 10 'sq-sq-demo')" = 'probe screen
 > ' ] \
   || fail 'an sq-prefixed task id must still capture its own screen'
+SQUAD_HC_LABEL_TASK=sq-demo write_live_terminal t1 live pi '{"app":"pi","state":"idle"}'
 fm_backend_herdr_core_send_text_line 'default:t1' 'hello' 'sq-sq-demo' \
   || fail 'an sq-prefixed task id must still accept a delivery'
 rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
@@ -498,6 +587,42 @@ printf 'weird' > "$SQUAD_HC_SEND_KIND"; printf '1' > "$SQUAD_HC_SEND_RC"
 [ "$(verdict_send)" = uncertain-delivery ] || fail 'an unclassified failure is uncertain-delivery, never retried'
 unset SQUAD_HC_SEND_ERROR
 pass 'delivery verdicts map every refusal kind'
+
+# The program's own reported state decides how it is typed into. `--if` accepts
+# only idle|working, so an exactly-idle program is gated by `--if idle`, a
+# `done` program (its turn finished, it is at rest) is sent plainly, and any
+# other reported state refuses before typing.
+write_world
+write_live_terminal t1 live pi '{"app":"pi","state":"idle"}'
+reset_calls
+[ "$(verdict_send)" = empty ] || fail 'an idle program accepts a delivery'
+case "$(call_log)" in
+  *'send --json --if idle'*) ;;
+  *) fail "an idle program must be gated by --if idle (saw: $(call_log))" ;;
+esac
+
+write_live_terminal t1 live pi '{"app":"pi","state":"done"}'
+reset_calls
+[ "$(verdict_send)" = empty ] || fail 'a done program is at rest and accepts a delivery'
+send_line=$(grep -F 'send ' "$SQUAD_HC_LOG" | tail -1)
+case "$send_line" in
+  *'--if'*) fail "a done program must be sent without --if, which cannot express done (saw: $send_line)" ;;
+esac
+
+write_live_terminal t1 live pi '{"app":"pi","state":"working"}'
+reset_calls
+[ "$(verdict_send)" = not_ready ] || fail 'a working program must refuse a delivery'
+case "$(call_log)" in *'send '*) fail 'a working program must not be sent into' ;; esac
+
+write_live_terminal t1 live pi '{"app":"pi","state":"error"}'
+reset_calls
+[ "$(verdict_send)" = not_ready ] || fail 'an erroring program must refuse a delivery'
+case "$(call_log)" in *'send '*) fail 'an erroring program must not be sent into' ;; esac
+
+write_world
+[ "$(fm_backend_herdr_core_busy_state 'default:t1')" = idle ] || fail 'busy_state keeps reporting done as idle'
+write_world
+pass 'delivery gates on the reported state, and done is sent plainly'
 
 # A failed read, or an identity this process cannot verify, is a local failure
 # before anything was typed, never a confident absence: a caller that treats
@@ -618,6 +743,85 @@ rm -f "$SQUAD_STATE_OVERRIDE"/*.meta "$TMP_ROOT/owner-record.json" "$TMP_ROOT/st
 write_world
 pass 'the identity is checked again before rm'
 
+# The failed-create recovery closes an address that has no task record behind it,
+# so its close also re-checks the terminal's own squad.base label: another base's
+# terminal is never closed even when this base's task id happens to match.
+write_world
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+out=$(fm_backend_herdr_core_kill 'default:t1' '' 'sq-probe' other 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail "a close must refuse another base's terminal"
+assert_contains "$out" "refusing to touch another base's terminal" 'the base refusal names the reason'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a base-label mismatch must never reach kill or rm'
+fm_backend_herdr_core_kill 'default:t1' '' 'sq-probe' base >/dev/null 2>&1 \
+  || fail "a close must accept this base's own terminal"
+write_world
+pass 'a close checks the squad.base label it was scoped by'
+
+# --- retiring a previous endpoint before a relaunch ------------------------
+
+relaunch_meta() {  # <id> <address>
+  fm_write_meta "$SQUAD_STATE_OVERRIDE/$1.meta" \
+    "window=default:$2" "endpoint_task_id=$1" "worktree=$TMP_ROOT" \
+    "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+    "hc_session=default" "hc_address=$2" "hc_core_id=core-a"
+}
+
+# A core restart leaves the task's own terminal as a finished husk. The relaunch
+# must retire exactly that address, or it accumulates unmanaged terminals.
+write_world
+relaunch_meta relaunch t1
+SQUAD_HC_LABEL_TASK=relaunch write_live_terminal t1 finished pi 'null'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' \
+  || fail 'a finished previous endpoint must be retired before the relaunch'
+assert_grep 'kill t1' "$SQUAD_HC_KILL_LOG" 'the finished husk is closed'
+assert_grep 'rm t1' "$SQUAD_HC_KILL_LOG" 'the finished husk is removed'
+
+# A harness that exits on its own leaves a live but agentless shell, which would
+# otherwise refuse the replacement as a duplicate endpoint.
+SQUAD_HC_LABEL_TASK=relaunch write_live_terminal t1 live bash 'null'
+[ "$(fm_backend_herdr_core_agent_state 'default:t1')" = dead ] \
+  || fail 'a live agentless shell is the dead state a relaunch proceeds from'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' \
+  || fail 'a live agentless previous endpoint must be retired before the relaunch'
+assert_grep 'kill t1' "$SQUAD_HC_KILL_LOG" 'the agentless shell is closed'
+assert_grep 'rm t1' "$SQUAD_HC_KILL_LOG" 'the agentless shell is removed'
+
+# An address the core authoritatively no longer has is already retired.
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+SQUAD_HC_GET_RC=3 fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' \
+  || fail 'an absent previous endpoint is already retired'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'an absent previous endpoint must not be closed'
+
+# An address that now belongs to another task refuses the relaunch instead of
+# being closed.
+SQUAD_HC_LABEL_TASK=other write_live_terminal t1 live bash 'null'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+out=$(fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail "a previous endpoint carrying another task's label must refuse the relaunch"
+assert_contains "$out" 'could not be closed' 'the refusal says the previous endpoint could not be closed'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail "another task's terminal must never be closed"
+
+# A previous endpoint that still runs a verified agent is never killed by a
+# relaunch, even when the caller asks: only a confidently agentless endpoint is
+# retired.
+SQUAD_HC_LABEL_TASK=relaunch write_live_terminal t1 live pi '{"app":"pi","state":"working"}'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+out=$(fm_backend_herdr_core_retire_endpoint 'default:t1' 'sq-relaunch' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a previous endpoint with a live agent must refuse the relaunch'
+assert_contains "$out" 'may still be running a program' 'the refusal says the endpoint may still be running'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a live agent must never be killed by a relaunch'
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
+write_world
+pass 'a relaunch retires its own previous endpoint and refuses a foreign one'
+
 # teardown's confirmation: absent address passes, a present one refuses.
 write_world
 SQUAD_HC_GET_RC=3 fm_backend_herdr_core_task_closed 'default:t1' probe \
@@ -689,12 +893,20 @@ assert_contains "$run_line" '--label squad.task=probe' 'create_task labels the t
 assert_contains "$run_line" '--label squad.base=' 'create_task labels the base'
 assert_contains "$run_line" "--cwd $TMP_ROOT" 'create_task passes the recorded worktree as cwd'
 
-printf '{"terminals":[{"address":"t9","name":"sq-probe","state":"live"}]}\n' > "$SQUAD_HC_LIST"
+printf '{"terminals":[{"address":"t9","name":"sq-probe","state":"live","labels":{"squad.task":"probe","squad.base":"base"}}]}\n' > "$SQUAD_HC_LIST"
 reset_calls
 out=$(fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
 [ "$rc" -ne 0 ] || fail 'create_task must refuse a duplicate live task label'
 assert_contains "$out" 'refusing a duplicate endpoint' 'the duplicate refusal names the reason'
 case "$(call_log)" in *'run '* ) fail 'a duplicate refusal must not create a terminal' ;; esac
+
+# Another Squad base on the same core numbers its tasks from 1 too, so a
+# terminal carrying this task id under a different squad.base is not this base's
+# duplicate and must not block the spawn.
+printf '{"terminals":[{"address":"t9","state":"live","labels":{"squad.task":"probe","squad.base":"other"}}]}\n' > "$SQUAD_HC_LIST"
+address=$(SQUAD_HC_NEW_ADDRESS=t8 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
+  || fail "another base's terminal with the same task id is not this base's duplicate"
+[ "$address" = t8 ] || fail "create_task returns the new opaque address (got '$address')"
 
 printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
 out=$(fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT/missing" 2>&1) && rc=0 || rc=$?
@@ -746,7 +958,7 @@ assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'the terminal an unusable address hid
 # already `finished` is invisible to a live-only listing but is still recovered
 # by the same exact close.
 SQUAD_HC_LABEL_TASK=probe write_live_terminal t7 finished pi 'null'
-printf '{"terminals":[{"address":"t7","state":"finished","labels":{"squad.task":"probe"}}]}\n' > "$TMP_ROOT/list-all.json"
+printf '{"terminals":[{"address":"t7","state":"finished","labels":{"squad.task":"probe","squad.base":"base"}}]}\n' > "$TMP_ROOT/list-all.json"
 reset_calls
 : > "$SQUAD_HC_KILL_LOG"
 printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
@@ -756,6 +968,18 @@ out=$(SQUAD_HC_LIST_ALL="$TMP_ROOT/list-all.json" SQUAD_HC_NEW_ADDRESS=.t7 \
 assert_contains "$out" 'usable opaque address' 'the unusable-address refusal names the reason'
 assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'a finished unrecorded terminal is closed too'
 assert_grep 'rm t7' "$SQUAD_HC_KILL_LOG" 'a finished unrecorded terminal is removed too'
+
+# The recovery inventory is base-scoped: a second base's terminal that happens to
+# carry this task id is not this base's create and must never be closed.
+printf '{"terminals":[{"address":"t8","state":"finished","labels":{"squad.task":"probe","squad.base":"other"}}]}\n' > "$TMP_ROOT/list-all.json"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+out=$(SQUAD_HC_LIST_ALL="$TMP_ROOT/list-all.json" SQUAD_HC_NEW_ADDRESS=.t8 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'an unusable reported address must refuse'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail "another base's terminal must never be closed by this base's recovery (saw: $(cat "$SQUAD_HC_KILL_LOG"))"
+printf '{"terminals":[{"address":"t7","state":"finished","labels":{"squad.task":"probe","squad.base":"base"}}]}\n' > "$TMP_ROOT/list-all.json"
 
 # The address the inventory names is re-checked against its own task label, so a
 # core that recycled that address between the listing and the close leaves the
@@ -871,5 +1095,111 @@ case "$verdict" in
 esac
 [ ! -s "$SQUAD_HC_LOG" ] || fail "no primitive may invoke hc without a listening core (saw: $(call_log))"
 pass 'no primitive invokes hc without a listening core'
+
+# --- the launch delivery owns the terminal it created ---------------------
+# The task endpoint is created and recorded before the launch line is delivered,
+# so the abort cleanup must stay armed through that delivery. A refused launch has
+# to close the exact address it created instead of exiting with a live labelled
+# terminal behind a published record and no exec_state=running to retry from.
+
+spawn_case() {  # <name> <id> [extra-setup-fn] -> "case-dir"
+  local name=$1 id=$2 dir proj wt base
+  dir="$TMP_ROOT/spawn-$name"
+  proj="$dir/project"
+  wt="$dir/wt"
+  base="$dir/mybase"
+  mkdir -p "$base/data/$id" "$base/state" "$base/config" "$base/projects" "$proj"
+  printf 'bash\n' > "$base/config/crew-harness"
+  printf '# brief\n\nraw launch probe for %s\n\nReport status by appending one line:\n\n    echo "{state}: {note}" >> %s/%s.status\n' \
+    "$id" "$base/state" "$id" > "$base/data/$id/brief.md"
+  fm_git_worktree "$proj" "$wt" "wt-$name"
+  printf '%s|%s|%s|%s|%s\n' "$dir" "$base" "$proj" "$wt" "$id"
+}
+
+run_spawn_case() {  # <case-record> <launch-command>
+  local dir base proj wt id
+  IFS='|' read -r dir base proj wt id <<EOF
+$1
+EOF
+  SQUAD_ROOT_OVERRIDE='' SQUAD_BASE="$base" \
+    SQUAD_STATE_OVERRIDE="$base/state" SQUAD_DATA_OVERRIDE="$base/data" \
+    SQUAD_PROJECTS_OVERRIDE="$base/projects" SQUAD_CONFIG_OVERRIDE="$base/config" \
+    XDG_RUNTIME_DIR="$TMP_ROOT/r" SQUAD_SPAWN_NO_GUARD=1 \
+    SQUAD_FAKE_FOB_LOG="$dir/fob.log" SQUAD_FAKE_FOB_LEASE="$wt" \
+    SQUAD_HC_LEASE="$wt" \
+    "$ROOT/bin/sq-spawn.sh" "$id" "$proj" "$2" --backend herdr-core --recon 2>&1
+}
+
+# The terminal the spawn creates is address t2, carrying this task's own labels;
+# a silent program keeps delivery on the composer path the spawn uses.
+seed_spawn_terminal() {  # <case-record>
+  local dir base proj wt id
+  IFS='|' read -r dir base proj wt id <<EOF
+$1
+EOF
+  jq -cn --arg address t2 --arg id "$id" --arg base "$(basename "$base")" --arg cwd "$proj" '
+    {address:$address,state:"live",
+     labels:{"squad.task":$id,"squad.base":$base},
+     foreground:{argv:["bash"],cwd:$cwd,name:"bash",pid:4242},
+     reported:false,status_ms:0,turn:0,title:"t"}' > "$SQUAD_HC_GET"
+  printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+}
+
+case_record=$(spawn_case launch-refused spawn-launch-refused)
+seed_spawn_terminal "$case_record"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+spawn_out=$(SQUAD_HC_SEND_FAIL_MATCH='LAUNCH-REFUSED-MARKER' \
+  SQUAD_HC_NEW_ADDRESS=t2 run_spawn_case "$case_record" 'bash -c LAUNCH-REFUSED-MARKER') && spawn_rc=0 || spawn_rc=$?
+[ "$spawn_rc" -ne 0 ] || fail 'a refused launch delivery must fail the spawn'
+assert_contains "$spawn_out" 'did not submit the line' 'the failed launch names the refused delivery'
+assert_grep 'kill t2' "$SQUAD_HC_KILL_LOG" 'a refused launch must close the terminal it created'
+assert_grep 'rm t2' "$SQUAD_HC_KILL_LOG" 'a refused launch must remove the terminal it created'
+pass 'a refused launch delivery closes the exact terminal the spawn created'
+
+case_record=$(spawn_case launch-delivered spawn-launch-delivered)
+seed_spawn_terminal "$case_record"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+spawn_out=$(SQUAD_HC_NEW_ADDRESS=t2 run_spawn_case "$case_record" 'bash -c LAUNCH-DELIVERED-MARKER') && spawn_rc=0 || spawn_rc=$?
+[ "$spawn_rc" -eq 0 ] || fail "a delivered launch must spawn cleanly: $spawn_out"
+assert_contains "$spawn_out" 'spawned spawn-launch-delivered' 'a delivered launch reports the spawn'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a delivered launch must not close its own terminal'
+case "$(call_log)" in
+  *'LAUNCH-DELIVERED-MARKER'*) ;;
+  *) fail 'the launch command must be delivered through hc send' ;;
+esac
+pass 'a delivered launch leaves its terminal in place'
+
+# A relaunch retires the endpoint the task still records before it creates the
+# replacement, so a finished husk does not accumulate and a live agentless shell
+# does not refuse the new terminal as a duplicate.
+relaunch_record=$(spawn_case relaunch spawn-relaunch)
+IFS='|' read -r _ relaunch_base relaunch_proj relaunch_wt relaunch_id <<EOF
+$relaunch_record
+EOF
+jq -cn --arg address t2 --arg id "$relaunch_id" --arg base "$(basename "$relaunch_base")" '
+  {address:$address,state:"finished",
+   labels:{"squad.task":$id,"squad.base":$base},
+   reported:false,status_ms:0,turn:0,title:"t",reason:"exited"}' > "$SQUAD_HC_GET"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+fm_write_meta "$relaunch_base/state/$relaunch_id.meta" \
+  "window=default:t2" "endpoint_task_id=$relaunch_id" "worktree=$relaunch_wt" \
+  "project=$relaunch_proj" "harness=bash" "kind=recon" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t2" "hc_core_id=core-a"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+spawn_out=$(SQUAD_HC_NEW_ADDRESS=t3 \
+  SQUAD_HC_RUN_GET_TASK="$relaunch_id" SQUAD_HC_RUN_GET_BASE="$(basename "$relaunch_base")" \
+  SQUAD_HC_RUN_GET_CWD="$relaunch_proj" \
+  run_spawn_case "$relaunch_record" 'bash -c RELAUNCH-MARKER') && spawn_rc=0 || spawn_rc=$?
+[ "$spawn_rc" -eq 0 ] || fail "a relaunch over a retired endpoint must spawn cleanly: $spawn_out"
+assert_grep 'kill t2' "$SQUAD_HC_KILL_LOG" 'the relaunch retires the finished previous endpoint'
+assert_grep 'rm t2' "$SQUAD_HC_KILL_LOG" 'the relaunch removes the finished previous endpoint'
+assert_grep 'hc_address=t3' "$relaunch_base/state/$relaunch_id.meta" 'the relaunch records the replacement address'
+case "$(cat "$SQUAD_HC_KILL_LOG")" in
+  *'t3'*) fail 'the relaunch must not close the replacement it just created' ;;
+esac
+pass 'a relaunch retires its previous endpoint before creating the replacement'
 
 printf 'ok - herdr-core adapter contract\n'

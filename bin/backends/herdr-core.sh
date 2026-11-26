@@ -14,8 +14,11 @@
 #   * NEVER START A CORE. Any `hc` call starts a core when none is running, and
 #     a core started that way inherits the caller's whole environment, including
 #     credentials and backend markers (report trap T1). Every call this adapter
-#     makes therefore runs only after the session's socket is present. When it is
-#     absent the adapter refuses and says who must start the core.
+#     makes therefore runs only after the session's socket exists AND a probe
+#     that cannot start a core proves a listener answers on it: a socket file a
+#     dead core left behind is not a running core. When either test fails the
+#     adapter refuses and says who must start the core, and when no unix-socket
+#     probe client exists it fails closed rather than risking a start.
 #   * VERSION AND PROTOCOL GUARD. Before a task is created, the adapter
 #     handshakes one `hello` for protocol generation 1, refuses a version below
 #     the measured floor, and refuses any core whose own catalog lacks a method,
@@ -25,11 +28,19 @@
 #     created. No destructive call ever takes `--all`, never a server-global
 #     verb, never a name selector and never another program's terminal. The
 #     only `--all` reads are label-filtered and read-only: the failed-create
-#     inventory (`hc ls --all --json --label squad.task=<id>`), which closes
-#     nothing until that address's own label agrees, and the lab's tripwire.
+#     inventory (`hc ls --all --json --label squad.task=<id> --label
+#     squad.base=<base>`), which closes nothing until that address's own labels
+#     agree, and the lab's tripwire. Both inventories are scoped by the base, so
+#     a second Squad base sharing the core is neither a duplicate nor a target.
 #     The cleanup identity is the triple (recorded address, `squad.task=<id>`
-#     label, recorded core id), checked immediately before `kill` and again
+#     label, recorded core id), plus the `squad.base=<base>` label on the
+#     failed-create recovery, checked immediately before `kill` and again
 #     before `rm`.
+#   * A RELAUNCH RETIRES ITS OWN PREVIOUS ENDPOINT. Before a replacement is
+#     created, the exact recorded address this task still owns is closed through
+#     the same identity-checked path, so neither a finished husk nor a live
+#     agentless shell is left unmanaged on the shared core. An endpoint that is
+#     ambiguous or still runs a verified agent refuses the relaunch.
 #   * Status is the program's own OSC 7501 report. `busy_state` maps it, and
 #     `blocked` is a person-needed verdict, never ordinary work. A lane that
 #     reports no status is supervised by polling exactly as a tmux lane is.
@@ -98,14 +109,92 @@ fm_backend_herdr_core_socket() {  # <session>
   printf '%s/herdr-core/%s.sock' "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" "$session"
 }
 
-# fm_backend_herdr_core_core_present: refuse unless a core is listening for
+# fm_backend_herdr_core_listener_probe: is a LISTENER answering on <socket>? A
+# unix-socket file proves only that something once bound the path: after an
+# unclean core death the file survives while nothing accepts on it, and the next
+# `hc` call would then start a core with Squad's environment. Each client here
+# can only connect - none of them can start a core.
+#   0  a listener accepted the connection
+#   1  the connection was refused: nothing is listening
+#   2  no client could decide (none installed, or the client itself cannot run)
+# Every client is tried in turn, so a broken interpreter cannot masquerade as a
+# dead core, and 2 is a fail-closed refusal at the caller.
+SQUAD_BACKEND_HERDR_CORE_PROBE_TIMEOUT=2
+
+fm_backend_herdr_core_probe_python() {  # <socket>
+  local socket=$1 out rc=0
+  out=$(python3 - "$socket" <<'PY' 2>/dev/null
+import socket
+import sys
+
+client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+client.settimeout(2)
+try:
+    client.connect(sys.argv[1])
+except OSError:
+    print("refused")
+    sys.exit(0)
+print("listening")
+PY
+  ) || rc=$?
+  [ "$rc" -eq 0 ] || return 2
+  case "$out" in
+    listening) return 0 ;;
+    refused) return 1 ;;
+  esac
+  return 2
+}
+
+fm_backend_herdr_core_probe_curl() {  # <socket>
+  local socket=$1 rc=0
+  curl --max-time "$SQUAD_BACKEND_HERDR_CORE_PROBE_TIMEOUT" --unix-socket "$socket" http://localhost/ \
+    >/dev/null 2>&1 || rc=$?
+  # 7 is curl's "could not connect": nothing is listening on that path. Any
+  # other outcome means something accepted and answered on the socket.
+  [ "$rc" -eq 7 ] && return 1
+  return 0
+}
+
+fm_backend_herdr_core_probe_nc() {  # <socket>
+  nc -U -z -w "$SQUAD_BACKEND_HERDR_CORE_PROBE_TIMEOUT" "$1" >/dev/null 2>&1
+}
+
+fm_backend_herdr_core_listener_probe() {  # <socket>
+  local socket=$1 client rc=0
+  for client in python3 curl nc; do
+    command -v "$client" >/dev/null 2>&1 || continue
+    case "$client" in
+      python3) fm_backend_herdr_core_probe_python "$socket" || rc=$? ;;
+      curl) fm_backend_herdr_core_probe_curl "$socket" || rc=$? ;;
+      nc) fm_backend_herdr_core_probe_nc "$socket" || rc=$? ;;
+    esac
+    case "$rc" in
+      0) return 0 ;;
+      1) return 1 ;;
+    esac
+    rc=0
+  done
+  return 2
+}
+
+# fm_backend_herdr_core_core_present: refuse unless a core is LISTENING for
 # <session>. THIS is the whole never-start-a-core rule: no other function in
-# this file runs `hc` without it.
+# this file runs `hc` without it. A socket file that no process accepts on is
+# the stale-socket case, and it refuses exactly like an absent one.
 fm_backend_herdr_core_core_present() {  # <session>
-  local session=${1:-default} socket
+  local session=${1:-default} socket rc=0
   socket=$(fm_backend_herdr_core_socket "$session")
-  [ -S "$socket" ] && return 0
-  echo "error: herdr-core is not running for session '$session' (no core socket at $socket); Squad never starts the core - start Herdr or run 'hc server start' yourself" >&2
+  if [ -S "$socket" ]; then
+    fm_backend_herdr_core_listener_probe "$socket" || rc=$?
+    case "$rc" in
+      0) return 0 ;;
+      2)
+        echo "error: cannot prove a core is listening for herdr-core session '$session' at $socket (no unix-socket probe client could prove it; install python3, nc or curl); Squad never starts the core, and refusing is safer than risking a start" >&2
+        return 1
+        ;;
+    esac
+  fi
+  echo "error: herdr-core is not running for session '$session' (no core listening at $socket); Squad never starts the core - start Herdr or run 'hc server start' yourself" >&2
   return 1
 }
 
@@ -159,6 +248,14 @@ fm_backend_herdr_core_task_id_of_label() {  # <label>
     sq-*) printf '%s' "${label#sq-}" ;;
     *) printf '%s' "$label" ;;
   esac
+}
+
+# fm_backend_herdr_core_base_name: the `squad.base` value this base writes, and
+# the value every base-scoped inventory filters on. Two bases sharing one core
+# both number their tasks from 1, so the task label alone neither proves nor
+# refutes ownership.
+fm_backend_herdr_core_base_name() {
+  basename "${SQUAD_BASE:-${SQUAD_ROOT:-squad}}"
 }
 
 # fm_backend_herdr_core_read_core_id: one authoritative, never-cached read of
@@ -220,14 +317,18 @@ fm_backend_herdr_core_recorded_core_id() {  # <target>
 # address. `<allow-finished>` is set only by the cleanup path, because a task
 # whose program already exited is a `finished` address that a close must still
 # be able to retire - it never licenses a write of any other kind.
+# `<expected-base>` additionally requires the terminal's own `squad.base` label
+# to be this base, which is the only ownership proof on a close that has no task
+# record to fall back on.
 # Failure is always a refusal, and the delivery verdict needs to tell an
 # authoritative absence from a local failure, so the reason is in the code:
 #   1  a local failure or an identity that could not be read at all
 #   3  the address is authoritatively gone, or no longer live for a write
 #   4  the address carries another identity (foreign, recycled or re-labelled)
 #   5  a recorded core id cannot be verified against a readable live core id
-fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
-  local target=${1:-} expected=${2:-} allow_finished=${3:-} session address json recorded live state label rc=0
+fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [expected-base]
+  local target=${1:-} expected=${2:-} allow_finished=${3:-} expected_base=${4:-}
+  local session address json recorded live state label rc=0
   fm_backend_herdr_core_parse_target "$target" || {
     echo "error: malformed herdr-core target '$target'; expected <session>:<address>" >&2
     return 1
@@ -274,6 +375,13 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
     label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" '(.labels // {})[$key] // ""')
     if [ "$label" != "$(fm_backend_herdr_core_task_id_of_label "$expected")" ]; then
       echo "error: herdr-core address $address carries task label '${label:-none}', not '$(fm_backend_herdr_core_task_id_of_label "$expected")'; refusing to touch another task's terminal" >&2
+      return 4
+    fi
+  fi
+  if [ -n "$expected_base" ]; then
+    label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL" '(.labels // {})[$key] // ""')
+    if [ "$label" != "$expected_base" ]; then
+      echo "error: herdr-core address $address carries base label '${label:-none}', not '$expected_base'; refusing to touch another base's terminal" >&2
       return 4
     fi
   fi
@@ -541,12 +649,12 @@ fm_backend_herdr_core_send_refusal_kind() {  # <stderr-file>
 # verdicts and never retried or retyped.
 #   empty                the text was pasted and submitted
 #   agent_blocked        the program is blocked; nothing was typed
-#   not_ready            the program declined because its status was not idle; nothing was typed
+#   not_ready            the program's own report says it is not at rest; nothing was typed
 #   no_agent             the address is authoritatively finished or gone, or it is not this task's; nothing was typed
 #   send-failed          a local failure before typing (an unreadable read, or an identity this process cannot verify)
 #   uncertain-delivery   the call failed without a stable refusal kind, so bytes may have landed
 fm_backend_herdr_core_deliver() {  # <target> <text> [expected-label]
-  local target=${1:-} text=${2:-} expected=${3:-} status_json reported kind rc=0 err_file
+  local target=${1:-} text=${2:-} expected=${3:-} status_json reported state kind rc=0 err_file
   # `no_agent` is a confident verdict about the core's own record, never a
   # catch-all for a failed read: a transient hiccup must surface as a local
   # failure so no caller drops a delivery expectation on it.
@@ -564,13 +672,35 @@ fm_backend_herdr_core_deliver() {  # <target> <text> [expected-label]
     *) printf 'send-failed'; return 0 ;;
   esac
   reported=$(printf '%s' "$status_json" | jq -r '.reported')
+  state=$(printf '%s' "$status_json" | jq -r '.status')
   err_file=$(mktemp "${TMPDIR:-/tmp}/sq-hc-send.XXXXXX") || { printf 'send-failed'; return 0; }
   if [ "$reported" = true ]; then
-    # A reporting program's own status is the readiness contract: `--if idle`
-    # makes the product itself refuse rather than typing over a running turn or
-    # into a blocked dialog, and nothing is typed on that refusal.
-    fm_backend_herdr_core_cli "$SQUAD_BACKEND_HERDR_CORE_SESSION" send --json --if idle \
-      "$SQUAD_BACKEND_HERDR_CORE_ADDRESS" "$text" >/dev/null 2>"$err_file" && rc=0 || rc=$?
+    # The program's own report decides how it is typed into, and the product's
+    # `--if` accepts only `idle` and `working` - so `--if idle` is the gate for an
+    # exactly-idle program, a `done` program (its turn finished, it is at rest and
+    # accepts the next instruction) is typed plainly, and every other reported
+    # state refuses without typing. Refusing on `working` keeps a steer from
+    # landing mid-turn; `blocked` and `error` mean a person is needed first.
+    case "$state" in
+      idle)
+        fm_backend_herdr_core_cli "$SQUAD_BACKEND_HERDR_CORE_SESSION" send --json --if idle \
+          "$SQUAD_BACKEND_HERDR_CORE_ADDRESS" "$text" >/dev/null 2>"$err_file" && rc=0 || rc=$?
+        ;;
+      done)
+        fm_backend_herdr_core_cli "$SQUAD_BACKEND_HERDR_CORE_SESSION" send --json \
+          "$SQUAD_BACKEND_HERDR_CORE_ADDRESS" "$text" >/dev/null 2>"$err_file" && rc=0 || rc=$?
+        ;;
+      blocked)
+        rm -f "$err_file"
+        printf 'agent_blocked'
+        return 0
+        ;;
+      *)
+        rm -f "$err_file"
+        printf 'not_ready'
+        return 0
+        ;;
+    esac
   else
     # A silent program has no status to test, so `--if idle` would refuse for the
     # ordinary reason "reports nothing". Its composer is the only readable signal,
@@ -656,20 +786,31 @@ fm_backend_herdr_core_name_for_task() {  # <task-id>
 }
 
 # fm_backend_herdr_core_labeled_addresses: every address in <session> whose own
-# `squad.task` label is exactly <task-id>, live or already finished. `hc ls`
-# without `--all` lists live terminals only, and the create failure this
+# `squad.task` label is exactly <task-id> and whose `squad.base` label is this
+# base, live or already finished. The base scope is what keeps a second Squad
+# base on the same core out of this base's inventory: both bases number their
+# tasks from 1, so the task label alone is not unique across the core.
+# `hc ls` without `--all` lists live terminals only, and the create failure this
 # inventory recovers can already have run to completion, so the read asks for
 # finished terminals too; it is read-only and never authorizes anything on its
 # own. The product's `--label` filter is re-checked locally, because this list
 # authorizes closing a terminal that may have just been created and never
 # recorded.
 fm_backend_herdr_core_labeled_addresses() {  # <session> <task-id>
-  local session=${1:-default} task_id=${2:-} out
+  local session=${1:-default} task_id=${2:-} base out
   [ -n "$task_id" ] || return 1
-  out=$(fm_backend_herdr_core_cli "$session" ls --all --json --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" 2>/dev/null) || return 1
-  printf '%s' "$out" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" --arg id "$task_id" '
-    (.terminals // [])[]
-    | select(((.labels // {})[$key] // "") == $id)
+  base=$(fm_backend_herdr_core_base_name)
+  out=$(fm_backend_herdr_core_cli "$session" ls --all --json \
+    --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" \
+    --label "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL=$base" 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -r \
+    --arg task_key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" \
+    --arg base_key "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL" \
+    --arg id "$task_id" --arg base "$base" '
+    (.terminals // [])
+    | map(select(((.labels // {})[$task_key] // "") == $id))
+    | map(select(((.labels // {})[$base_key] // "") == $base))
+    | .[]
     | .address // empty
   ' 2>/dev/null
 }
@@ -677,22 +818,24 @@ fm_backend_herdr_core_labeled_addresses() {  # <session> <task-id>
 # fm_backend_herdr_core_close_created: recover a create that failed or returned an
 # unreadable address. The product documents that a failed `hc run` may still have
 # run the program, so the adapter resolves the terminal it may just have made by
-# its unique task label and closes exactly that address. Nothing else is touched,
-# and a close that cannot be confirmed names the exact address to retire by hand.
+# its task label scoped to this base, and closes exactly that address. Nothing
+# else is touched, and a close that cannot be confirmed names the exact address to
+# retire by hand.
 fm_backend_herdr_core_close_created() {  # <session> <task-id>
-  local session=${1:-default} task_id=${2:-} addresses address
+  local session=${1:-default} task_id=${2:-} addresses address base
+  base=$(fm_backend_herdr_core_base_name)
   addresses=$(fm_backend_herdr_core_labeled_addresses "$session" "$task_id") || {
-    echo "warning: could not read the herdr-core inventory to recover a failed create for task $task_id in session '$session'; check 'HC_SESSION=$session hc ls --all --label $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id' and close that exact address by hand" >&2
+    echo "warning: could not read the herdr-core inventory to recover a failed create for task $task_id in session '$session'; check 'HC_SESSION=$session hc ls --all --label $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id --label $SQUAD_BACKEND_HERDR_CORE_BASE_LABEL=$base' and close that exact address by hand" >&2
     return 0
   }
   [ -n "$addresses" ] || return 0
   while IFS= read -r address; do
     [ -n "$address" ] || continue
-    # The expected label is Squad's caller-facing form of the label already
-    # filtered above, so the close re-checks the terminal's own task label
-    # before both `kill` and `rm` and never retires an address the core has
-    # recycled in between.
-    fm_backend_herdr_core_kill "$session:$address" '' "sq-$task_id" >/dev/null 2>&1 && continue
+    # The expected labels are Squad's caller-facing form of the labels already
+    # filtered above, so the close re-checks the terminal's own task AND base
+    # labels before both `kill` and `rm` and never retires an address the core
+    # has recycled in between.
+    fm_backend_herdr_core_kill "$session:$address" '' "sq-$task_id" "$base" >/dev/null 2>&1 && continue
     echo "warning: could not close the herdr-core terminal $session:$address created for task $task_id; close that exact address by hand: HC_SESSION=$session hc kill $address; HC_SESSION=$session hc rm $address" >&2
   done <<EOF
 $addresses
@@ -704,17 +847,27 @@ fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
   [ -n "$label" ] || { echo 'error: herdr-core create_task needs a task label' >&2; return 1; }
   [ -n "$cwd" ] && [ -d "$cwd" ] || { echo "error: herdr-core create_task needs an existing directory, got '$cwd'" >&2; return 1; }
   task_id=$(fm_backend_herdr_core_task_id_of_label "$label")
-  base=$(basename "${SQUAD_BASE:-${SQUAD_ROOT:-squad}}")
+  base=$(fm_backend_herdr_core_base_name)
   name=$(fm_backend_herdr_core_name_for_task "$task_id")
-  # Refuse a second live terminal for the same task label: a duplicate endpoint
-  # would split one task across two terminals.
-  out=$(fm_backend_herdr_core_cli "$session" ls --json --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" 2>/dev/null) || {
+  # Refuse a second live terminal for this base's task label: a duplicate endpoint
+  # would split one task across two terminals. Another base's terminal with the
+  # same id is not a duplicate of this task.
+  out=$(fm_backend_herdr_core_cli "$session" ls --json \
+    --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" \
+    --label "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL=$base" 2>/dev/null) || {
     echo "error: cannot read the herdr-core inventory for session '$session'" >&2
     return 1
   }
-  duplicate=$(printf '%s' "$out" | jq -r '[.terminals[]?] | length' 2>/dev/null) || duplicate=unknown
+  duplicate=$(printf '%s' "$out" | jq -r \
+    --arg task_key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" \
+    --arg base_key "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL" \
+    --arg id "$task_id" --arg base "$base" '
+    [.terminals[]?
+     | select(((.labels // {})[$task_key] // "") == $id)
+     | select(((.labels // {})[$base_key] // "") == $base)] | length
+  ' 2>/dev/null) || duplicate=unknown
   if [ "$duplicate" != 0 ]; then
-    echo "error: a live herdr-core terminal already carries $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id ($duplicate found); refusing a duplicate endpoint" >&2
+    echo "error: a live herdr-core terminal already carries $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id in base '$base' ($duplicate found); refusing a duplicate endpoint" >&2
     return 1
   fi
   # stdout carries only the product's JSON record and stderr only its message, so
@@ -840,14 +993,16 @@ fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
 # fm_backend_herdr_core_kill: close ONE exact address after the identity triple,
 # and confirm both destructive steps. This close never takes `--all`, never a
 # name, never a server-global verb, and never an address whose label or core id
-# does not match.
+# does not match. A fourth argument additionally requires the terminal's own
+# `squad.base` label to name this base, which is what the failed-create recovery
+# needs: it acts on an address that has no task record behind it.
 # Refuses (nonzero) whenever the exact close cannot be confirmed, so a caller
 # that preserves metadata on refusal keeps a retryable record.
-fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label]
-  local target=${1:-} expected=${3:-} session address out state removed
+fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label] [expected-base]
+  local target=${1:-} expected=${3:-} expected_base=${4:-} session address out state removed
   # A task whose program already exited is a finished address; the close still
   # has to retire it, so finished is accepted here and nowhere else.
-  fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
+  fm_backend_herdr_core_verify "$target" "$expected" 1 "$expected_base" || return 1
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   out=$(fm_backend_herdr_core_cli "$session" kill --json "$address" 2>/dev/null) || {
@@ -862,7 +1017,7 @@ fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label]
   # The second destructive step checks the same identity again: another actor can
   # remove the finished address and the core can recycle it for a new terminal
   # between the close and the removal.
-  fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
+  fm_backend_herdr_core_verify "$target" "$expected" 1 "$expected_base" || return 1
   if ! out=$(fm_backend_herdr_core_cli "$session" rm --json "$address" 2>/dev/null); then
     echo "error: herdr-core refused to remove the finished terminal $address in session '$session'" >&2
     return 1
@@ -872,6 +1027,51 @@ fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label]
     echo "error: herdr-core did not confirm removal of $address (removed='${removed:-none}')" >&2
     return 1
   fi
+}
+
+# fm_backend_herdr_core_retire_endpoint: retire a task's PREVIOUS exact endpoint
+# before a relaunch creates its replacement. A task whose harness exited normally
+# leaves a live, agentless shell; a core restart leaves a `finished` record. Both
+# still carry this task's labels, so without this step the replacement is refused
+# as a duplicate (live shell) or the husk is left unmanaged on the shared core
+# (finished). The close is the same identity-checked one teardown uses, and an
+# address the core authoritatively no longer has is already retired.
+#
+#   0  the recorded address is gone, or was closed and confirmed
+#   1  the address is present but could not be closed: the relaunch refuses
+fm_backend_herdr_core_retire_endpoint() {  # <target> <expected-label>
+  local target=${1:-} expected=${2:-} session address state rc=0
+  fm_backend_herdr_core_parse_target "$target" || {
+    echo "error: malformed herdr-core target '$target'; cannot retire the previous endpoint" >&2
+    return 1
+  }
+  session=$SQUAD_BACKEND_HERDR_CORE_SESSION
+  address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
+  fm_backend_herdr_core_session_ok "$session" || return 1
+  fm_backend_herdr_core_get_json "$session" "$address" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) ;;
+    3) return 0 ;;
+    *)
+      echo "error: the previous herdr-core endpoint $target for $expected could not be read in session '$session'; refusing to create a replacement beside an endpoint this process cannot verify" >&2
+      return 1
+      ;;
+  esac
+  # Only an endpoint confidently without an agent is retired here. A read that is
+  # ambiguous or unreadable, or that still sees a live agent, refuses: a relaunch
+  # must never kill a program that may still be working.
+  state=$(fm_backend_herdr_core_agent_state "$target" 2>/dev/null || printf 'unreadable')
+  case "$state" in
+    dead|missing) ;;
+    *)
+      echo "error: the previous herdr-core endpoint $target for $expected is $state; refusing to retire an endpoint that may still be running a program" >&2
+      return 1
+      ;;
+  esac
+  fm_backend_herdr_core_kill "$target" '' "$expected" || {
+    echo "error: the previous herdr-core endpoint $target for $expected could not be closed; refusing to create a replacement" >&2
+    return 1
+  }
 }
 
 # fm_backend_herdr_core_task_closed: teardown's confirmation that the exact

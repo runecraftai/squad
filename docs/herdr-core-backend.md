@@ -25,15 +25,17 @@ A task records the session it was created in, and every later operation refuses 
 ## Never starts a core
 
 Any `hc` call starts a core when none is running, and a core started that way inherits the caller's whole environment - including credentials and other backends' markers.
-So the adapter refuses to run `hc` at all unless the session's socket is already present:
+So the adapter refuses to run `hc` at all unless the session's socket exists **and** a probe proves a listener answers on it:
 
 ```text
-error: herdr-core is not running for session 'default' (no core socket at /run/user/1000/herdr-core/default.sock); Squad never starts the core - start Herdr or run 'hc server start' yourself
+error: herdr-core is not running for session 'default' (no core listening at /run/user/1000/herdr-core/default.sock); Squad never starts the core - start Herdr or run 'hc server start' yourself
 ```
 
+A socket file alone is not a core: after an unclean core death the file survives while nothing accepts on it, and the next `hc` call would start a core with Squad's environment.
+The listener probe is a unix-socket connect by a client that cannot start anything - `python3`, then `curl --unix-socket`, then `nc -U -z` - so a stale socket refuses exactly like an absent one, and when none of those clients can prove it the adapter fails closed and names what to install.
 That check runs before the version handshake, before the first `get`, and before every write, so no path in this backend can start a core.
 When the core is absent, the task is a blocker: bring the core up and retry, or spawn on another backend.
-`tests/sq-backend-herdr-core.test.sh` pins the rule by asserting zero `hc` invocations on a session with no socket, and the lab proves the same against a real missing core.
+`tests/sq-backend-herdr-core.test.sh` pins the rule by asserting zero `hc` invocations on a session with no socket and on a session whose socket file is stale, and the lab proves the same against a real missing core.
 
 ## The version and protocol guard
 
@@ -65,16 +67,16 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 
 | Why | Exact command |
 | --- | --- |
-| Is the core listening (before anything else) | a socket test on `$XDG_RUNTIME_DIR/herdr-core/<s>.sock`, or `$HC_SOCKET` |
+| Is the core listening (before anything else) | a socket test on `$XDG_RUNTIME_DIR/herdr-core/<s>.sock`, or `$HC_SOCKET`, then a unix-socket connect by `python3`, `curl --unix-socket` or `nc -U -z` |
 | Protocol handshake | `printf '{"jsonrpc":"2.0","id":1,"method":"hello","params":{"generation":1}}\n' \| hc connect` (bounded by `fm_run_timed`) |
 | Method and parameter contract | `hc schema --json` |
 | Core identity | `hc server status --json` (read only after the socket test) |
-| Inventory for the duplicate check | `hc ls --json --label squad.task=<id>` (live terminals) |
-| Inventory for a failed-create recovery | `hc ls --all --json --label squad.task=<id>` (live and finished) |
+| Inventory for the duplicate check | `hc ls --json --label squad.task=<id> --label squad.base=<base>` (live terminals) |
+| Inventory for a failed-create recovery | `hc ls --all --json --label squad.task=<id> --label squad.base=<base>` (live and finished) |
 | One record read (every identity and state check) | `hc get --json <t>` |
 | Screen and history | `hc read --json --lines <n> <t>` |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
-| Deliver text | `hc send --json --if idle <t> <text>` (reporting program), `hc send --json <t> <text>` (silent program) |
+| Deliver text | `hc send --json --if idle <t> <text>` (a program reporting `idle`), `hc send --json <t> <text>` (a program reporting `done`, or a silent one) |
 | Press one named key | `hc keys --json <t> <key>` |
 | Close | `hc kill --json <t>`, confirm `.state == finished`, then `hc rm --json <t>`, confirm `.removed == <t>` |
 
@@ -83,20 +85,26 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 Not used, by design: `server stop`, `server restart`, `machine *`, `update`, `hc attach`, and every name-addressed write.
 
 Create is the only step that makes a terminal, so it is also the only step that may have to undo one.
-When `hc run` fails, or succeeds without a usable address, the adapter reads back the terminals carrying this task's `squad.task` label - live and finished, because a failed run may already have run to completion - and closes exactly that address, after re-checking that address's own label, before it refuses.
+When `hc run` fails, or succeeds without a usable address, the adapter reads back the terminals carrying this task's `squad.task` label **and this base's** `squad.base` label - live and finished, because a failed run may already have run to completion - and closes exactly that address, after re-checking both of those labels on the address itself, before it refuses.
+Both labels are checked because two bases on one core both number their tasks from 1: without the base scope, a second base's terminal would be refused as a duplicate or, worse, closed by this base's recovery.
 The product documents that a failed `hc run` may still have run the program, so the alternative would be an unrecorded terminal that the next spawn then refuses as a duplicate endpoint.
-Nothing outside that one label is touched, and a close that cannot be confirmed prints the exact address and the `hc kill`/`hc rm` commands to retire it by hand.
+Nothing outside those labels is touched, and a close that cannot be confirmed prints the exact address and the `hc kill`/`hc rm` commands to retire it by hand.
+
+A relaunch makes a replacement terminal, so it first retires the exact address the task still records.
+A task whose harness exited on its own leaves a live but agentless shell; a core restart leaves a `finished` record.
+Both still carry this task's labels, so the relaunch closes that one address through the same identity-checked path before it creates the replacement: without it the live shell would refuse the replacement as a duplicate and the finished record would stay behind as an unmanaged terminal in the person's registry.
+Only an endpoint that is confidently without an agent is retired - a read that is ambiguous or unreadable, or that still sees a live agent, refuses the relaunch rather than killing a program that may still be working.
 
 ## Address-exact operations only
 
 Every write names one opaque address that Squad created:
 
-- **No sweep.** `server stop`, `server restart`, `machine *`, and `update` are never called, and no destructive call ever takes `--all`. The only `--all` reads are the label-filtered failed-create inventory and the lab's tripwire; both are read-only, and the inventory authorizes nothing until the address's own `squad.task` label agrees.
+- **No sweep.** `server stop`, `server restart`, `machine *`, and `update` are never called, and no destructive call ever takes `--all`. The only `--all` reads are the label-filtered failed-create inventory and the lab's tripwire; both are read-only, and the inventory authorizes nothing until the address's own `squad.task` and `squad.base` labels agree.
 - **No name selectors.** A recorded address is used verbatim, and this adapter resolves no bare terminal name of its own; ad hoc use passes an exact `<session>:<address>`.
 - **No foreign terminal.** `kill` and `rm` require the cleanup identity triple to agree, checked immediately before `kill` and again before `rm`:
 
   1. the recorded address,
-  2. the terminal's own `squad.task=<id>` label,
+  2. the terminal's own `squad.task=<id>` label (plus `squad.base=<base>` on the failed-create recovery, which has no task record to fall back on),
   3. the recorded `hc_core_id=` against the live core's identity.
 
   A mismatch refuses and keeps the task metadata, so a later rerun can retry once the identity agrees. Teardown then confirms the exact address is authoritatively gone before it retires any record; a still-present address refuses the whole teardown.
@@ -109,7 +117,9 @@ One address belongs to one core's registry, so an address is only meaningful ins
 
 Delivery types text and submits it in one product call, so the tmux-shaped retry loop has no counterpart here.
 
-- A program that reports OSC 7501 status (`pi`, `claude-code`, `opencode` 2.x) is sent with `--if idle`. The product itself refuses rather than typing over a running turn or into a blocked dialog.
+- A program that reports `idle` is sent with `--if idle`. The product itself refuses rather than typing over a running turn or into a blocked dialog.
+- A program that reports `done` is sent once without `--if`: its turn finished and it is at rest, but the product's `--if` vocabulary has no `done`, so gating on `idle` would refuse every steer to it forever.
+- A program reporting `working`, `error`, `blocked`, or any other reported state is refused before anything is typed - `working` because a steer must not land mid-turn, `blocked` and `error` because a person is needed first.
 - A program that reports no status is sent once, without `--if`. Its composer is read first, and only positive evidence of unsent text (`pending`) refuses the send.
 
 Verdicts reach `bin/sq-send.sh` unchanged:
@@ -118,7 +128,7 @@ Verdicts reach `bin/sq-send.sh` unchanged:
 | --- | --- |
 | `empty` | The text was pasted and submitted. |
 | `agent_blocked` | The program is blocked, so typing would answer its dialog. Nothing was typed. |
-| `not_ready` | The program declined because its status was not idle, or its composer positively holds unsent text. Nothing was typed. |
+| `not_ready` | The program's own report says it is not at rest, or its composer positively holds unsent text. Nothing was typed. |
 | `no_agent` | The core authoritatively reports the address finished or gone, or it carries another task's label. Nothing was typed. |
 | `uncertain-delivery` | The call failed without a stable refusal kind, so bytes may have landed. Never retype; read the pane. |
 | `send-failed` | A local failure before typing: an unreadable read, a core identity this process cannot verify, or no temporary file for the product's error envelope. Nothing was typed, and a transient read is never reported as an absent agent. |
@@ -168,6 +178,7 @@ The durable lease is returned at teardown, exactly as on every other session-pro
 The core serves the person's own terminals, the desktop app, and their phone.
 
 - Never `kill`, `rm`, or restart anything Squad did not create.
+- Every inventory is filtered by `squad.task` **and** `squad.base`, so a second Squad base on the same core is neither counted as a duplicate nor closed by this base's recovery.
 - Never a `--all` sweep, a server-global verb, or a name selector on a destructive call.
 - Never change the person's app settings, telemetry, or core configuration.
 - The adapter only writes the two Squad labels it owns, on terminals it created.

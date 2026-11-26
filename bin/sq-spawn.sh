@@ -842,7 +842,7 @@ spawn_abort_cleanup() {
     # Exactly the address this spawn created, verified against its own task
     # label by the adapter: no sweep, no name, and no other terminal.
     fm_backend_herdr_core_kill "$HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS" '' "sq-$ID" >/dev/null 2>&1 || \
-      echo "warning: could not close the herdr-core terminal $HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS for $ID; no task record names it yet, so close that exact address by hand: HC_SESSION=$HERDR_CORE_SESSION hc kill $HERDR_CORE_ADDRESS; HC_SESSION=$HERDR_CORE_SESSION hc rm $HERDR_CORE_ADDRESS" >&2
+      echo "warning: could not close the herdr-core terminal $HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS for $ID; close that exact address by hand: HC_SESSION=$HERDR_CORE_SESSION hc kill $HERDR_CORE_ADDRESS; HC_SESSION=$HERDR_CORE_SESSION hc rm $HERDR_CORE_ADDRESS" >&2
   fi
   if [ -n "${SPAWN_TUIOS_LEASE:-}" ]; then
     tuios_release_lease "$SPAWN_TUIOS_LEASE" || true
@@ -2281,6 +2281,17 @@ EOF
       echo 'error: herdr-core core identity is unreadable; refusing to create a task endpoint' >&2
       exit 1
     }
+    if [ -n "${RELAUNCH_EXISTING_META:-}" ] \
+      && [ "$(fm_backend_of_meta "$STATE/$ID.meta")" = herdr-core ]; then
+      # A relaunch retires the exact endpoint this task still owns - a finished
+      # husk from a core restart, or a live shell whose harness exited - through
+      # the same identity-checked close teardown uses, so the replacement is not
+      # refused as a duplicate and no unmanaged terminal is left on the core.
+      HERDR_CORE_PREVIOUS_TARGET=$(fm_backend_target_of_meta "$STATE/$ID.meta")
+      if [ -n "$HERDR_CORE_PREVIOUS_TARGET" ]; then
+        fm_backend_herdr_core_retire_endpoint "$HERDR_CORE_PREVIOUS_TARGET" "sq-$ID" || exit 1
+      fi
+    fi
     HERDR_CORE_ADDRESS=$(fm_backend_herdr_core_create_task "$HERDR_CORE_SESSION" "$W" "$PROJ_ABS") || exit 1
     HERDR_CORE_ABORT_CLEANUP=1
     if ! fm_backend_opaque_address_valid "$HERDR_CORE_ADDRESS"; then
@@ -3313,7 +3324,10 @@ META_WINDOW=$T
   fi
 } > "$STATE/$ID.meta"
 TUIOS_ABORT_CLEANUP=0
-HERDR_CORE_ABORT_CLEANUP=0
+# The herdr-core terminal is created and recorded before the launch is delivered,
+# so its abort cleanup stays armed until that delivery is confirmed: a refused or
+# uncertain launch must close the exact address it created instead of leaving a
+# live labelled terminal behind a published record.
 SPAWN_TUIOS_LEASE=
 # Claim the per-attempt sidecar only after all dispatch validation and metadata
 # publication have succeeded, so a competing dispatch cannot launch this task.
@@ -3469,8 +3483,12 @@ fi
 sleep 0.3
 if [ "$BACKEND" = herdr-core ]; then
   # One delivery, one submit: `hc send` pastes the command and presses Enter
-  # itself, and it owns its own quiet/draft settling. Nothing is retyped.
+  # itself, and it owns its own quiet/draft settling. Nothing is retyped. The
+  # abort cleanup stays armed through this call and is disarmed only once the
+  # launch is confirmed, so a refused or uncertain delivery closes exactly the
+  # terminal this spawn created.
   spawn_send_text_line "$T" "$LAUNCH" || exit 1
+  HERDR_CORE_ABORT_CLEANUP=0
 else
   spawn_send_literal "$T" "$LAUNCH"
   sleep 0.3
