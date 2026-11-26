@@ -1024,14 +1024,7 @@ fm_backend_herdr_core_agent_state() {  # <target> [task-id]
   if [ "$rc" -ne 0 ]; then
     case "$rc" in
       3|4) printf 'missing' ;;
-      5) printf 'unreadable' ;;
-      *)
-        if [ -n "$(fm_backend_herdr_core_recorded_core_id "$target" "$id" 2>/dev/null || true)" ]; then
-          printf 'unreadable'
-        else
-          printf 'missing'
-        fi
-        ;;
+      *) printf 'unreadable' ;;
     esac
     return 0
   fi

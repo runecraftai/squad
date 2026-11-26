@@ -1048,6 +1048,13 @@ write_live_terminal t1 finished pi 'null'
 assert_contains "$(fm_backend_herdr_core_agent_state 'default:t1')" 'dead' 'a finished terminal is dead'
 SQUAD_HC_GET_RC=3 export SQUAD_HC_GET_RC
 assert_contains "$(fm_backend_herdr_core_agent_state 'default:t1')" 'missing' 'an absent address is missing'
+# An ad hoc address records no metadata, so the read itself is the only verdict
+# authority: a failed read is unverifiable, never an authoritative absence.
+SQUAD_HC_GET_RC=1 export SQUAD_HC_GET_RC
+assert_contains "$(fm_backend_herdr_core_agent_state 'default:t1')" 'unreadable' 'a failed ad hoc read is unreadable'
+[ "$(fm_backend_agent_alive herdr-core 'default:t1')" = unknown ] \
+  || fail 'an unreadable ad hoc read must not report the agent as dead'
+assert_contains "$(fm_backend_herdr_core_agent_state 'nocolon')" 'unreadable' 'a malformed target is unreadable'
 SQUAD_HC_GET_RC=0 export SQUAD_HC_GET_RC
 # A live address carrying another task's label is not THIS task's endpoint.
 fm_write_meta "$SQUAD_STATE_OVERRIDE/target.meta" \
@@ -1058,7 +1065,7 @@ SQUAD_HC_LABEL_TASK=other write_live_terminal t1 live pi '{"app":"pi","state":"i
 assert_contains "$(fm_backend_herdr_core_agent_state 'default:t1')" 'missing' 'a foreign label is missing for this task'
 rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
 write_world
-pass 'agent state separates alive, dead, and missing'
+pass 'agent state separates alive, dead, missing and unreadable'
 
 # --- key names ------------------------------------------------------------
 
@@ -1306,10 +1313,10 @@ done
 verdict=$( XDG_RUNTIME_DIR="$TMP_ROOT/empty-runtime" fm_backend_herdr_core_busy_state 'default:t1' )
 [ "$verdict" = unknown ] || fail "busy state without a core is unknown (got '$verdict')"
 verdict=$( XDG_RUNTIME_DIR="$TMP_ROOT/empty-runtime" fm_backend_herdr_core_agent_state 'default:t1' )
-case "$verdict" in
-  missing|unreadable) ;;
-  *) fail "agent state without a core is missing or unreadable (got '$verdict')" ;;
-esac
+# No core listening is an unverifiable read, not an absent endpoint: `missing`
+# would let a caller replace an endpoint this process cannot see.
+[ "$verdict" = unreadable ] \
+  || fail "agent state without a core must be unreadable (got '$verdict')"
 [ ! -s "$SQUAD_HC_LOG" ] || fail "no primitive may invoke hc without a listening core (saw: $(call_log))"
 pass 'no primitive invokes hc without a listening core'
 
