@@ -263,8 +263,9 @@ fm_backend_herdr_core_base_name() {
   local raw label path hash
   raw=${SQUAD_BASE:-${SQUAD_ROOT:-squad}}
   path=$(cd "$raw" 2>/dev/null && pwd -P) || path=$raw
-  label=$(basename "$path" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')
+  label=$(printf '%s' "${path##*/}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | tr -s '-')
   label=${label#-}
+  label=${label%-}
   [ -n "$label" ] || label=base
   if command -v shasum >/dev/null 2>&1; then
     hash=$(printf '%s' "$path" | shasum -a 256 | awk '{print substr($1,1,8)}')

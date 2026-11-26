@@ -164,7 +164,7 @@ New spawns choose the backend in this order: an explicit `--backend` flag that c
 If more than one runtime marker is present, detection resolves innermost-first: `$TMUX` is checked before `HERDR_ENV=1`, which is checked before cmux's primary `CMUX_WORKSPACE_ID` marker and its documented fallback signals - tmux or herdr started from inside a cmux terminal is the innermost, currently-executing layer, while cmux itself (a terminal application, not a nestable multiplexer) is always checked last.
 See [`docs/cmux-backend.md`](cmux-backend.md#runtime-detection) for why cmux can be selected when `CMUX_WORKSPACE_ID` is absent.
 Auto-detected herdr or cmux prints a stderr notice naming `config/backend` and `--backend tmux` as opt-outs; auto-detected tmux stays silent to preserve existing default behavior.
-Zellij, Orca, and TUIOS are never auto-detected; select them by putting the name in a local `config/backend` file, by exporting `SQUAD_BACKEND=<name>`, or by telling the sergeant at arms in chat.
+Zellij, Orca, TUIOS, and herdr-core are never auto-detected; select them by putting the name in a local `config/backend` file, by exporting `SQUAD_BACKEND=<name>`, or by telling the sergeant at arms in chat.
 Any value other than `tmux`, `herdr`, `zellij`, `orca`, `cmux`, `tuios`, or `herdr-core` is rejected until another adapter is implemented and verified.
 `sq-spawn.sh` accepts `tmux`, `herdr`, `zellij`, `orca`, `cmux`, `tuios`, and `herdr-core` for ship and recon tasks; `backend=orca`, `backend=cmux`, `backend=tuios`, and `backend=herdr-core` still refuse `--xo` until XO launch semantics are designed for each.
 `codex-app` is not an accepted runtime backend yet; [`docs/codex-app-backend.md`](codex-app-backend.md) owns the Codex App boundary.

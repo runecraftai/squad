@@ -805,6 +805,17 @@ label_two=$(base_label_for "$TMP_ROOT/two/squad")
   || fail "two bases with the same directory name must get different labels (got '$label_one')"
 [ "$label_one" = "$(base_label_for "$TMP_ROOT/one/squad")" ] \
   || fail 'a base label must be stable for one base path'
+# The persisted base label is the documented `<base-directory>-<short-hash>`,
+# one separator and nothing else: an extra separator is a different identity than
+# the one this base both writes onto its terminals and filters its inventories by.
+assert_base_label_shape() {  # <expected-directory-name> <label>
+  case "$2" in *[!a-z0-9_-]*) fail "a base label may only use a-z 0-9 - _ (got '$2')" ;; esac
+  [ "$2" = "$1-${2##*-}" ] \
+    || fail "a base label must be <base-directory>-<hash> with exactly one separator (got '$2')"
+}
+assert_base_label_shape base "$BASE_LABEL"
+assert_base_label_shape squad "$label_one"
+assert_base_label_shape squad "$label_two"
 write_world
 write_list_all t5 finished probe "$label_two"
 cp "$TMP_ROOT/list-all.json" "$TMP_ROOT/other-base-inventory.json"
