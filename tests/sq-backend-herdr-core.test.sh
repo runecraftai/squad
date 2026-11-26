@@ -440,8 +440,8 @@ for _ in $(seq 1 100); do [ -S "$home_socket" ] && break; sleep 0.05; done
 [ -S "$home_socket" ] || fail 'could not bind the home state-directory core fixture'
 ( unset XDG_RUNTIME_DIR XDG_STATE_HOME HC_SOCKET; HOME="$home_root" fm_backend_herdr_core_core_present default ) \
   && home_rc=0 || home_rc=$?
-[ "$home_rc" -eq 0 ] || fail 'a core in $HOME/.local/state must be found when XDG_RUNTIME_DIR and XDG_STATE_HOME are unset'
-pass 'a core in $HOME/.local/state is reachable without a runtime directory'
+[ "$home_rc" -eq 0 ] || fail "a core in ~/.local/state must be found when XDG_RUNTIME_DIR and XDG_STATE_HOME are unset"
+pass "a core in ~/.local/state is reachable without a runtime directory"
 
 # And a missing state-directory core refuses at that exact path instead of a
 # /run/user path no core ever used.
