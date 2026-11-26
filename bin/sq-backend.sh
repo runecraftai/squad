@@ -634,10 +634,10 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
       fi
       ;;
     herdr-core)
-      # The cleanup identity is the triple: the recorded opaque address, the
-      # task label the terminal itself carries (checked again in the adapter
-      # immediately before kill and again before rm), and the core id whose
-      # registry owns that address.
+      # The cleanup identity is the quadruple: the recorded opaque address, the
+      # task label and base label the terminal itself carries (both checked again
+      # in the adapter immediately before kill and again before rm), and the core
+      # id whose registry owns that address.
       [ "$binding" = "$id" ] || {
         echo "REFUSED: herdr-core endpoint metadata for task $id lacks an exact task binding; preserving task state." >&2
         return 1

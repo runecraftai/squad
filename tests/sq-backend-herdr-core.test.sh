@@ -316,6 +316,7 @@ export SQUAD_ROOT SQUAD_BASE SQUAD_STATE_OVERRIDE
 fm_backend_source herdr-core || fail 'the dispatcher must source the herdr-core adapter'
 
 BASE_LABEL=$(fm_backend_herdr_core_base_name)
+BASE_HASH=${BASE_LABEL##*-}
 base_label_for() {  # <base-path>
   (
     SQUAD_BASE=$1
@@ -817,6 +818,33 @@ rm -f "$TMP_ROOT/other-base-inventory.json"
 write_world
 pass 'the base label is unique per base path and scopes the recovery close'
 
+# The base label is part of the identity on EVERY recorded-address close and read,
+# not only the failed-create recovery. Bases A and B share one core and both have
+# task `1`; A's recorded address `t1` is lost, the core recycles it for B's task
+# `1`, and A's teardown then reads a live terminal carrying `squad.task=1` and A's
+# recorded core id. It must still refuse, because the terminal's `squad.base` is
+# B's - closing it would destroy a terminal this base never created.
+write_world
+fm_write_meta "$SQUAD_STATE_OVERRIDE/recycled.meta" \
+  "window=default:t1" "endpoint_task_id=recycled" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t1" "hc_core_id=core-a"
+( SQUAD_HC_LABEL_TASK=recycled SQUAD_HC_LABEL_BASE="$label_two" \
+    write_live_terminal t1 live pi '{"app":"pi","state":"idle"}' )
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+out=$(fm_backend_herdr_core_kill 'default:t1' '' 'sq-recycled' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail "a recorded-address close must refuse another base's terminal at the recycled address"
+assert_contains "$out" "refusing to touch another base's terminal" 'the recorded-address base refusal names the reason'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail "another base's terminal must never reach kill or rm"
+fm_backend_herdr_core_status_json 'default:t1' >/dev/null 2>&1 && status_rc=0 || status_rc=$?
+[ "$status_rc" -eq 4 ] || fail "a status read must refuse another base's terminal (rc=$status_rc)"
+[ "$(fm_backend_herdr_core_agent_state 'default:t1')" = missing ] \
+  || fail "another base's terminal is not this task's"
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
+write_world
+pass 'every recorded-address close and read requires the squad.base label'
+
 # --- retiring a previous endpoint before a relaunch ------------------------
 
 relaunch_meta() {  # <id> <address>
@@ -1057,10 +1085,22 @@ assert_contains "$out" 'could not close the herdr-core terminal' 'an unclosable 
 rm -f "$TMP_ROOT/list-all.json"
 
 short_name=$(fm_backend_herdr_core_name_for_task 'short-id')
-[ "$short_name" = 'sq-short-id' ] || fail "short task ids name the terminal directly (got '$short_name')"
-# The id shapes `demo` and `sq-demo` both exist, so a bare `sq-` prefix is not
-# injective: the already-prefixed id is disambiguated by a hash, exactly as a
-# long id is.
+[ "$short_name" = "sq-$BASE_HASH-short-id" ] \
+  || fail "a clean short task id is named directly under its base (got '$short_name')"
+# The product's name registry is core-global while every base numbers its tasks
+# from the same start, so the name carries the base identity too: bases A and B
+# both spawning task `1` must not both ask for `sq-1` and collide on name_taken.
+name_one=$( ( SQUAD_BASE="$TMP_ROOT/one/squad"; fm_backend_herdr_core_name_for_task '1' ) )
+name_two=$( ( SQUAD_BASE="$TMP_ROOT/two/squad"; fm_backend_herdr_core_name_for_task '1' ) )
+[ "$name_one" != "$name_two" ] \
+  || fail "the same task id in two bases must get different terminal names (got '$name_one')"
+for name in "$name_one" "$name_two"; do
+  [ "${#name}" -le 32 ] || fail "a base-scoped name must fit the 32-character limit (got '$name')"
+  case "$name" in *[!a-z0-9_-]*) fail "a name may only use a-z 0-9 - _ (got '$name')" ;; esac
+done
+# The id shapes `demo` and `sq-demo` both exist, so a name built by stripping the
+# prefix is not injective: the id's own slug is kept, so the two ids get two
+# distinct names instead of both claiming `sq-demo`.
 plain_name=$(fm_backend_herdr_core_name_for_task 'demo')
 prefixed_name=$(fm_backend_herdr_core_name_for_task 'sq-demo')
 [ "$plain_name" != "$prefixed_name" ] || fail "the ids demo and sq-demo must not share one terminal name (got '$plain_name')"

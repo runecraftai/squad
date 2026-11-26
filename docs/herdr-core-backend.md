@@ -60,8 +60,9 @@ The shared target a reader sees is `<hc_session>:<hc_address>`, with `hc_session
 Task metadata therefore carries `backend=herdr-core`, `endpoint_task_id=`, `hc_session=`, `hc_address=`, and `hc_core_id=`.
 Every created terminal carries two labels: `squad.task=<task-id>` (the identity a destructive step checks) and `squad.base=<base-label>` (Squad's grouping, since herdr-core has no workspace or session layer).
 The base label is the readable base directory name plus a short hash of the physical resolved base path, for example `squad-1a2b3c4d`, so two bases whose directory name matches (the ordinary `squad` clone name) never share one label.
-The terminal name is `sq-<task-id>` for a clean short task id that carries no `sq-` prefix.
-Every other id - a longer one, an already-prefixed one such as `sq-demo`, or one whose sanitized slug differs from it - is truncated and disambiguated by a hash of the full id, so two task ids never share one name and every name fits the product's 32-character limit of a-z 0-9 - _.
+The terminal name is derived from the base identity as well as the task id, because the product's name registry is core-global while every base numbers its tasks from the same start.
+It is `sq-<base-hash>-<task-id>` when the id survives slugification unchanged and the whole name fits, so task `1` in two bases becomes `sq-1a2b3c4d-1` and `sq-9f8e7d6c-1`.
+Every other id - a longer one, or one whose sanitized slug differs from it - is truncated and disambiguated by a hash of the full id, so `demo` and `sq-demo` cannot share one name inside a base either, and every name fits the product's 32-character limit of a-z 0-9 - _.
 
 ## Commands this backend runs
 
@@ -103,13 +104,14 @@ Only an endpoint that is confidently without an agent is retired - a read that i
 Every write names one opaque address that Squad created:
 
 - **No sweep.** `server stop`, `server restart`, `machine *`, and `update` are never called, and no destructive call ever takes `--all`. The only `--all` reads are the label-filtered failed-create inventory and the lab's tripwire; both are read-only, and the inventory authorizes nothing until the address's own `squad.task` and `squad.base` labels agree.
-- **No name selectors.** A recorded address is used verbatim, and this adapter resolves no bare terminal name of its own; ad hoc use passes an exact `<session>:<address>`.
-- **No foreign terminal.** `kill` and `rm` require the cleanup identity triple to agree, checked immediately before `kill` and again before `rm`:
+- **No name selectors.** A recorded address is used verbatim, and this adapter resolves no bare terminal name of its own; ad hoc use passes an exact `<session>:<address>` whose terminal carries this base's own two labels, because an unlabelled or foreign terminal is not one this base may read or close.
+- **No foreign terminal.** `kill` and `rm` require the cleanup identity to agree, checked immediately before `kill` and again before `rm`:
 
   1. the recorded address,
-  2. the terminal's own `squad.task=<id>` label (plus `squad.base=<base>` on the failed-create recovery, which has no task record to fall back on),
+  2. the terminal's own `squad.task=<id>` label **and** its own `squad.base=<base>` label - the task label alone is not unique across bases, so the base label is required on every close, and the caller's own base label is the one used when no explicit one is passed,
   3. the recorded `hc_core_id=` against the live core's identity.
 
+  The same base label is required by every read and write this backend performs, so a recycled address that now carries another base's terminal is refused rather than projected or closed.
   A mismatch refuses and keeps the task metadata, so a later rerun can retry once the identity agrees. Teardown then confirms the exact address is authoritatively gone before it retires any record; a still-present address refuses the whole teardown.
 
 One address belongs to one core's registry, so an address is only meaningful inside the core that issued it. The recorded core id and the recorded session are both re-checked, and a task whose recorded session or core no longer matches refuses every write rather than resolving against whatever is running.
@@ -185,6 +187,7 @@ The core serves the person's own terminals, the desktop app, and their phone.
 
 - Never `kill`, `rm`, or restart anything Squad did not create.
 - Every inventory is filtered by `squad.task` **and** `squad.base`, so a second Squad base on the same core is neither counted as a duplicate nor closed by this base's recovery. The base label carries a short hash of the physical base path, so two bases with the same directory name are still distinguished.
+- The product's terminal name is base-scoped for the same reason: the name registry is core-global, so `sq-<base-hash>-<task-id>` keeps task `1` in two bases from colliding on `name_taken`.
 - Never a `--all` sweep, a server-global verb, or a name selector on a destructive call.
 - Never change the person's app settings, telemetry, or core configuration.
 - The adapter only writes the two Squad labels it owns, on terminals it created.

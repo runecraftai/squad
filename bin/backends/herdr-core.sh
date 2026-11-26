@@ -34,10 +34,11 @@
 #     a second Squad base sharing the core is neither a duplicate nor a target.
 #     The base value is the readable base label plus a short hash of the physical
 #     base path, so two bases with the same directory name never share it.
-#     The cleanup identity is the triple (recorded address, `squad.task=<id>`
-#     label, recorded core id), plus the `squad.base=<base>` label on the
-#     failed-create recovery, checked immediately before `kill` and again
-#     before `rm`.
+#     The cleanup identity is the quadruple (recorded address, `squad.task=<id>`
+#     label, `squad.base=<base>` label, recorded core id), checked immediately
+#     before `kill` and again before `rm`. The task label alone is not unique
+#     across bases, so every close requires the base label too, defaulting to
+#     this base's own.
 #   * A RELAUNCH RETIRES ITS OWN PREVIOUS ENDPOINT. Before a replacement is
 #     created, the exact recorded address this task still owns is closed through
 #     the same identity-checked path, so neither a finished husk nor a live
@@ -229,7 +230,7 @@ fm_backend_herdr_core_cli() {  # <session> <hc args...>
   command "$bin" "$@"
 }
 
-# --- target parsing and the identity triple --------------------------------
+# --- target parsing and the identity quadruple -------------------------------
 
 fm_backend_herdr_core_parse_target() {  # <target> -> session and address globals
   local target=${1:-}
@@ -334,9 +335,10 @@ fm_backend_herdr_core_recorded_core_id() {  # <target>
 # address. `<allow-finished>` is set only by the cleanup path, because a task
 # whose program already exited is a `finished` address that a close must still
 # be able to retire - it never licenses a write of any other kind.
-# `<expected-base>` additionally requires the terminal's own `squad.base` label
-# to be this base, which is the only ownership proof on a close that has no task
-# record to fall back on.
+# `<expected-base>` names the `squad.base` label the terminal must carry, and an
+# empty one means this base's own: two bases sharing one core both number their
+# tasks from 1, so the task label alone never proves ownership, and no close or
+# write may reach a terminal this base did not create.
 # Failure is always a refusal, and the delivery verdict needs to tell an
 # authoritative absence from a local failure, so the reason is in the code:
 #   1  a local failure or an identity that could not be read at all
@@ -346,6 +348,7 @@ fm_backend_herdr_core_recorded_core_id() {  # <target>
 fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [expected-base]
   local target=${1:-} expected=${2:-} allow_finished=${3:-} expected_base=${4:-}
   local session address json recorded live state label rc=0
+  [ -n "$expected_base" ] || expected_base=$(fm_backend_herdr_core_base_name)
   fm_backend_herdr_core_parse_target "$target" || {
     echo "error: malformed herdr-core target '$target'; expected <session>:<address>" >&2
     return 1
@@ -395,12 +398,10 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [
       return 4
     fi
   fi
-  if [ -n "$expected_base" ]; then
-    label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL" '(.labels // {})[$key] // ""')
-    if [ "$label" != "$expected_base" ]; then
-      echo "error: herdr-core address $address carries base label '${label:-none}', not '$expected_base'; refusing to touch another base's terminal" >&2
-      return 4
-    fi
+  label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL" '(.labels // {})[$key] // ""')
+  if [ "$label" != "$expected_base" ]; then
+    echo "error: herdr-core address $address carries base label '${label:-none}', not '$expected_base'; refusing to touch another base's terminal" >&2
+    return 4
   fi
 }
 
@@ -415,8 +416,9 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [
 #   kind/msg  the blocked prompt's own fields, when it carries them
 #   turn, name, cwd, pid, reason, exit_code
 # Returns 3 when the address is authoritatively absent, 4 when the record does
-# not carry the core id and task label this base recorded for <target>, and 5
-# when a recorded core id cannot be verified against a readable live core id.
+# not carry the core id, task label and base label this base recorded for
+# <target>, and 5 when a recorded core id cannot be verified against a readable
+# live core id.
 fm_backend_herdr_core_status_json() {  # <target>
   local target=${1:-} session address json rc=0
   fm_backend_herdr_core_parse_target "$target" || return 1
@@ -798,20 +800,22 @@ fm_backend_herdr_core_container_ensure() {  # <project-cwd> -> session, after th
 
 # fm_backend_herdr_core_name_for_task: the product's own terminal name, which is
 # unique only among live terminals and limited to 32 characters of
-# a-z 0-9 - _. The plain `sq-<id>` form is used only when the id is already its
-# own slug and carries no `sq-` prefix; every other id - a longer one, a
-# prefixed one, or one whose slug differs from it - is truncated and
-# disambiguated by a hash of the full id, so the mapping is injective: the ids
-# `demo` and `sq-demo` cannot both claim the name `sq-demo`.
+# a-z 0-9 - _. The product's registry is core-global while every base numbers its
+# tasks from the same start, so the name is scoped by the base identity as well
+# as the task id: `sq-<base-hash>-<id>`. The plain form is used only when the id
+# is already its own slug and the whole name fits; every other id - a longer one,
+# or one whose slug differs from it - is truncated and disambiguated by a hash of
+# the full id, so `demo` and `sq-demo` cannot claim one name and two bases'
+# task `1` cannot either.
 fm_backend_herdr_core_name_for_task() {  # <task-id>
-  local id=${1:-} slug prefix=sq- suffix full
+  local id=${1:-} slug base hash suffix full
+  base=$(fm_backend_herdr_core_base_name)
+  hash=${base##*-}
   slug=$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')
   slug=${slug#-}
   [ -n "$slug" ] || slug=task
-  # A task id that already carries Squad's own `sq-` prefix is not prefixed twice.
-  case "$slug" in sq-*) prefix='' ;; esac
-  full="$prefix$slug"
-  if [ "$prefix" = sq- ] && [ "$slug" = "$id" ] && [ "${#full}" -le 32 ]; then
+  full="sq-$hash-$slug"
+  if [ "$slug" = "$id" ] && [ "${#full}" -le 32 ]; then
     printf '%s' "$full"
     return 0
   fi
@@ -820,10 +824,10 @@ fm_backend_herdr_core_name_for_task() {  # <task-id>
   else
     suffix=$(printf '%s' "$id" | md5sum | cut -c1-6)
   fi
-  if [ "${#full}" -gt 25 ]; then
-    full=$(printf '%s' "$full" | cut -c1-25)
+  if [ "${#slug}" -gt 13 ]; then
+    slug=$(printf '%s' "$slug" | cut -c1-13)
   fi
-  printf '%s-%s' "$full" "$suffix"
+  printf 'sq-%s-%s-%s' "$hash" "$slug" "$suffix"
 }
 
 # fm_backend_herdr_core_labeled_addresses: every address in <session> whose own
@@ -1005,18 +1009,19 @@ fm_backend_herdr_core_recorded_task_id_for_target() {  # <target>
   fm_meta_get "$meta" endpoint_task_id
 }
 
-# fm_backend_herdr_core_record_owned: does one read of <target> carry the two
+# fm_backend_herdr_core_record_owned: does one read of <target> carry the
 # identities this base recorded for it? A recycled address in a restarted core,
-# or an address another task now owns, has lost one of them, so a status
-# consumer must refuse the record instead of projecting a stranger's state onto
-# the task that recorded the address. A recorded core id that cannot be read is
-# not a mismatch: it is an unverifiable identity, which callers must never
-# confuse with an authoritatively absent endpoint.
-#   0  both recorded identities are present and agree
+# an address another task now owns, or another base's terminal at that address
+# has lost one of them, so a status consumer must refuse the record instead of
+# projecting a stranger's state onto the task that recorded the address. A
+# recorded core id that cannot be read is not a mismatch: it is an unverifiable
+# identity, which callers must never confuse with an authoritatively absent
+# endpoint.
+#   0  the recorded identities are present and agree
 #   1  an identity belongs to something else (foreign, recycled, or re-labelled)
 #   2  a core id is recorded and the live core id cannot be read
 fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
-  local session=${1:-default} target=${2:-} json=${3:-} recorded live recorded_id label rc=0
+  local session=${1:-default} target=${2:-} json=${3:-} recorded live recorded_id label base rc=0
   recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
   if [ -n "$recorded" ]; then
     live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null) || rc=$?
@@ -1028,15 +1033,18 @@ fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
     label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" '(.labels // {})[$key] // ""')
     [ "$label" = "$recorded_id" ] || return 1
   fi
+  base=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL" '(.labels // {})[$key] // ""')
+  [ "$base" = "$(fm_backend_herdr_core_base_name)" ] || return 1
   return 0
 }
 
-# fm_backend_herdr_core_kill: close ONE exact address after the identity triple,
-# and confirm both destructive steps. This close never takes `--all`, never a
-# name, never a server-global verb, and never an address whose label or core id
-# does not match. A fourth argument additionally requires the terminal's own
-# `squad.base` label to name this base, which is what the failed-create recovery
-# needs: it acts on an address that has no task record behind it.
+# fm_backend_herdr_core_kill: close ONE exact address after the identity
+# quadruple, and confirm both destructive steps. This close never takes `--all`,
+# never a name, never a server-global verb, and never an address whose labels or
+# core id do not match. The fourth argument names the terminal's required
+# `squad.base` label and defaults to this base's own: a recorded-address close
+# and the failed-create recovery both need it, because the task label is not
+# unique across bases.
 # Refuses (nonzero) whenever the exact close cannot be confirmed, so a caller
 # that preserves metadata on refusal keeps a retryable record.
 fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label] [expected-base]
