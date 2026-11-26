@@ -113,6 +113,7 @@ Every write names one opaque address that Squad created:
 
   The same base label is required by every read and write this backend performs, so a recycled address that now carries another base's terminal is refused rather than projected or closed.
   A mismatch refuses and keeps the task metadata, so a later rerun can retry once the identity agrees. Teardown then confirms the exact address is authoritatively gone before it retires any record; a still-present address refuses the whole teardown.
+  Forced teardown of an XO closes each herdr-core child under that child home's own base label, because the child was spawned with `SQUAD_BASE` pointing at its home, and it retains the child record unless the exact address is confirmed gone.
 
 One address belongs to one core's registry, so an address is only meaningful inside the core that issued it. The recorded core id and the recorded session are both re-checked, and a task whose recorded session or core no longer matches refuses every write rather than resolving against whatever is running.
 
@@ -204,4 +205,5 @@ If the core reports a protocol generation, version, method, or parameter this ad
 ## Lab
 
 `SQUAD_HC_LAB=1 bin/sq-herdr-core-lab.sh` drives a real spawn, send, peek, crew-state, and teardown against a **private** core created by the lab itself, then proves the commander's default core is byte-identical afterwards.
+Before any tripwire read it runs the adapter's own unix-socket listener probe against the ambient `default` socket, so a socket file left behind by a dead core is a hard stop rather than the call that starts a core with the lab's environment.
 It is the only supported way to exercise this backend on a real core, and it never addresses the shared one.

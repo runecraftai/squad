@@ -25,8 +25,10 @@
 #
 # Tripwire. Before provisioning, the lab records the ambient `default` core's
 # identity, pid, version and full terminal inventory - read only, and only after
-# proving a socket is already present so the read cannot start a core. After the
-# private core is stopped and removed, the identical read must be byte-identical;
+# the adapter's own unix-socket listener probe proves a listener answers on that
+# socket, because a socket file left behind by a dead core is not a running core
+# and the next `hc` call on it would start one with this lab's environment. After
+# the private core is stopped and removed, the identical read must be byte-identical;
 # a missing, stopped, or changed default core is a hard failure, never a warning.
 #
 # Never run this against the commander's core, never point it at `default`, and
@@ -59,34 +61,60 @@ fm_lab_socket() {  # <session>
 # selection and drops the lab's HC_SESSION/HC_SOCKET for the duration of the read.
 fm_lab_ambient() {  # <command...>
   local -a env_args=(-u HC_SESSION -u HC_SOCKET)
+  local -a env_sets=()
   if [ "$AMBIENT_RUNTIME_SET" = 1 ]; then
-    env_args+=("XDG_RUNTIME_DIR=$AMBIENT_RUNTIME")
+    env_sets+=("XDG_RUNTIME_DIR=$AMBIENT_RUNTIME")
   else
     env_args+=(-u XDG_RUNTIME_DIR)
   fi
   if [ "$AMBIENT_CONFIG_SET" = 1 ]; then
-    env_args+=("XDG_CONFIG_HOME=$AMBIENT_CONFIG")
+    env_sets+=("XDG_CONFIG_HOME=$AMBIENT_CONFIG")
   else
     env_args+=(-u XDG_CONFIG_HOME)
   fi
   if [ "$AMBIENT_STATE_SET" = 1 ]; then
-    env_args+=("XDG_STATE_HOME=$AMBIENT_STATE")
+    env_sets+=("XDG_STATE_HOME=$AMBIENT_STATE")
   else
     env_args+=(-u XDG_STATE_HOME)
   fi
-  env "${env_args[@]}" "$@"
+  env "${env_args[@]}" "${env_sets[@]}" "$@"
+}
+
+# fm_lab_ambient_listener_probe: the adapter's own unix-socket listener probe,
+# run under the caller's ambient selection. Only a listener that accepts a
+# connection may license an `hc` read: a socket file left behind by a dead core
+# would make the next `hc` call start one.
+#   0  a listener answers on <socket>
+#   1  nothing is listening
+#   2  no probe client could decide, so the caller fails closed
+fm_lab_ambient_listener_probe() {  # <socket>
+  local socket=$1
+  # shellcheck disable=SC2016 # the script's $1/$2 are its own positional args
+  fm_lab_ambient bash -c '
+    . "$1/bin/sq-backend.sh" >/dev/null 2>&1 || exit 2
+    fm_backend_source herdr-core >/dev/null 2>&1 || exit 2
+    fm_backend_herdr_core_listener_probe "$2"' _ "$LAB_DIR" "$socket"
 }
 
 # fm_lab_default_unit_state: read-only identity and inventory of the ambient
-# core. It refuses unless the socket is already a socket, so this read can never
-# be the call that starts a core.
+# core. It refuses unless the adapter's listener probe proves a core answers on
+# the socket, so this read can never be the call that starts a core.
 fm_lab_default_unit_state() {
-  local socket status inventory
+  local socket status inventory probe_rc=0
   socket="${AMBIENT_RUNTIME:-/run/user/$(id -u)}/herdr-core/default.sock"
   [ -S "$socket" ] || {
     fm_lab_error "the default core is not running (no socket at $socket); the tripwire needs the commander's core already up, and this lab never starts it"
     return 1
   }
+  fm_lab_ambient_listener_probe "$socket" || probe_rc=$?
+  if [ "$probe_rc" -eq 1 ]; then
+    fm_lab_error "no listener answers on the default core socket $socket (a socket file left by a dead core); the tripwire never starts a core, so start Herdr or run 'hc server start' yourself and rerun"
+    return 1
+  fi
+  if [ "$probe_rc" -ne 0 ]; then
+    fm_lab_error "cannot prove a listener answers on the default core socket $socket (no unix-socket probe client could decide); the tripwire never starts a core, so refusing rather than risking a start"
+    return 1
+  fi
   status=$(fm_lab_ambient hc server status --json 2>/dev/null) || {
     fm_lab_error 'cannot read the default core status for the tripwire'
     return 1

@@ -2026,6 +2026,20 @@ cleanup_Squad_home_children() {
         # Zellij titles are scoped by the owning base tag, so forced XO
         # cleanup must verify child tabs as that child base, not the parent.
         ( unset SQUAD_ROOT_OVERRIDE; SQUAD_BASE=$home SQUAD_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" ) 2>/dev/null || true
+      elif [ "$child_backend" = herdr-core ]; then
+        # A child spawned inside an XO home records SQUAD_BASE=$home, so its
+        # terminal carries that home's base label. The close must verify it as
+        # that child base, and the child record may only go once the exact
+        # address is confirmed absent - otherwise forced cleanup would leave a
+        # live, unrecorded terminal on the shared core.
+        ( fm_backend_source herdr-core >/dev/null 2>&1 || exit 1
+          SQUAD_BASE=$home SQUAD_BACKEND_STATE_DIR=$sub_state \
+            fm_backend_herdr_core_task_closed "$child_t" "$child_id" \
+            || SQUAD_BASE=$home SQUAD_BACKEND_STATE_DIR=$sub_state \
+                 fm_backend_kill "$child_backend" "$child_t" '' "sq-$child_id" ) 2>/dev/null || {
+          echo "error: herdr-core terminal $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
+          return 1
+        }
       else
         fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "sq-$child_id" 2>/dev/null || true
       fi

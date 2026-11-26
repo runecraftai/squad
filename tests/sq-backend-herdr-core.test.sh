@@ -1207,6 +1207,28 @@ esac
 [ ! -s "$SQUAD_HC_LOG" ] || fail "no primitive may invoke hc without a listening core (saw: $(call_log))"
 pass 'no primitive invokes hc without a listening core'
 
+# --- the lab tripwire never starts the ambient core -----------------------
+# The lab's tripwire reads the commander's default core before and after the
+# run. A socket file left behind by a dead core is not a running core, so the
+# next `hc` call would start one with the lab's environment; the tripwire must
+# refuse through the adapter's listener probe instead of trusting the socket.
+stale_runtime="$TMP_ROOT/lab-stale-runtime"
+mkdir -p "$stale_runtime/herdr-core" "$TMP_ROOT/lab-project"
+"$PY" - "$stale_runtime/herdr-core/default.sock" <<'PY'
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sys.argv[1])
+s.close()
+PY
+[ -S "$stale_runtime/herdr-core/default.sock" ] || fail 'could not create the stale default-core socket fixture'
+reset_calls
+lab_out=$(SQUAD_HC_LAB=1 SQUAD_HC_LAB_PROJECT="$TMP_ROOT/lab-project" XDG_RUNTIME_DIR="$stale_runtime" \
+  "$ROOT/bin/sq-herdr-core-lab.sh" 2>&1) && lab_rc=0 || lab_rc=$?
+[ "$lab_rc" -ne 0 ] || fail 'the lab must refuse a stale default-core socket'
+[ ! -s "$SQUAD_HC_LOG" ] || fail "the lab tripwire invoked hc on a socket with no listener (saw: $(call_log))"
+assert_contains "$lab_out" 'no listener answers' 'the lab names the stale-socket refusal'
+pass 'the lab tripwire refuses a stale default-core socket without invoking hc'
+
 # --- the launch delivery owns the terminal it created ---------------------
 # The task endpoint is created and recorded before the launch line is delivered,
 # so the abort cleanup must stay armed through that delivery. A refused launch has
@@ -1312,5 +1334,53 @@ case "$(cat "$SQUAD_HC_KILL_LOG")" in
   *'t3'*) fail 'the relaunch must not close the replacement it just created' ;;
 esac
 pass 'a relaunch retires its previous endpoint before creating the replacement'
+
+# --- forced XO cleanup closes a herdr-core child as the child base --------
+# A child spawned inside an XO home records SQUAD_BASE=$home, so its terminal
+# carries that home's base label. Forced teardown must verify the close as the
+# child base (not the parent's) and may retire the child record only once the
+# exact address is gone; otherwise a live terminal is left on the shared core.
+
+test_forced_XO_teardown_closes_herdr_core_child_as_its_home() {
+  local dir state data config home project fakebin out status child_label
+  dir="$TMP_ROOT/teardown-herdr-core-XO-child"
+  state="$dir/state" data="$dir/data" config="$dir/config"
+  home="$dir/XO-home" project="$dir/project" fakebin="$dir/fakebin"
+  mkdir -p "$state" "$data" "$config" "$home/state" "$home/data" "$home/config" \
+    "$home/projects" "$project" "$fakebin"
+  printf 'smhc\n' > "$home/.sq-xo-home"
+  fm_write_meta "$state/smhc.meta" \
+    "window=Squad:sq-smhc" "endpoint_task_id=smhc" "backend=tmux" \
+    "worktree=$home" "project=$home" "kind=xo" "mode=xo" "home=$home"
+  fm_write_meta "$home/state/childhc.meta" \
+    "window=default:t7" "endpoint_task_id=childhc" "backend=herdr-core" \
+    "hc_session=default" "hc_address=t7" "hc_core_id=core-a" \
+    "worktree=$dir/missing-child-worktree" "project=$project" "kind=strike"
+  child_label=$(base_label_for "$home")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  unset SQUAD_HC_GET_RC SQUAD_HC_GET_COUNT SQUAD_HC_GET_FAIL_AFTER \
+    SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL
+  jq -cn --arg id childhc --arg base "$child_label" '
+    {address:"t7",state:"live",labels:{"squad.task":$id,"squad.base":$base},
+     foreground:{argv:["bash"],cwd:"/tmp",name:"bash",pid:4242},
+     reported:false,status_ms:0,turn:0,title:"t"}' > "$SQUAD_HC_GET"
+  jq -c '.state="finished" | .reason="killed"' "$SQUAD_HC_GET" > "$dir/kill-swap.json"
+  : > "$SQUAD_HC_KILL_LOG"
+  out=$( PATH="$fakebin:$PATH" SQUAD_STATE_OVERRIDE="$state" SQUAD_DATA_OVERRIDE="$data" \
+    SQUAD_CONFIG_OVERRIDE="$config" SQUAD_ROOT_OVERRIDE="$ROOT" \
+    XDG_RUNTIME_DIR="$TMP_ROOT/r" SQUAD_HC_KILL_SWAP="$dir/kill-swap.json" \
+    "$ROOT/bin/sq-teardown.sh" smhc --force 2>&1 ) && status=0 || status=$?
+  [ "$status" -eq 0 ] || fail "sq-teardown should force-retire an XO with a herdr-core child: $out"
+  assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'forced XO cleanup must close the herdr-core child address'
+  assert_grep 'rm t7' "$SQUAD_HC_KILL_LOG" 'forced XO cleanup must remove the herdr-core child address'
+  [ ! -e "$home/state/childhc.meta" ] || fail 'forced XO cleanup must retire the closed child record'
+  pass 'forced XO teardown closes a herdr-core child as the child home base'
+}
+
+test_forced_XO_teardown_closes_herdr_core_child_as_its_home
 
 printf 'ok - herdr-core adapter contract\n'
