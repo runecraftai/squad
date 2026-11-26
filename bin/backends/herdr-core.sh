@@ -103,13 +103,21 @@ fm_backend_herdr_core_session() {
 # fm_backend_herdr_core_socket: the socket path for <session>, honoring the
 # product's own HC_SOCKET override. This is the path `hc` itself would use, so a
 # present socket is the only precondition that makes an `hc` call here safe.
+# `hc` has two placements: a runtime directory when `XDG_RUNTIME_DIR` is set and
+# non-empty, otherwise the state directory under a per-session folder (there is
+# no `/run/user/<uid>` default - a host without `XDG_RUNTIME_DIR`, such as a
+# container or a bare ssh session, keeps the core only in the state directory).
 fm_backend_herdr_core_socket() {  # <session>
   local session=${1:-default}
   if [ -n "${HC_SOCKET:-}" ]; then
     printf '%s' "$HC_SOCKET"
     return 0
   fi
-  printf '%s/herdr-core/%s.sock' "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" "$session"
+  if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    printf '%s/herdr-core/%s.sock' "$XDG_RUNTIME_DIR" "$session"
+    return 0
+  fi
+  printf '%s/herdr-core/%s/%s.sock' "${XDG_STATE_HOME:-${HOME:-}/.local/state}" "$session" "$session"
 }
 
 # fm_backend_herdr_core_listener_probe: is a LISTENER answering on <socket>? A
@@ -149,20 +157,20 @@ PY
 }
 
 fm_backend_herdr_core_probe_curl() {  # <socket>
-  local socket=$1 rc=0
-  curl --max-time "$SQUAD_BACKEND_HERDR_CORE_PROBE_TIMEOUT" --unix-socket "$socket" http://localhost/ \
-    >/dev/null 2>&1 || rc=$?
-  # Only codes that prove curl reached a peer may license an `hc` call: 0 (a
-  # complete answer), 22 (an HTTP error answer), 52 and 56 (the peer accepted
-  # and then dropped the exchange). 7 is curl's "could not connect": nothing
-  # is listening. Everything else - a build without --unix-socket, a wrapper,
-  # an initialization or connect failure, a timeout - proves nothing about a
-  # listener, and reading it as one would let the next `hc` call start a core,
-  # so it is a cannot-decide.
-  case "$rc" in
-    7) return 1 ;;
-    0|22|52|56) return 0 ;;
-  esac
+  local socket=$1 out rc=0
+  # herdr-core answers in HTTP/0.9 - raw JSON-RPC lines with no HTTP framing - so
+  # curl must be told to accept that, and a live core keeps the connection open
+  # after answering, which ends curl on its timeout. The exit code therefore
+  # cannot decide anything except "could not connect": the proof is the
+  # RESPONSE. 7 is curl's could-not-connect: nothing is listening. Bytes from the
+  # peer prove a listener. No bytes prove nothing about one - a build without
+  # --unix-socket, a wrapper, an initialization or connect failure, or a timeout
+  # on a socket that never answers - and reading that as a listener would let the
+  # next `hc` call start a core, so it is a cannot-decide.
+  out=$(curl -s --http0.9 --max-time "$SQUAD_BACKEND_HERDR_CORE_PROBE_TIMEOUT" \
+    --unix-socket "$socket" http://localhost/ </dev/null 2>/dev/null) || rc=$?
+  [ "$rc" -eq 7 ] && return 1
+  [ -n "$out" ] && return 0
   return 2
 }
 

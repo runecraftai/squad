@@ -285,7 +285,9 @@ write_world() {  # write a baseline hello + schema so only the case under test d
 # precondition for any `hc` call is that a listener answers on this path. It
 # accepts and closes every connection, exactly as a real core does, so the
 # adapter's probe cannot fill the accept queue over a long suite.
-"$PY" - "$SOCKET" <<'PY' &
+LISTENER_PIDS=()
+bind_listener() {  # <socket>
+  "$PY" - "$1" <<'PY' &
 import socket, sys, time
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 s.bind(sys.argv[1])
@@ -299,8 +301,37 @@ while time.time() < deadline:
         continue
     conn.close()
 PY
-SOCKET_PID=$!
-restore_and_exit() { rm -rf "$TMP_ROOT"; kill "$SOCKET_PID" 2>/dev/null || true; rm -f "$SQUAD_HC_GET"; }
+  LISTENER_PIDS+=("$!")
+}
+
+# A listener that answers like a live herdr-core: HTTP/0.9 - raw JSON-RPC and no
+# HTTP framing - and a connection it holds open after answering.
+bind_http09_core() {  # <socket>
+  "$PY" - "$1" <<'PY' &
+import socket, sys, time
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sys.argv[1])
+s.listen(8)
+s.settimeout(0.2)
+deadline = time.time() + 60
+while time.time() < deadline:
+    try:
+        conn, _ = s.accept()
+    except OSError:
+        continue
+    conn.recv(4096)
+    try:
+        conn.sendall(b'{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"expected value at line 1 column 1"}}\n')
+        time.sleep(1)
+    except OSError:
+        pass
+    conn.close()
+PY
+  LISTENER_PIDS+=("$!")
+}
+
+bind_listener "$SOCKET"
+restore_and_exit() { rm -rf "$TMP_ROOT"; kill "${LISTENER_PIDS[@]}" 2>/dev/null || true; rm -f "$SQUAD_HC_GET"; }
 trap 'restore_and_exit' EXIT
 for _ in $(seq 1 100); do [ -S "$SOCKET" ] && break; sleep 0.05; done
 [ -S "$SOCKET" ] || fail 'could not bind the private stand-in core socket'
@@ -381,10 +412,73 @@ XDG_RUNTIME_DIR="$TMP_ROOT/stale-runtime" fm_backend_herdr_core_target_exists 'd
 [ ! -s "$SQUAD_HC_LOG" ] || fail 'target_exists must not invoke hc on a stale socket'
 pass 'never starts a core: a stale socket file is not a listening core'
 
+# `hc` has two socket placements: the runtime directory when XDG_RUNTIME_DIR is
+# set, and the per-session state folder when it is not. A host without a runtime
+# directory - a container, a bare ssh session - keeps its core only in the state
+# directory, so resolving `/run/user/<uid>` there would refuse a reachable core
+# and the next `hc` call would start one with Squad's environment.
+state_root="$TMP_ROOT/state-fallback"
+state_socket="$state_root/herdr-core/default/default.sock"
+mkdir -p "$state_root/herdr-core/default"
+bind_listener "$state_socket"
+for _ in $(seq 1 100); do [ -S "$state_socket" ] && break; sleep 0.05; done
+[ -S "$state_socket" ] || fail 'could not bind the state-directory core fixture'
+reset_calls
+( unset XDG_RUNTIME_DIR HC_SOCKET; XDG_STATE_HOME="$state_root" fm_backend_herdr_core_core_present default ) \
+  && state_rc=0 || state_rc=$?
+[ "$state_rc" -eq 0 ] || fail 'a core in the state directory must be found when XDG_RUNTIME_DIR is unset'
+[ ! -s "$SQUAD_HC_LOG" ] || fail "resolving the state-directory core must not invoke hc (saw: $(call_log))"
+pass 'a core in the state directory is reachable without XDG_RUNTIME_DIR'
+
+# The same placement when XDG_STATE_HOME is unset too: hc falls back to
+# $HOME/.local/state, so the adapter must derive the identical path.
+home_root="$TMP_ROOT/home-fallback"
+home_socket="$home_root/.local/state/herdr-core/default/default.sock"
+mkdir -p "$(dirname "$home_socket")"
+bind_listener "$home_socket"
+for _ in $(seq 1 100); do [ -S "$home_socket" ] && break; sleep 0.05; done
+[ -S "$home_socket" ] || fail 'could not bind the home state-directory core fixture'
+( unset XDG_RUNTIME_DIR XDG_STATE_HOME HC_SOCKET; HOME="$home_root" fm_backend_herdr_core_core_present default ) \
+  && home_rc=0 || home_rc=$?
+[ "$home_rc" -eq 0 ] || fail 'a core in $HOME/.local/state must be found when XDG_RUNTIME_DIR and XDG_STATE_HOME are unset'
+pass 'a core in $HOME/.local/state is reachable without a runtime directory'
+
+# And a missing state-directory core refuses at that exact path instead of a
+# /run/user path no core ever used.
+no_core_state="$TMP_ROOT/no-core-state"
+reset_calls
+no_core_out=$( ( unset XDG_RUNTIME_DIR HC_SOCKET; XDG_STATE_HOME="$no_core_state" fm_backend_herdr_core_core_present default ) 2>&1 ) \
+  && no_core_state_rc=0 || no_core_state_rc=$?
+[ "$no_core_state_rc" -ne 0 ] || fail 'a missing state-directory core must refuse'
+assert_contains "$no_core_out" "$no_core_state/herdr-core/default/default.sock" 'the refusal names hc state-directory socket'
+assert_contains "$no_core_out" 'Squad never starts the core' 'the state-directory refusal names the no-start rule'
+[ ! -s "$SQUAD_HC_LOG" ] || fail "a missing state-directory core must invoke no hc (saw: $(call_log))"
+pass 'no core: the state-directory socket is the path that is refused'
+
+# curl's proof is the RESPONSE, not its exit code: hc answers in HTTP/0.9 - raw
+# JSON-RPC, no HTTP framing - and holds the connection open afterwards, so real
+# curl ends on its timeout with the reply already in hand. Without --http0.9 curl
+# rejects that reply before it is ever shown, so the adapter must ask for 0.9.
+if command -v curl >/dev/null 2>&1; then
+  http09_socket="$TMP_ROOT/http09-runtime/herdr-core/default.sock"
+  mkdir -p "$(dirname "$http09_socket")"
+  bind_http09_core "$http09_socket"
+  for _ in $(seq 1 100); do [ -S "$http09_socket" ] && break; sleep 0.05; done
+  [ -S "$http09_socket" ] || fail 'could not bind the HTTP/0.9 core fixture'
+  fm_backend_herdr_core_probe_curl "$http09_socket" && http09_rc=0 || http09_rc=$?
+  [ "$http09_rc" -eq 0 ] || fail "real curl facing hc's HTTP/0.9 reply must prove the listener (got $http09_rc)"
+  XDG_RUNTIME_DIR="$TMP_ROOT/http09-runtime" fm_backend_herdr_core_core_present default \
+    || fail 'core_present must license a core whose reply arrives in HTTP/0.9'
+  pass 'the curl probe recognizes a real HTTP/0.9 herdr-core reply'
+else
+  echo 'skip: curl not installed (the HTTP/0.9 probe fixture)'
+fi
+
 # The fallback clients exist because a working python3 is not guaranteed, so a
-# curl that cannot reach the peer must fail closed too: a build without
-# --unix-socket (exit 2) or any other client-local failure is not a listener.
-# The suite PATH is cut down to one fake client so python3 and nc cannot answer.
+# curl that cannot prove a connection must fail closed: a build without
+# --unix-socket, a client-local failure, or a timeout that delivered no byte is
+# not a listener. The suite PATH is cut down to one fake client so python3 and nc
+# cannot answer.
 probe_client_bin() {  # <name> <curl-exit> -> dir
   local dir="$TMP_ROOT/probe-$1"
   mkdir -p "$dir"
@@ -405,13 +499,18 @@ assert_contains "$undecided_out" 'cannot prove a core is listening' 'the undecid
 [ ! -s "$SQUAD_HC_LOG" ] || fail "an undecidable probe must produce zero hc invocations (saw: $(call_log))"
 pass 'never starts a core: a probe client that cannot decide refuses'
 
+# A timeout with no byte is the failure mode a real core produces only when it
+# never answered, so it must not be read as a listener just because the live-core
+# case also ends on curl's timeout.
+timedout_bin=$(probe_client_bin timedout 28)
+PATH="$timedout_bin" fm_backend_herdr_core_probe_curl "$STALE_SOCKET" && timedout_rc=0 || timedout_rc=$?
+[ "$timedout_rc" -eq 2 ] || fail "a timeout that delivered no byte must be undecidable (got $timedout_rc)"
+pass 'the curl probe requires a reply, not a timeout exit code'
+
 refused_bin=$(probe_client_bin refused 7)
 PATH="$refused_bin" fm_backend_herdr_core_probe_curl "$STALE_SOCKET" && refused_rc=0 || refused_rc=$?
 [ "$refused_rc" -eq 1 ] || fail "curl's could-not-connect must be a refusal (got $refused_rc)"
-answered_bin=$(probe_client_bin answered 52)
-PATH="$answered_bin" fm_backend_herdr_core_probe_curl "$STALE_SOCKET" && answered_rc=0 || answered_rc=$?
-[ "$answered_rc" -eq 0 ] || fail "an accepted-then-dropped exchange proves a listener (got $answered_rc)"
-pass 'the curl probe accepts only codes that prove a connection'
+pass 'the curl probe refuses a could-not-connect socket'
 
 # --- the protocol guard -----------------------------------------------------
 
@@ -1449,6 +1548,20 @@ case "$(call_log)" in
 esac
 pass 'a delivered launch leaves its terminal in place'
 
+# Codex must run with --no-daemon under herdr-core, or the commands it runs
+# execute outside hc's terminal and disappear from its record. The flag is this
+# backend's alone: the same harness on tmux keeps its original launch line.
+codex_record=$(spawn_case codex spawn-codex)
+seed_spawn_terminal "$codex_record"
+reset_calls
+spawn_out=$(SQUAD_HC_NEW_ADDRESS=t2 run_spawn_case "$codex_record" codex) && spawn_rc=0 || spawn_rc=$?
+[ "$spawn_rc" -eq 0 ] || fail "a codex launch on herdr-core must spawn cleanly: $spawn_out"
+case "$(call_log)" in
+  *'codex --no-daemon '*) ;;
+  *) fail "codex on herdr-core must be delivered with --no-daemon (log: $(call_log))" ;;
+esac
+pass 'codex on herdr-core launches with --no-daemon'
+
 # A relaunch retires the endpoint the task still records before it creates the
 # replacement, so a finished husk does not accumulate and a live agentless shell
 # does not refuse the new terminal as a duplicate.
@@ -1559,6 +1672,21 @@ esac
   || fail 'the tmux relaunch must not keep a herdr-core address in the replacement record'
 assert_grep 'CROSS-BACKEND-MARKER' "$cross_dir/tmux.log" 'the replacement launch goes to the new backend'
 pass 'a cross-backend relaunch retires the recorded herdr-core endpoint'
+
+# The codex --no-daemon flag is herdr-core's alone: the same harness launched on
+# tmux keeps its original line, so the exception cannot leak onto another backend.
+codex_tmux_record=$(spawn_case codex-tmux spawn-codex-tmux)
+IFS='|' read -r codex_tmux_dir _ codex_tmux_proj _ _ <<EOF
+$codex_tmux_record
+EOF
+printf '%s\n' "$codex_tmux_proj" > "$codex_tmux_dir/tmux-cwd"
+codex_tmux_out=$(run_cross_backend_spawn_case "$codex_tmux_record" codex) && spawn_rc=0 || spawn_rc=$?
+[ "$spawn_rc" -eq 0 ] || fail "a codex launch on tmux must spawn cleanly: $codex_tmux_out"
+assert_grep 'codex ' "$codex_tmux_dir/tmux.log" 'the codex launch goes to the tmux backend'
+case "$(cat "$codex_tmux_dir/tmux.log")" in
+  *'--no-daemon'*) fail '--no-daemon must not leak onto another backend' ;;
+esac
+pass 'codex on tmux keeps its original launch without --no-daemon'
 
 # --- a refused relaunch leaves the recorded endpoint alone ----------------
 # Retirement is destructive, so it must run only after every relaunch refusal

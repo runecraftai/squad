@@ -26,13 +26,17 @@ A task records the session it was created in, and every later operation refuses 
 
 Any `hc` call starts a core when none is running, and a core started that way inherits the caller's whole environment - including credentials and other backends' markers.
 So the adapter refuses to run `hc` at all unless the session's socket exists **and** a probe proves a listener answers on it:
+The socket is the one `hc` itself uses: `${XDG_RUNTIME_DIR}/herdr-core/<s>.sock` when `XDG_RUNTIME_DIR` is set and non-empty, otherwise `${XDG_STATE_HOME:-~/.local/state}/herdr-core/<s>/<s>.sock` - a host without a runtime directory, such as a container or a bare ssh session, keeps the core only in the state directory, and `/run/user/<uid>` is not a fallback `hc` ever used.
+`HC_SOCKET` overrides both.
 
 ```text
 error: herdr-core is not running for session 'default' (no core listening at /run/user/1000/herdr-core/default.sock); Squad never starts the core - start Herdr or run 'hc server start' yourself
 ```
 
 A socket file alone is not a core: after an unclean core death the file survives while nothing accepts on it, and the next `hc` call would start a core with Squad's environment.
-The listener probe is a unix-socket connect by a client that cannot start anything - `python3`, then `curl --unix-socket`, then `nc -U -z` - so a stale socket refuses exactly like an absent one, and when none of those clients can prove it - including a client that fails before it ever connects, such as a `curl` build without `--unix-socket` - the adapter fails closed and names what to install.
+The listener probe is a unix-socket connect by a client that cannot start anything - `python3`, then `curl --http0.9 --unix-socket`, then `nc -U -z` - so a stale socket refuses exactly like an absent one, and when none of those clients can prove it - including a client that fails before it ever connects, such as a `curl` build without `--unix-socket` or `--http0.9` - the adapter fails closed and names what to install.
+`hc` answers in HTTP/0.9 - raw JSON-RPC lines, no HTTP framing - and keeps the connection open afterwards, so the curl probe asks for HTTP/0.9 and accepts the exchange when any response bytes arrive, not when curl exits 0.
+A reply-less exit, a connect timeout, or a refused connection therefore proves nothing and refuses.
 That check runs before the version handshake, before the first `get`, and before every write, so no path in this backend can start a core.
 When the core is absent, the task is a blocker: bring the core up and retry, or spawn on another backend.
 `tests/sq-backend-herdr-core.test.sh` pins the rule by asserting zero `hc` invocations on a session with no socket and on a session whose socket file is stale, and the lab proves the same against a real missing core.
@@ -70,7 +74,7 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 
 | Why | Exact command |
 | --- | --- |
-| Is the core listening (before anything else) | a socket test on `$XDG_RUNTIME_DIR/herdr-core/<s>.sock`, or `$HC_SOCKET`, then a unix-socket connect by `python3`, `curl --unix-socket` or `nc -U -z` |
+| Is the core listening (before anything else) | a socket test on `${XDG_RUNTIME_DIR}/herdr-core/<s>.sock`, or `${XDG_STATE_HOME:-~/.local/state}/herdr-core/<s>/<s>.sock` when `XDG_RUNTIME_DIR` is unset or empty, or `$HC_SOCKET`, then a unix-socket connect by `python3`, `curl --http0.9 --unix-socket` or `nc -U -z` |
 | Protocol handshake | `printf '{"jsonrpc":"2.0","id":1,"method":"hello","params":{"generation":1}}\n' \| hc connect` (bounded by `fm_run_timed`) |
 | Method and parameter contract | `hc schema --json` |
 | Core identity | `hc server status --json` (read only after the socket test) |

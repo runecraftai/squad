@@ -53,8 +53,14 @@ fm_lab_usage() {
   sed -n '2,40p' "${BASH_SOURCE[0]}" | sed -n 's/^# \{0,1\}//p'
 }
 
+# fm_lab_socket: the private core's socket, by the same rule `hc` and the adapter
+# use - the runtime directory when set, otherwise the per-session state folder.
 fm_lab_socket() {  # <session>
-  printf '%s/herdr-core/%s.sock' "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" "$1"
+  if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    printf '%s/herdr-core/%s.sock' "$XDG_RUNTIME_DIR" "$1"
+    return 0
+  fi
+  printf '%s/herdr-core/%s/%s.sock' "${XDG_STATE_HOME:-${HOME:-}/.local/state}" "$1" "$1"
 }
 
 # The tripwire must read the AMBIENT core, so it restores the caller's own XDG
@@ -96,12 +102,27 @@ fm_lab_ambient_listener_probe() {  # <socket>
     fm_backend_herdr_core_listener_probe "$2"' _ "$LAB_DIR" "$socket"
 }
 
+# fm_lab_ambient_socket: the ambient default core's socket, resolved by the
+# adapter's own rule under the caller's selection, so a host without
+# XDG_RUNTIME_DIR finds the core in the state directory instead of a
+# `/run/user/<uid>` path that hc never used.
+fm_lab_ambient_socket() {  # <session>
+  # shellcheck disable=SC2016 # the script's $1/$2 are its own positional args
+  fm_lab_ambient bash -c '
+    . "$1/bin/sq-backend.sh" >/dev/null 2>&1 || exit 2
+    fm_backend_source herdr-core >/dev/null 2>&1 || exit 2
+    fm_backend_herdr_core_socket "$2"' _ "$LAB_DIR" "$1"
+}
+
 # fm_lab_default_unit_state: read-only identity and inventory of the ambient
 # core. It refuses unless the adapter's listener probe proves a core answers on
 # the socket, so this read can never be the call that starts a core.
 fm_lab_default_unit_state() {
   local socket status inventory probe_rc=0
-  socket="${AMBIENT_RUNTIME:-/run/user/$(id -u)}/herdr-core/default.sock"
+  socket=$(fm_lab_ambient_socket default) || {
+    fm_lab_error 'cannot resolve the default core socket for the tripwire'
+    return 1
+  }
   [ -S "$socket" ] || {
     fm_lab_error "the default core is not running (no socket at $socket); the tripwire needs the commander's core already up, and this lab never starts it"
     return 1
