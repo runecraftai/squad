@@ -152,10 +152,18 @@ fm_backend_herdr_core_probe_curl() {  # <socket>
   local socket=$1 rc=0
   curl --max-time "$SQUAD_BACKEND_HERDR_CORE_PROBE_TIMEOUT" --unix-socket "$socket" http://localhost/ \
     >/dev/null 2>&1 || rc=$?
-  # 7 is curl's "could not connect": nothing is listening on that path. Any
-  # other outcome means something accepted and answered on the socket.
-  [ "$rc" -eq 7 ] && return 1
-  return 0
+  # Only codes that prove curl reached a peer may license an `hc` call: 0 (a
+  # complete answer), 22 (an HTTP error answer), 52 and 56 (the peer accepted
+  # and then dropped the exchange). 7 is curl's "could not connect": nothing
+  # is listening. Everything else - a build without --unix-socket, a wrapper,
+  # an initialization or connect failure, a timeout - proves nothing about a
+  # listener, and reading it as one would let the next `hc` call start a core,
+  # so it is a cannot-decide.
+  case "$rc" in
+    7) return 1 ;;
+    0|22|52|56) return 0 ;;
+  esac
+  return 2
 }
 
 fm_backend_herdr_core_probe_nc() {  # <socket>

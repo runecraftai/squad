@@ -39,6 +39,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-install-oxlint.sh`   | Install CI's exact-version oxlint with npm tarball URL, SHA-256 pin, and platform binding |
 | `sq-install-fob.sh`| Build and install the vendored packages/fob from source for real-Herdr E2E that needs spawn worktrees |
 | `sq-herdr-ci-cleanup.sh` | Snapshot and tear down only job-owned `sq-lab-*` sessions in the Herdr CI lane       |
+| `sq-herdr-core-lab.sh`   | Guarded opt-in live lab for the herdr-core backend on a private core, with a tripwire proving the default core unchanged |
 | `sq-test-run.sh`         | Behavior-test runner: selection, portable lanes, proven-isolated `--jobs`, coverage guard, timing/JSON |
 | `sq-test-isolation-proof.sh` | Concurrent isolation proof and proven-isolated candidate set owner |
 | `sq-ensure-agents-md.sh` | Ensure a project's real `AGENTS.md`, its `CLAUDE.md` symlink, and the canonical self-governance section |
@@ -65,6 +66,7 @@ Outside the toolbelt, the drill package's manual `make mutation` target runs gre
 | `sq-composer-lib.sh`     | Single unit-wide owner of composer-content classification for all backends          |
 | `backends/tmux.sh`       | Verified tmux session-provider adapter                                               |
 | `backends/herdr.sh`      | Experimental herdr session-provider adapter                                          |
+| `backends/herdr-core.sh` | Experimental herdr-core (shared `hc` core) session-provider adapter                  |
 | `backends/zellij.sh`     | Experimental zellij session-provider adapter                                         |
 | `backends/orca.sh`       | Experimental Orca backend adapter owning both worktree and terminal                  |
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |

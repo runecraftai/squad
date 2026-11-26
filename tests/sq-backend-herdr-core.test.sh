@@ -381,6 +381,38 @@ XDG_RUNTIME_DIR="$TMP_ROOT/stale-runtime" fm_backend_herdr_core_target_exists 'd
 [ ! -s "$SQUAD_HC_LOG" ] || fail 'target_exists must not invoke hc on a stale socket'
 pass 'never starts a core: a stale socket file is not a listening core'
 
+# The fallback clients exist because a working python3 is not guaranteed, so a
+# curl that cannot reach the peer must fail closed too: a build without
+# --unix-socket (exit 2) or any other client-local failure is not a listener.
+# The suite PATH is cut down to one fake client so python3 and nc cannot answer.
+probe_client_bin() {  # <name> <curl-exit> -> dir
+  local dir="$TMP_ROOT/probe-$1"
+  mkdir -p "$dir"
+  ln -sf "$(command -v bash)" "$dir/bash"
+  printf '#!/usr/bin/env bash\nexit %s\n' "$2" > "$dir/curl"
+  chmod +x "$dir/curl"
+  printf '%s' "$dir"
+}
+
+undecided_bin=$(probe_client_bin undecided 2)
+PATH="$undecided_bin" fm_backend_herdr_core_probe_curl "$STALE_SOCKET" && probe_rc=0 || probe_rc=$?
+[ "$probe_rc" -eq 2 ] || fail "a curl that cannot connect must be undecidable (got $probe_rc)"
+reset_calls
+undecided_out=$(PATH="$undecided_bin" XDG_RUNTIME_DIR="$TMP_ROOT/stale-runtime" \
+  fm_backend_herdr_core_core_present default 2>&1) && undecided_rc=0 || undecided_rc=$?
+[ "$undecided_rc" -ne 0 ] || fail 'an undecidable probe client must refuse, not license hc'
+assert_contains "$undecided_out" 'cannot prove a core is listening' 'the undecidable probe names why it refuses'
+[ ! -s "$SQUAD_HC_LOG" ] || fail "an undecidable probe must produce zero hc invocations (saw: $(call_log))"
+pass 'never starts a core: a probe client that cannot decide refuses'
+
+refused_bin=$(probe_client_bin refused 7)
+PATH="$refused_bin" fm_backend_herdr_core_probe_curl "$STALE_SOCKET" && refused_rc=0 || refused_rc=$?
+[ "$refused_rc" -eq 1 ] || fail "curl's could-not-connect must be a refusal (got $refused_rc)"
+answered_bin=$(probe_client_bin answered 52)
+PATH="$answered_bin" fm_backend_herdr_core_probe_curl "$STALE_SOCKET" && answered_rc=0 || answered_rc=$?
+[ "$answered_rc" -eq 0 ] || fail "an accepted-then-dropped exchange proves a listener (got $answered_rc)"
+pass 'the curl probe accepts only codes that prove a connection'
+
 # --- the protocol guard -----------------------------------------------------
 
 guard_fails() {  # <label> <expected-fragment> [assert no run]

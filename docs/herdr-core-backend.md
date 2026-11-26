@@ -32,7 +32,7 @@ error: herdr-core is not running for session 'default' (no core listening at /ru
 ```
 
 A socket file alone is not a core: after an unclean core death the file survives while nothing accepts on it, and the next `hc` call would start a core with Squad's environment.
-The listener probe is a unix-socket connect by a client that cannot start anything - `python3`, then `curl --unix-socket`, then `nc -U -z` - so a stale socket refuses exactly like an absent one, and when none of those clients can prove it the adapter fails closed and names what to install.
+The listener probe is a unix-socket connect by a client that cannot start anything - `python3`, then `curl --unix-socket`, then `nc -U -z` - so a stale socket refuses exactly like an absent one, and when none of those clients can prove it - including a client that fails before it ever connects, such as a `curl` build without `--unix-socket` - the adapter fails closed and names what to install.
 That check runs before the version handshake, before the first `get`, and before every write, so no path in this backend can start a core.
 When the core is absent, the task is a blocker: bring the core up and retry, or spawn on another backend.
 `tests/sq-backend-herdr-core.test.sh` pins the rule by asserting zero `hc` invocations on a session with no socket and on a session whose socket file is stale, and the lab proves the same against a real missing core.
