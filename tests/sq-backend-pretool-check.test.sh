@@ -45,6 +45,14 @@ for backend in tmux herdr zellij orca cmux tuios; do
   assert_not_contains "$result" "$backend" "backend guard message stays backend-agnostic for $backend"
 done
 
+# herdr-core is reachable through two command names: the provider's own binary
+# and the documented `hc` symlink. Both are raw session control.
+for cli in herdr-core hc; do
+  result=$(run_check "$cli lifecycle-control --target task")
+  expect_code 2 "${result%%$'\n'*}" "blocks raw $cli CLI"
+  assert_contains "$result" "backend-raw-session-control" "reports raw backend guard code for $cli"
+done
+
 # The refusal publishes the one sanctioned pane-grant surface, so an agent that
 # followed the provider's own set-pane-grants advice is told what to use instead.
 result=$(run_check 'tuios set-pane-grants -w task --grants respond')

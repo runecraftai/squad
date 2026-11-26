@@ -2320,6 +2320,12 @@ elif [ "$BACKEND" = herdr ]; then
   else
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
+elif [ "$BACKEND" = herdr-core ]; then
+  # The adapter refuses unless the recorded opaque address, its own `squad.task`
+  # label and the recorded core id all agree, so its refusal text is the
+  # operator's remedy and is deliberately NOT discarded here. A refusal is not
+  # fatal by itself: the confirmation below decides whether any record may go.
+  fm_backend_kill herdr-core "$T" '' "sq-$ID" || true
 elif [ "$BACKEND" != orca ]; then
   fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "sq-$ID" 2>/dev/null || true
 fi
@@ -2347,6 +2353,13 @@ if [ "$BACKEND" = herdr ]; then
   fi
   if ! fm_backend_herdr_endpoint_confirmed_gone "$T"; then
     echo "error: herdr pane $T for $ID is not confirmed gone after its close was refused, skipped, or failed; retaining every durable task record - rerun teardown once the close can run under the session lock" >&2
+    exit 1
+  fi
+fi
+if [ "$BACKEND" = herdr-core ]; then
+  fm_backend_source herdr-core || exit 1
+  if ! fm_backend_herdr_core_task_closed "$T" "$ID"; then
+    echo "error: the herdr-core terminal $T for $ID is not confirmed gone; retaining every durable task record - rerun teardown once its exact address can be closed" >&2
     exit 1
   fi
 fi

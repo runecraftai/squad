@@ -107,6 +107,10 @@
    "target": "docs/verification/runtime-backends.md"
   },
   {
+   "source": "docs/herdr-core-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
    "source": "docs/codex-app-backend.md",
    "target": "docs/verification/runtime-backends.md"
   },
@@ -458,6 +462,10 @@
   },
   {
    "path": "docs/herdr-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/herdr-core-backend.md",
    "audience": "operator-current"
   },
   {

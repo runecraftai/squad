@@ -21,7 +21,7 @@ The existing timer carries each new episode's epoch; replay cannot rewind a late
 Busy suppressors are classed in the existing stale marker so clearing busy on an unchanged viewport still surfaces the inconclusive idle transition immediately.
 A current authoritative done/failed task clears wedge tracking instead of re-arming it; current state is checked again so an old finished result cannot hide a newer active run.
 A current active run-step outranks an old terminal status and defers pane expiry in both modes, but cannot suppress the independent quiet-step reason below.
-Complete viewport reads are supported on tmux (`capture-pane` without `-S`), zellij (`dump-screen` without `--full`), and tuios (`capture-pane` without `--scrollback`).
+Complete viewport reads are supported on tmux (`capture-pane` without `-S`), zellij (`dump-screen` without `--full`), tuios (`capture-pane` without `--scrollback`), and herdr-core (`hc read --lines 0`).
 Herdr and Orca viewport flags are unverified, and cmux has no verified complete-viewport read in this repository: these paths return cannot-evaluate, never claim static from a tail, and log a named backend limitation for a static busy episode.
 An unreadable complete viewport never proves inactivity: the daemon retains retryable ownership in the existing marker, excludes the read gap, and starts a full new static window on successful recovery.
 Idle handoffs follow the same per-episode timing rule; declared-pause cadence is unchanged, while the pause-age limit below is a separate clock.
@@ -158,7 +158,7 @@ All are harness-scoped rather than a global pattern union, and none is a recorde
 
 The runtime backend is the session-provider layer below Squad's scripts.
 It owns task endpoint creation, bounded capture, text/key sends, current-path reads for spawn-time worktree discovery when the backend does not create the worktree itself, live-window fallback lookup, agent-process liveness probes where verified, and endpoint teardown.
-`bin/sq-backend.sh` centralizes backend selection, `state/<id>.meta` helpers, metadata-only cleanup identity validation, selector resolution, and operation dispatch; `bin/backends/tmux.sh` is the verified reference adapter ([`docs/tmux-backend.md`](tmux-backend.md)), and `bin/backends/herdr.sh` (P2), `bin/backends/zellij.sh` (P3), `bin/backends/orca.sh` (P4), `bin/backends/cmux.sh` (P5), and `bin/backends/tuios.sh` (P6) are experimental task-spawn adapters.
+`bin/sq-backend.sh` centralizes backend selection, `state/<id>.meta` helpers, metadata-only cleanup identity validation, selector resolution, and operation dispatch; `bin/backends/tmux.sh` is the verified reference adapter ([`docs/tmux-backend.md`](tmux-backend.md)), and `bin/backends/herdr.sh` (P2), `bin/backends/zellij.sh` (P3), `bin/backends/orca.sh` (P4), `bin/backends/cmux.sh` (P5), `bin/backends/tuios.sh` (P6), and `bin/backends/herdr-core.sh` (S1) are experimental task-spawn adapters.
 [`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend) owns new-spawn backend selection precedence and authorization.
 Runtime auto-detection is innermost-first: `$TMUX` wins over `HERDR_ENV=1`, which wins over cmux's primary `CMUX_WORKSPACE_ID` marker and documented fallback signals; auto-detected herdr or cmux prints a one-time opt-out notice, auto-detected tmux stays silent, and zellij, orca, and TUIOS are never auto-detected (only explicit selection).
 Unknown backend names fail loudly.
@@ -339,7 +339,7 @@ The mechanics are owned by the `/updatesquad` skill and Squad's operating manual
 
 ## Restart-proof
 
-Unit state lives in each task's session-provider backend (tmux by hard default, herdr or cmux when selected or auto-detected, zellij/orca/tuios when explicitly selected), drill run records, status event logs, local markdown under `data/` including `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md`, and persistent XO bases.
+Unit state lives in each task's session-provider backend (tmux by hard default, herdr or cmux when selected or auto-detected, zellij/orca/tuios/herdr-core when explicitly selected), drill run records, status event logs, local markdown under `data/` including `data/commander.md`, `data/commander-shared.md`, and `data/learnings.md`, and persistent XO bases.
 For herdr, respawning after a server-restored layout closes and replaces confirmed no-agent or dead task-tab husks instead of requiring manual tab cleanup.
 At session start, confirmed-dead XO agent endpoints are closed and relaunched through the same XO spawn path, while ambiguous liveness reads are left untouched to avoid duplicate supervisors.
 Use `/debrief` before an intentional reset when the conversation may hold durable knowledge that has not yet been written to disk; after that, the next Squad session can reconcile and carry on.

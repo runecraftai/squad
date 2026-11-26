@@ -795,6 +795,7 @@ install_cmd() {
 manual_install_url() {
   case "$1" in
     herdr) echo "https://herdr.dev" ;;
+    hc) echo "https://herdr.dev/docs/install" ;;
     tuios) echo "https://tuios.dev/docs/getting-started#install" ;;
     *) return 1 ;;
   esac

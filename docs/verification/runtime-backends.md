@@ -955,3 +955,79 @@ Not established:
 - The away-mode lab replaces the model with a loopback stub, so the verified claim is delivery into Pi's own queue and the start of a real agent turn, not any particular model's response or the content of a completed turn.
 
 Never use the commander's watched sessions as a test fixture. A live TUIOS run creates and destroys its own disposable session, and a restart experiment uses a private daemon with fresh `XDG_RUNTIME_DIR`/`XDG_STATE_HOME`/`XDG_CONFIG_HOME` as the installed product skill documents.
+
+## herdr-core
+
+The backend was measured against the installed `hc 0.1.22` (`herdr-core`, with `hc` as its symlink) on 2026-11-26, protocol generation 1, OpenRPC `1.3.2`, `info.version` `0.1.22`.
+Mechanisms are validated against the binary's own `--version`, `--help`, `--skill`, `hello` handshake, and `schema --json` catalog, never against web documentation alone; the design and the first measurement record live in `data/squad-herdr-core-adapter-recon/report.md`.
+Portable regression coverage (fake `hc` on `PATH`, no live core):
+
+```sh
+tests/sq-backend-herdr-core.test.sh
+tests/sq-backend-pretool-check.test.sh
+```
+
+`tests/sq-backend-herdr-core.test.sh` binds one private unix socket to stand in for a listening core and then asserts, in order: zero `hc` invocations on a session with no socket (the never-start-a-core rule, for every primitive); every guard refusal (newer generation, the core's own `unsupported_generation` hint, a version below the floor, a malformed handshake, a missing method, a missing feature, a missing catalog method, a missing parameter, an unreadable catalog, an unreadable core id) with a named reason; the version-floor comparison; capture and busy state from the program report; a silent lane staying `unknown`; every delivery verdict (`empty`, `agent_blocked`, `not_ready`, `no_agent`, `uncertain-delivery`); a foreign `squad.task` label refusing before typing; `kill`+`rm` on the exact address only; the cleanup identity triple (label mismatch, changed core id, non-live address); teardown's still-present-address refusal; a foreign recorded session refusing without an address read; agent state across `alive`/`dead`/`missing`; key-name translation with an unmapped key refused; `create_task` labelling, duplicate refusal, and the 32-character name limit; the poll producer's one-prompt dedupe, a changed prompt re-waking, and a non-blocked edge clearing the markers; and the full `hc_session`/`hc_address`/`hc_core_id` endpoint-metadata triple.
+`tests/sq-backend-pretool-check.test.sh` additionally pins that both `herdr-core` and `hc` command words are refused by the primary raw-CLI guard.
+
+### The guarded private-core lab
+
+`bin/sq-herdr-core-lab.sh` drives the production path end to end against a core it creates itself.
+
+```sh
+SQUAD_HC_LAB=1 bin/sq-herdr-core-lab.sh
+```
+
+The lab records the commander's ambient `default` core (identity, pid, version, and full terminal inventory) only after proving its socket is already a socket, so the record itself cannot start a core.
+It then creates a private core from a scratch `XDG_RUNTIME_DIR`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME` under a short temp root and a private `HC_SESSION`, with a short socket path.
+Everything after that - `bin/sq-spawn.sh`, `bin/sq-crew-state.sh`, `bin/sq-peek.sh`, `bin/sq-send.sh`, `bin/sq-teardown.sh` - runs on that private core, and the lab stops only that core, by session, after asserting its socket lives inside its own temp root.
+Observed output (2026-11-26, `hc 0.1.22`):
+
+```text
+tripwire default-core-before={"core":"ff44ef1b71645ade87fc818adfd507b9","pid":1826875,"live":1,"finished":1,"terminals":[{"address":"t4","state":"live","name":null},{"address":"t5","state":"finished","name":null}]}
+lab session=sq-lab-3871672-22658 socket=/tmp/sqhc-lab.0hafNe/r/herdr-core/sq-lab-3871672-22658.sock
+no-start proof: refused with no listening core, and the private socket is still absent
+private core id=0118d39d375e958faab896d1a7913e93
+spawning sq-hc-lab-20261126113329-3871672 on project /home/rehem/Projects/squad
+spawn: spawned sq-hc-lab-20261126113329-3871672 harness=bash kind=recon window=sq-lab-3871672-22658:t1 worktree=/home/rehem/.fob/squad-b4752b/6/squad
+recorded backend=herdr-core hc_session=sq-lab-3871672-22658 hc_address=t1 hc_core_id=0118d39d375e958faab896d1a7913e93 worktree=/home/rehem/.fob/squad-b4752b/6/squad
+terminal: address=t1 label=squad.task:sq-hc-lab-20261126113329-3871672 foreground-cwd=/home/rehem/.fob/squad-b4752b/6/squad
+private inventory after spawn: [{"address":"t1","name":"sq-hc-lab-20261126113329-3871672","status":"working"}]
+crew-state: state: blocked · source: pane · harness waiting on a prompt (question: Answer the lab question) · exec_state=running
+peek: read the program screen through the adapter
+send: confirmed (exit 0)
+delivery: the program received 'lab answer one'
+teardown: teardown sq-hc-lab-20261126113329-3871672 complete (window sq-lab-3871672-22658:t1, worktree /home/rehem/.fob/squad-b4752b/6/squad)
+teardown: exact address gone, private inventory empty, worktree /home/rehem/.fob/squad-b4752b/6/squad available again
+tripwire default-core-after={"core":"ff44ef1b71645ade87fc818adfd507b9","pid":1826875,"live":1,"finished":1,"terminals":[{"address":"t4","state":"live","name":null},{"address":"t5","state":"finished","name":null}]}
+LIVE-UNCHANGED: the commander default core is byte-identical before and after
+PASS
+```
+
+Established live:
+
+- **The adapter never starts a core.** With the private session's socket absent, `fm_backend_herdr_core_container_ensure` refused with `Squad never starts the core - start Herdr or run 'hc server start' yourself`, and the private socket was still absent afterwards. Every later step ran only after the lab had started its own core.
+- **A real spawn lands on the backend and records the exact identity.** `bin/sq-spawn.sh <id> <project> '<raw launch command>' --backend herdr-core --recon` printed `spawned ... window=<private-session>:t1 worktree=...`, the metadata carried `backend=herdr-core`, `hc_session=`, `hc_address=t1` and `hc_core_id=` matching the private core, and `hc get t1 --json` showed `labels["squad.task"]` equal to the task id, `labels["squad.base"]` equal to the base name, and `foreground.cwd` equal to the recorded worktree.
+- **Native status drives the state the supervisor reads.** The program's own OSC 7501 reports produced `busy_state` `working` → `blocked` → `idle`, and `bin/sq-crew-state.sh` rendered `state: blocked · source: pane · harness waiting on a prompt (question: Answer the lab question)`, carrying the prompt text the program itself wrote.
+- **Read and delivery work address-exactly.** `bin/sq-peek.sh` returned the program's screen through `hc read`, and `bin/sq-send.sh` returned a confirmed verdict after the program received exactly the sent text.
+- **Teardown closes one address and nothing else.** `bin/sq-teardown.sh` reported `complete (window <private-session>:t1, ...)`, the address was authoritatively gone, the private core's whole inventory was empty (it had only ever held that one terminal), and `fob status` showed the leased worktree `available` again.
+- **The commander's core is untouched.** The tripwire's `default` core identity, pid, version, and terminal inventory were byte-identical before and after, reported as `LIVE-UNCHANGED`.
+
+Measured during the design recon on the same binary, and still relied on here:
+
+- `hc send` refuses a blocked program with `kind:"blocked"` and exit 9 without typing, refuses a non-idle reporting program with `kind:"status_mismatch"` and exit 10, and refuses a finished terminal with `kind:"finished"` and exit 11.
+- `hc keys` does **not** refuse while a program is blocked: `hc keys t3 y` typed the key and advanced the turn. An answer path would therefore have to re-read the blocked record itself, which is why this backend does not answer prompts.
+- Two consecutive different blocked prompts were observed with the **same** `status_ms`, so the poll producer's dedupe identity is the pair `(kind, msg)` rather than the timestamp the recon proposed.
+- `hc get` reports `status_ms`, `reported`, the decoded `status.msg`, and `foreground.{argv,cwd,name,pid}`; `foreground.cwd` follows the foreground process, which is what the worktree poll reads.
+- `hc kill` is idempotent and `hc rm` refuses a live terminal with `kind:"live"`, so the adapter confirms `state=finished` after `kill` and `.removed == <address>` after `rm`.
+
+Not established:
+
+- **Native event push (S2).** This backend is supervised by the sentry's ordinary poll only; `fm_backend_has_push` returns false for it, so the event-wait splice is never used. The wake latency of a blocked program is therefore at most one poll interval, not the near-immediate wake TUIOS and Herdr get from a stream.
+- **Answering a blocked operator prompt.** No prompt-id-bound answer exists in `hc`, and this backend does not type keys into a blocked program. `bin/sq-send.sh` refuses with `agent_blocked` and a person answers in the terminal.
+- **Presentation labels on the desktop app (S3).** Squad writes only its own two labels, so a Squad terminal appears in `hc ls` and on the phone, but not in a desktop app space.
+- **The primary session and away mode on this backend (S4),** and the default switch (S5a), are separate units; `config/backend` was not changed and TUIOS keeps running in production.
+- **Vendor harness rendering.** The lab's program is a scripted OSC 7501 reporter, not a vendor CLI, so the lab proves the adapter, the product's status plumbing, delivery, and cleanup - not any particular harness's rendering or a model turn. The recon separately confirmed that `pi 1.6.1` and Claude Code report status while `codex 0.172.0` and the `opencode` on `PATH` (1.18.18) report nothing.
+- **`--no-daemon` for codex** is applied by the launch template on this backend only, from the product's own guidance; no live codex turn was run to confirm it (answering codex's trust dialog would write the commander's `~/.codex`).
+- **Multiple bases sharing one core** have not been exercised live. Each base labels its terminals with its own `squad.base=`, and one core's registry is shared, so two bases could see each other's terminals in an unfiltered `ls`; only label-filtered reads and exact addresses are used.
+- **Instant blocking-clear detection** (the boundary between `blocked` and `idle` inside one poll) is not separately measured; a person-answered prompt clears on the next read.

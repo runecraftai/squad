@@ -7,7 +7,13 @@ import {
 } from "./sq-arm-command-policy.mjs";
 
 // Keep this literal synchronized with SQUAD_BACKEND_KNOWN in bin/sq-backend.sh.
-export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux", "tuios"]);
+export const SQUAD_BACKEND_KNOWN = new Set(["tmux", "herdr", "zellij", "orca", "cmux", "tuios", "herdr-core"]);
+
+// Provider CLI names that differ from the backend name they belong to. The
+// herdr-core backend is driven by the `herdr-core` binary, which ships `hc` as
+// its documented symlink, so either name on a command line is raw session
+// control exactly like `tmux` or `tuios`.
+export const SQUAD_BACKEND_CLI_ALIASES = new Set(["hc"]);
 
 // The guard's registry of the one Squad surface that reaches session-provider
 // grant state on purpose. It is named here so every refusal tells the operator
@@ -43,7 +49,8 @@ function shellPayload(position) {
 
 function nodeHasBackend(node, depth) {
   const position = commandPosition(node);
-  if (position?.command && SQUAD_BACKEND_KNOWN.has(basename(position.command.value))) return true;
+  const commandName0 = basename(literalValue(position?.command));
+  if (position?.command && (SQUAD_BACKEND_KNOWN.has(commandName0) || SQUAD_BACKEND_CLI_ALIASES.has(commandName0))) return true;
 
   const commandName = basename(literalValue(position?.command));
   if (SHELLS.has(commandName)) {
