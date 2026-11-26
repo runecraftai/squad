@@ -79,11 +79,17 @@ case "$cmd" in
     exit 1
     ;;
   run)
+    [ -z "${SQUAD_HC_RUN_STDERR:-}" ] || printf '%s\n' "$SQUAD_HC_RUN_STDERR" >&2
+    run_address=${SQUAD_HC_NEW_ADDRESS:-t1}
+    if [ "${SQUAD_HC_RUN_REGISTERS:-0}" = 1 ]; then
+      jq -cn --arg address "${SQUAD_HC_RUN_REGISTER_ADDRESS:-$run_address}" --arg task "${SQUAD_HC_RUN_TASK:-probe}" \
+        '{terminals:[{address:$address,state:"live",labels:{"squad.task":$task}}]}' > "$SQUAD_HC_LIST"
+    fi
     if [ "${SQUAD_HC_RUN_FAIL:-0}" = 1 ]; then
       printf '{"error":{"kind":"name_taken","message":"that name is taken","hint":"pick another"}}\n' >&2
       exit 1
     fi
-    printf '{"address":"%s","agent":"bash","cwd":"/tmp","name":"x","state":"live","turn":0}\n' "${SQUAD_HC_NEW_ADDRESS:-t1}"
+    printf '{"address":"%s","agent":"bash","cwd":"/tmp","name":"x","state":"live","turn":0}\n' "$run_address"
     ;;
   ls)
     cat "${SQUAD_HC_LIST:-/dev/null}"
@@ -504,8 +510,8 @@ out=$(fm_backend_herdr_core_kill 'default:t1' '' 'sq-other' 2>&1) && rc=0 || rc=
 
 write_world
 reset_calls
-printf '{"core":{"id":"core-other"}}\n' > /dev/null
-out=$(SQUAD_HC_CORE_ID=core-a fm_backend_herdr_core_kill 'default:t1' '' 'sq-probe' 2>&1) && rc=0 || rc=$?
+: > "$SQUAD_HC_KILL_LOG"
+out=$(fm_backend_herdr_core_kill 'default:t1' '' 'sq-probe' 2>&1) && rc=0 || rc=$?
 [ "$rc" -eq 0 ] || fail "kill must succeed on a matching triple: $out"
 assert_grep 'kill t1' "$SQUAD_HC_KILL_LOG" 'kill names the exact address'
 assert_grep 'rm t1' "$SQUAD_HC_KILL_LOG" 'rm names the exact address'
@@ -662,6 +668,42 @@ out=$(fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && 
 [ "$rc" -ne 0 ] || fail 'create_task must refuse an address the adapter cannot address'
 assert_contains "$out" 'usable opaque address' 'the unusable-address refusal names the reason'
 unset SQUAD_HC_NEW_ADDRESS
+
+# A create that succeeds while the product also writes a notice on stderr still
+# yields its address: only stdout is parsed as JSON.
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+address=$(SQUAD_HC_NEW_ADDRESS=t7 SQUAD_HC_RUN_STDERR='notice: registry compacted' \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
+  || fail 'a stderr notice must not hide a successful create'
+[ "$address" = t7 ] || fail "a create with a stderr notice still returns its address (got '$address')"
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a successful create must not close anything'
+
+# The product documents that a failed `hc run` may still have run the program, so
+# the terminal it created is resolved by its unique task label and closed exactly.
+SQUAD_HC_LABEL_TASK=probe write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+out=$(SQUAD_HC_RUN_FAIL=1 SQUAD_HC_RUN_REGISTERS=1 SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a failed hc run must refuse'
+assert_contains "$out" 'that name is taken' 'the create refusal relays the product message'
+assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'the unrecorded terminal is closed by its exact address'
+assert_grep 'rm t7' "$SQUAD_HC_KILL_LOG" 'the unrecorded terminal is removed by its exact address'
+
+# The same recovery runs when the create output carries no usable address: the
+# inventory, not the unreadable output, names what has to be closed.
+SQUAD_HC_LABEL_TASK=probe write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+out=$(SQUAD_HC_RUN_REGISTERS=1 SQUAD_HC_RUN_REGISTER_ADDRESS=t7 SQUAD_HC_NEW_ADDRESS=.t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'an unusable reported address must refuse'
+assert_contains "$out" 'usable opaque address' 'the unusable-address refusal names the reason'
+assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'the terminal an unusable address hid is closed by the address the inventory reports'
 
 short_name=$(fm_backend_herdr_core_name_for_task 'short-id')
 [ "$short_name" = 'sq-short-id' ] || fail "short task ids name the terminal directly (got '$short_name')"

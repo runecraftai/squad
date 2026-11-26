@@ -3231,6 +3231,17 @@ if [ -n "${RELAUNCH_EXISTING_META:-}" ]; then
   fi
 fi
 
+if [ "$BACKEND" = herdr-core ]; then
+  # The guarded core id is recorded with the task and every later write refuses
+  # when it no longer matches, so a core that restarted while this spawn ran must
+  # be caught before the record names the wrong core. The terminal this spawn
+  # created is still covered by the armed abort cleanup on this exit.
+  HERDR_CORE_LIVE_CORE_ID=$(fm_backend_herdr_core_read_core_id "$HERDR_CORE_SESSION" 2>/dev/null) || HERDR_CORE_LIVE_CORE_ID=
+  if [ -z "$HERDR_CORE_LIVE_CORE_ID" ] || [ "$HERDR_CORE_LIVE_CORE_ID" != "$HERDR_CORE_CORE_ID" ]; then
+    echo "error: the herdr-core core for session '$HERDR_CORE_SESSION' changed while $ID was being created (guarded ${HERDR_CORE_CORE_ID:-unreadable}, live ${HERDR_CORE_LIVE_CORE_ID:-unreadable}); refusing to record a terminal that may belong to another core" >&2
+    exit 1
+  fi
+fi
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 {

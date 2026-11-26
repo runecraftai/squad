@@ -69,7 +69,7 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Protocol handshake | `printf '{"jsonrpc":"2.0","id":1,"method":"hello","params":{"generation":1}}\n' \| hc connect` (bounded by `fm_run_timed`) |
 | Method and parameter contract | `hc schema --json` |
 | Core identity | `hc server status --json` (read only after the socket test) |
-| Inventory for the duplicate check | `hc ls --json --label squad.task=<id>` |
+| Inventory for the duplicate check and a failed-create recovery | `hc ls --json --label squad.task=<id>` |
 | One record read (every identity and state check) | `hc get --json <t>` |
 | Screen and history | `hc read --json --lines <n> <t>` |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
@@ -80,6 +80,11 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 `<project>` is the project directory recorded for the task; the isolated worktree is entered later inside the terminal by the ordinary `fob get` sequence, exactly as on the other session-provider backends.
 
 Not used, by design: `hc ls --all`, `server stop`, `server restart`, `machine *`, `update`, `hc attach`, and every name-addressed write.
+
+Create is the only step that makes a terminal, so it is also the only step that may have to undo one.
+When `hc run` fails, or succeeds without a usable address, the adapter reads back the terminals carrying this task's `squad.task` label and closes exactly that address before it refuses.
+The product documents that a failed `hc run` may still have run the program, so the alternative would be an unrecorded terminal that the next spawn then refuses as a duplicate endpoint.
+Nothing outside that one label is touched, and a close that cannot be confirmed prints the exact address and the `hc kill`/`hc rm` commands to retire it by hand.
 
 ## Address-exact operations only
 

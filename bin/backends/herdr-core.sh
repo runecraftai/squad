@@ -621,8 +621,44 @@ fm_backend_herdr_core_name_for_task() {  # <task-id>
   printf '%s-%s' "$(printf '%s' "$full" | cut -c1-25)" "$suffix"
 }
 
+# fm_backend_herdr_core_labeled_addresses: every address in <session> whose own
+# `squad.task` label is exactly <task-id>. The product's `--label` filter is
+# re-checked locally, because this list authorizes closing a terminal that may
+# have just been created and never recorded.
+fm_backend_herdr_core_labeled_addresses() {  # <session> <task-id>
+  local session=${1:-default} task_id=${2:-} out
+  [ -n "$task_id" ] || return 1
+  out=$(fm_backend_herdr_core_cli "$session" ls --json --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" --arg id "$task_id" '
+    (.terminals // [])[]
+    | select(((.labels // {})[$key] // "") == $id)
+    | .address // empty
+  ' 2>/dev/null
+}
+
+# fm_backend_herdr_core_close_created: recover a create that failed or returned an
+# unreadable address. The product documents that a failed `hc run` may still have
+# run the program, so the adapter resolves the terminal it may just have made by
+# its unique task label and closes exactly that address. Nothing else is touched,
+# and a close that cannot be confirmed names the exact address to retire by hand.
+fm_backend_herdr_core_close_created() {  # <session> <task-id>
+  local session=${1:-default} task_id=${2:-} addresses address
+  addresses=$(fm_backend_herdr_core_labeled_addresses "$session" "$task_id") || {
+    echo "warning: could not read the herdr-core inventory to recover a failed create for task $task_id in session '$session'; check 'HC_SESSION=$session hc ls --all --label $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id' and close that exact address by hand" >&2
+    return 0
+  }
+  [ -n "$addresses" ] || return 0
+  while IFS= read -r address; do
+    [ -n "$address" ] || continue
+    fm_backend_herdr_core_kill "$session:$address" '' '' >/dev/null 2>&1 && continue
+    echo "warning: could not close the herdr-core terminal $session:$address created for task $task_id; close that exact address by hand: HC_SESSION=$session hc kill $address; HC_SESSION=$session hc rm $address" >&2
+  done <<EOF
+$addresses
+EOF
+}
+
 fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
-  local session=${1:-} label=${2:-} cwd=${3:-} task_id base name out address duplicate
+  local session=${1:-} label=${2:-} cwd=${3:-} task_id base name out address duplicate err_file reason
   [ -n "$label" ] || { echo 'error: herdr-core create_task needs a task label' >&2; return 1; }
   [ -n "$cwd" ] && [ -d "$cwd" ] || { echo "error: herdr-core create_task needs an existing directory, got '$cwd'" >&2; return 1; }
   task_id=$(fm_backend_herdr_core_task_id_of_label "$label")
@@ -639,15 +675,27 @@ fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
     echo "error: a live herdr-core terminal already carries $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id ($duplicate found); refusing a duplicate endpoint" >&2
     return 1
   fi
-  out=$(fm_backend_herdr_core_cli "$session" run --bg --json --no-parent \
-    --name "$name" --cwd "$cwd" \
-    --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" \
-    --label "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL=$base" 2>&1) || {
-    echo "error: herdr-core refused to create the terminal for $label: ${out:-no reason given}" >&2
+  # stdout carries only the product's JSON record and stderr only its message, so
+  # an informational notice on an otherwise successful create cannot make the
+  # address unreadable.
+  err_file=$(mktemp "${TMPDIR:-/tmp}/sq-hc-run.XXXXXX") || {
+    echo "error: cannot create a temporary file for the herdr-core create error envelope" >&2
     return 1
   }
+  if ! out=$(fm_backend_herdr_core_cli "$session" run --bg --json --no-parent \
+    --name "$name" --cwd "$cwd" \
+    --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" \
+    --label "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL=$base" 2>"$err_file"); then
+    reason=$(tr '\n\r' '  ' < "$err_file" 2>/dev/null || true)
+    rm -f "$err_file"
+    fm_backend_herdr_core_close_created "$session" "$task_id"
+    echo "error: herdr-core refused to create the terminal for $label: ${reason:-no reason given}" >&2
+    return 1
+  fi
+  rm -f "$err_file"
   address=$(printf '%s' "$out" | jq -r '.address // empty' 2>/dev/null) || address=
   if ! fm_backend_opaque_address_valid "$address"; then
+    fm_backend_herdr_core_close_created "$session" "$task_id"
     echo "error: herdr-core returned no usable opaque address for $label" >&2
     return 1
   fi
