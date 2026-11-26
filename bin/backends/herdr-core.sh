@@ -131,11 +131,7 @@ fm_backend_herdr_core_cli() {  # <session> <hc args...>
   }
   fm_backend_herdr_core_session_ok "$session" || return 1
   fm_backend_herdr_core_core_present "$session" || return 1
-  if [ "$session" = "$(fm_backend_herdr_core_session)" ]; then
-    command "$bin" "$@"
-  else
-    HC_SESSION="$session" command "$bin" "$@"
-  fi
+  command "$bin" "$@"
 }
 
 # --- target parsing and the identity triple --------------------------------
@@ -163,17 +159,24 @@ fm_backend_herdr_core_task_id_of_label() {  # <label>
   esac
 }
 
+# fm_backend_herdr_core_read_core_id: one authoritative, never-cached read of
+# the live core's own id, so a long-lived poller notices a restarted core.
+fm_backend_herdr_core_read_core_id() {  # <session>
+  local session=${1:-default} out
+  out=$(fm_backend_herdr_core_cli "$session" server status --json 2>/dev/null) || return 1
+  printf '%s' "$out" | jq -er '.core.id | select(type == "string" and length > 0)' 2>/dev/null
+}
+
 # fm_backend_herdr_core_core_id: the live core's own id, read once per process.
 # It is the third element of the cleanup identity: an address belongs to one
 # core's registry, so a recorded id that no longer matches refuses every write.
 fm_backend_herdr_core_core_id() {  # <session>
-  local session=${1:-default} out id
+  local session=${1:-default} id
   if [ -n "${SQUAD_BACKEND_HERDR_CORE_CORE_ID:-}" ]; then
     printf '%s' "$SQUAD_BACKEND_HERDR_CORE_CORE_ID"
     return 0
   fi
-  out=$(fm_backend_herdr_core_cli "$session" server status --json 2>/dev/null) || return 1
-  id=$(printf '%s' "$out" | jq -er '.core.id | select(type == "string" and length > 0)' 2>/dev/null) || return 1
+  id=$(fm_backend_herdr_core_read_core_id "$session") || return 1
   # shellcheck disable=SC2034 # Read by later calls in the same shell.
   SQUAD_BACKEND_HERDR_CORE_CORE_ID=$id
   printf '%s' "$id"
@@ -226,7 +229,7 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
   fm_backend_herdr_core_session_ok "$session" || return 1
   recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
   if [ -n "$recorded" ]; then
-    live=$(fm_backend_herdr_core_core_id "$session" 2>/dev/null || true)
+    live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null || true)
     if [ -z "$live" ] || [ "$live" != "$recorded" ]; then
       echo "error: herdr-core identity for $target changed (recorded core ${recorded:-unreadable}, live core ${live:-unreadable}); refusing every write" >&2
       return 1
@@ -269,7 +272,8 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
 #   status    idle|working|done|blocked|error, or empty when it reports none
 #   kind/msg  the blocked prompt's own fields, when it carries them
 #   turn, name, cwd, pid, reason, exit_code
-# Returns 3 when the address is authoritatively absent.
+# Returns 3 when the address is authoritatively absent, and 4 when the record
+# does not carry the core id and task label this base recorded for <target>.
 fm_backend_herdr_core_status_json() {  # <target>
   local target=${1:-} session address json rc=0
   fm_backend_herdr_core_parse_target "$target" || return 1
@@ -280,6 +284,7 @@ fm_backend_herdr_core_status_json() {  # <target>
   # like a successful read of an empty record.
   json=$(fm_backend_herdr_core_get_json "$session" "$address") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
+  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || return 4
   printf '%s' "$json" | jq -c '
     (if (.reported | type) == "boolean" then .reported else false end) as $reported
     | (if (.status | type) == "object" then .status else {} end) as $status
@@ -363,20 +368,34 @@ fm_backend_herdr_core_protocol_check() {  # <session>
     echo "error: herdr-core version '${version:-unknown}' is below this adapter's floor $SQUAD_BACKEND_HERDR_CORE_VERSION_FLOOR; upgrade hc or refuse this backend" >&2
     return 1
   fi
+  printf '%s' "$line" | jq -e '(.result.features // []) | type == "array"' >/dev/null 2>&1 || {
+    echo 'error: herdr-core handshake features list is malformed; refusing to drive an unverified core' >&2
+    return 1
+  }
   problems=$(printf '%s' "$line" | jq -r --arg required "$SQUAD_BACKEND_HERDR_CORE_REQUIRED_FEATURES" '
     (.result.features // []) as $have
     | $required | split(" ") | map(select(length > 0))
     | map(select(. as $f | ($have | index($f)) == null) | "missing feature \(.)")
-    | .[]' 2>/dev/null) || problems=
+    | .[]' 2>/dev/null) || {
+    echo 'error: herdr-core handshake features could not be validated; refusing to drive an unverified core' >&2
+    return 1
+  }
   if [ -n "$problems" ]; then
     echo "error: herdr-core is missing protocol features this adapter requires: $(printf '%s' "$problems" | tr '\n' ' ' | sed 's/ *$//')" >&2
     return 1
   fi
+  printf '%s' "$line" | jq -e '(.result.methods // []) | type == "array"' >/dev/null 2>&1 || {
+    echo 'error: herdr-core handshake methods list is malformed; refusing to drive an unverified core' >&2
+    return 1
+  }
   problems=$(printf '%s' "$line" | jq -r --arg required "$SQUAD_BACKEND_HERDR_CORE_REQUIRED_METHODS" '
     (.result.methods // [] | map(if type == "object" then (.name // "") else . end)) as $have
     | $required | split("\n") | map(select(length > 0))
     | map(select(. as $m | ($have | index($m)) == null) | "missing method \(.)")
-    | .[]' 2>/dev/null) || problems=
+    | .[]' 2>/dev/null) || {
+    echo 'error: herdr-core handshake methods could not be validated; refusing to drive an unverified core' >&2
+    return 1
+  }
   if [ -n "$problems" ]; then
     echo "error: herdr-core is missing methods this adapter requires: $(printf '%s' "$problems" | tr '\n' ' ' | sed 's/ *$//')" >&2
     return 1
@@ -416,22 +435,6 @@ fm_backend_herdr_core_protocol_check() {  # <session>
 }
 
 # --- the 16 session-provider primitives -------------------------------------
-
-fm_backend_herdr_core_resolve_bare_selector() {  # <name>
-  local name=${1:-} base out count
-  base=$(basename "${SQUAD_BASE:-${SQUAD_ROOT:-squad}}")
-  out=$(fm_backend_herdr_core_cli "$(fm_backend_herdr_core_session)" \
-    ls --json --label "$SQUAD_BACKEND_HERDR_CORE_BASE_LABEL=$base" 2>/dev/null) || {
-    echo "error: cannot list herdr-core terminals for base '$base'" >&2
-    return 1
-  }
-  count=$(printf '%s' "$out" | jq -r --arg name "$name" '[.terminals[]? | select(.name == $name)] | length' 2>/dev/null) || count=0
-  if [ "$count" != 1 ]; then
-    echo "error: no single live herdr-core terminal named $name in base '$base' (found ${count:-unknown}); pass a task id or an exact <session>:<address>" >&2
-    return 1
-  fi
-  printf '%s' "$out" | jq -r --arg name "$name" '[.terminals[] | select(.name == $name)][0].address'
-}
 
 fm_backend_herdr_core_capture() {  # <target> <lines> [expected-label]
   local target=${1:-} lines=${2:-0} expected=${3:-} session address
@@ -655,28 +658,6 @@ fm_backend_herdr_core_current_path() {  # <target>
   printf '%s' "$status_json" | jq -r '.cwd // empty'
 }
 
-fm_backend_herdr_core_current_command() {  # <target>
-  local status_json
-  status_json=$(fm_backend_herdr_core_status_json "${1:-}" 2>/dev/null) || return 0
-  printf '%s' "$status_json" | jq -r '.name // empty'
-}
-
-# fm_backend_herdr_core_foreground_comms: the product exposes the foreground
-# process GROUP LEADER's name only, never the other members of its group. The
-# classifier below therefore treats it as one positive name source rather than
-# as a complete group listing.
-fm_backend_herdr_core_foreground_comms() {  # <target>
-  local name
-  name=$(fm_backend_herdr_core_current_command "${1:-}" 2>/dev/null) || return 0
-  [ -n "$name" ] && printf '%s\n' "$name"
-}
-
-fm_backend_herdr_core_foreground_argv0s() {  # <target>
-  local status_json
-  status_json=$(fm_backend_herdr_core_status_json "${1:-}" 2>/dev/null) || return 0
-  printf '%s' "$status_json" | jq -r '.argv0 // empty | select(length > 0)'
-}
-
 # fm_backend_herdr_core_classify_process_name: the shared process-name
 # vocabulary (`agent` for a verified harness, `shell` for an idle interactive
 # shell, `other` for anything else), reusing the tmux adapter's single owner so
@@ -694,9 +675,14 @@ fm_backend_herdr_core_classify_process_name() {  # <path> [argv0]
 #   ambiguous  the address is live but its program cannot be attributed
 #   unreadable a read failed or contradicted itself
 fm_backend_herdr_core_agent_state() {  # <target>
-  local target=${1:-} status_json state expected label
+  local target=${1:-} status_json state expected label rc=0
   expected=$(fm_backend_herdr_core_expected_label_for_target "$target" 2>/dev/null || true)
-  if ! status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null); then
+  status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$rc" -eq 4 ]; then
+      printf 'missing'
+      return 0
+    fi
     if [ -n "$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)" ]; then
       printf 'unreadable'
     else
@@ -750,12 +736,24 @@ fm_backend_herdr_core_expected_label_for_target() {  # <target>
   fm_meta_get "$meta" endpoint_task_id
 }
 
-fm_backend_herdr_core_agent_alive() {  # <target>
-  case "$(fm_backend_herdr_core_agent_state "${1:-}")" in
-    alive) printf 'alive' ;;
-    dead|missing) printf 'dead' ;;
-    *) printf 'unknown' ;;
-  esac
+# fm_backend_herdr_core_record_owned: does one read of <target> carry the two
+# identities this base recorded for it? A recycled address in a restarted core,
+# or an address another task now owns, has lost one of them, so a status
+# consumer must refuse the record instead of projecting a stranger's state onto
+# the task that recorded the address.
+fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
+  local session=${1:-default} target=${2:-} json=${3:-} recorded live expected label
+  recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
+  if [ -n "$recorded" ]; then
+    live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null || true)
+    [ -n "$live" ] && [ "$live" = "$recorded" ] || return 1
+  fi
+  expected=$(fm_backend_herdr_core_expected_label_for_target "$target" 2>/dev/null || true)
+  if [ -n "$expected" ]; then
+    label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" '(.labels // {})[$key] // ""')
+    [ "$label" = "$(fm_backend_herdr_core_task_id_of_label "$expected")" ] || return 1
+  fi
+  return 0
 }
 
 # fm_backend_herdr_core_kill: close ONE exact address after the identity triple,
@@ -803,9 +801,14 @@ fm_backend_herdr_core_task_closed() {  # <target> <task-id>
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   fm_backend_herdr_core_session_ok "$session" || return 1
   fm_backend_herdr_core_get_json "$session" "$address" >/dev/null 2>&1 || rc=$?
-  if [ "$rc" -eq 3 ]; then
-    return 0
-  fi
+  case "$rc" in
+    0) ;;
+    3) return 0 ;;
+    *)
+      echo "error: herdr-core address $address for task $id could not be read in session '$session' (unreachable core or an inconsistent record); cannot confirm the close" >&2
+      return 1
+      ;;
+  esac
   echo "error: herdr-core address $address for task $id is still present; refusing to retire its records" >&2
   return 1
 }
@@ -857,7 +860,7 @@ fm_backend_herdr_core_prompt_summary() {  # <target>
 # same way the other adapters read a bordered composer and classified by the
 # shared owner in bin/sq-composer-lib.sh.
 fm_backend_herdr_core_composer_state() {  # <target>
-  local status_json cap line trimmed stripped="" found=0
+  local status_json cap line trimmed content="" bordered=0 found=0
   status_json=$(fm_backend_herdr_core_status_json "${1:-}" 2>/dev/null) || { printf 'unknown'; return 0; }
   [ "$(printf '%s' "$status_json" | jq -r '.reported')" = true ] && { printf 'unknown'; return 0; }
   cap=$(fm_backend_herdr_core_capture "${1:-}" 24 2>/dev/null) || { printf 'unknown'; return 0; }
@@ -865,29 +868,28 @@ fm_backend_herdr_core_composer_state() {  # <target>
     trimmed=${line#"${line%%[![:space:]]*}"}
     trimmed=${trimmed%"${trimmed##*[![:space:]]}"}
     [ -n "$trimmed" ] || continue
-    # Only a bordered composer row, or a bare agent prompt glyph, is a
-    # candidate: a bare shell prompt is never a safe injection target, and the
-    # shared classifier below refuses it.
+    # A bordered row is a genuine composer container even when it holds only the
+    # harness's own prompt glyph. A bare row is a candidate only for an AGENT
+    # prompt glyph: a bare shell prompt is never a safe injection target, and the
+    # shared classifier below makes that distinction, so the glyph stays in the
+    # content it judges.
     case "$trimmed" in
-      '│'*'│'|'┃'*'┃'|'|'*'|'|'>'*|'❯'*|'›'*|'⟩'*) ;;
+      '│'*'│'|'┃'*'┃'|'|'*'|') bordered=1 ;;
+      '>'*|'❯'*|'›'*|'⟩'*) bordered=0 ;;
       *) continue ;;
     esac
-    stripped=$trimmed
+    content=$trimmed
     found=1
   done <<EOF
 $cap
 EOF
   [ "$found" -eq 1 ] || { printf 'unknown'; return 0; }
-  stripped=${stripped//│/}
-  stripped=${stripped//┃/}
-  stripped=${stripped//|/}
-  stripped=${stripped//>/}
-  stripped=${stripped//❯/}
-  stripped=${stripped//›/}
-  stripped=${stripped//⟩/}
-  stripped=${stripped#"${stripped%%[![:space:]]*}"}
-  stripped=${stripped%"${stripped##*[![:space:]]}"}
-  fm_composer_classify_content 0 "$stripped"
+  content=${content//│/}
+  content=${content//┃/}
+  content=${content//|/}
+  content=${content#"${content%%[![:space:]]*}"}
+  content=${content%"${content##*[![:space:]]}"}
+  fm_composer_classify_content "$bordered" "$content"
 }
 
 fm_backend_herdr_core_target_exists() {  # <target> [expected-label]
@@ -897,6 +899,7 @@ fm_backend_herdr_core_target_exists() {  # <target> [expected-label]
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   fm_backend_herdr_core_session_ok "$session" 2>/dev/null || return 1
   json=$(fm_backend_herdr_core_get_json "$session" "$address" 2>/dev/null) || return 1
+  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || return 1
   state=$(printf '%s' "$json" | jq -r '.state')
   [ "$state" = live ] || return 1
   if [ -n "$expected" ]; then

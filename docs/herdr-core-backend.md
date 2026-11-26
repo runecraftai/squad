@@ -69,13 +69,15 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Protocol handshake | `printf '{"jsonrpc":"2.0","id":1,"method":"hello","params":{"generation":1}}\n' \| hc connect` (bounded by `fm_run_timed`) |
 | Method and parameter contract | `hc schema --json` |
 | Core identity | `hc server status --json` (read only after the socket test) |
-| Inventory for the duplicate check and a bare-name selector | `hc ls --json --label squad.task=<id>` / `--label squad.base=<base>` |
+| Inventory for the duplicate check | `hc ls --json --label squad.task=<id>` |
 | One record read (every identity and state check) | `hc get --json <t>` |
 | Screen and history | `hc read --json --lines <n> <t>` |
-| Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <worktree> --label squad.task=<id> --label squad.base=<base>` |
+| Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
 | Deliver text | `hc send --json --if idle <t> <text>` (reporting program), `hc send --json <t> <text>` (silent program) |
 | Press one named key | `hc keys --json <t> <key>` |
 | Close | `hc kill --json <t>`, confirm `.state == finished`, then `hc rm --json <t>`, confirm `.removed == <t>` |
+
+`<project>` is the project directory recorded for the task; the isolated worktree is entered later inside the terminal by the ordinary `fob get` sequence, exactly as on the other session-provider backends.
 
 Not used, by design: `hc ls --all`, `server stop`, `server restart`, `machine *`, `update`, `hc attach`, and every name-addressed write.
 
@@ -84,7 +86,7 @@ Not used, by design: `hc ls --all`, `server stop`, `server restart`, `machine *`
 Every write names one opaque address that Squad created:
 
 - **No sweep.** `hc ls --all`, `server stop`, `server restart`, `machine *`, and `update` are never called. The one `--all` read in this backend is the lab's tripwire, which is read-only and never leaves a test.
-- **No name selectors.** A recorded address is used verbatim; a bare name is only resolved through a base-label-filtered inventory read for ad hoc use.
+- **No name selectors.** A recorded address is used verbatim, and this adapter resolves no bare terminal name of its own; ad hoc use passes an exact `<session>:<address>`.
 - **No foreign terminal.** `kill` and `rm` require the cleanup identity triple to agree, checked immediately before `kill` and again before `rm`:
 
   1. the recorded address,

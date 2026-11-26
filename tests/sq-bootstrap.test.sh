@@ -776,7 +776,7 @@ test_cmux_bundled_cli_satisfies_dependency() {
 }
 
 test_unknown_backend_reports_invalid_configuration() {
-  local case_dir fakebin out
+  local case_dir fakebin out known
   case_dir="$TMP_ROOT/unknown-backend"
   mkdir -p "$case_dir/home/config"
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
@@ -784,8 +784,15 @@ test_unknown_backend_reports_invalid_configuration() {
   fakebin=$(make_fake_toolchain "$case_dir")
   out=$(PATH="$fakebin:$BASE_PATH" SQUAD_BASE="$case_dir/home" SQUAD_ROOT_OVERRIDE="$case_dir/home" \
     SQUAD_FAKE_FOB_LEASE_HELP=1 "$ROOT/bin/sq-bootstrap.sh")
-  assert_contains "$out" "BACKEND_INVALID: bogus (known: tmux herdr zellij orca cmux tuios)" \
+  assert_contains "$out" "BACKEND_INVALID: bogus" \
     "bootstrap should report an unknown resolved backend"
+  # The diagnostic names the accepted set; compare it as a set so registering a
+  # backend cannot silently drop another one from the message.
+  known=$(printf '%s\n' "$out" | sed -n 's/.*BACKEND_INVALID: bogus (known: \([^)]*\)).*/\1/p')
+  # shellcheck disable=SC2086 # deliberate word split of the diagnostic's list
+  known=$(printf '%s\n' $known | sort | tr '\n' ' ' | sed 's/ *$//')
+  [ "$known" = "cmux herdr herdr-core orca tmux tuios zellij" ] \
+    || fail "the invalid-backend diagnostic must list exactly the known backends, got '${known:-none}'"
   assert_not_contains "$out" "MISSING: tmux" "an unknown backend should not silently fall back to tmux dependencies"
   pass "bootstrap: unknown resolved backends fail closed with an actionable diagnostic"
 }

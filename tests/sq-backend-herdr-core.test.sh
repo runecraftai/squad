@@ -268,6 +268,12 @@ guard_fails 'guard refuses a missing method' 'missing method terminal.send'
 hello_reply 1 0.1.22 '["hello","server.status","terminal.run","terminal.get","terminal.list","terminal.read","terminal.send","terminal.keys","terminal.kill","terminal.rm","events.subscribe"]' '["framed"]' > "$TMP_ROOT/hello.json"
 guard_fails 'guard refuses a missing feature' 'missing feature status'
 
+hello_reply 1 0.1.22 '["hello","server.status","terminal.run","terminal.get","terminal.list","terminal.read","terminal.send","terminal.keys","terminal.kill","terminal.rm","events.subscribe"]' '{"status":true,"events":true}' > "$TMP_ROOT/hello.json"
+guard_fails 'guard refuses a malformed feature catalog instead of assuming none' 'features list is malformed'
+
+hello_reply 1 0.1.22 '{"terminal.run":true}' > "$TMP_ROOT/hello.json"
+guard_fails 'guard refuses a malformed method catalog instead of assuming none' 'methods list is malformed'
+
 write_world
 schema_reply '' 'terminal.send:if' > "$SQUAD_HC_SCHEMA_FILE"
 guard_fails 'guard refuses a missing parameter' 'terminal.send has no parameter if'
@@ -321,6 +327,61 @@ SQUAD_HC_LABEL_TASK=probe write_live_terminal t1 live bash 'null'
 [ "$(fm_backend_herdr_core_busy_state 'default:t1')" = unknown ] || fail 'a silent program is unknown, never idle'
 [ -z "$(fm_backend_herdr_core_prompt_summary 'default:t1')" ] || fail 'a silent program has no prompt summary'
 pass 'silent lanes stay unknown and carry no prompt'
+
+# A restarted core recycles addresses, and a retired task's address can belong
+# to a stranger: the one read every status consumer uses checks the recorded
+# core id and the terminal's own task label before projecting any state.
+write_world
+fm_write_meta "$SQUAD_STATE_OVERRIDE/status.meta" \
+  "window=default:t1" "endpoint_task_id=status" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t1" "hc_core_id=core-old"
+SQUAD_HC_LABEL_TASK=status write_live_terminal t1 live pi '{"app":"pi","state":"blocked","kind":"permission","msg":"Allow rm?"}'
+[ "$(fm_backend_herdr_core_busy_state 'default:t1')" = unknown ] \
+  || fail 'a record from a different core must not report a busy verdict'
+[ -z "$(fm_backend_herdr_core_prompt_summary 'default:t1')" ] \
+  || fail 'a record from a different core must not report a prompt'
+[ "$(fm_backend_herdr_core_agent_state 'default:t1')" = missing ] \
+  || fail 'a record from a different core is not this task endpoint'
+mkdir -p "$TMP_ROOT/status-state"
+out=$(fm_backend_herdr_core_poll_transition "$TMP_ROOT/status-state" default 'default:t1') && rc=0 || rc=$?
+[ "$rc" -eq 2 ] || fail "a record from a different core must not wake the sentry (rc=$rc)"
+
+fm_write_meta "$SQUAD_STATE_OVERRIDE/status.meta" \
+  "window=default:t1" "endpoint_task_id=status" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t1" "hc_core_id=core-a"
+SQUAD_HC_LABEL_TASK=stranger write_live_terminal t1 live pi '{"app":"pi","state":"blocked","kind":"permission","msg":"Allow rm?"}'
+[ "$(fm_backend_herdr_core_busy_state 'default:t1')" = unknown ] \
+  || fail 'a stranger task label must not report a busy verdict'
+[ "$(fm_backend_herdr_core_agent_state 'default:t1')" = missing ] \
+  || fail 'a stranger task label is not this task endpoint'
+out=$(fm_backend_herdr_core_poll_transition "$TMP_ROOT/status-state" default 'default:t1') && rc=0 || rc=$?
+[ "$rc" -eq 2 ] || fail "a stranger task label must not wake the sentry (rc=$rc)"
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
+write_world
+pass 'status reads are bound to the recorded core id and task label'
+
+# composer_state: only a bordered row, or a bare AGENT glyph, is a composer.
+write_world
+printf '│ ❯ │\n' > "$SQUAD_HC_READ_TEXT"
+write_live_terminal t1 live bash 'null'
+[ "$(fm_backend_herdr_core_composer_state 'default:t1')" = empty ] \
+  || fail 'an empty bordered composer is empty'
+printf '│ hello │\n' > "$SQUAD_HC_READ_TEXT"
+[ "$(fm_backend_herdr_core_composer_state 'default:t1')" = pending ] \
+  || fail 'typed text in a bordered composer is pending'
+printf '│ > │\n' > "$SQUAD_HC_READ_TEXT"
+[ "$(fm_backend_herdr_core_composer_state 'default:t1')" = empty ] \
+  || fail 'a shell prompt inside a composer box is its own empty composer'
+printf '> \n' > "$SQUAD_HC_READ_TEXT"
+[ "$(fm_backend_herdr_core_composer_state 'default:t1')" = unknown ] \
+  || fail 'a bare shell prompt is never a safe injection target'
+printf '❯ \n' > "$SQUAD_HC_READ_TEXT"
+[ "$(fm_backend_herdr_core_composer_state 'default:t1')" = empty ] \
+  || fail 'a bare agent glyph is an empty agent composer'
+printf 'probe screen\n> ' > "$SQUAD_HC_READ_TEXT"
+pass 'the composer classifier keeps the prompt glyph it must judge'
 
 # --- delivery verdicts -----------------------------------------------------
 
@@ -417,7 +478,11 @@ SQUAD_HC_GET_RC=3 fm_backend_herdr_core_task_closed 'default:t1' probe \
 out=$(fm_backend_herdr_core_task_closed 'default:t1' probe 2>&1) && rc=0 || rc=$?
 [ "$rc" -ne 0 ] || fail 'a still-present address must refuse the close'
 assert_contains "$out" 'still present' 'the close refusal says the address is still there'
-pass 'teardown confirmation refuses a still-present address'
+out=$(SQUAD_HC_GET_RC=1 fm_backend_herdr_core_task_closed 'default:t1' probe 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'an unreadable address must refuse the close'
+assert_contains "$out" 'could not be read' 'an unreachable core is not reported as a present address'
+assert_not_contains "$out" 'still present' 'an unreachable core must not claim the address is still there'
+pass 'teardown confirmation separates an unreadable core from a present address'
 
 # A recorded session other than this process die is refused, not resolved.
 write_world
