@@ -92,7 +92,16 @@ case "$cmd" in
     printf '{"address":"%s","agent":"bash","cwd":"/tmp","name":"x","state":"live","turn":0}\n' "$run_address"
     ;;
   ls)
-    cat "${SQUAD_HC_LIST:-/dev/null}"
+    # `hc ls` lists live terminals; `--all` also includes finished ones. The
+    # fixture may set a distinct all-inventory; otherwise the live one doubles
+    # as it.
+    only_live=1
+    for a in "$@"; do [ "$a" = --all ] && only_live=0; done
+    if [ "$only_live" = 1 ] || [ -z "${SQUAD_HC_LIST_ALL:-}" ]; then
+      cat "${SQUAD_HC_LIST:-/dev/null}"
+    else
+      cat "$SQUAD_HC_LIST_ALL"
+    fi
     ;;
   get)
     if [ "${SQUAD_HC_GET_RC:-0}" != 0 ]; then
@@ -208,7 +217,7 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   export SQUAD_HC_SCHEMA_FILE="$TMP_ROOT/schema.json"
   unset SQUAD_HC_HELLO SQUAD_HC_STATUS_FAIL SQUAD_HC_SCHEMA_FAIL SQUAD_HC_GET_RC
   unset SQUAD_HC_RUN_FAIL SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL SQUAD_HC_SEND_ERROR
-  unset SQUAD_HC_KILL_SWAP
+  unset SQUAD_HC_KILL_SWAP SQUAD_HC_LIST_ALL
   export SQUAD_HC_CORE_ID=core-a
   printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
   write_live_terminal
@@ -704,6 +713,35 @@ out=$(SQUAD_HC_RUN_REGISTERS=1 SQUAD_HC_RUN_REGISTER_ADDRESS=t7 SQUAD_HC_NEW_ADD
 [ "$rc" -ne 0 ] || fail 'an unusable reported address must refuse'
 assert_contains "$out" 'usable opaque address' 'the unusable-address refusal names the reason'
 assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'the terminal an unusable address hid is closed by the address the inventory reports'
+
+# The failed create may already have run to completion, so a terminal that is
+# already `finished` is invisible to a live-only listing but is still recovered
+# by the same exact close.
+SQUAD_HC_LABEL_TASK=probe write_live_terminal t7 finished pi 'null'
+printf '{"terminals":[{"address":"t7","state":"finished","labels":{"squad.task":"probe"}}]}\n' > "$TMP_ROOT/list-all.json"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+out=$(SQUAD_HC_LIST_ALL="$TMP_ROOT/list-all.json" SQUAD_HC_NEW_ADDRESS=.t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'an unusable reported address must refuse'
+assert_contains "$out" 'usable opaque address' 'the unusable-address refusal names the reason'
+assert_grep 'kill t7' "$SQUAD_HC_KILL_LOG" 'a finished unrecorded terminal is closed too'
+assert_grep 'rm t7' "$SQUAD_HC_KILL_LOG" 'a finished unrecorded terminal is removed too'
+
+# The address the inventory names is re-checked against its own task label, so a
+# core that recycled that address between the listing and the close leaves the
+# stranger alone and reports the address to retire by hand.
+SQUAD_HC_LABEL_TASK=stranger write_live_terminal t7 finished pi 'null'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+out=$(SQUAD_HC_LIST_ALL="$TMP_ROOT/list-all.json" SQUAD_HC_NEW_ADDRESS=.t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'an unusable reported address must refuse'
+assert_contains "$out" 'could not close the herdr-core terminal' 'an unclosable recycled address is reported, not swallowed'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a recycled address carrying another task label must never be closed'
+rm -f "$TMP_ROOT/list-all.json"
 
 short_name=$(fm_backend_herdr_core_name_for_task 'short-id')
 [ "$short_name" = 'sq-short-id' ] || fail "short task ids name the terminal directly (got '$short_name')"

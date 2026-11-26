@@ -622,13 +622,17 @@ fm_backend_herdr_core_name_for_task() {  # <task-id>
 }
 
 # fm_backend_herdr_core_labeled_addresses: every address in <session> whose own
-# `squad.task` label is exactly <task-id>. The product's `--label` filter is
-# re-checked locally, because this list authorizes closing a terminal that may
-# have just been created and never recorded.
+# `squad.task` label is exactly <task-id>, live or already finished. `hc ls`
+# without `--all` lists live terminals only, and the create failure this
+# inventory recovers can already have run to completion, so the read asks for
+# finished terminals too; it is read-only and never authorizes anything on its
+# own. The product's `--label` filter is re-checked locally, because this list
+# authorizes closing a terminal that may have just been created and never
+# recorded.
 fm_backend_herdr_core_labeled_addresses() {  # <session> <task-id>
   local session=${1:-default} task_id=${2:-} out
   [ -n "$task_id" ] || return 1
-  out=$(fm_backend_herdr_core_cli "$session" ls --json --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" 2>/dev/null) || return 1
+  out=$(fm_backend_herdr_core_cli "$session" ls --all --json --label "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL=$task_id" 2>/dev/null) || return 1
   printf '%s' "$out" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" --arg id "$task_id" '
     (.terminals // [])[]
     | select(((.labels // {})[$key] // "") == $id)
@@ -650,7 +654,11 @@ fm_backend_herdr_core_close_created() {  # <session> <task-id>
   [ -n "$addresses" ] || return 0
   while IFS= read -r address; do
     [ -n "$address" ] || continue
-    fm_backend_herdr_core_kill "$session:$address" '' '' >/dev/null 2>&1 && continue
+    # The expected label is Squad's caller-facing form of the label already
+    # filtered above, so the close re-checks the terminal's own task label
+    # before both `kill` and `rm` and never retires an address the core has
+    # recycled in between.
+    fm_backend_herdr_core_kill "$session:$address" '' "sq-$task_id" >/dev/null 2>&1 && continue
     echo "warning: could not close the herdr-core terminal $session:$address created for task $task_id; close that exact address by hand: HC_SESSION=$session hc kill $address; HC_SESSION=$session hc rm $address" >&2
   done <<EOF
 $addresses

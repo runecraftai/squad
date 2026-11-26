@@ -69,7 +69,8 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Protocol handshake | `printf '{"jsonrpc":"2.0","id":1,"method":"hello","params":{"generation":1}}\n' \| hc connect` (bounded by `fm_run_timed`) |
 | Method and parameter contract | `hc schema --json` |
 | Core identity | `hc server status --json` (read only after the socket test) |
-| Inventory for the duplicate check and a failed-create recovery | `hc ls --json --label squad.task=<id>` |
+| Inventory for the duplicate check | `hc ls --json --label squad.task=<id>` (live terminals) |
+| Inventory for a failed-create recovery | `hc ls --all --json --label squad.task=<id>` (live and finished) |
 | One record read (every identity and state check) | `hc get --json <t>` |
 | Screen and history | `hc read --json --lines <n> <t>` |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
@@ -79,10 +80,10 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 
 `<project>` is the project directory recorded for the task; the isolated worktree is entered later inside the terminal by the ordinary `fob get` sequence, exactly as on the other session-provider backends.
 
-Not used, by design: `hc ls --all`, `server stop`, `server restart`, `machine *`, `update`, `hc attach`, and every name-addressed write.
+Not used, by design: `server stop`, `server restart`, `machine *`, `update`, `hc attach`, and every name-addressed write.
 
 Create is the only step that makes a terminal, so it is also the only step that may have to undo one.
-When `hc run` fails, or succeeds without a usable address, the adapter reads back the terminals carrying this task's `squad.task` label and closes exactly that address before it refuses.
+When `hc run` fails, or succeeds without a usable address, the adapter reads back the terminals carrying this task's `squad.task` label - live and finished, because a failed run may already have run to completion - and closes exactly that address, after re-checking that address's own label, before it refuses.
 The product documents that a failed `hc run` may still have run the program, so the alternative would be an unrecorded terminal that the next spawn then refuses as a duplicate endpoint.
 Nothing outside that one label is touched, and a close that cannot be confirmed prints the exact address and the `hc kill`/`hc rm` commands to retire it by hand.
 
@@ -90,7 +91,7 @@ Nothing outside that one label is touched, and a close that cannot be confirmed 
 
 Every write names one opaque address that Squad created:
 
-- **No sweep.** `hc ls --all`, `server stop`, `server restart`, `machine *`, and `update` are never called. The one `--all` read in this backend is the lab's tripwire, which is read-only and never leaves a test.
+- **No sweep.** `server stop`, `server restart`, `machine *`, and `update` are never called, and no destructive call ever takes `--all`. The only `--all` reads are the label-filtered failed-create inventory and the lab's tripwire; both are read-only, and the inventory authorizes nothing until the address's own `squad.task` label agrees.
 - **No name selectors.** A recorded address is used verbatim, and this adapter resolves no bare terminal name of its own; ad hoc use passes an exact `<session>:<address>`.
 - **No foreign terminal.** `kill` and `rm` require the cleanup identity triple to agree, checked immediately before `kill` and again before `rm`:
 
