@@ -121,6 +121,8 @@ Every write names one opaque address that Squad created:
 
 One address belongs to one core's registry, so an address is only meaningful inside the core that issued it. The recorded core id and the recorded session are both re-checked, and a task whose recorded session or core no longer matches refuses every write rather than resolving against whatever is running.
 
+The recorded identity is read from the task's own metadata file (`<task-id>.meta`), never by matching the recyclable `<session>:<address>` alone: two tasks can record the same address after a recycle, and resolving that by the address would hand one task the other's recorded core id and labels. A read that names no task and finds several recorded owners refuses as unverifiable instead of picking one.
+
 `hc kill` ends the terminal's own program and its foreground job. A process a program deliberately detached can survive it, exactly as on every other backend; this is not a process-tree sweep.
 
 ## Delivery

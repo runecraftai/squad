@@ -845,6 +845,55 @@ rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
 write_world
 pass 'every recorded-address close and read requires the squad.base label'
 
+# A core recycles an address as soon as its terminal is closed, so two tasks can
+# record the same `<session>:<address>` window. The recorded identity therefore
+# comes from the task's own `<task-id>.meta`, never from whichever meta the
+# address glob yields first: task `alpha` recorded `default:t1` against an older
+# core, the address was recycled, and task `beta` now records that same window
+# against the live core. Reading alpha's ids for beta would refuse every write,
+# drop deliveries and retire a live task's records as "foreign".
+write_world
+twin_meta() {  # <id> <core-id>
+  fm_write_meta "$SQUAD_STATE_OVERRIDE/$1.meta" \
+    "window=default:t1" "endpoint_task_id=$1" "worktree=$TMP_ROOT" \
+    "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+    "hc_session=default" "hc_address=t1" "hc_core_id=$2"
+}
+twin_meta alpha core-old
+twin_meta beta core-a
+SQUAD_HC_LABEL_TASK=beta write_live_terminal t1 live pi '{"app":"pi","state":"idle"}'
+[ "$(fm_backend_herdr_core_recorded_core_id 'default:t1' beta)" = core-a ] \
+  || fail "a task's recorded core id must come from its own metadata"
+[ "$(fm_backend_herdr_core_recorded_task_id_for_target 'default:t1' beta)" = beta ] \
+  || fail "a task's recorded task id must come from its own metadata"
+fm_backend_herdr_core_target_exists 'default:t1' 'sq-beta' \
+  || fail 'a live task is present through its own recorded identity even when a recycled address is shared'
+[ "$(fm_backend_herdr_core_agent_state 'default:t1' beta)" = alive ] \
+  || fail 'a live task is alive through its own recorded identity'
+out=$(fm_backend_herdr_core_task_closed 'default:t1' beta 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a live task must refuse to retire the records of the endpoint it still owns'
+assert_contains "$out" 'still present' 'the live owner still owns its recorded address'
+# A read that names no task cannot tell the two recorded owners apart, so it
+# refuses as unverifiable instead of projecting one task's state onto the other.
+fm_backend_herdr_core_recorded_core_id 'default:t1' >/dev/null 2>&1 && ambiguous_rc=0 || ambiguous_rc=$?
+[ "$ambiguous_rc" -eq 2 ] || fail "an address two tasks recorded without a task id must be ambiguous (rc=$ambiguous_rc)"
+fm_backend_herdr_core_status_json 'default:t1' >/dev/null 2>&1 && ambiguous_status_rc=0 || ambiguous_status_rc=$?
+[ "$ambiguous_status_rc" -eq 5 ] \
+  || fail "an ambiguous recorded identity must be unverifiable, not another task's state (rc=$ambiguous_status_rc)"
+[ "$(fm_backend_herdr_core_agent_state 'default:t1')" = unreadable ] \
+  || fail "an ambiguous recorded identity must not resolve to one task's state"
+[ "$(fm_backend_herdr_core_endpoint_ownership 'default:t1' beta)" = ours ] \
+  || fail 'the task that records the address owns it'
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+fm_backend_herdr_core_kill 'default:t1' '' 'sq-beta' \
+  || fail 'the task whose metadata records the live address must be able to close it'
+assert_grep 'kill t1' "$SQUAD_HC_KILL_LOG" 'the live owner closes its own recorded address'
+assert_grep 'rm t1' "$SQUAD_HC_KILL_LOG" 'the live owner removes its own recorded address'
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
+write_world
+pass 'a recycled window is resolved by the task own metadata, and ambiguity refuses'
+
 # --- retiring a previous endpoint before a relaunch ------------------------
 
 relaunch_meta() {  # <id> <address>

@@ -318,12 +318,58 @@ fm_backend_herdr_core_get_json() {  # <session> <address>
   printf '%s' "$out"
 }
 
+# fm_backend_herdr_core_meta_for_target: the one meta file that records
+# <target>. `window` is `<session>:<address>`, and a core recycles an address as
+# soon as its terminal is closed, so the address alone is not a task identity:
+# two tasks can record the same window once the core recycles it. When the
+# caller knows the task id, that identity decides: its own `<task-id>.meta` is
+# used when it exists and records this target, and a file that exists but records
+# another target refuses. When that file is absent, or no task id is known, the
+# address is all there is; a single match is usable and several matches are
+# ambiguous - resolving to whichever file the glob yields first would read
+# another task's recorded core id and labels.
+#   0  printed the one meta that owns <target>
+#   1  no meta records <target>
+#   2  several metas record <target> and no task id disambiguates
+fm_backend_herdr_core_meta_for_target() {  # <target> [task-id]
+  local target=${1:-} id=${2:-} state=${SQUAD_BACKEND_STATE_DIR:-} meta window terminal found="" ambiguous=0
+  { [ -n "$target" ] && [ -n "$state" ]; } || return 1
+  if [ -n "$id" ]; then
+    meta=$state/$id.meta
+    if [ -f "$meta" ]; then
+      window=$(fm_meta_get "$meta" window)
+      terminal=$(fm_meta_get "$meta" terminal)
+      if [ "$window" = "$target" ] || { [ -n "$terminal" ] && [ "$terminal" = "$target" ]; }; then
+        printf '%s' "$meta"
+        return 0
+      fi
+      return 1
+    fi
+  fi
+  for meta in "$state"/*.meta; do
+    [ -e "$meta" ] || continue
+    window=$(fm_meta_get "$meta" window)
+    terminal=$(fm_meta_get "$meta" terminal)
+    if [ "$window" = "$target" ] || { [ -n "$terminal" ] && [ "$terminal" = "$target" ]; }; then
+      if [ -n "$found" ]; then
+        ambiguous=1
+        break
+      fi
+      found=$meta
+    fi
+  done
+  [ "$ambiguous" -eq 0 ] || return 2
+  [ -n "$found" ] || return 1
+  printf '%s' "$found"
+}
+
 # fm_backend_herdr_core_recorded_core_id: the core id recorded with the task that
 # owns <target>, if this base records one. Empty (success) when the target has no
-# metadata of its own, which is the ad hoc-probe case.
-fm_backend_herdr_core_recorded_core_id() {  # <target>
-  local target=$1 meta
-  meta=$(fm_backend_meta_for_window "$target" "${SQUAD_BACKEND_STATE_DIR:-}" 2>/dev/null) || return 0
+# metadata of its own, which is the ad hoc-probe case; 2 when several tasks
+# recorded the address and no task id says which task this read is for.
+fm_backend_herdr_core_recorded_core_id() {  # <target> [task-id]
+  local target=$1 id=${2:-} meta
+  meta=$(fm_backend_herdr_core_meta_for_target "$target" "$id") || return $?
   fm_meta_get "$meta" hc_core_id
 }
 
@@ -341,22 +387,28 @@ fm_backend_herdr_core_recorded_core_id() {  # <target>
 # write may reach a terminal this base did not create.
 # Failure is always a refusal, and the delivery verdict needs to tell an
 # authoritative absence from a local failure, so the reason is in the code:
-#   1  a local failure or an identity that could not be read at all
+#   1  a local failure or an identity that could not be read at all (including
+#      metadata whose ownership the recorded address cannot disambiguate)
 #   3  the address is authoritatively gone, or no longer live for a write
 #   4  the address carries another identity (foreign, recycled or re-labelled)
 #   5  a recorded core id cannot be verified against a readable live core id
 fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [expected-base]
   local target=${1:-} expected=${2:-} allow_finished=${3:-} expected_base=${4:-}
-  local session address json recorded live state label rc=0
+  local session address json recorded live state label rc=0 expected_id meta_rc=0
   [ -n "$expected_base" ] || expected_base=$(fm_backend_herdr_core_base_name)
   fm_backend_herdr_core_parse_target "$target" || {
     echo "error: malformed herdr-core target '$target'; expected <session>:<address>" >&2
     return 1
   }
+  expected_id=$(fm_backend_herdr_core_task_id_of_label "$expected")
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   fm_backend_herdr_core_session_ok "$session" || return 1
-  recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
+  recorded=$(fm_backend_herdr_core_recorded_core_id "$target" "$expected_id" 2>/dev/null) || meta_rc=$?
+  if [ "$meta_rc" -eq 2 ]; then
+    echo "error: herdr-core identity for $target is ambiguous (several tasks recorded this address and this write names none of them); refusing every write" >&2
+    return 1
+  fi
   if [ -n "$recorded" ]; then
     live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null || true)
     if [ -z "$live" ]; then
@@ -417,10 +469,11 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [
 #   turn, name, cwd, pid, reason, exit_code
 # Returns 3 when the address is authoritatively absent, 4 when the record does
 # not carry the core id, task label and base label this base recorded for
-# <target>, and 5 when a recorded core id cannot be verified against a readable
-# live core id.
-fm_backend_herdr_core_status_json() {  # <target>
-  local target=${1:-} session address json rc=0
+# <target>, and 5 when a recorded identity cannot be verified against a readable
+# core: the live core id, or metadata ownership when several tasks recorded this
+# recycled address and <task-id> names none of them.
+fm_backend_herdr_core_status_json() {  # <target> [task-id]
+  local target=${1:-} id=${2:-} session address json rc=0
   fm_backend_herdr_core_parse_target "$target" || return 1
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
@@ -429,7 +482,7 @@ fm_backend_herdr_core_status_json() {  # <target>
   # like a successful read of an empty record.
   json=$(fm_backend_herdr_core_get_json "$session" "$address") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
-  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || rc=$?
+  fm_backend_herdr_core_record_owned "$session" "$target" "$json" "$id" || rc=$?
   case "$rc" in
     0) ;;
     2) return 5 ;;
@@ -702,7 +755,7 @@ fm_backend_herdr_core_deliver() {  # <target> <text> [expected-label]
     *) printf 'send-failed'; return 0 ;;
   esac
   rc=0
-  status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null) || rc=$?
+  status_json=$(fm_backend_herdr_core_status_json "$target" "$(fm_backend_herdr_core_task_id_of_label "$expected")" 2>/dev/null) || rc=$?
   case "$rc" in
     0) ;;
     3|4) printf 'no_agent'; return 0 ;;
@@ -964,15 +1017,15 @@ fm_backend_herdr_core_classify_process_name() {  # <path> [argv0]
 #   alive      a verified harness is the foreground program
 #   ambiguous  the address is live but its program cannot be attributed
 #   unreadable a read failed or contradicted itself
-fm_backend_herdr_core_agent_state() {  # <target>
-  local target=${1:-} status_json state rc=0
-  status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null) || rc=$?
+fm_backend_herdr_core_agent_state() {  # <target> [task-id]
+  local target=${1:-} id=${2:-} status_json state rc=0
+  status_json=$(fm_backend_herdr_core_status_json "$target" "$id" 2>/dev/null) || rc=$?
   if [ "$rc" -ne 0 ]; then
     case "$rc" in
       3|4) printf 'missing' ;;
       5) printf 'unreadable' ;;
       *)
-        if [ -n "$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)" ]; then
+        if [ -n "$(fm_backend_herdr_core_recorded_core_id "$target" "$id" 2>/dev/null || true)" ]; then
           printf 'unreadable'
         else
           printf 'missing'
@@ -1003,9 +1056,9 @@ fm_backend_herdr_core_agent_state() {  # <target>
 # this base recorded for <target> (the terminal's own `squad.task` value), or
 # empty for a target no task owns. Unlike a caller-facing label it carries no
 # `sq-` prefix, so it must never be passed through the label translation.
-fm_backend_herdr_core_recorded_task_id_for_target() {  # <target>
-  local target=${1:-} meta
-  meta=$(fm_backend_meta_for_window "$target" "${SQUAD_BACKEND_STATE_DIR:-}" 2>/dev/null) || return 0
+fm_backend_herdr_core_recorded_task_id_for_target() {  # <target> [task-id]
+  local target=${1:-} id=${2:-} meta
+  meta=$(fm_backend_herdr_core_meta_for_target "$target" "$id") || return $?
   fm_meta_get "$meta" endpoint_task_id
 }
 
@@ -1019,16 +1072,24 @@ fm_backend_herdr_core_recorded_task_id_for_target() {  # <target>
 # endpoint.
 #   0  the recorded identities are present and agree
 #   1  an identity belongs to something else (foreign, recycled, or re-labelled)
-#   2  a core id is recorded and the live core id cannot be read
-fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
-  local session=${1:-default} target=${2:-} json=${3:-} recorded live recorded_id label base rc=0
-  recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
+#   2  a recorded identity cannot be verified: several tasks recorded the address
+#      and the caller named none, or the live core id cannot be read
+# The optional <task-id> is the task the caller is asking about. Without it the
+# recorded address decides, and an address several tasks recorded is refused
+# rather than resolved to another task's core id and labels.
+fm_backend_herdr_core_record_owned() {  # <session> <target> <json> [task-id]
+  local session=${1:-default} target=${2:-} json=${3:-} id=${4:-}
+  local recorded live recorded_id label base rc=0 meta_rc=0
+  recorded=$(fm_backend_herdr_core_recorded_core_id "$target" "$id" 2>/dev/null) || meta_rc=$?
+  [ "$meta_rc" -ne 2 ] || return 2
   if [ -n "$recorded" ]; then
     live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null) || rc=$?
     [ "$rc" -eq 0 ] && [ -n "$live" ] || return 2
     [ "$live" = "$recorded" ] || return 1
   fi
-  recorded_id=$(fm_backend_herdr_core_recorded_task_id_for_target "$target" 2>/dev/null || true)
+  meta_rc=0
+  recorded_id=$(fm_backend_herdr_core_recorded_task_id_for_target "$target" "$id" 2>/dev/null) || meta_rc=$?
+  [ "$meta_rc" -ne 2 ] || return 2
   if [ -n "$recorded_id" ]; then
     label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" '(.labels // {})[$key] // ""')
     [ "$label" = "$recorded_id" ] || return 1
@@ -1052,8 +1113,8 @@ fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
 # Only `unreadable` is a refusal: the other three are facts a caller may act on,
 # and classifying a stranger's terminal as this task's would either close it or
 # wedge the task's cleanup forever.
-fm_backend_herdr_core_endpoint_ownership() {  # <target>
-  local target=${1:-} session address json rc=0
+fm_backend_herdr_core_endpoint_ownership() {  # <target> [task-id]
+  local target=${1:-} id=${2:-} session address json rc=0
   if ! fm_backend_herdr_core_parse_target "$target"; then
     printf 'unreadable'
     return 0
@@ -1070,7 +1131,7 @@ fm_backend_herdr_core_endpoint_ownership() {  # <target>
     3) printf 'absent'; return 0 ;;
     *) printf 'unreadable'; return 0 ;;
   esac
-  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || rc=$?
+  fm_backend_herdr_core_record_owned "$session" "$target" "$json" "$id" || rc=$?
   case "$rc" in
     0) printf 'ours' ;;
     1) printf 'foreign' ;;
@@ -1144,7 +1205,7 @@ fm_backend_herdr_core_retire_endpoint() {  # <target> <expected-label>
   # task's or base's terminal, means this task's previous endpoint is already
   # gone: there is nothing to retire and nothing this base may touch, so the
   # relaunch creates its replacement instead of killing a stranger's terminal.
-  ownership=$(fm_backend_herdr_core_endpoint_ownership "$target")
+  ownership=$(fm_backend_herdr_core_endpoint_ownership "$target" "$(fm_backend_herdr_core_task_id_of_label "${expected:-}")")
   case "$ownership" in
     absent|foreign) return 0 ;;
     ours) ;;
@@ -1156,7 +1217,7 @@ fm_backend_herdr_core_retire_endpoint() {  # <target> <expected-label>
   # Only an endpoint confidently without an agent is retired here. A read that is
   # ambiguous or unreadable, or that still sees a live agent, refuses: a relaunch
   # must never kill a program that may still be working.
-  state=$(fm_backend_herdr_core_agent_state "$target" 2>/dev/null || printf 'unreadable')
+  state=$(fm_backend_herdr_core_agent_state "$target" "$(fm_backend_herdr_core_task_id_of_label "${expected:-}")" 2>/dev/null || printf 'unreadable')
   case "$state" in
     dead|missing) ;;
     *)
@@ -1188,7 +1249,7 @@ fm_backend_herdr_core_task_closed() {  # <target> <task-id>
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   fm_backend_herdr_core_session_ok "$session" || return 1
-  ownership=$(fm_backend_herdr_core_endpoint_ownership "$target")
+  ownership=$(fm_backend_herdr_core_endpoint_ownership "$target" "$id")
   case "$ownership" in
     absent) return 0 ;;
     foreign)
@@ -1292,7 +1353,8 @@ fm_backend_herdr_core_target_exists() {  # <target> [expected-label]
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
   fm_backend_herdr_core_session_ok "$session" 2>/dev/null || return 1
   json=$(fm_backend_herdr_core_get_json "$session" "$address" 2>/dev/null) || return 1
-  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || return 1
+  fm_backend_herdr_core_record_owned "$session" "$target" "$json" \
+    "$(fm_backend_herdr_core_task_id_of_label "$expected")" || return 1
   state=$(printf '%s' "$json" | jq -r '.state')
   [ "$state" = live ] || return 1
   if [ -n "$expected" ]; then
