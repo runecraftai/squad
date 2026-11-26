@@ -49,10 +49,9 @@ function shellPayload(position) {
 
 function nodeHasBackend(node, depth) {
   const position = commandPosition(node);
-  const commandName0 = basename(literalValue(position?.command));
-  if (position?.command && (SQUAD_BACKEND_KNOWN.has(commandName0) || SQUAD_BACKEND_CLI_ALIASES.has(commandName0))) return true;
-
   const commandName = basename(literalValue(position?.command));
+  if (position?.command && (SQUAD_BACKEND_KNOWN.has(commandName) || SQUAD_BACKEND_CLI_ALIASES.has(commandName))) return true;
+
   if (SHELLS.has(commandName)) {
     const payload = shellPayload(position);
     if (payload && containsRawBackend(payload, depth + 1)) return true;

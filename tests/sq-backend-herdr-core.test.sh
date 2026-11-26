@@ -113,7 +113,9 @@ case "$cmd" in
     address=${positional[1]:-}
     printf 'kill %s\n' "$address" >> "$SQUAD_HC_KILL_LOG"
     if [ "${SQUAD_HC_KILL_FAIL:-0}" = 1 ]; then exit 1; fi
-    jq -c '.state="finished" | .reason="killed"' "$SQUAD_HC_GET"
+    out=$(jq -c '.state="finished" | .reason="killed"' "$SQUAD_HC_GET")
+    if [ -n "${SQUAD_HC_KILL_SWAP:-}" ]; then cat "$SQUAD_HC_KILL_SWAP" > "$SQUAD_HC_GET"; fi
+    printf '%s\n' "$out"
     ;;
   rm)
     address=${positional[1]:-}
@@ -183,6 +185,7 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   export SQUAD_HC_SCHEMA_FILE="$TMP_ROOT/schema.json"
   unset SQUAD_HC_HELLO SQUAD_HC_STATUS_FAIL SQUAD_HC_SCHEMA_FAIL SQUAD_HC_GET_RC
   unset SQUAD_HC_RUN_FAIL SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL SQUAD_HC_SEND_ERROR
+  unset SQUAD_HC_KILL_SWAP
   export SQUAD_HC_CORE_ID=core-a
   printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
   write_live_terminal
@@ -358,6 +361,18 @@ SQUAD_HC_LABEL_TASK=stranger write_live_terminal t1 live pi '{"app":"pi","state"
   || fail 'a stranger task label is not this task endpoint'
 out=$(fm_backend_herdr_core_poll_transition "$TMP_ROOT/status-state" default 'default:t1') && rc=0 || rc=$?
 [ "$rc" -eq 2 ] || fail "a stranger task label must not wake the sentry (rc=$rc)"
+
+# A recorded core id the live core cannot confirm is an UNVERIFIABLE identity,
+# not an absent endpoint: reporting `missing` here would authorise a replacement
+# endpoint or supervisor for a task whose terminal may still be running.
+export SQUAD_HC_STATUS_FAIL=1
+[ "$(fm_backend_herdr_core_agent_state 'default:t1')" = unreadable ] \
+  || fail 'an unreadable live core id must not read as an absent endpoint'
+[ "$(fm_backend_agent_alive herdr-core 'default:t1')" = unknown ] \
+  || fail 'an unverifiable identity must not report the agent as dead'
+[ "$(fm_backend_herdr_core_busy_state 'default:t1')" = unknown ] \
+  || fail 'an unreadable core id must not report a busy verdict'
+unset SQUAD_HC_STATUS_FAIL
 rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
 write_world
 pass 'status reads are bound to the recorded core id and task label'
@@ -470,6 +485,33 @@ fi
 rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
 write_world
 pass 'the cleanup identity is address, task label and core id'
+
+# The identity is re-checked immediately before `rm`: if the finished address is
+# retired and recycled by another actor between the close and the removal, the
+# stranger that now owns it must survive.
+write_world
+fm_write_meta "$SQUAD_STATE_OVERRIDE/target.meta" \
+  "window=default:t1" "endpoint_task_id=target" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t1" "hc_core_id=core-a"
+SQUAD_HC_LABEL_TASK=target write_live_terminal t1 live pi '{"app":"pi","state":"idle"}'
+cp "$SQUAD_HC_GET" "$TMP_ROOT/owner-record.json"
+SQUAD_HC_LABEL_TASK=stranger write_live_terminal t1 finished pi 'null'
+cp "$SQUAD_HC_GET" "$TMP_ROOT/stranger-record.json"
+cp "$TMP_ROOT/owner-record.json" "$SQUAD_HC_GET"
+reset_calls
+: > "$SQUAD_HC_KILL_LOG"
+out=$(SQUAD_HC_KILL_SWAP="$TMP_ROOT/stranger-record.json" \
+  fm_backend_herdr_core_kill 'default:t1' '' 'sq-target' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a recycled address must refuse the removal'
+assert_contains "$out" 'refusing to touch another task' 'the second check names the foreign label'
+assert_grep 'kill t1' "$SQUAD_HC_KILL_LOG" 'the close itself ran on the exact address'
+case "$(cat "$SQUAD_HC_KILL_LOG")" in
+  *'rm t1'*) fail 'a recycled address must never be removed' ;;
+esac
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta "$TMP_ROOT/owner-record.json" "$TMP_ROOT/stranger-record.json"
+write_world
+pass 'the identity is checked again before rm'
 
 # teardown's confirmation: absent address passes, a present one refuses.
 write_world

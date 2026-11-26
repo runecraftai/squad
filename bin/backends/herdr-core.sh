@@ -272,8 +272,9 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
 #   status    idle|working|done|blocked|error, or empty when it reports none
 #   kind/msg  the blocked prompt's own fields, when it carries them
 #   turn, name, cwd, pid, reason, exit_code
-# Returns 3 when the address is authoritatively absent, and 4 when the record
-# does not carry the core id and task label this base recorded for <target>.
+# Returns 3 when the address is authoritatively absent, 4 when the record does
+# not carry the core id and task label this base recorded for <target>, and 5
+# when a recorded core id cannot be verified against a readable live core id.
 fm_backend_herdr_core_status_json() {  # <target>
   local target=${1:-} session address json rc=0
   fm_backend_herdr_core_parse_target "$target" || return 1
@@ -284,7 +285,12 @@ fm_backend_herdr_core_status_json() {  # <target>
   # like a successful read of an empty record.
   json=$(fm_backend_herdr_core_get_json "$session" "$address") || rc=$?
   [ "$rc" -eq 0 ] || return "$rc"
-  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || return 4
+  fm_backend_herdr_core_record_owned "$session" "$target" "$json" || rc=$?
+  case "$rc" in
+    0) ;;
+    2) return 5 ;;
+    *) return 4 ;;
+  esac
   printf '%s' "$json" | jq -c '
     (if (.reported | type) == "boolean" then .reported else false end) as $reported
     | (if (.status | type) == "object" then .status else {} end) as $status
@@ -679,15 +685,17 @@ fm_backend_herdr_core_agent_state() {  # <target>
   expected=$(fm_backend_herdr_core_expected_label_for_target "$target" 2>/dev/null || true)
   status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null) || rc=$?
   if [ "$rc" -ne 0 ]; then
-    if [ "$rc" -eq 4 ]; then
-      printf 'missing'
-      return 0
-    fi
-    if [ -n "$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)" ]; then
-      printf 'unreadable'
-    else
-      printf 'missing'
-    fi
+    case "$rc" in
+      3|4) printf 'missing' ;;
+      5) printf 'unreadable' ;;
+      *)
+        if [ -n "$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)" ]; then
+          printf 'unreadable'
+        else
+          printf 'missing'
+        fi
+        ;;
+    esac
     return 0
   fi
   state=$(printf '%s' "$status_json" | jq -r '.state')
@@ -740,13 +748,19 @@ fm_backend_herdr_core_expected_label_for_target() {  # <target>
 # identities this base recorded for it? A recycled address in a restarted core,
 # or an address another task now owns, has lost one of them, so a status
 # consumer must refuse the record instead of projecting a stranger's state onto
-# the task that recorded the address.
+# the task that recorded the address. A recorded core id that cannot be read is
+# not a mismatch: it is an unverifiable identity, which callers must never
+# confuse with an authoritatively absent endpoint.
+#   0  both recorded identities are present and agree
+#   1  an identity belongs to something else (foreign, recycled, or re-labelled)
+#   2  a core id is recorded and the live core id cannot be read
 fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
-  local session=${1:-default} target=${2:-} json=${3:-} recorded live expected label
+  local session=${1:-default} target=${2:-} json=${3:-} recorded live expected label rc=0
   recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
   if [ -n "$recorded" ]; then
-    live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null || true)
-    [ -n "$live" ] && [ "$live" = "$recorded" ] || return 1
+    live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null) || rc=$?
+    [ "$rc" -eq 0 ] && [ -n "$live" ] || return 2
+    [ "$live" = "$recorded" ] || return 1
   fi
   expected=$(fm_backend_herdr_core_expected_label_for_target "$target" 2>/dev/null || true)
   if [ -n "$expected" ]; then
@@ -777,6 +791,10 @@ fm_backend_herdr_core_kill() {  # <target> [unused] [expected-label]
     echo "error: herdr-core did not confirm $address finished after kill (state='${state:-unknown}')" >&2
     return 1
   fi
+  # The second destructive step checks the same identity again: another actor can
+  # remove the finished address and the core can recycle it for a new terminal
+  # between the close and the removal.
+  fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
   if ! out=$(fm_backend_herdr_core_cli "$session" rm --json "$address" 2>/dev/null); then
     echo "error: herdr-core refused to remove the finished terminal $address in session '$session'" >&2
     return 1
