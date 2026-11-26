@@ -133,6 +133,21 @@ export const LEGACY_WRITERS: readonly LegacyWriter[] = Object.freeze([
 		},
 		note: "guarded live TUIOS lab; every run makes its own mktemp base, session and daemon, then retires them",
 	},
+	{
+		path: "bin/sq-herdr-core-lab.sh",
+		consults: [],
+		delegatesTo: ["bin/sq-spawn.sh", "bin/sq-teardown.sh"],
+		exempt: {
+			reason:
+				"writes the brief, recon report and decision marker of its own synthetic `sq-hc-lab-*` task inside the private, disposable lab base it creates with mktemp and removes again; the base is never a Squad base, so these lines never write a real mission's record",
+			lines: [
+				'> "$LAB_BASE/data/$ID/brief.md" || fm_lab_fail \'cannot write the lab brief\'',
+				'> "$LAB_BASE/data/$ID/report.md"',
+				'printf \'decisions_reviewed=1\\n\' >> "$META"',
+			],
+		},
+		note: "guarded live herdr-core lab; every run makes its own mktemp base and private core, then retires them",
+	},
 	guard("bin/sq-backlog-handoff.sh", ["xo-routing"], "moves backlog items to an XO; refuses the XO and every item key before any move"),
 	guard("bin/sq-backlog-receive.sh", ["xo-routing"], "XO side of a handoff; refuses every received key before the destination backlog is touched"),
 	guard("bin/sq-brief.sh", ["admission"], "writes data/<id>/brief.md; a durable mission needs its admission confirmed"),
