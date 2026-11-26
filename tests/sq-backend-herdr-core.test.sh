@@ -395,6 +395,31 @@ rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
 write_world
 pass 'status reads are bound to the recorded core id and task label'
 
+# endpoint_task_id= is the bare task id even when the id itself begins with
+# sq-, which docs/configuration.md supports: the identity check must not strip
+# that prefix a second time, or every status consumer and delivery refuses a
+# correctly recorded task.
+write_world
+fm_write_meta "$SQUAD_STATE_OVERRIDE/sq-demo.meta" \
+  "window=default:t1" "endpoint_task_id=sq-demo" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t1" "hc_core_id=core-a"
+SQUAD_HC_LABEL_TASK=sq-demo write_live_terminal t1 live pi '{"app":"pi","state":"blocked","kind":"permission","msg":"Allow rm?"}'
+[ "$(fm_backend_herdr_core_busy_state 'default:t1')" = blocked ] \
+  || fail 'an sq-prefixed task id must still report its busy verdict'
+[ "$(fm_backend_herdr_core_agent_state 'default:t1')" = alive ] \
+  || fail 'an sq-prefixed task id must still report its live agent'
+fm_backend_herdr_core_target_exists 'default:t1' 'sq-sq-demo' \
+  || fail 'an sq-prefixed task id is still this task exact endpoint'
+[ "$(fm_backend_herdr_core_capture 'default:t1' 10 'sq-sq-demo')" = 'probe screen
+> ' ] \
+  || fail 'an sq-prefixed task id must still capture its own screen'
+fm_backend_herdr_core_send_text_line 'default:t1' 'hello' 'sq-sq-demo' \
+  || fail 'an sq-prefixed task id must still accept a delivery'
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
+write_world
+pass 'an sq-prefixed task id keeps its bare recorded identity'
+
 # composer_state: only a bordered row, or a bare AGENT glyph, is a composer.
 write_world
 printf '│ ❯ │\n' > "$SQUAD_HC_READ_TEXT"

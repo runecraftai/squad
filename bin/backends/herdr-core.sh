@@ -715,9 +715,11 @@ fm_backend_herdr_core_agent_state() {  # <target>
   esac
 }
 
-# fm_backend_herdr_core_expected_label_for_target: this task's id as recorded for
-# <target> in this base's metadata, or empty for a target no task owns.
-fm_backend_herdr_core_expected_label_for_target() {  # <target>
+# fm_backend_herdr_core_recorded_task_id_for_target: the bare herdr-core task id
+# this base recorded for <target> (the terminal's own `squad.task` value), or
+# empty for a target no task owns. Unlike a caller-facing label it carries no
+# `sq-` prefix, so it must never be passed through the label translation.
+fm_backend_herdr_core_recorded_task_id_for_target() {  # <target>
   local target=${1:-} meta
   meta=$(fm_backend_meta_for_window "$target" "${SQUAD_BACKEND_STATE_DIR:-}" 2>/dev/null) || return 0
   fm_meta_get "$meta" endpoint_task_id
@@ -734,17 +736,17 @@ fm_backend_herdr_core_expected_label_for_target() {  # <target>
 #   1  an identity belongs to something else (foreign, recycled, or re-labelled)
 #   2  a core id is recorded and the live core id cannot be read
 fm_backend_herdr_core_record_owned() {  # <session> <target> <json>
-  local session=${1:-default} target=${2:-} json=${3:-} recorded live expected label rc=0
+  local session=${1:-default} target=${2:-} json=${3:-} recorded live recorded_id label rc=0
   recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
   if [ -n "$recorded" ]; then
     live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null) || rc=$?
     [ "$rc" -eq 0 ] && [ -n "$live" ] || return 2
     [ "$live" = "$recorded" ] || return 1
   fi
-  expected=$(fm_backend_herdr_core_expected_label_for_target "$target" 2>/dev/null || true)
-  if [ -n "$expected" ]; then
+  recorded_id=$(fm_backend_herdr_core_recorded_task_id_for_target "$target" 2>/dev/null || true)
+  if [ -n "$recorded_id" ]; then
     label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" '(.labels // {})[$key] // ""')
-    [ "$label" = "$(fm_backend_herdr_core_task_id_of_label "$expected")" ] || return 1
+    [ "$label" = "$recorded_id" ] || return 1
   fi
   return 0
 }
