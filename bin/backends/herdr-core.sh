@@ -220,8 +220,14 @@ fm_backend_herdr_core_recorded_core_id() {  # <target>
 # address. `<allow-finished>` is set only by the cleanup path, because a task
 # whose program already exited is a `finished` address that a close must still
 # be able to retire - it never licenses a write of any other kind.
+# Failure is always a refusal, and the delivery verdict needs to tell an
+# authoritative absence from a local failure, so the reason is in the code:
+#   1  a local failure or an identity that could not be read at all
+#   3  the address is authoritatively gone, or no longer live for a write
+#   4  the address carries another identity (foreign, recycled or re-labelled)
+#   5  a recorded core id cannot be verified against a readable live core id
 fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
-  local target=${1:-} expected=${2:-} allow_finished=${3:-} session address json recorded live state label
+  local target=${1:-} expected=${2:-} allow_finished=${3:-} session address json recorded live state label rc=0
   fm_backend_herdr_core_parse_target "$target" || {
     echo "error: malformed herdr-core target '$target'; expected <session>:<address>" >&2
     return 1
@@ -232,12 +238,21 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
   recorded=$(fm_backend_herdr_core_recorded_core_id "$target" 2>/dev/null || true)
   if [ -n "$recorded" ]; then
     live=$(fm_backend_herdr_core_read_core_id "$session" 2>/dev/null || true)
-    if [ -z "$live" ] || [ "$live" != "$recorded" ]; then
-      echo "error: herdr-core identity for $target changed (recorded core ${recorded:-unreadable}, live core ${live:-unreadable}); refusing every write" >&2
-      return 1
+    if [ -z "$live" ]; then
+      echo "error: herdr-core identity for $target is unreadable (recorded core $recorded); refusing every write" >&2
+      return 5
+    fi
+    if [ "$live" != "$recorded" ]; then
+      echo "error: herdr-core identity for $target changed (recorded core $recorded, live core $live); refusing every write" >&2
+      return 4
     fi
   fi
-  if ! json=$(fm_backend_herdr_core_get_json "$session" "$address"); then
+  json=$(fm_backend_herdr_core_get_json "$session" "$address") || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$rc" -eq 3 ]; then
+      echo "error: herdr-core address $address no longer exists in session '$session'" >&2
+      return 3
+    fi
     echo "error: herdr-core address $address is not readable in session '$session'" >&2
     return 1
   fi
@@ -247,7 +262,7 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
     finished)
       [ "$allow_finished" = 1 ] || {
         echo "error: herdr-core address $address is finished, not live; refusing to write to it" >&2
-        return 1
+        return 3
       }
       ;;
     *)
@@ -259,7 +274,7 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished]
     label=$(printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL" '(.labels // {})[$key] // ""')
     if [ "$label" != "$(fm_backend_herdr_core_task_id_of_label "$expected")" ]; then
       echo "error: herdr-core address $address carries task label '${label:-none}', not '$(fm_backend_herdr_core_task_id_of_label "$expected")'; refusing to touch another task's terminal" >&2
-      return 1
+      return 4
     fi
   fi
 }
@@ -527,12 +542,27 @@ fm_backend_herdr_core_send_refusal_kind() {  # <stderr-file>
 #   empty                the text was pasted and submitted
 #   agent_blocked        the program is blocked; nothing was typed
 #   not_ready            the program declined because its status was not idle; nothing was typed
-#   no_agent             the address has finished or is gone; nothing was typed
+#   no_agent             the address is authoritatively finished or gone, or it is not this task's; nothing was typed
+#   send-failed          a local failure before typing (an unreadable read, or an identity this process cannot verify)
 #   uncertain-delivery   the call failed without a stable refusal kind, so bytes may have landed
 fm_backend_herdr_core_deliver() {  # <target> <text> [expected-label]
-  local target=${1:-} text=${2:-} expected=${3:-} status_json reported kind rc err_file
-  fm_backend_herdr_core_verify "$target" "$expected" || { printf 'no_agent'; return 0; }
-  status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null) || { printf 'no_agent'; return 0; }
+  local target=${1:-} text=${2:-} expected=${3:-} status_json reported kind rc=0 err_file
+  # `no_agent` is a confident verdict about the core's own record, never a
+  # catch-all for a failed read: a transient hiccup must surface as a local
+  # failure so no caller drops a delivery expectation on it.
+  fm_backend_herdr_core_verify "$target" "$expected" || rc=$?
+  case "$rc" in
+    0) ;;
+    3|4) printf 'no_agent'; return 0 ;;
+    *) printf 'send-failed'; return 0 ;;
+  esac
+  rc=0
+  status_json=$(fm_backend_herdr_core_status_json "$target" 2>/dev/null) || rc=$?
+  case "$rc" in
+    0) ;;
+    3|4) printf 'no_agent'; return 0 ;;
+    *) printf 'send-failed'; return 0 ;;
+  esac
   reported=$(printf '%s' "$status_json" | jq -r '.reported')
   err_file=$(mktemp "${TMPDIR:-/tmp}/sq-hc-send.XXXXXX") || { printf 'send-failed'; return 0; }
   if [ "$reported" = true ]; then

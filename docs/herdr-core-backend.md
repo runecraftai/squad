@@ -119,9 +119,9 @@ Verdicts reach `bin/sq-send.sh` unchanged:
 | `empty` | The text was pasted and submitted. |
 | `agent_blocked` | The program is blocked, so typing would answer its dialog. Nothing was typed. |
 | `not_ready` | The program declined because its status was not idle, or its composer positively holds unsent text. Nothing was typed. |
-| `no_agent` | The address is finished or gone, or its label is not this task's. Nothing was typed. |
+| `no_agent` | The core authoritatively reports the address finished or gone, or it carries another task's label. Nothing was typed. |
 | `uncertain-delivery` | The call failed without a stable refusal kind, so bytes may have landed. Never retype; read the pane. |
-| `send-failed` | A local failure before typing (for example no temporary file for the product's error envelope). Nothing was typed. |
+| `send-failed` | A local failure before typing: an unreadable read, a core identity this process cannot verify, or no temporary file for the product's error envelope. Nothing was typed, and a transient read is never reported as an absent agent. |
 
 Nothing is ever retyped. A send has one attempt, and the product owns its own draft settling (a person's unfinished draft holds a send for up to 60 seconds since their last key; nobody typing in a Squad terminal means the ordinary short quiet pause).
 

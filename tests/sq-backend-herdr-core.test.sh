@@ -499,6 +499,34 @@ printf 'weird' > "$SQUAD_HC_SEND_KIND"; printf '1' > "$SQUAD_HC_SEND_RC"
 unset SQUAD_HC_SEND_ERROR
 pass 'delivery verdicts map every refusal kind'
 
+# A failed read, or an identity this process cannot verify, is a local failure
+# before anything was typed, never a confident absence: a caller that treats
+# no_agent as authoritative would otherwise drop its delivery record on a core
+# hiccup, while an authoritative "gone" still must read as no_agent.
+write_world
+fm_write_meta "$SQUAD_STATE_OVERRIDE/verdict.meta" \
+  "window=default:t1" "endpoint_task_id=probe" "worktree=$TMP_ROOT" \
+  "project=$TMP_ROOT" "harness=pi" "kind=strike" "backend=herdr-core" \
+  "hc_session=default" "hc_address=t1" "hc_core_id=core-a"
+reset_calls
+verdict=$(SQUAD_HC_STATUS_FAIL=1 fm_backend_herdr_core_send_text_submit 'default:t1' 'hello' 3 0.1 0 'sq-probe' 2>/dev/null)
+[ "$verdict" = send-failed ] || fail "an unverifiable core identity is a local failure, not $verdict"
+case "$(call_log)" in *'send '*) fail 'an unverifiable core identity must not send' ;; esac
+
+reset_calls
+verdict=$(SQUAD_HC_GET_RC=1 fm_backend_herdr_core_send_text_submit 'default:t1' 'hello' 3 0.1 0 'sq-probe' 2>/dev/null)
+[ "$verdict" = send-failed ] || fail "an unreadable status read is a local failure, not $verdict"
+case "$(call_log)" in *'send '*) fail 'an unreadable status read must not send' ;; esac
+
+reset_calls
+verdict=$(SQUAD_HC_GET_RC=3 fm_backend_herdr_core_send_text_submit 'default:t1' 'hello' 3 0.1 0 'sq-probe' 2>/dev/null)
+[ "$verdict" = no_agent ] || fail "an authoritatively gone address is no_agent, not $verdict"
+case "$(call_log)" in *'send '*) fail 'a gone address must not send' ;; esac
+
+rm -f "$SQUAD_STATE_OVERRIDE"/*.meta
+write_world
+pass 'a failed read is a local send failure, never a confident absence'
+
 # A mismatched task label is refused before anything is typed.
 write_world
 reset_calls
