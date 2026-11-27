@@ -1753,6 +1753,24 @@ for budget in 0 -1 abc; do
     "a title budget of '$budget' still leaves the placement labels in place"
 done
 
+# A digits-only budget with a leading zero is decimal, not octal: `08` is the
+# kind of value the arithmetic itself would reject, and that rejection used to
+# abort the shell after the terminal existed. It is an ordinary 8-second budget.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+address=$(SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT=08 SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/leading-zero-budget-stderr.txt") \
+  || fail 'a leading-zero title budget must not fail the spawn'
+[ "$address" = t7 ] \
+  || fail "a leading-zero title budget still returns the created address (got '$address')"
+[ ! -s "$TMP_ROOT/leading-zero-budget-stderr.txt" ] \
+  || fail "a leading-zero title budget is a plain 8-second budget (saw: $(cat "$TMP_ROOT/leading-zero-budget-stderr.txt"))"
+[ "$(rename_count)" = 1 ] \
+  || fail "a leading-zero title budget names the tab once (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
+assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  'a leading-zero title budget still lands the title'
+
 # An app that is not installed has a created tab left at its number, so the set
 # reports exactly that: it is nothing like the clear's "nothing to undo".
 write_world

@@ -1138,7 +1138,7 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
 #      reported
 fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
   local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out err reason='' act hand rc=0
-  local nothing=0 ok=0 err_file='' deadline bound timeout
+  local nothing=0 ok=0 err_file='' deadline bound timeout now
   [ -n "$tab" ] || return 1
   bin=$(fm_backend_herdr_core_app_bin)
   if [ -n "$title" ]; then
@@ -1165,9 +1165,11 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
   case "$timeout" in
     ''|*[!0-9]*) timeout=0 ;;
   esac
+  timeout=$((10#$timeout))
   deadline=$((SECONDS + timeout))
   while :; do
-    if [ "$SECONDS" -ge "$deadline" ]; then
+    now=$SECONDS
+    if [ "$now" -ge "$deadline" ]; then
       if [ -n "$reason" ]; then
         reason="gave up after ${timeout}s (last answer: $reason)"
       else
@@ -1175,7 +1177,7 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
       fi
       break
     fi
-    bound=$((deadline - SECONDS))
+    bound=$((deadline - now))
     rc=0
     if [ -n "$err_file" ]; then
       out=$(fm_run_timed "$bound" \
