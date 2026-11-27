@@ -1740,6 +1740,35 @@ assert_grep "do tab.rename --id sq-$BASE_HASH-probe --name " "$SQUAD_HERDR_APP_L
 [ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
   || fail 'an unnamed clear clears both placement labels it wrote'
 
+# A task id that itself begins with `sq-` is stored bare in the terminal's
+# `squad.task` label. The clear must derive its tab from that bare label without
+# stripping the prefix a second time, or it refuses its own tab and can never
+# remove the placement it wrote.
+SQUAD_HC_LABEL_TASK=sq-demo SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_label_state
+prefixed_tab=$(fm_backend_herdr_core_tab_for_task 'sq-demo')
+plain_tab=$(fm_backend_herdr_core_tab_for_task 'demo')
+[ "$prefixed_tab" != "$plain_tab" ] \
+  || fail "the ids sq-demo and demo cannot share one tab (got '$prefixed_tab')"
+printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\t%s\n' "$prefixed_tab" > "$SQUAD_HC_LABELS"
+jq --arg tab "$prefixed_tab" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
+  && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+printf '%s\tsq-demo\n%s\tdemo\n' "$prefixed_tab" "$plain_tab" > "$SQUAD_HERDR_APP_TABS"
+fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-sq-demo' \
+  || fail 'an sq-prefixed task id must clear its own tab'
+assert_grep "do tab.rename --id $prefixed_tab --name " "$SQUAD_HERDR_APP_LOG" \
+  'an sq-prefixed task id gives its own derived tab its number back'
+assert_no_grep "do tab.rename --id $plain_tab --name" "$SQUAD_HERDR_APP_LOG" \
+  'an sq-prefixed task id never renames the bare-prefix task tab'
+[ "$(rename_count)" = 1 ] || fail "an sq-prefixed clear renames one tab only (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
+[ -z "$(awk -F'\t' -v t="$prefixed_tab" '$1 == t' "$SQUAD_HERDR_APP_TABS")" ] \
+  || fail 'an sq-prefixed clear gives its own tab its number back'
+assert_grep "$(printf '%s\tdemo' "$plain_tab")" "$SQUAD_HERDR_APP_TABS" \
+  'an sq-prefixed clear leaves the bare-prefix task tab titled'
+[ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
+  || fail 'an sq-prefixed clear clears both placement labels it wrote'
+
 # A terminal that carries no placement label titles no tab: there is nothing
 # this adapter set, so the clear writes nothing to the app at all.
 SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \

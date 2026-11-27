@@ -1230,8 +1230,7 @@ fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
       echo "error: herdr-core terminal $address carries $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL '${tab}' but no $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL to derive its own tab from; refusing to rename a tab this task did not create" >&2
       return 1
     fi
-    own_tab=$(fm_backend_herdr_core_tab_for_task \
-      "$(fm_backend_herdr_core_task_id_of_label "$own_task")")
+    own_tab=$(fm_backend_herdr_core_tab_for_task "$own_task")
     if [ "$tab" != "$own_tab" ]; then
       echo "error: herdr-core terminal $address carries $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL '${tab}', not its own task's '$own_tab'; refusing to rename a tab this task did not create" >&2
       return 1
