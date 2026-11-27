@@ -82,6 +82,7 @@ sp7b9a496a3b6da2d94d5341c408030af3
 It is one positive identifier, read once per create from the effective config dir (`$SQUAD_CONFIG_OVERRIDE`, otherwise `$SQUAD_BASE/config`) on its first non-empty line, with whitespace stripped - the same convention `config/backend` and `config/crew-harness` already use.
 Nothing is inferred: the file names the space, and an id the app does not know becomes a new space under the app's own name.
 Space ids are local to this machine's app, exactly as the product's own labels are, and `herdr-app ls` prints them.
+The setting is deliberately base-local and is not inherited by XO bases, because the id names a space in this machine's app and a base may run on another machine; the inventory entry in [`configuration.md`](configuration.md) owns that status.
 
 With the setting present, every terminal the adapter creates also carries two labels, written right after the create returned its address so they can only ever name that one terminal:
 
@@ -100,7 +101,8 @@ The write is best-effort and never changes a task's outcome:
 - **Idempotent** - it is a plain label set, so repeating it leaves exactly one value per label.
 
 Adoption has two product-side consequences worth knowing.
-A terminal adopted into a space is kept by the core, so a terminal lost with the core comes back as a shell in its last folder instead of disappearing.
+A terminal adopted into a space is kept by the core: `keep` is measured flipping from false to true, and the product's own contract for a kept terminal is that one lost with the core comes back as a shell in its last folder instead of disappearing.
+That restore was not itself captured here, so treat it as the product's documented behavior rather than as a measured guarantee.
 Adoption is also one-way on the app's side: clearing the labels does not take the pane off the person's screen - the app owns that binding - which is why the reversal below has two steps.
 
 ### Reversal
