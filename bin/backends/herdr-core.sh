@@ -124,6 +124,11 @@ SQUAD_BACKEND_HERDR_CORE_APP_BIN='herdr-app'
 # retried, within this bounded budget; anything else is reported at once.
 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=8
 SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL='0.2'
+# A create runs the title write inline, so it carries the same hard bound as the
+# adapter's other external client call: an app that blocks on a missing socket,
+# a stalled write, or a starting window is reported like a refusal instead of
+# holding the spawn open.
+SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT=5
 
 # Per-target dedupe markers for the blocked-transition producer, keyed like the
 # sentry's own .stale-<key> files.
@@ -1093,7 +1098,7 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address>
 #   0  the tab carries the title, or there is nothing to title
 #   1  the app is not installed, refused, or answered an error; already reported
 fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
-  local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out reason act hand
+  local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out reason act hand rc=0
   [ -n "$tab" ] || return 1
   bin=$(fm_backend_herdr_core_app_bin)
   if [ -n "$title" ]; then
@@ -1108,7 +1113,15 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     return 1
   fi
   while :; do
-    out=$("$bin" 'do' tab.rename --id "$tab" --name "$title" 2>/dev/null) && return 0
+    out=$(fm_run_timed "$SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT" \
+      "$bin" 'do' tab.rename --id "$tab" --name "$title" 2>/dev/null) && return 0
+    rc=$?
+    # A bound that expired is final: the app is holding the call, not that one
+    # tab's adoption, and waiting longer only holds the spawn open.
+    if [ "$rc" -eq 124 ]; then
+      reason="the app did not answer within ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s"
+      break
+    fi
     reason=$(printf '%s' "$out" | jq -r '.error // empty' 2>/dev/null)
     reason=${reason:-no reason given}
     # Only an unknown tab is worth another try: it is the app saying it has not
@@ -1171,7 +1184,11 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 # It also gives back the tab's own number, which is the one title this adapter
 # set: the tab is resolved from the `herdr.tab` label on that verified terminal
 # before the label goes, so it is that tab and no other, and a terminal that
-# carries no such label titles nothing.
+# carries no such label titles nothing. When the caller names the task, that
+# label must also be the tab id this adapter derives for it; anything else is
+# another tab and refuses, because an address can be recycled between reads.
+# The title goes back before the labels, so a failed rename leaves the label
+# that names the tab in place and the whole removal is re-runnable.
 # A recorded core id and session that no longer agree refuse, so a recycled
 # address is never cleared. A finished terminal is accepted, because a record
 # whose program already exited can still carry the labels.
@@ -1182,7 +1199,7 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 #   0  both labels are cleared on that terminal and its tab carries no title
 #   1  refused: a foreign, unreadable or unverifiable identity, or a failed write
 fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
-  local target=${1:-} expected=${2:-} session address tab rc=0
+  local target=${1:-} expected=${2:-} session address tab own_tab
   fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
@@ -1192,15 +1209,32 @@ fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
     echo "error: could not read the desktop tab herdr-core terminal $address was placed in (session '$session'); refusing to clear a presentation this process cannot resolve" >&2
     return 1
   }
+  # A label is terminal state and the address that carries it can be recycled
+  # between the two reads, so the read value is only usable when it is the tab
+  # this task's own derivation names. Anything else would rename a tab this task
+  # never created, which no clear may do.
+  own_tab=
+  if [ -n "$expected" ]; then
+    own_tab=$(fm_backend_herdr_core_tab_for_task \
+      "$(fm_backend_herdr_core_task_id_of_label "$expected")")
+  fi
+  if [ -n "$tab" ] && [ -n "$own_tab" ] && [ "$tab" != "$own_tab" ]; then
+    echo "error: herdr-core terminal $address carries $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL '${tab}', not this task's '$own_tab'; refusing to rename a tab this task did not create" >&2
+    return 1
+  fi
+  # The title goes first: while it is still there the label above still names
+  # this one tab, so a failed rename leaves the removal re-runnable instead of
+  # stranding a title no later run can find.
+  if [ -n "$tab" ]; then
+    fm_backend_herdr_core_rename_tab "$tab" '' "$session:$address" || return 1
+  fi
   fm_backend_herdr_core_cli "$session" label "$address" \
     "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=" \
     "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=" >/dev/null || {
     echo "error: herdr-core refused to clear the presentation labels on $address in session '$session'" >&2
     return 1
   }
-  [ -n "$tab" ] || return 0
-  fm_backend_herdr_core_rename_tab "$tab" '' "$session:$address" || rc=1
-  return "$rc"
+  return 0
 }
 
 fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address

@@ -125,7 +125,7 @@ The write is best-effort and never changes a task's outcome:
 
 - **Absent, unreadable, or blank setting** - neither a label nor a title is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
 - **A failed label write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. No title is attempted, because without the labels the app has no tab for that terminal.
-- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. A missing `herdr-app`, an app that is not running, and an id the app does not know are all this case.
+- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. A missing `herdr-app`, an app that is not running, and an id the app does not know are all this case. Each attempt is bounded (5s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open.
 - **Outside the guard** - placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command, or an app whose CLI is absent, warns and keeps the task, because a missing display preference must never block real work.
 - **Idempotent** - the label write is a plain set, so repeating it leaves exactly one value per label, and renaming a tab to the title it already has leaves it named.
 
@@ -146,14 +146,15 @@ fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>
 
 It runs the same identity check every other write runs - this base's `squad.base` label, the recorded core id, and, when the optional `sq-<task-id>` is passed, this task's `squad.task` label - so it can only ever reach one of this base's own terminals, and it removes or relabels nothing else.
 It resolves the tab from that verified terminal's own `herdr.tab` label before the label goes, so the title it clears is that tab and no other; a terminal that carries no such label titles nothing.
-A read it cannot resolve refuses before any write, so the removal never does half its work.
+When a task is named, the label must also be the tab id this adapter derives for that task, so a recycled address or a hand-edited label refuses instead of renaming a tab this task never created.
+A read it cannot resolve refuses before any write, the title is given back before the labels are cleared, and a failed rename returns with the labels still in place, so the removal never does half its work and the same command can simply be run again.
 
-The equivalent by hand is both writes, and a tab's id is the value the label held:
+Both writes in the order the adapter runs them, where a tab's id is the value the label held:
 
 ```text
 hc get --json <address> | jq -r '.labels["herdr.tab"]'
-hc label <address> herdr.space= herdr.tab=
 herdr-app do tab.rename --id <tab> --name ""
+hc label <address> herdr.space= herdr.tab=
 ```
 
 That clear is deliberately not a full restore of the app's label set: it removes only the two labels this adapter wrote, because the app keeps its own `where` record, and adopting a terminal does not give Squad ownership of every label on it.

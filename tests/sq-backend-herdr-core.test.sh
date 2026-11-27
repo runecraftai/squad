@@ -276,6 +276,9 @@ if [ "${SQUAD_HERDR_APP_FAIL:-0}" = 1 ]; then
   printf '{\n  "error": "connection refused"\n}\n'
   exit 1
 fi
+if [ "${SQUAD_HERDR_APP_HANG:-0}" = 1 ]; then
+  sleep "${SQUAD_HERDR_APP_HANG_SECONDS:-20}"
+fi
 awk -F'\t' -v t="$tab" '$1 != t' "$SQUAD_HERDR_APP_TABS" > "$SQUAD_HERDR_APP_TABS.next" 2>/dev/null || :
 [ -z "$name" ] || printf '%s\t%s\n' "$tab" "$name" >> "$SQUAD_HERDR_APP_TABS.next"
 mv "$SQUAD_HERDR_APP_TABS.next" "$SQUAD_HERDR_APP_TABS"
@@ -344,7 +347,7 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HC_RUN_FAIL SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL SQUAD_HC_SEND_ERROR
   unset SQUAD_HC_KILL_SWAP SQUAD_HC_LIST_ALL
   unset SQUAD_HC_LABEL_TASK SQUAD_HC_LABEL_FAIL
-  unset SQUAD_HERDR_APP_FAIL SQUAD_HERDR_APP_UNKNOWN_TAB
+  unset SQUAD_HERDR_APP_FAIL SQUAD_HERDR_APP_UNKNOWN_TAB SQUAD_HERDR_APP_HANG
   unset SQUAD_CONFIG_OVERRIDE
   export SQUAD_HC_LABEL_BASE="$BASE_LABEL" SQUAD_HC_RUN_BASE="$BASE_LABEL"
   unset SQUAD_HC_READ_SHAPE
@@ -1594,33 +1597,98 @@ address=$(SQUAD_HERDR_APP_UNKNOWN_TAB=1 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=
 [ "$(rename_count)" = 3 ] \
   || fail "an unknown tab is retried inside its bounded budget only (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
 
+# A rename that never answers is bounded like every other external client call:
+# the spawn reports it and continues instead of holding the create open.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+start=$SECONDS
+address=$(SQUAD_HERDR_APP_HANG=1 SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT=1 \
+  SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/hang-stderr.txt") \
+  || fail 'an app that never answers must not fail the spawn'
+elapsed=$((SECONDS - start))
+[ "$address" = t7 ] || fail "a stalled title still returns the created address (got '$address')"
+[ "$elapsed" -le 10 ] || fail "a stalled app must not hold the spawn open (waited ${elapsed}s)"
+assert_contains "$(cat "$TMP_ROOT/hang-stderr.txt")" 'did not answer within 1s' \
+  'a stalled app is reported as the bound that expired'
+[ "$(rename_count)" = 1 ] \
+  || fail "a stalled app is not retried (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
+
 # The reversal: clearing names exactly its own terminal and removes nothing.
 SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
   write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
 reset_label_state
-printf 't7	herdr.space	squad-desk\nt7	herdr.tab	sq-tab-one\nt8	herdr.space	squad-desk\nt8	herdr.tab	sq-tab-two\n' > "$SQUAD_HC_LABELS"
+printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\t%s\nt8\therdr.space\tsquad-desk\nt8\therdr.tab\t%s\n' \
+  "sq-$BASE_HASH-probe" "sq-$BASE_HASH-scaffold" > "$SQUAD_HC_LABELS"
 # The clearance resolves the tab from the label on that exact terminal, so the
 # fake's own record for t7 carries the placement it was given.
-jq '.labels["herdr.tab"] = "sq-tab-one"' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
+jq --arg tab "sq-$BASE_HASH-probe" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
   && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
-printf 'sq-tab-one\tprobe\nsq-tab-two\tscaffold\n' > "$SQUAD_HERDR_APP_TABS"
+printf 'sq-%s-probe\tprobe\nsq-%s-scaffold\tscaffold\n' "$BASE_HASH" "$BASE_HASH" \
+  > "$SQUAD_HERDR_APP_TABS"
 fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \
   || fail 'clearing the presentation labels on its own terminal must succeed'
 assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
   'the clear names the exact address with both values empty'
 assert_no_grep 't8' "$SQUAD_HC_LABEL_LOG" 'another terminal is never named by the clear'
-assert_grep 'do tab.rename --id sq-tab-one --name ' "$SQUAD_HERDR_APP_LOG" \
+assert_grep "do tab.rename --id sq-$BASE_HASH-probe --name " "$SQUAD_HERDR_APP_LOG" \
   'the clear gives its own tab its number back'
 [ "$(rename_count)" = 1 ] || fail "the clear renames one tab only (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
-assert_no_grep 'sq-tab-two --name' "$SQUAD_HERDR_APP_LOG" "another task's tab is never renamed"
-[ -z "$(awk -F'\t' '$1 == "sq-tab-one"' "$SQUAD_HERDR_APP_TABS")" ] \
+assert_no_grep "sq-$BASE_HASH-scaffold --name" "$SQUAD_HERDR_APP_LOG" "another task's tab is never renamed"
+[ -z "$(awk -F'\t' -v t="sq-$BASE_HASH-probe" '$1 == t' "$SQUAD_HERDR_APP_TABS")" ] \
   || fail "its own tab carries no title again (saw: $(cat "$SQUAD_HERDR_APP_TABS"))"
-assert_grep "sq-tab-two	scaffold" "$SQUAD_HERDR_APP_TABS" "another task's tab title is left exactly as it was"
+assert_grep "$(printf 'sq-%s-scaffold\tscaffold' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" "another task's tab title is left exactly as it was"
 cleared=$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")
 [ -z "$cleared" ] || fail "the cleared terminal lost both placement labels (got: $cleared)"
 assert_grep "t8	herdr.space	squad-desk" "$SQUAD_HC_LABELS" "another terminal's space label is left exactly as it was"
-assert_grep "t8	herdr.tab	sq-tab-two" "$SQUAD_HC_LABELS" "another terminal's tab label is left exactly as it was"
+assert_grep "$(printf 't8	herdr.tab	sq-%s-scaffold' "$BASE_HASH")" "$SQUAD_HC_LABELS" "another terminal's tab label is left exactly as it was"
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'the reversal removes no terminal'
+
+# A failed title clear comes first and leaves the label that names the tab in
+# place, so a re-run finishes the removal instead of stranding a title no later
+# run can resolve.
+SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_label_state
+printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\tsq-%s-probe\n' "$BASE_HASH" > "$SQUAD_HC_LABELS"
+jq --arg tab "sq-$BASE_HASH-probe" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
+  && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+printf 'sq-%s-probe\tprobe\n' "$BASE_HASH" > "$SQUAD_HERDR_APP_TABS"
+out=$(SQUAD_HERDR_APP_FAIL=1 fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a failed title clear must report failure'
+assert_contains "$out" 'could not clear the desktop tab title' \
+  'a failed title clear warns with what could not be done'
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] \
+  || fail "a failed title clear must leave the labels that name the tab (saw: $(cat "$SQUAD_HC_LABEL_LOG"))"
+assert_grep "$(printf 't7\therdr.tab\tsq-%s-probe' "$BASE_HASH")" "$SQUAD_HC_LABELS" \
+  'the tab label survives a failed title clear, so the removal is re-runnable'
+assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  'the title the clear could not remove is untouched'
+fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \
+  || fail 'the same clear must finish on a re-run'
+[ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
+  || fail 'the re-run clears the labels it left behind'
+[ -z "$(awk -F'\t' -v t="sq-$BASE_HASH-probe" '$1 == t' "$SQUAD_HERDR_APP_TABS")" ] \
+  || fail 'the re-run gives its tab its number back'
+
+# A tab label that is not this task's own derived id is another tab: the clear
+# refuses before writing anything, so a recycled address never renames it.
+SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_label_state
+printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\tsq-%s-othertask\n' "$BASE_HASH" > "$SQUAD_HC_LABELS"
+jq --arg tab "sq-$BASE_HASH-othertask" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
+  && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+printf 'sq-%s-othertask\tother mission\n' "$BASE_HASH" > "$SQUAD_HERDR_APP_TABS"
+out=$(fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail "another tab's id must refuse the clear"
+assert_contains "$out" 'refusing to rename a tab this task did not create' 'the refusal names why'
+[ ! -s "$SQUAD_HERDR_APP_LOG" ] \
+  || fail "a mismatched tab label must rename nothing (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] || fail 'a mismatched tab label must clear no label'
+assert_grep "$(printf 'sq-%s-othertask\tother mission' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  "another tab's title is left exactly as it was"
 
 # A terminal that carries no placement label titles no tab: there is nothing
 # this adapter set, so the clear writes nothing to the app at all.
