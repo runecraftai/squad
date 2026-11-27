@@ -12,7 +12,7 @@ The desktop app shows that terminal inside one of its spaces once a space is con
 
 Requirements: herdr-core 0.1.22 or newer with an API compatible with protocol generation 1, `jq`, and `fob` for the worktree.
 The `hc` binary (or its `herdr-core` name) must be on `PATH`; `SQUAD_HC_BIN` overrides the resolved command.
-The desktop app's own `herdr-app` CLI is optional: it is needed only when `config/herdr-core-space` is set, and only to give the tab its title. When it is absent no title is written and the spawn is unaffected; `SQUAD_HERDR_APP_BIN` overrides the resolved command.
+The desktop app's own `herdr-app` CLI is optional: it is needed only when `config/herdr-core-space` is set, to give that tab its title and to clear the title again on removal. When it is absent no title is written and the spawn is unaffected, but a presentation clear refuses and leaves both placement labels in place rather than assume the tab is untitled; `SQUAD_HERDR_APP_BIN` overrides the resolved command.
 
 A core must already be running: started by the desktop app, by systemd, or by the person with `hc server start`.
 Squad never starts one - see "Never starts a core" below.

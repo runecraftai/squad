@@ -1279,7 +1279,7 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
 #      reachable with an empty title, where there is nothing to undo; already
 #      reported
 #   3  the labels are in place but the app CLI is not installed, so the title
-#      could not be set or checked; already reported
+#      could not be set; already reported
 fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-id>
   local session=${1:-default} address=${2:-} task_id=${3:-} space tab title err_file reason rc=0
   [ -n "$address" ] || return 1
