@@ -1636,9 +1636,10 @@ func (c *Config) AutoFixLimit(step types.StepName) int {
 }
 
 // MaxFixRounds returns the maximum total fix executions (auto-fix + user-fix)
-// allowed per step before the run declares non-convergence and fails. The
-// initial evaluation does not consume this budget; only actual fix executions
-// do, and a request beyond the budget is refused without executing.
+// allowed per step before the run declares non-convergence and fails, and the
+// size of the separate budget for endorsed gate decisions. The initial
+// evaluation does not consume either budget; only actual fix executions do,
+// and a request beyond the budget is refused without executing.
 // This is a global safety bound, not per-step: every step shares the same
 // cap so a single misconfigured step cannot loop indefinitely.
 func (c *Config) MaxFixRounds() int {

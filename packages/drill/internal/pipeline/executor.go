@@ -233,13 +233,14 @@ func (e *Executor) initializeRunScopes(runID string) {
 }
 
 type stepExecutionState struct {
-	fixing           bool
-	previousFindings string
-	roundNum         int
-	autoFixAttempts  int
-	userFixAttempts  int
-	executionMS      int64
-	currentRoundID   string
+	fixing            bool
+	previousFindings  string
+	roundNum          int
+	autoFixAttempts   int
+	userFixAttempts   int
+	decisionFixRounds int
+	executionMS       int64
+	currentRoundID    string
 }
 
 type recoveredGate struct {
@@ -250,6 +251,7 @@ type recoveredGate struct {
 	round           int
 	autoFixes       int
 	userFixes       int
+	decisionFixes   int
 	lastRoundID     string
 	reviewedHeadSHA string
 }
@@ -410,10 +412,15 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 	case types.ActionFix:
 		selected := filterFindingsJSON(gate.findings, response.findingIDs)
 		merged := mergeUserOverridesJSON(selected, response.instructions, response.addedFindings)
+		selectionSource := db.RoundSelectionSourceUser
+		endorsed := endorsedDecisionFix(selected, response)
+		if endorsed {
+			selectionSource = db.RoundSelectionSourceDecision
+		}
 		if gate.lastRoundID != "" {
 			allSelectedIDs := combineSelectedFindingIDs(response.findingIDs, merged)
 			if idsJSON := marshalFindingIDs(allSelectedIDs); idsJSON != "" {
-				if dbErr := e.db.SetStepRoundSelection(gate.lastRoundID, &idsJSON, db.RoundSelectionSourceUser); dbErr != nil {
+				if dbErr := e.db.SetStepRoundSelection(gate.lastRoundID, &idsJSON, selectionSource); dbErr != nil {
 					slog.Warn("failed to record recovered selected finding ids", "step", gate.step.Name(), "round", gate.round, "error", dbErr)
 				}
 			}
@@ -423,27 +430,49 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 				}
 			}
 		}
-		if gate.autoFixes+gate.userFixes >= e.maxFixRounds() {
-			err := nonConvergenceError(gate.step.Name(), gate.autoFixes+gate.userFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
-			if dbErr := e.db.FailStep(gate.stepResult.ID, err.Error(), duration); dbErr != nil {
+		// A recovered run keeps the same split between the shared automatic
+		// budget and the endorsed-decision budget, so a restart never turns a
+		// decision into a non-convergence refusal or the reverse.
+		decisionFixRounds := gate.decisionFixes
+		var refusal error
+		if endorsed {
+			if gate.decisionFixes >= e.maxFixRounds() {
+				refusal = decisionNonConvergenceError(gate.step.Name(), gate.decisionFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
+			} else {
+				decisionFixRounds++
+				telemetry.Track("fix", e.fixTelemetryFields("decision", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), decisionFixRounds))
+			}
+		} else {
+			if gate.autoFixes+gate.userFixes >= e.maxFixRounds() {
+				refusal = nonConvergenceError(gate.step.Name(), gate.autoFixes+gate.userFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
+			} else {
+				telemetry.Track("fix", e.fixTelemetryFields("user", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), 0))
+			}
+		}
+		if refusal != nil {
+			if dbErr := e.db.FailStep(gate.stepResult.ID, refusal.Error(), duration); dbErr != nil {
 				slog.Warn("failed to mark recovered step as non-converged", "step", gate.step.Name(), "error", dbErr)
 			}
-			e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFailed), gate.findings, err.Error(), &duration)
-			return e.failRun(run, repo, err, ctx)
+			e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFailed), gate.findings, refusal.Error(), &duration)
+			return e.failRun(run, repo, refusal, ctx)
 		}
-		telemetry.Track("fix", e.fixTelemetryFields("user", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), 0))
 		if dbErr := e.db.UpdateStepStatus(gate.stepResult.ID, types.StepStatusFixing); dbErr != nil {
 			return e.failRun(run, repo, fmt.Errorf("mark recovered step %s fixing: %w", gate.step.Name(), dbErr), ctx)
 		}
 		e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFixing), "", "", nil)
+		userFixAttempts := gate.userFixes + 1
+		if endorsed {
+			userFixAttempts = gate.userFixes
+		}
 		skipRemaining, err := e.executeStep(ctx, gate.step, gate.stepResult, run, repo, workDir, logDir, stepExecutionState{
-			fixing:           true,
-			previousFindings: merged,
-			roundNum:         gate.round,
-			autoFixAttempts:  gate.autoFixes,
-			userFixAttempts:  gate.userFixes + 1,
-			executionMS:      duration,
-			currentRoundID:   gate.lastRoundID,
+			fixing:            true,
+			previousFindings:  merged,
+			roundNum:          gate.round,
+			autoFixAttempts:   gate.autoFixes,
+			userFixAttempts:   userFixAttempts,
+			decisionFixRounds: decisionFixRounds,
+			executionMS:       duration,
+			currentRoundID:    gate.lastRoundID,
 		})
 		if err != nil {
 			return e.failRun(run, repo, err, ctx)
@@ -484,28 +513,34 @@ func (e *Executor) recoveredGate(runID string) (*recoveredGate, error) {
 				return nil, fmt.Errorf("recovered approval gate findings are incomplete")
 			}
 			autoFixes := 0
+			decisionFixes := 0
 			executedFixes := 0
-			for _, round := range rounds {
-				if round.IsFixRound() {
-					executedFixes++
+			for i, round := range rounds {
+				if !round.IsFixRound() {
+					continue
 				}
-				if round.SelectionSource != nil && *round.SelectionSource == db.RoundSelectionSourceAutoFix {
+				executedFixes++
+				if i == 0 || rounds[i-1].SelectionSource == nil {
+					continue
+				}
+				switch *rounds[i-1].SelectionSource {
+				case db.RoundSelectionSourceAutoFix:
 					autoFixes++
+				case db.RoundSelectionSourceDecision:
+					decisionFixes++
 				}
 			}
-			if autoFixes > executedFixes {
-				autoFixes = executedFixes
-			}
-			userFixes := executedFixes - autoFixes
+			userFixes := executedFixes - autoFixes - decisionFixes
 			gate = &recoveredGate{
-				index:       index,
-				step:        e.steps[index],
-				stepResult:  result,
-				findings:    *result.FindingsJSON,
-				round:       latest.Round,
-				autoFixes:   autoFixes,
-				userFixes:   userFixes,
-				lastRoundID: latest.ID,
+				index:         index,
+				step:          e.steps[index],
+				stepResult:    result,
+				findings:      *result.FindingsJSON,
+				round:         latest.Round,
+				autoFixes:     autoFixes,
+				userFixes:     userFixes,
+				decisionFixes: decisionFixes,
+				lastRoundID:   latest.ID,
 			}
 			if latest.ReviewedHeadSHA != nil {
 				gate.reviewedHeadSHA = *latest.ReviewedHeadSHA
@@ -719,6 +754,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 	// invocation during execution of round N+1 sees roundNum still at N.
 	autoFixAttempts := state.autoFixAttempts
 	userFixAttempts := state.userFixAttempts
+	decisionFixRounds := state.decisionFixRounds
 	roundNum := state.roundNum
 
 	stepAgent := e.agent
@@ -1019,10 +1055,14 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			// selection is preserved even when non-convergence stops the loop.
 			selectedFindings := filterFindingsJSON(outcome.Findings, response.findingIDs)
 			mergedFindings := mergeUserOverridesJSON(selectedFindings, response.instructions, response.addedFindings)
+			selectionSource := db.RoundSelectionSourceUser
+			if endorsedDecisionFix(selectedFindings, response) {
+				selectionSource = db.RoundSelectionSourceDecision
+			}
 			if currentRoundID != "" {
 				allSelectedIDs := combineSelectedFindingIDs(response.findingIDs, mergedFindings)
 				if idsJSON := marshalFindingIDs(allSelectedIDs); idsJSON != "" {
-					if dbErr := e.db.SetStepRoundSelection(currentRoundID, &idsJSON, db.RoundSelectionSourceUser); dbErr != nil {
+					if dbErr := e.db.SetStepRoundSelection(currentRoundID, &idsJSON, selectionSource); dbErr != nil {
 						slog.Warn("failed to record selected finding ids", "step", stepName, "round", roundNum, "error", dbErr)
 					}
 				}
@@ -1034,25 +1074,48 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 				}
 			}
 			// Count executions, not requests: a refused fix spends no budget.
-			totalRounds := autoFixAttempts + userFixAttempts
-			maxRounds := e.maxFixRounds()
-			if totalRounds >= maxRounds {
-				slog.Error("fix loop non-convergence", "step", stepName, "total_rounds", totalRounds, "max_fix_rounds", maxRounds, "auto_fix_rounds", autoFixAttempts, "user_fix_rounds", userFixAttempts)
-				err := nonConvergenceError(stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
-				if dbErr := e.db.FailStep(sr.ID, err.Error(), executionMS); dbErr != nil {
+			var executionLabel string
+			var refusal error
+			if selectionSource == db.RoundSelectionSourceDecision {
+				// An endorsed decision is the supervisor's answer to a finding the
+				// gate parked, not the pipeline retrying itself. Charging it to the
+				// automatic budget is what refused it in the field once automatic
+				// fixes had spent the shared cap, so it is charged to its own
+				// budget instead - still bounded, so no loop is left open.
+				maxDecisions := e.maxFixRounds()
+				if decisionFixRounds >= maxDecisions {
+					slog.Error("decision fix non-convergence", "step", stepName, "decision_rounds", decisionFixRounds, "max_fix_rounds", maxDecisions, "auto_fix_rounds", autoFixAttempts, "user_fix_rounds", userFixAttempts)
+					refusal = decisionNonConvergenceError(stepName, decisionFixRounds, maxDecisions, autoFixAttempts, userFixAttempts)
+				} else {
+					decisionFixRounds++
+					executionLabel = fmt.Sprintf("decision-fix execution %d/%d", decisionFixRounds, maxDecisions)
+					telemetry.Track("fix", e.fixTelemetryFields("decision", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), decisionFixRounds))
+				}
+			} else {
+				totalRounds := autoFixAttempts + userFixAttempts
+				maxRounds := e.maxFixRounds()
+				if totalRounds >= maxRounds {
+					slog.Error("fix loop non-convergence", "step", stepName, "total_rounds", totalRounds, "max_fix_rounds", maxRounds, "auto_fix_rounds", autoFixAttempts, "user_fix_rounds", userFixAttempts)
+					refusal = nonConvergenceError(stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
+				} else {
+					userFixAttempts++
+					totalRounds++
+					executionLabel = fmt.Sprintf("user-fix execution %d/%d", totalRounds, maxRounds)
+					telemetry.Track("fix", e.fixTelemetryFields("user", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), 0))
+				}
+			}
+			if refusal != nil {
+				if dbErr := e.db.FailStep(sr.ID, refusal.Error(), executionMS); dbErr != nil {
 					slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
 				}
-				writeLog(err.Error())
-				e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFailed), outcome.Findings, err.Error(), &executionMS)
-				return false, err
+				writeLog(refusal.Error())
+				e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFailed), outcome.Findings, refusal.Error(), &executionMS)
+				return false, refusal
 			}
-			userFixAttempts++
-			totalRounds++
-			telemetry.Track("fix", e.fixTelemetryFields("user", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), 0))
 			// Fix - mark step as fixing, resume execution timer, re-execute.
 			phaseStart = time.Now()
 			selectedCount := selectedFindingCount(outcome.Findings, response.findingIDs)
-			writeLog(fmt.Sprintf("user-fix execution %d/%d starting after round %d (%d %s selected)", totalRounds, maxRounds, roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
+			writeLog(fmt.Sprintf("%s starting after round %d (%d %s selected)", executionLabel, roundNum, selectedCount, pluralize(selectedCount, "finding", "findings")))
 			if dbErr := e.db.UpdateStepStatus(sr.ID, types.StepStatusFixing); dbErr != nil {
 				slog.Warn("failed to update step status in db", "step", stepName, "status", "fixing", "error", dbErr)
 			}
@@ -1060,7 +1123,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			sctx.PreviousFindings = mergedFindings
 			nextTrigger = "auto_fix"
 			e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFixing), "", "", nil)
-			slog.Info("step fix requested, re-executing", "step", stepName, "total_rounds", totalRounds, "max_fix_rounds", maxRounds)
+			slog.Info("step fix requested, re-executing", "step", stepName, "decision_rounds", decisionFixRounds, "total_rounds", autoFixAttempts+userFixAttempts, "max_fix_rounds", e.maxFixRounds())
 			continue // loop back to step.Execute
 		}
 	}
@@ -1126,6 +1189,26 @@ func (e *Executor) maxFixRounds() int {
 func nonConvergenceError(stepName types.StepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts int) error {
 	return fmt.Errorf("non-convergence: %s used %d/%d fix executions (%d auto + %d user); next fix refused (not executed); unresolved findings remain",
 		stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
+}
+
+// decisionNonConvergenceError reports the separate decision budget refusing
+// another endorsed correction. It names the shared budget's executions too, so
+// a supervisor can see that the automatic budget was not the one exhausted.
+func decisionNonConvergenceError(stepName types.StepName, decisionRounds, maxDecisionRounds, autoFixAttempts, userFixAttempts int) error {
+	return fmt.Errorf("non-convergence: %s used %d/%d decision fix executions (%d auto + %d user on the shared fix budget); next endorsed fix refused (not executed); unresolved findings remain",
+		stepName, decisionRounds, maxDecisionRounds, autoFixAttempts, userFixAttempts)
+}
+
+// endorsedDecisionFix reports whether a fix response applies a gate decision the
+// supervisor endorsed rather than an ordinary fix selection. Per-finding
+// instructions, user-authored findings, and a selected ask-user finding all
+// carry an answer to what the gate raised, and that answer is not the pipeline
+// retrying itself, so it must not be charged to the automatic fix budget.
+func endorsedDecisionFix(selectedFindings string, response approvalResponse) bool {
+	if len(response.instructions) > 0 || len(response.addedFindings) > 0 {
+		return true
+	}
+	return hasAskUserFindingsJSON(selectedFindings)
 }
 
 type gateStepBoundaryAgent struct {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1188,4 +1189,238 @@ func driveToNonConvergenceUserFix(t *testing.T, maxRounds int) int {
 	}
 	t.Fatal("review step not found")
 	return 0
+}
+
+// TestEndorsedDecisionFixDoesNotConsumeAutoFixBudget reproduces the observed
+// failure where the automatic fix path spent the whole shared budget and the
+// correction an answered gate decision endorsed was then refused as
+// non-convergence - shipping a run whose green checks never applied the
+// accepted requirement. An endorsed decision is charged to its own budget, so
+// the correction lands and the run reaches a verdict.
+func TestEndorsedDecisionFixDoesNotConsumeAutoFixBudget(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	workDir := t.TempDir()
+	initGitRepo(t, workDir)
+
+	// One automatic fix is all the shared budget allows, so the next automatic
+	// correction is refused and the gate parks with the endorsed decision open.
+	cfg := &config.Config{AutoFix: config.AutoFix{Review: 2, MaxFixRounds: 1}}
+
+	const gateFindings = `{"items":[{"id":"requirement","severity":"error","action":"ask-user","description":"ship the accepted requirement"},{"id":"bug","severity":"warning","action":"auto-fix","description":"mechanical cleanup"}]}`
+
+	var fixes atomic.Int32
+	step := &adaptiveCallStep{
+		name: types.StepReview,
+		fn: func(sctx *StepContext) (*StepOutcome, error) {
+			if sctx.Fixing {
+				if fixes.Add(1) == 2 {
+					// The endorsed correction settled the review.
+					return &StepOutcome{}, nil
+				}
+			}
+			return &StepOutcome{NeedsApproval: true, AutoFixable: true, Findings: gateFindings}, nil
+		},
+	}
+
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- exec.Execute(context.Background(), run, repo, workDir)
+	}()
+
+	// Round 1 spends the one automatic fix; round 2 parks with the budget
+	// exhausted and the decision still unanswered.
+	waitForFixReviewRound(t, database, run.ID, 2)
+	if got := fixes.Load(); got != 1 {
+		t.Fatalf("fixes = %d, want the single automatic fix", got)
+	}
+
+	// The supervisor endorses the decision on the ask-user finding.
+	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"requirement"}); err != nil {
+		t.Fatalf("responding with the endorsed decision: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("endorsed decision must apply, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the endorsed decision to apply")
+	}
+
+	if got := fixes.Load(); got != 2 {
+		t.Errorf("fix executions = %d, want the automatic fix plus the endorsed correction", got)
+	}
+
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range steps {
+		if s.StepName != types.StepReview {
+			continue
+		}
+		if s.Status != types.StepStatusCompleted {
+			t.Errorf("step status = %s, want completed", s.Status)
+		}
+		rounds, err := database.GetRoundsByStep(s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rounds) != 3 {
+			t.Fatalf("rounds = %d, want initial + automatic fix + endorsed decision", len(rounds))
+		}
+		if rounds[1].SelectionSource == nil || *rounds[1].SelectionSource != db.RoundSelectionSourceDecision {
+			t.Errorf("endorsed round selection source = %v, want %q", rounds[1].SelectionSource, db.RoundSelectionSourceDecision)
+		}
+		log, err := os.ReadFile(filepath.Join(p.RunLogDir(run.ID), "review.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(log), "decision-fix execution 1/1") {
+			t.Errorf("log does not report the endorsed correction against its own budget:\n%s", log)
+		}
+		if strings.Contains(string(log), "next fix refused") {
+			t.Errorf("endorsed correction was refused:\n%s", log)
+		}
+	}
+}
+
+// TestNonEndorsedFixStillRefusedWhenBudgetExhausted proves the loop guard still
+// bites: with the shared budget exhausted and no endorsed decision, the next
+// fix request is refused as non-convergence instead of opening a new round.
+func TestNonEndorsedFixStillRefusedWhenBudgetExhausted(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	workDir := t.TempDir()
+	initGitRepo(t, workDir)
+
+	cfg := &config.Config{AutoFix: config.AutoFix{Review: 2, MaxFixRounds: 1}}
+
+	const gateFindings = `{"items":[{"id":"requirement","severity":"error","action":"ask-user","description":"ship the accepted requirement"},{"id":"bug","severity":"warning","action":"auto-fix","description":"mechanical cleanup"}]}`
+
+	var fixes atomic.Int32
+	step := &adaptiveCallStep{
+		name: types.StepReview,
+		fn: func(sctx *StepContext) (*StepOutcome, error) {
+			if sctx.Fixing {
+				fixes.Add(1)
+			}
+			return &StepOutcome{NeedsApproval: true, AutoFixable: true, Findings: gateFindings}, nil
+		},
+	}
+
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- exec.Execute(context.Background(), run, repo, workDir)
+	}()
+
+	waitForFixReviewRound(t, database, run.ID, 2)
+
+	// A plain fix selection carries no endorsed decision.
+	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"bug"}); err != nil {
+		t.Fatalf("responding without an endorsed decision: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "non-convergence") {
+			t.Fatalf("expected non-convergence refusal, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "used 1/1 fix executions (1 auto + 0 user); next fix refused (not executed)") {
+			t.Errorf("refusal must keep the shared budget accounting: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the non-convergence refusal")
+	}
+
+	if got := fixes.Load(); got != 1 {
+		t.Errorf("fix executions = %d, want only the automatic fix; the refused request must not execute", got)
+	}
+}
+
+// TestEndorsedDecisionInstructionsApplyWithoutAutoFixBudget proves the same
+// carve-out on the documented AXI route: `drill axi respond --action fix
+// --instructions` answers an objective finding the gate raised, so the
+// automatic fixes that already spent the shared budget cannot refuse it. The
+// selected finding is not an ask-user finding, so only the instruction map can
+// mark the response as an endorsed decision.
+func TestEndorsedDecisionInstructionsApplyWithoutAutoFixBudget(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	workDir := t.TempDir()
+	initGitRepo(t, workDir)
+
+	cfg := &config.Config{AutoFix: config.AutoFix{Review: 2, MaxFixRounds: 1}}
+
+	const gateFindings = `{"items":[{"id":"requirement","severity":"error","action":"ask-user","description":"ship the accepted requirement"},{"id":"bug","severity":"warning","action":"auto-fix","description":"mechanical cleanup"}]}`
+
+	var fixes atomic.Int32
+	step := &adaptiveCallStep{
+		name: types.StepReview,
+		fn: func(sctx *StepContext) (*StepOutcome, error) {
+			if sctx.Fixing && fixes.Add(1) == 2 {
+				return &StepOutcome{}, nil
+			}
+			return &StepOutcome{NeedsApproval: true, AutoFixable: true, Findings: gateFindings}, nil
+		},
+	}
+
+	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
+	done := make(chan error, 1)
+	go func() {
+		done <- exec.Execute(context.Background(), run, repo, workDir)
+	}()
+
+	waitForFixReviewRound(t, database, run.ID, 2)
+
+	if err := exec.RespondWithOverrides(
+		types.StepReview,
+		types.ActionFix,
+		[]string{"bug"},
+		map[string]string{"bug": "apply the accepted requirement"},
+		nil,
+	); err != nil {
+		t.Fatalf("responding with the endorsed instruction: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("endorsed instruction must apply, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the endorsed instruction to apply")
+	}
+
+	if got := fixes.Load(); got != 2 {
+		t.Errorf("fix executions = %d, want the automatic fix plus the endorsed correction", got)
+	}
+
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range steps {
+		if s.StepName != types.StepReview {
+			continue
+		}
+		rounds, err := database.GetRoundsByStep(s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rounds) != 3 {
+			t.Fatalf("rounds = %d, want initial + automatic fix + endorsed instruction", len(rounds))
+		}
+		if rounds[1].SelectionSource == nil || *rounds[1].SelectionSource != db.RoundSelectionSourceDecision {
+			t.Errorf("endorsed instruction round selection source = %v, want %q", rounds[1].SelectionSource, db.RoundSelectionSourceDecision)
+		}
+		log, err := os.ReadFile(filepath.Join(p.RunLogDir(run.ID), "review.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(log), "decision-fix execution 1/1") {
+			t.Errorf("log does not report the endorsed instruction against its own budget:\n%s", log)
+		}
+	}
 }

@@ -312,10 +312,12 @@ For empty `commands.lint`, the document step's combined housekeeping pass also a
 | `auto_fix.document` | `int` | `3`     | Not used by the automatic document pass                                                     |
 | `auto_fix.lint`     | `int` | `3`     | Lint issue auto-fix attempts                                                                |
 | `auto_fix.ci`       | `int` | `3`     | CI auto-fix attempts for CI failures, plus GitHub, GitLab, and Azure DevOps merge conflicts |
-| `auto_fix.max_fix_rounds` | `int` | `3` | Global cap on actual fix executions (auto-fix + user-fix) per step; the next fix request fails with non-convergence |
+| `auto_fix.max_fix_rounds` | `int` | `3` | Global cap on actual fix executions (auto-fix + user-fix) per step, and the same size used for the separate endorsed-decision budget; the next fix request fails with non-convergence |
 
 `max_fix_rounds: 3` permits three fix executions per step, each followed by verification, in addition to the initial evaluation.
 Automatic and user-triggered fixes share this budget, including after recovery of a parked run.
+A fix that endorses a parked gate decision - per-finding instructions, user-authored findings, or a selected `ask-user` finding - is charged to its own budget of the same size instead, so automatic fixes cannot spend the room an endorsed decision needs.
+That split is recorded on each round, so a resumed run keeps the same budgets.
 A refused request does not consume an execution or approve unresolved findings.
 
 Legacy alias: `auto_fix.babysit`.

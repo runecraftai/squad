@@ -5,6 +5,11 @@ import "fmt"
 const (
 	RoundSelectionSourceUser    = "user"
 	RoundSelectionSourceAutoFix = "auto_fix"
+	// RoundSelectionSourceDecision marks a fix the supervisor endorsed from a
+	// gate decision (per-finding instructions, user-authored findings, or a
+	// selected ask-user finding). It is charged to its own decision budget, so
+	// recording it separately keeps a recovered run's accounting faithful.
+	RoundSelectionSourceDecision = "decision"
 )
 
 // StepRound represents one execution round within a pipeline step.
@@ -22,10 +27,10 @@ type StepRound struct {
 	// instructions) and the user-authored findings.
 	UserFindingsJSON *string
 	// SelectedFindingIDs, when non-nil, is a JSON array of finding IDs that
-	// were chosen (by the user or auto-fix filter) to be fixed AFTER this
-	// round. It is populated on the round whose findings triggered the next
-	// round, so that later rounds' prompts can tell which findings were
-	// deliberately left unselected.
+	// were chosen (by the user, the auto-fix filter, or an endorsed gate
+	// decision) to be fixed AFTER this round. It is populated on the round
+	// whose findings triggered the next round, so that later rounds' prompts
+	// can tell which findings were deliberately left unselected.
 	SelectedFindingIDs *string
 	SelectionSource    *string
 	// FixSummary, when non-nil, is the agent's one-line commit summary for
@@ -156,7 +161,8 @@ func (d *DB) insertStepRound(stepResultID string, round int, trigger string, fin
 
 // SetStepRoundSelection records which findings were selected for fix AFTER the
 // given round produced its findings, along with whether that selection came
-// from the user or auto-fix filtering. Passing a nil or empty JSON array clears
+// from the user, auto-fix filtering, or an endorsed gate decision (see the
+// RoundSelectionSource* constants). Passing a nil or empty JSON array clears
 // both columns.
 func (d *DB) SetStepRoundSelection(id string, selectedFindingIDs *string, source string) error {
 	var selectionSource *string
