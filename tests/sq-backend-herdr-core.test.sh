@@ -1406,16 +1406,21 @@ printf 'squad-desk\n' > "$SPACE_CONFIG"
 address=$(SQUAD_HC_NEW_ADDRESS=t7 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
   || fail 'create_task must succeed with a configured presentation space'
 [ "$address" = t7 ] || fail "a labelled create still returns its opaque address (got '$address')"
-assert_grep 't7 herdr.space=squad-desk' "$SQUAD_HC_LABEL_LOG" 'the created terminal carries the configured space label'
+assert_grep 't7 herdr.space=squad-desk herdr.tab=' "$SQUAD_HC_LABEL_LOG" 'the created terminal carries the configured space and a tab of its own'
 [ "$(grep -c . "$SQUAD_HC_LABEL_LOG" || true)" = 1 ] \
   || fail "one label write only (saw: $(cat "$SQUAD_HC_LABEL_LOG"))"
 assert_grep "t7	herdr.space	squad-desk" "$SQUAD_HC_LABELS" 'the label state holds the one address and value'
-assert_no_grep 'herdr.tab' "$SQUAD_HC_LABEL_LOG" 'no tab id is guessed'
-assert_no_grep 'herdr.tab' "$SQUAD_HC_LABELS" 'no tab id is written'
+task_tab=$(fm_backend_herdr_core_tab_for_task 'probe')
+assert_grep "$task_tab" "$SQUAD_HC_LABELS" "the tab label is the task's own derived id"
+[ "$task_tab" = "$(fm_backend_herdr_core_name_for_task 'probe')" ] \
+  || fail 'the tab id must be the same derived identity the terminal is named with'
+[ "$task_tab" != "$(fm_backend_herdr_core_tab_for_task 'another-task')" ] \
+  || fail 'two tasks must not share one tab id'
+assert_no_grep 'herdr.seen' "$SQUAD_HC_LABELS" 'the app state beyond placement is left alone'
 
 # Idempotent: running the same write again returns success and leaves exactly
 # one value, because the product's own label write is a set.
-fm_backend_herdr_core_apply_presentation_space default t7 \
+fm_backend_herdr_core_apply_presentation_space default t7 probe \
   || fail 'a repeated label write for the same space must succeed'
 [ "$(space_labels | grep -c . || true)" = 1 ] \
   || fail "a repeated write must leave one space label (got: $(space_labels | tr '\n' ' '))"
@@ -1459,7 +1464,7 @@ address=$(SQUAD_HC_LABEL_FAIL=1 SQUAD_HC_NEW_ADDRESS=t7 \
 [ "$address" = t7 ] || fail "a failed label write still returns the created address (got '$address')"
 assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'could not place herdr-core terminal' \
   'a failed label write warns instead of failing'
-assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'hc label t7 herdr.space=squad-desk' \
+assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'hc label t7 herdr.space=squad-desk herdr.tab=' \
   'the warning names the exact by-hand command'
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a failed label write must not close the terminal it could not label'
 
@@ -1467,14 +1472,16 @@ assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'hc label t7 herdr.space=s
 SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
   write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
 reset_label_state
-printf 't7\therdr.space\tsquad-desk\nt8\therdr.space\tsquad-desk\n' > "$SQUAD_HC_LABELS"
+printf 't7	herdr.space	squad-desk\nt7	herdr.tab	sq-tab-one\nt8	herdr.space	squad-desk\nt8	herdr.tab	sq-tab-two\n' > "$SQUAD_HC_LABELS"
 fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \
-  || fail 'clearing the presentation label on its own terminal must succeed'
-assert_grep 't7 herdr.space=' "$SQUAD_HC_LABEL_LOG" 'the clear names the exact address with an empty value'
+  || fail 'clearing the presentation labels on its own terminal must succeed'
+assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
+  'the clear names the exact address with both values empty'
 assert_no_grep 't8' "$SQUAD_HC_LABEL_LOG" 'another terminal is never named by the clear'
-cleared=$(awk -F'\t' '$1 == "t7" && $2 == "herdr.space"' "$SQUAD_HC_LABELS")
-[ -z "$cleared" ] || fail "the cleared terminal lost its space label (got: $cleared)"
-assert_grep "t8	herdr.space	squad-desk" "$SQUAD_HC_LABELS" "another terminal's label is left exactly as it was"
+cleared=$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")
+[ -z "$cleared" ] || fail "the cleared terminal lost both placement labels (got: $cleared)"
+assert_grep "t8	herdr.space	squad-desk" "$SQUAD_HC_LABELS" "another terminal's space label is left exactly as it was"
+assert_grep "t8	herdr.tab	sq-tab-two" "$SQUAD_HC_LABELS" "another terminal's tab label is left exactly as it was"
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'the reversal removes no terminal'
 
 # A foreign identity refuses: another base's terminal is never relabelled.
