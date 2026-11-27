@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16](https://github.com/runecraftai/squad/compare/drill-v0.1.15...drill-v0.1.16) (2026-11-27)
+
+
+### Bug Fixes
+
+* **drill:** charge endorsed gate decisions outside the automatic fix budget ([#360](https://github.com/runecraftai/squad/issues/360)) ([d8f9071](https://github.com/runecraftai/squad/commit/d8f90719cddefb803832daccbd7f028fe04b3056))
+
 ## [0.1.15](https://github.com/runecraftai/squad/compare/drill-v0.1.14...drill-v0.1.15) (2026-11-09)
 
 
