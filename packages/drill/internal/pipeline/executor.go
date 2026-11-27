@@ -1075,6 +1075,7 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 			}
 			// Count executions, not requests: a refused fix spends no budget.
 			var executionLabel string
+			var refusal error
 			if selectionSource == db.RoundSelectionSourceDecision {
 				// An endorsed decision is the supervisor's answer to a finding the
 				// gate parked, not the pipeline retrying itself. Charging it to the
@@ -1084,34 +1085,32 @@ func (e *Executor) executeStep(ctx context.Context, step Step, sr *db.StepResult
 				maxDecisions := e.maxFixRounds()
 				if decisionFixRounds >= maxDecisions {
 					slog.Error("decision fix non-convergence", "step", stepName, "decision_rounds", decisionFixRounds, "max_fix_rounds", maxDecisions, "auto_fix_rounds", autoFixAttempts, "user_fix_rounds", userFixAttempts)
-					err := decisionNonConvergenceError(stepName, decisionFixRounds, maxDecisions, autoFixAttempts, userFixAttempts)
-					if dbErr := e.db.FailStep(sr.ID, err.Error(), executionMS); dbErr != nil {
-						slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
-					}
-					writeLog(err.Error())
-					e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFailed), outcome.Findings, err.Error(), &executionMS)
-					return false, err
+					refusal = decisionNonConvergenceError(stepName, decisionFixRounds, maxDecisions, autoFixAttempts, userFixAttempts)
+				} else {
+					decisionFixRounds++
+					executionLabel = fmt.Sprintf("decision-fix execution %d/%d", decisionFixRounds, maxDecisions)
+					telemetry.Track("fix", e.fixTelemetryFields("decision", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), decisionFixRounds))
 				}
-				decisionFixRounds++
-				executionLabel = fmt.Sprintf("decision-fix execution %d/%d", decisionFixRounds, maxDecisions)
-				telemetry.Track("fix", e.fixTelemetryFields("decision", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), decisionFixRounds))
 			} else {
 				totalRounds := autoFixAttempts + userFixAttempts
 				maxRounds := e.maxFixRounds()
 				if totalRounds >= maxRounds {
 					slog.Error("fix loop non-convergence", "step", stepName, "total_rounds", totalRounds, "max_fix_rounds", maxRounds, "auto_fix_rounds", autoFixAttempts, "user_fix_rounds", userFixAttempts)
-					err := nonConvergenceError(stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
-					if dbErr := e.db.FailStep(sr.ID, err.Error(), executionMS); dbErr != nil {
-						slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
-					}
-					writeLog(err.Error())
-					e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFailed), outcome.Findings, err.Error(), &executionMS)
-					return false, err
+					refusal = nonConvergenceError(stepName, totalRounds, maxRounds, autoFixAttempts, userFixAttempts)
+				} else {
+					userFixAttempts++
+					totalRounds++
+					executionLabel = fmt.Sprintf("user-fix execution %d/%d", totalRounds, maxRounds)
+					telemetry.Track("fix", e.fixTelemetryFields("user", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), 0))
 				}
-				userFixAttempts++
-				totalRounds++
-				executionLabel = fmt.Sprintf("user-fix execution %d/%d", totalRounds, maxRounds)
-				telemetry.Track("fix", e.fixTelemetryFields("user", stepName, selectedFindingCount(outcome.Findings, response.findingIDs), 0))
+			}
+			if refusal != nil {
+				if dbErr := e.db.FailStep(sr.ID, refusal.Error(), executionMS); dbErr != nil {
+					slog.Warn("failed to mark non-converged step as failed in db", "step", stepName, "error", dbErr)
+				}
+				writeLog(refusal.Error())
+				e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, stepName, string(types.StepStatusFailed), outcome.Findings, refusal.Error(), &executionMS)
+				return false, refusal
 			}
 			// Fix - mark step as fixing, resume execution timer, re-execute.
 			phaseStart = time.Now()
