@@ -1171,17 +1171,26 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
         "$bin" 'do' tab.rename --id "$tab" --name "$title" 2>/dev/null) || rc=$?
       err=
     fi
-    [ "$rc" -ne 0 ] || { ok=1; break; }
     # A bound that expired is final: the app is holding the call, not that one
     # tab's adoption, and waiting longer only holds the spawn open.
     if [ "$rc" -eq 124 ]; then
       reason="the app did not answer within ${bound}s"
       break
     fi
+    # The product's own refusal record is the authority on whether the tab is
+    # still unknown, not the status alone: a build that prints that record and
+    # exits zero must still take the adoption retry instead of reporting a
+    # titled tab that never got its title.
     reason=$(printf '%s' "$out" | jq -r '.error // empty' 2>/dev/null) || reason=
     if [ -z "$reason" ] && [ -n "$err" ]; then
       reason=$(printf '%s' "$err" | jq -r '.error // empty' 2>/dev/null) || reason=
-      [ -n "$reason" ] || reason=$(printf '%s\n' "$err" | head -n 1 | tr -d '\r')
+    fi
+    if [ -z "$reason" ] && [ "$rc" -eq 0 ]; then
+      ok=1
+      break
+    fi
+    if [ -z "$reason" ] && [ -n "$err" ]; then
+      reason=$(printf '%s\n' "$err" | head -n 1 | tr -d '\r')
     fi
     reason=${reason:-no reason given}
     # Only an unknown tab is worth another try: it is the app saying it has not

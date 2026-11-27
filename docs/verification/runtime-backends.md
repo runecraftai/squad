@@ -1136,7 +1136,8 @@ Nothing else on the screen was addressed at any point, and the person's own work
  "about":"Rename a tab (asks the person when no name; an empty name: called by its number again)."}
 ```
 
-An id the app does not know answers `{"error": "no tab \"<id>\""}` on **stdout** and exit 1, which is the answer that tells a create the tab has not been adopted yet; a good rename answers `{"ok": true}`.
+An id the app does not know answers `{"error": "no tab \"<id>\""}`, which is the answer that tells a create the tab has not been adopted yet; a good rename answers `{"ok": true}`.
+The capture recorded those records and their timings, but not which stream carried the refusal or its exit status; the fake `herdr-app` in `tests/sq-backend-herdr-core.test.sh` proves the retry for the record on stdout or stderr and for either exit status.
 
 No truncation is imposed: a 300-character name came back as all 300 characters.
 
@@ -1219,7 +1220,7 @@ fm_backend_herdr_core_rename_tab sq-f8f4d208-herdr-core-tab-title herdr-core-tab
 ```
 
 Not measured live, and therefore not claimed: the rename while the app is closed (there is no tab to address, so it warns and the spawn continues - the fake `herdr-app` in `tests/sq-backend-herdr-core.test.sh` proves the spawn survives; stopping or restarting the app is forbidden here) and the title call's 5s bound when the app accepts the request and never answers (the same fake held open past the bound proves the create still returns).
-Which stream the product writes its refusal record to was not measured either, so the adapter reads it from stdout and falls back to stderr; the fake proves both shapes are retried.
+Which stream carries the product's refusal record and whether it exits nonzero were not measured either, so the adapter decides from the record itself (stdout first, stderr fallback) as well as the status; the fake proves both streams and both exit statuses are retried.
 
 Portable coverage of the write, the absent and unreadable setting, the idempotent repeat, the failing write that keeps the spawn, and the address-exact clear is in `tests/sq-backend-herdr-core.test.sh`; the live facts above are what that code is for.
 

@@ -291,7 +291,9 @@ if [ "$no_tab" -eq 1 ]; then
   else
     printf '{\n  "error": "no tab \\"%s\\""\n}\n' "$tab"
   fi
-  exit 1
+  unknown_exit=${SQUAD_HERDR_APP_UNKNOWN_TAB_EXIT:-1}
+  case "$unknown_exit" in ''|*[!0-9]*) unknown_exit=1 ;; esac
+  exit "$unknown_exit"
 fi
 if [ "${SQUAD_HERDR_APP_FAIL:-0}" = 1 ]; then
   printf '{\n  "error": "connection refused"\n}\n'
@@ -371,6 +373,7 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HERDR_APP_FAIL SQUAD_HERDR_APP_UNKNOWN_TAB SQUAD_HERDR_APP_HANG
   unset SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT
   unset SQUAD_HERDR_APP_UNKNOWN_TAB_DELAY SQUAD_HERDR_APP_UNKNOWN_TAB_STDERR
+  unset SQUAD_HERDR_APP_UNKNOWN_TAB_EXIT
   unset SQUAD_CONFIG_OVERRIDE
   export SQUAD_HC_LABEL_BASE="$BASE_LABEL" SQUAD_HC_RUN_BASE="$BASE_LABEL"
   unset SQUAD_HC_READ_SHAPE
@@ -1672,6 +1675,24 @@ address=$(SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT=2 SQUAD_HERDR_APP_UNKNOWN_TAB_STDERR
   || fail "a stderr no-tab answer is retried like a stdout one (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
 assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
   'the tab renamed after a stderr no-tab answer holds its title'
+
+# The refusal record, not the exit status, decides whether the tab is unknown: a
+# build that prints `no tab` and exits zero must still retry to the adoption
+# instead of reporting a title that was never written.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+address=$(SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT=2 SQUAD_HERDR_APP_UNKNOWN_TAB_EXIT=0 \
+  SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/no-tab-zero-stderr.txt") \
+  || fail 'a zero-status no-tab answer must not fail the spawn'
+[ "$address" = t7 ] || fail "a zero-status retry still returns the created address (got '$address')"
+[ ! -s "$TMP_ROOT/no-tab-zero-stderr.txt" ] \
+  || fail "a successful retry over a zero-status refusal must be silent (saw: $(cat "$TMP_ROOT/no-tab-zero-stderr.txt"))"
+[ "$(rename_count)" = 3 ] \
+  || fail "a zero-status no-tab answer is retried like a nonzero one (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
+assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  'the tab renamed after a zero-status no-tab answer holds its title'
 
 # One deadline covers the whole write: an app that answers `no tab` slowly is
 # cut off at the bound instead of spending that bound once per attempt, and the
