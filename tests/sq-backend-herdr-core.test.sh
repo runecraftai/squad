@@ -299,6 +299,7 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HC_RUN_FAIL SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL SQUAD_HC_SEND_ERROR
   unset SQUAD_HC_KILL_SWAP SQUAD_HC_LIST_ALL
   unset SQUAD_HC_LABEL_TASK SQUAD_HC_LABEL_FAIL
+  unset SQUAD_CONFIG_OVERRIDE
   export SQUAD_HC_LABEL_BASE="$BASE_LABEL" SQUAD_HC_RUN_BASE="$BASE_LABEL"
   unset SQUAD_HC_READ_SHAPE
   export SQUAD_HC_CORE_ID=core-a
@@ -1416,7 +1417,9 @@ assert_grep "$task_tab" "$SQUAD_HC_LABELS" "the tab label is the task's own deri
   || fail 'the tab id must be the same derived identity the terminal is named with'
 [ "$task_tab" != "$(fm_backend_herdr_core_tab_for_task 'another-task')" ] \
   || fail 'two tasks must not share one tab id'
-assert_no_grep 'herdr.seen' "$SQUAD_HC_LABELS" 'the app state beyond placement is left alone'
+expected_labels=$(printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\t%s' "$task_tab")
+[ "$(cat "$SQUAD_HC_LABELS")" = "$expected_labels" ] \
+  || fail "the create writes exactly the space and tab rows for its own address (saw: $(cat "$SQUAD_HC_LABELS"))"
 
 # Idempotent: running the same write again returns success and leaves exactly
 # one value, because the product's own label write is a set.
@@ -1425,6 +1428,24 @@ fm_backend_herdr_core_apply_presentation_space default t7 probe \
 [ "$(space_labels | grep -c . || true)" = 1 ] \
   || fail "a repeated write must leave one space label (got: $(space_labels | tr '\n' ' '))"
 assert_grep "t7	herdr.space	squad-desk" "$SQUAD_HC_LABELS" 'the repeated write leaves the same value'
+
+# The effective config dir wins: with SQUAD_CONFIG_OVERRIDE set, the override's
+# value is the one written and the base's own config is never read, so an
+# ambient override can neither supply nor mask a space.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+override_config="$TMP_ROOT/override-config"
+mkdir -p "$override_config"
+printf 'squad-override\n' > "$override_config/herdr-core-space"
+address=$(SQUAD_CONFIG_OVERRIDE="$override_config" SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
+  || fail 'create_task must succeed with an override config dir'
+[ "$address" = t7 ] || fail "an override-configured create returns its opaque address (got '$address')"
+assert_grep 't7 herdr.space=squad-override' "$SQUAD_HC_LABEL_LOG" \
+  'the override config dir wins over the base config dir'
+assert_no_grep 'squad-desk' "$SQUAD_HC_LABELS" \
+  'a value under the base config dir is never used when the override names a space'
 
 # Absent setting: nothing is written, exactly as before this unit existed.
 write_world

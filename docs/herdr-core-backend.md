@@ -85,7 +85,7 @@ Space ids are local to this machine's app, exactly as the product's own labels a
 With the setting present, every terminal the adapter creates also carries two labels, written right after the create returned its address so they can only ever name that one terminal:
 
 - `herdr.space=<configured id>` - the space the task belongs to.
-- `herdr.tab=<task id>` - the tab inside that space, derived from the same base-scoped identity the terminal is named with, so one mission owns one tab and a relaunch returns to that tab instead of stacking a second one.
+- `herdr.tab=sq-<base-hash>-<slug>` - the tab inside that space: the same base-scoped, collision-safe name the terminal is created with (for example `sq-1a2b3c4d-demo`, or that name with the id hashed when its slug is long or lossy), so one mission owns one tab and a relaunch returns to that tab instead of stacking a second one.
 
 That pair is all the product needs.
 Measured on the live core: a terminal created exactly as Squad creates it - `hc run --bg --no-parent` - has no pane, but writing those two labels makes the app show it as its own tab in the configured space, leaving the tab the person was using untouched.
@@ -139,7 +139,7 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Screen and history | `hc read --json --lines <n> <t>` |
 | Complete rendered viewport (busy hashing) | `hc read --json --lines 0 <t>`, accepted only when `.complete` is true, `.how` is `screen`, and the text is non-empty |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
-| Place the terminal in the configured desktop space, as its own tab | `hc label <t> herdr.space=<id> herdr.tab=<task-id>` |
+| Place the terminal in the configured desktop space, as its own tab | `hc label <t> herdr.space=<id> herdr.tab=sq-<base-hash>-<slug>` |
 | Clear that placement (the app's `terminal.park` takes the pane away) | `hc label <t> herdr.space= herdr.tab=` |
 | Deliver text | `hc send --json --if idle <t> <text>` (a program reporting `idle`), `hc send --json <t> <text>` (a program reporting `done`, or a silent one) |
 | Press one named key | `hc keys --json <t> <key>` |
