@@ -114,7 +114,8 @@ The title is the task id itself - `robotyard-skeleton-complete` - because that i
 It is used whole: measured on herdr-app 0.1.18, `tab.rename` keeps a 300-character name unchanged, so the app forces no truncation and the adapter derives none.
 The title is therefore a pure function of the task id, which is what makes a relaunch stable - the same task writes the same title on the same tab id.
 
-The title lives in the app's own state, not on the terminal: the app keeps it in that machine's core doc, keyed by tab id (`~/.local/state/herdr-core/default/docs.json` holds it, next to the space and tab records), so it survives an app relaunch and is what every client of that core shows.
+The title lives in the app's own state, not on the terminal: the capture found it in that machine's core doc, keyed by tab id (`~/.local/state/herdr-core/default/docs.json` holds it, next to the space and tab records).
+That the app restores it from there on relaunch, and that every client of that core shows it, is the product's documented behavior; an app relaunch was not captured here, because stopping or restarting the app is forbidden.
 Repeating it is harmless, and the adapter writes it on every create, so a task that already has a title converges on the same one.
 This also means the write needs the app: when the app is not running there is no tab to name, and the spawn reports it and continues.
 The product's own skill text (`herdr-app --skill`) says `ls` and `status` talk to the running window rather than a new app, and warns that launching bare `herdr-app` opens or raises the window, so the adapter relies on the app's documented behavior and does not add an app-liveness check.

@@ -1083,8 +1083,10 @@ fm_backend_herdr_core_tab_title_for_task() {  # <task-id> -> tab title
 # recycled address from swapping one terminal's labels for another's between two
 # reads.
 fm_backend_herdr_core_record_label() {  # <record-json> <label-key>
-  printf '%s' "${1:-}" | jq -r --arg key "${2:-}" \
-    '(.labels // {})[$key] // ""' 2>/dev/null
+  local value
+  value=$(printf '%s' "${1:-}" | jq -r --arg key "${2:-}" \
+    '(.labels // {})[$key] // ""' 2>/dev/null) || value=
+  printf '%s' "$value"
 }
 
 # fm_backend_herdr_core_presentation_tab_of: the app tab id recorded on ONE
@@ -1110,9 +1112,10 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
 # "the active tab" - so the person's own working tab can never be reached here.
 # An empty <title> gives the tab its number back, which is the product's own
 # spelling of "unnamed".
-# The title is the app's own state, not a core label: the app keeps it in the
-# machine's core doc, keyed by that same tab id, so it survives an app relaunch
-# and every client of that core sees it.
+# The title is the app's own state, not a core label: the capture found the app
+# keeping it in the machine's core doc, keyed by that same tab id. That the app
+# restores it from there on relaunch, and that every client of that core shows
+# it, is the product's documented behavior, not something measured here.
 # Best-effort by contract, exactly like the label write: a missing app, a
 # refusal, or a failed write warns on stderr and returns nonzero for a caller
 # that cares; no caller may turn it into a spawn failure.
