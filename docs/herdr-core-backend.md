@@ -12,6 +12,7 @@ The desktop app shows that terminal inside one of its spaces once a space is con
 
 Requirements: herdr-core 0.1.22 or newer with an API compatible with protocol generation 1, `jq`, and `fob` for the worktree.
 The `hc` binary (or its `herdr-core` name) must be on `PATH`; `SQUAD_HC_BIN` overrides the resolved command.
+The desktop app's own `herdr-app` CLI is optional: it is needed only when `config/herdr-core-space` is set, to give that tab its title and to clear the title again on removal. When it is absent no title is written and the spawn is unaffected, but a presentation clear refuses and leaves both placement labels in place rather than assume the tab is untitled; `SQUAD_HERDR_APP_BIN` overrides the resolved command.
 
 A core must already be running: started by the desktop app, by systemd, or by the person with `hc server start`.
 Squad never starts one - see "Never starts a core" below.
@@ -89,16 +90,51 @@ With the setting present, every terminal the adapter creates also carries two la
 - `herdr.space=<configured id>` - the space the task belongs to.
 - `herdr.tab=sq-<base-hash>-<slug>` - the tab inside that space: the same base-scoped, collision-safe name the terminal is created with (for example `sq-1a2b3c4d-demo`, or that name with the id hashed when its slug is long or lossy), so one mission owns one tab and a relaunch returns to that tab instead of stacking a second one.
 
-That pair is all the product needs.
+That pair is all the product needs to adopt the terminal as its own tab.
 Measured on the live core: a terminal created exactly as Squad creates it - `hc run --bg --no-parent` - has no pane, but writing those two labels makes the app show it as its own tab in the configured space, leaving the tab the person was using untouched.
 Neither `--keep`, nor `attach`ing after the create, nor creating without `--bg` was needed.
 The full transcript, including the reversal, is recorded in [`verification/runtime-backends.md`](verification/runtime-backends.md#herdr-core).
 
+### What names the tab, and what only identifies it
+
+The label is an IDENTITY, never a title.
+`herdr.tab` is the tab's id, which is why a relaunch finds the same tab again - and an id the app does not know becomes a new tab the app calls by its number, so a labelled terminal alone still reads as `pi - squad` in the tab bar, identical for every mission.
+
+No label names a tab.
+The app honours exactly two labels on a terminal, `herdr.space` and `herdr.tab`, and its own `tab.rename` (`f2` when a person does it) is the only sanctioned way to write a title.
+`hc` has no tab concept at all, so the title cannot come from the core.
+
+One write follows the labels, addressed to the tab id those labels just created:
+
+```text
+herdr-app do tab.rename --id <herdr.tab> --name <task-id>
+```
+
+The title is the task id itself - `robotyard-skeleton-complete` - because that is already the readable mission name, while the derived id (`sq-f8f4d208-scaffold-dete-24b281`) identifies the tab without being readable.
+It is used whole: measured on herdr-app 0.1.18, `tab.rename` keeps a 300-character name unchanged, so the app forces no truncation and the adapter derives none.
+The title is therefore a pure function of the task id, which is what makes a relaunch stable - the same task writes the same title on the same tab id.
+
+The title lives in the app's own state, not on the terminal: the capture found it in that machine's core doc, keyed by tab id (`~/.local/state/herdr-core/default/docs.json` holds it, next to the space and tab records).
+That the app restores it from there on relaunch, and that every client of that core shows it, is the product's documented behavior; an app relaunch was not captured here, because stopping or restarting the app is forbidden.
+Repeating it is harmless, and the adapter writes it on every create, so a task that already has a title converges on the same one.
+This also means the write needs the app: when the app is not running there is no tab to name, and the spawn reports it and continues.
+The product's own skill text (`herdr-app --skill`) says `ls` and `status` talk to the running window rather than a new app, and warns that launching bare `herdr-app` opens or raises the window, so the adapter relies on the app's documented behavior and does not add an app-liveness check.
+The app-closed case was not measured here, because stopping or restarting the app is forbidden.
+
+Only that one tab is ever addressed, by id.
+The write never targets a position and never "the active tab", so no other tab is ever named.
+The live capture shows the person's own tab kept its number, its name, and remained the shown and focused tab across those renames.
+After the labels land the app learns about the tab on the core's event stream, so a create can arrive before the tab exists; that one answer (`no tab`) is retried, up to 8 attempts 0.2 s apart for roughly 1.4 s of adoption waiting, and every other answer is reported at once.
+The retries share one 5 s deadline for the whole write, so an app that answers `no tab` slowly cannot spend that bound once per attempt.
+
 The write is best-effort and never changes a task's outcome:
 
-- **Absent, unreadable, or blank setting** - no label is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
-- **A failed write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. Placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command warns and keeps the task, because a missing display preference must never block real work.
-- **Idempotent** - it is a plain label set, so repeating it leaves exactly one value per label.
+- **Absent, unreadable, or blank setting** - neither a label nor a title is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
+- **A failed label write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. No title is attempted, because without the labels the app has no tab for that terminal.
+- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. The whole write is bounded (5 s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open. A create that exhausts the `no tab` retries is reported the same way, because its tab may still appear just after the budget and the by-hand rename is what finishes it.
+- **Nothing to title** - the app's own `no tab` answer means no title of this adapter's exists for that id: on a clear it is never retried and the labels still go, and on a set it is the adoption the retries wait for. A missing `herdr-app` is different, because nothing could be asked: on a set the warning says so, says the created tab keeps its number, and names the by-hand rename to run after installing the app; on a clear it refuses and leaves both placement labels in place, naming the `hc label` clear and the `tab.rename` for that tab id, so the removal is re-runnable once the CLI is present. The spawn still keeps the terminal, its labels, and its task either way.
+- **Outside the guard** - placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command, or an app whose CLI is absent, warns and keeps the task, because a missing display preference must never block real work.
+- **Idempotent** - the label write is a plain set, so repeating it leaves exactly one value per label, and renaming a tab to the title it already has leaves it named.
 
 Adoption has two product-side consequences worth knowing.
 A terminal adopted into a space is kept by the core: `keep` is measured flipping from false to true, and the product's own contract for a kept terminal is that one lost with the core comes back as a shell in its last folder instead of disappearing.
@@ -107,7 +143,7 @@ Adoption is also one-way on the app's side: clearing the labels does not take th
 
 ### Reversal
 
-The adapter's half clears both labels on one exact terminal:
+The adapter's half clears both labels and gives the tab its number back, on one exact terminal:
 
 ```text
 . bin/sq-backend.sh
@@ -116,7 +152,21 @@ fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>
 ```
 
 It runs the same identity check every other write runs - this base's `squad.base` label, the recorded core id, and, when the optional `sq-<task-id>` is passed, this task's `squad.task` label - so it can only ever reach one of this base's own terminals, and it removes or relabels nothing else.
-The equivalent by hand is `hc label <address> herdr.space= herdr.tab=`.
+It resolves the tab from that verified terminal's own `herdr.tab` label before the label goes, so the title it clears is that tab and no other; a terminal that carries no such label titles nothing.
+That label must be the tab id this adapter derives from the same record's own `squad.task` label, whether or not a task is named, so a hand-edited label or a terminal with no task label refuses instead of renaming a tab this task never created.
+The tab and the task label come from the one record the identity check returned, so an address recycled after that read cannot swap one task's tab for another's.
+A read it cannot resolve refuses before any write, and the title is given back before the labels are cleared, so an app that refuses to rename the tab it holds returns with the labels still in place: that half-done removal is re-runnable, and the same command finishes it.
+The clear continues to the labels on exactly two answers: the rename succeeded, or the app said `no tab` for a tab id it does not hold, which means no title of this adapter's is left behind.
+A missing `herdr-app` CLI is not one of them: nothing could be asked about that tab, so the clear refuses on stderr and leaves both placement labels exactly as they were - they are the only thing that resolves the tab - and the same command finishes the removal once the CLI is available.
+The warning prints both ways forward without the app: the `hc label` clear and the `tab.rename` for that tab id, for a person who accepts the title may remain.
+
+Both writes in the order the adapter runs them, where a tab's id is the value the label held:
+
+```text
+hc get --json <address> | jq -r '.labels["herdr.tab"]'
+herdr-app do tab.rename --id <tab> --name ""
+hc label <address> herdr.space= herdr.tab=
+```
 
 That clear is deliberately not a full restore of the app's label set: it removes only the two labels this adapter wrote, because the app keeps its own `where` record, and adopting a terminal does not give Squad ownership of every label on it.
 A remaining `where: "squad / N"` after the clear is the app's own bookkeeping, not a placement Squad still claims.
@@ -135,11 +185,11 @@ herdr-app do terminal.park --terminal <address>
 ```
 
 A terminal that ends closes its own pane, so a task that is torn down needs neither step for its pane.
-Removing `config/herdr-core-space` stops new terminals from being labeled; terminals already created keep their labels until they are cleared that way.
+Removing `config/herdr-core-space` stops new terminals from being labeled or titled; terminals already created keep their labels and their tab titles until they are cleared that way.
 
 ## Commands this backend runs
 
-Every command is addressed to one opaque terminal; `<s>` is the recorded session and `<t>` the recorded address.
+Every core command is addressed to one opaque terminal, every title command to one tab id, and the app's `terminal.park` to one terminal address, so nothing is addressed by name or by position; `<s>` is the recorded session, `<t>` the recorded address and `<tab>` the recorded tab id.
 
 | Why | Exact command |
 | --- | --- |
@@ -154,6 +204,8 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Complete rendered viewport (busy hashing) | `hc read --json --lines 0 <t>`, accepted only when `.complete` is true, `.how` is `screen`, and the text is non-empty |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
 | Place the terminal in the configured desktop space, as its own tab | `hc label <t> herdr.space=<id> herdr.tab=sq-<base-hash>-<slug>` |
+| Name that tab with the mission title | `herdr-app do tab.rename --id sq-<base-hash>-<slug> --name <task-id>` |
+| Clear the title again (the same id, empty name: its number back) | `herdr-app do tab.rename --id <tab> --name ""` |
 | Deliver text | `hc send --json --if idle <t> <text>` (a program reporting `idle`), `hc send --json <t> <text>` (a program reporting `done`, or a silent one) |
 | Press one named key | `hc keys --json <t> <key>` |
 | Close | `hc kill --json <t>`, confirm `.state == finished`, then `hc rm --json <t>`, confirm `.removed == <t>` |
@@ -273,7 +325,7 @@ The core serves the person's own terminals, the desktop app, and their phone.
 - The product's terminal name is base-scoped for the same reason: the name registry is core-global, so `sq-<base-hash>-<task-id>` keeps task `1` in two bases from colliding on `name_taken`.
 - Never a `--all` sweep, a server-global verb, or a name selector on a destructive call.
 - Never change the person's app settings, telemetry, or core configuration.
-- The adapter only writes its own labels, and only on terminals it created: the two Squad identity labels, plus the optional `herdr.space`/`herdr.tab` placement from `config/herdr-core-space`.
+- The adapter writes app state only on what it created: the two Squad identity labels on its own terminals, the optional `herdr.space`/`herdr.tab` placement from `config/herdr-core-space`, and the title of the one tab those labels create - addressed by that tab's id, never by position or the active tab, so the person's own working tab is never named.
 - Mobile access is SSH into this machine: anyone holding that key can type into Squad's operators. That is a person-side security decision, not something Squad can bound.
 
 ## Recovery when the core is absent
