@@ -434,27 +434,27 @@ func (e *Executor) Resume(ctx context.Context, run *db.Run, repo *db.Repo, workD
 		// budget and the endorsed-decision budget, so a restart never turns a
 		// decision into a non-convergence refusal or the reverse.
 		decisionFixRounds := gate.decisionFixes
+		var refusal error
 		if endorsed {
 			if gate.decisionFixes >= e.maxFixRounds() {
-				err := decisionNonConvergenceError(gate.step.Name(), gate.decisionFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
-				if dbErr := e.db.FailStep(gate.stepResult.ID, err.Error(), duration); dbErr != nil {
-					slog.Warn("failed to mark recovered step as non-converged", "step", gate.step.Name(), "error", dbErr)
-				}
-				e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFailed), gate.findings, err.Error(), &duration)
-				return e.failRun(run, repo, err, ctx)
+				refusal = decisionNonConvergenceError(gate.step.Name(), gate.decisionFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
+			} else {
+				decisionFixRounds++
+				telemetry.Track("fix", e.fixTelemetryFields("decision", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), decisionFixRounds))
 			}
-			decisionFixRounds++
-			telemetry.Track("fix", e.fixTelemetryFields("decision", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), decisionFixRounds))
 		} else {
 			if gate.autoFixes+gate.userFixes >= e.maxFixRounds() {
-				err := nonConvergenceError(gate.step.Name(), gate.autoFixes+gate.userFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
-				if dbErr := e.db.FailStep(gate.stepResult.ID, err.Error(), duration); dbErr != nil {
-					slog.Warn("failed to mark recovered step as non-converged", "step", gate.step.Name(), "error", dbErr)
-				}
-				e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFailed), gate.findings, err.Error(), &duration)
-				return e.failRun(run, repo, err, ctx)
+				refusal = nonConvergenceError(gate.step.Name(), gate.autoFixes+gate.userFixes, e.maxFixRounds(), gate.autoFixes, gate.userFixes)
+			} else {
+				telemetry.Track("fix", e.fixTelemetryFields("user", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), 0))
 			}
-			telemetry.Track("fix", e.fixTelemetryFields("user", gate.step.Name(), selectedFindingCount(gate.findings, response.findingIDs), 0))
+		}
+		if refusal != nil {
+			if dbErr := e.db.FailStep(gate.stepResult.ID, refusal.Error(), duration); dbErr != nil {
+				slog.Warn("failed to mark recovered step as non-converged", "step", gate.step.Name(), "error", dbErr)
+			}
+			e.emitStepEventWithFindingsAndError(ipc.EventStepCompleted, run, repo, gate.step.Name(), string(types.StepStatusFailed), gate.findings, refusal.Error(), &duration)
+			return e.failRun(run, repo, refusal, ctx)
 		}
 		if dbErr := e.db.UpdateStepStatus(gate.stepResult.ID, types.StepStatusFixing); dbErr != nil {
 			return e.failRun(run, repo, fmt.Errorf("mark recovered step %s fixing: %w", gate.step.Name(), dbErr), ctx)

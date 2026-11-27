@@ -223,7 +223,7 @@ func TestExecutor_ResumeCountsFixWithoutSelection(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- exec.Resume(ctx, run, repo, t.TempDir()) }()
 	waitForEvent(t, events, ipc.EventStepCompleted, string(types.StepStatusFixReview))
-	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"cleanup"}); err != nil {
+	if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
 		t.Fatal(err)
 	}
 	select {
