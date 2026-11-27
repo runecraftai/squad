@@ -1771,6 +1771,28 @@ address=$(SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT=08 SQUAD_HC_NEW_ADDRESS=t7 \
 assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
   'a leading-zero title budget still lands the title'
 
+# The attempt knob is normalized like the deadline: a value the arithmetic
+# cannot use is one attempt, not an `integer expression expected` on every
+# retry, and the spawn still succeeds with the by-hand rename reported.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+address=$(SQUAD_HERDR_APP_UNKNOWN_TAB=1 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=abc \
+  SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/bad-attempts-stderr.txt") \
+  || fail 'an unusable attempt budget must not fail the spawn'
+[ "$address" = t7 ] \
+  || fail "an unusable attempt budget still returns the created address (got '$address')"
+[ "$(rename_count)" = 1 ] \
+  || fail "an unusable attempt budget makes one attempt (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
+assert_contains "$(cat "$TMP_ROOT/bad-attempts-stderr.txt")" \
+  'could not set the desktop tab title' \
+  'an unusable attempt budget is reported as the title that could not be set'
+assert_not_contains "$(cat "$TMP_ROOT/bad-attempts-stderr.txt")" 'integer expression expected' \
+  'an unusable attempt budget never leaks an arithmetic error'
+assert_grep "t7 herdr.space=squad-desk herdr.tab=sq-$BASE_HASH-probe" "$SQUAD_HC_LABEL_LOG" \
+  'an unusable attempt budget still leaves the placement labels in place'
+
 # An app that is not installed has a created tab left at its number, so the set
 # reports exactly that: it is nothing like the clear's "nothing to undo".
 write_world

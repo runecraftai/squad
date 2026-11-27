@@ -189,7 +189,7 @@ Removing `config/herdr-core-space` stops new terminals from being labeled or tit
 
 ## Commands this backend runs
 
-Every core command is addressed to one opaque terminal, and every app command to one tab id, so nothing is addressed by name or by position; `<s>` is the recorded session, `<t>` the recorded address and `<tab>` the recorded tab id.
+Every core command is addressed to one opaque terminal, every title command to one tab id, and the app's `terminal.park` to one terminal address, so nothing is addressed by name or by position; `<s>` is the recorded session, `<t>` the recorded address and `<tab>` the recorded tab id.
 
 | Why | Exact command |
 | --- | --- |

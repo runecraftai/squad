@@ -1142,7 +1142,7 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
 #      clear must refuse on it rather than assume the tab is untitled
 fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
   local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out err reason='' act hand rc=0
-  local nothing=0 ok=0 err_file='' deadline bound timeout now undo=''
+  local nothing=0 ok=0 err_file='' deadline bound timeout attempts now undo=''
   [ -n "$tab" ] || return 1
   bin=$(fm_backend_herdr_core_app_bin)
   if [ -n "$title" ]; then
@@ -1179,6 +1179,11 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     ''|*[!0-9]*) timeout=0 ;;
   esac
   timeout=$((10#$timeout))
+  attempts=$SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS
+  case "$attempts" in
+    ''|*[!0-9]*) attempts=0 ;;
+  esac
+  attempts=$((10#$attempts))
   deadline=$((SECONDS + timeout))
   while :; do
     now=$SECONDS
@@ -1235,7 +1240,7 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
       nothing=1
       break
     fi
-    if [ "$attempt" -ge "$SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS" ]; then
+    if [ "$attempt" -ge "$attempts" ]; then
       nothing=1
       break
     fi
@@ -1267,10 +1272,14 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
 # stderr and returns nonzero for a caller that cares, and no caller may turn it
 # into a spawn failure.
 #   0  the labels and the title are in place, or nothing is configured
-#   1  a configured label write failed; already reported
-#   2  the labels are in place but the app is not installed; already reported. A
-#      configured title that exhausts its retries returns 1, not 2, because the
-#      tab may still appear and the warning names the by-hand rename
+#   1  a configured label write failed, or a configured title could not be set;
+#      already reported. A title that exhausts its retries lands here too, not
+#      at 2: the tab may still appear, and the warning names the by-hand rename
+#   2  the labels are in place and the app answered `no tab` for them; only
+#      reachable with an empty title, where there is nothing to undo; already
+#      reported
+#   3  the labels are in place but the app CLI is not installed, so the title
+#      could not be set or checked; already reported
 fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-id>
   local session=${1:-default} address=${2:-} task_id=${3:-} space tab title err_file reason rc=0
   [ -n "$address" ] || return 1
