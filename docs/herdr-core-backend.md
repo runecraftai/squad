@@ -123,14 +123,15 @@ The app-closed case was not measured here, because stopping or restarting the ap
 Only that one tab is ever addressed, by id.
 The write never targets a position and never "the active tab", so no other tab is ever named.
 The live capture shows the person's own tab kept its number, its name, and remained the shown and focused tab across those renames.
-After the labels land the app learns about the tab on the core's event stream, so a create can arrive before the tab exists; that one answer (`no tab`) is retried for a bounded budget and every other answer is reported at once.
+After the labels land the app learns about the tab on the core's event stream, so a create can arrive before the tab exists; that one answer (`no tab`) is retried, up to 8 attempts 0.2 s apart for roughly 1.4 s of adoption waiting, and every other answer is reported at once.
+The retries share one 5 s deadline for the whole write, so an app that answers `no tab` slowly cannot spend that bound once per attempt.
 
 The write is best-effort and never changes a task's outcome:
 
 - **Absent, unreadable, or blank setting** - neither a label nor a title is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
 - **A failed label write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. No title is attempted, because without the labels the app has no tab for that terminal.
-- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. Each attempt is bounded (5s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open. A create that exhausts the `no tab` retries is reported the same way, because its tab may still appear just after the budget and the by-hand rename is what finishes it.
-- **Nothing to title** - a missing `herdr-app` names no tab at all, so the warning says so and offers no by-hand command that would fail identically. The spawn still keeps the terminal, its labels, and its task. On a clear, the app's own `no tab` answer is also nothing to undo, and the labels still go.
+- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. The whole write is bounded (5 s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open. A create that exhausts the `no tab` retries is reported the same way, because its tab may still appear just after the budget and the by-hand rename is what finishes it.
+- **Nothing to title** - a missing `herdr-app` names no tab at all, so the warning says so and offers no by-hand command that would fail identically. The spawn still keeps the terminal, its labels, and its task. On a clear, the app's own `no tab` answer is also nothing to undo, so it is never retried and the labels still go.
 - **Outside the guard** - placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command, or an app whose CLI is absent, warns and keeps the task, because a missing display preference must never block real work.
 - **Idempotent** - the label write is a plain set, so repeating it leaves exactly one value per label, and renaming a tab to the title it already has leaves it named.
 

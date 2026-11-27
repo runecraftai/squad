@@ -266,8 +266,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ "$cmd" = tab.rename ] || exit 1
-# The product answers an id it does not know with this exact record on stdout
-# and exit 1: that is the app saying it has not adopted the terminal yet.
+# The product answers an id it does not know with this exact record and exit 1:
+# that is the app saying it has not adopted the terminal yet. The record goes to
+# stdout by default, and to stderr when this feed asks for that shape.
+no_tab=0
 unknown_count=${SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT:-0}
 case "$unknown_count" in ''|*[!0-9]*) unknown_count=0 ;; esac
 if [ "$unknown_count" -gt 0 ]; then
@@ -276,12 +278,19 @@ if [ "$unknown_count" -gt 0 ]; then
   case "$unknown_seen" in ''|*[!0-9]*) unknown_seen=0 ;; esac
   if [ "$unknown_seen" -lt "$unknown_count" ]; then
     printf '%s\n' "$((unknown_seen + 1))" > "$unknown_counter"
-    printf '{\n  "error": "no tab \\"%s\\""\n}\n' "$tab"
-    exit 1
+    no_tab=1
   fi
 fi
 if [ "${SQUAD_HERDR_APP_UNKNOWN_TAB:-0}" = 1 ]; then
-  printf '{\n  "error": "no tab \\"%s\\""\n}\n' "$tab"
+  no_tab=1
+fi
+if [ "$no_tab" -eq 1 ]; then
+  sleep "${SQUAD_HERDR_APP_UNKNOWN_TAB_DELAY:-0}" 2>/dev/null || :
+  if [ "${SQUAD_HERDR_APP_UNKNOWN_TAB_STDERR:-0}" = 1 ]; then
+    printf '{\n  "error": "no tab \\"%s\\""\n}\n' "$tab" >&2
+  else
+    printf '{\n  "error": "no tab \\"%s\\""\n}\n' "$tab"
+  fi
   exit 1
 fi
 if [ "${SQUAD_HERDR_APP_FAIL:-0}" = 1 ]; then
@@ -361,6 +370,7 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HC_LABEL_TASK SQUAD_HC_LABEL_FAIL
   unset SQUAD_HERDR_APP_FAIL SQUAD_HERDR_APP_UNKNOWN_TAB SQUAD_HERDR_APP_HANG
   unset SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT
+  unset SQUAD_HERDR_APP_UNKNOWN_TAB_DELAY SQUAD_HERDR_APP_UNKNOWN_TAB_STDERR
   unset SQUAD_CONFIG_OVERRIDE
   export SQUAD_HC_LABEL_BASE="$BASE_LABEL" SQUAD_HC_RUN_BASE="$BASE_LABEL"
   unset SQUAD_HC_READ_SHAPE
@@ -1645,6 +1655,44 @@ address=$(SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT=2 SQUAD_BACKEND_HERDR_CORE_TITLE_INT
 assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
   'the retried create leaves its own tab titled'
 
+# The refusal record is recognised on either stream the app writes it to: the
+# same `no tab` answer on stderr is the adoption the retry exists for, so the
+# create lands the title and warns about nothing.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+address=$(SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT=2 SQUAD_HERDR_APP_UNKNOWN_TAB_STDERR=1 \
+  SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/no-tab-stderr.txt") \
+  || fail 'a tab the app reports on stderr must not fail the spawn'
+[ "$address" = t7 ] || fail "a stderr-reported retry still returns the created address (got '$address')"
+[ ! -s "$TMP_ROOT/no-tab-stderr.txt" ] \
+  || fail "a retry over a stderr no-tab answer must be silent (saw: $(cat "$TMP_ROOT/no-tab-stderr.txt"))"
+[ "$(rename_count)" = 3 ] \
+  || fail "a stderr no-tab answer is retried like a stdout one (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
+assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  'the tab renamed after a stderr no-tab answer holds its title'
+
+# One deadline covers the whole write: an app that answers `no tab` slowly is
+# cut off at the bound instead of spending that bound once per attempt, and the
+# create still returns its address with the by-hand rename in the warning.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+start=$SECONDS
+address=$(SQUAD_HERDR_APP_UNKNOWN_TAB=1 SQUAD_HERDR_APP_UNKNOWN_TAB_DELAY=1 \
+  SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT=2 SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 \
+  SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/slow-stderr.txt") \
+  || fail 'an app that answers slowly must not fail the spawn'
+elapsed=$((SECONDS - start))
+[ "$address" = t7 ] || fail "a slow app still returns the created address (got '$address')"
+[ "$elapsed" -le 5 ] || fail "the whole title write shares one deadline (waited ${elapsed}s)"
+assert_contains "$(cat "$TMP_ROOT/slow-stderr.txt")" \
+  "herdr-app do tab.rename --id sq-$BASE_HASH-probe --name \"probe\"" \
+  'a write cut off at its deadline names the exact by-hand rename'
+[ ! -s "$SQUAD_HERDR_APP_TABS" ] || fail 'an app that never adopts leaves no title behind'
+
 # A rename that never answers is bounded like every other external client call:
 # the spawn reports it and continues instead of holding the create open.
 write_world
@@ -1741,15 +1789,15 @@ assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a missing app must still remove no terminal'
 
 # An id the app does not hold is its own `no tab` answer and is nothing to
-# title: the labels still go, so the removal finishes for the core.
+# title: nothing can make it appear, so the clear tries it once inside the
+# default budget and still removes both labels.
 place_own_titled_tab
-out=$(SQUAD_HERDR_APP_UNKNOWN_TAB=1 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=1 \
-  SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 \
+out=$(SQUAD_HERDR_APP_UNKNOWN_TAB=1 \
   fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' 2>&1) && rc=0 || rc=$?
 [ "$rc" -eq 0 ] || fail "an unknown tab must not block the label clear (rc=$rc: $out)"
 assert_contains "$out" "no tab \"sq-$BASE_HASH-probe\"" \
   "the clear reports the app's own answer for its tab"
-[ "$(rename_count)" = 1 ] || fail "an unknown tab is tried once, not refused (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
+[ "$(rename_count)" = 1 ] || fail "an unknown tab is given back once, with no adoption wait (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
 assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
   'an unknown tab still clears both placement labels on the exact address'
 [ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \

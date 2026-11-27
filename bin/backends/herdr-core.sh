@@ -124,14 +124,16 @@ SQUAD_BACKEND_HERDR_CORE_APP_BIN='herdr-app'
 # retried, within this bounded budget; anything else is reported at once.
 # Measured on herdr-app 0.1.18 against the live app: a freshly labelled tab
 # first appeared 221 ms after the label write returned, while tab.rename
-# answered `no tab` in 5 ms before it. This budget covers about 1.4 s, more than
-# six times that measurement, so an ordinary create lands the title in place.
+# answered `no tab` in 5 ms before it. The 0.2 s intervals cover about 1.4 s,
+# more than six times that measurement, so an ordinary create lands the title in
+# place; the whole write also shares one TITLE_TIMEOUT deadline, so a slow app
+# cannot spend the timeout once per attempt.
 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=8
 SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL='0.2'
 # A create runs the title write inline, so it carries the same hard bound as the
 # adapter's other external client call: an app that blocks on a missing socket,
 # a stalled write, or a starting window is reported like a refusal instead of
-# holding the spawn open.
+# holding the spawn open. It is the bound for the whole write, not per attempt.
 SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT=5
 
 # Per-target dedupe markers for the blocked-transition producer, keyed like the
@@ -1116,10 +1118,15 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
 # that cares; no caller may turn it into a spawn failure.
 # A missing app is "there is nothing in this app to title": no title exists and
 # none was ever written, so a caller undoing its own work may still finish. The
-# app's own `no tab` answer is also nothing to undo on a clear. On a set, a
-# budget that exhausts that answer is reported as a failed title, because the
-# tab may still appear just after it and the warning names the by-hand rename.
-# Every other refusal is final.
+# app's own `no tab` answer is also nothing to undo on a clear, and it is final
+# there: nothing can make an id the app does not hold appear, so a clear never
+# waits. On a set, that answer is the app not having adopted the labelled
+# terminal yet, so it is retried; a budget that exhausts it is reported as a
+# failed title, because the tab may still appear just after it and the warning
+# names the by-hand rename. Every other refusal is final.
+# The reason an attempt failed is read from the app's own error record, on
+# stdout or on stderr: either stream carries the product's refusal, and the
+# `no tab` answer must be recognised on whichever one the build writes.
 #   0  the tab carries the title
 #   1  the app refused an existing tab or answered an error; already reported. A
 #      set that exhausts its retries also lands here, because the mission tab is
@@ -1127,8 +1134,8 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
 #   2  nothing in this app to title: not installed, or no such tab on a clear;
 #      reported
 fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
-  local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out reason act hand rc=0
-  local nothing=0
+  local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out err reason act hand rc=0
+  local nothing=0 ok=0 err_file='' deadline bound
   [ -n "$tab" ] || return 1
   bin=$(fm_backend_herdr_core_app_bin)
   if [ -n "$title" ]; then
@@ -1142,17 +1149,40 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     echo "warning: could not $act: '$bin' is not installed; there is no such tab in the app, so nothing is left to undo" >&2
     return 2
   fi
+  err_file=$(mktemp "${TMPDIR:-/tmp}/sq-hc-title.XXXXXX") || err_file=
+  # One deadline for the whole write, not one per attempt: the retry budget
+  # bounds elapsed time as well as the number of answers, so an app that keeps
+  # answering `no tab` slowly cannot hold the spawn for attempt-count times the
+  # per-call bound.
+  deadline=$((SECONDS + SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT))
   while :; do
-    out=$(fm_run_timed "$SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT" \
-      "$bin" 'do' tab.rename --id "$tab" --name "$title" 2>/dev/null) && return 0
-    rc=$?
-    # A bound that expired is final: the app is holding the call, not that one
-    # tab's adoption, and waiting longer only holds the spawn open.
-    if [ "$rc" -eq 124 ]; then
+    if [ "$SECONDS" -ge "$deadline" ]; then
       reason="the app did not answer within ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s"
       break
     fi
+    bound=$((deadline - SECONDS))
+    rc=0
+    if [ -n "$err_file" ]; then
+      out=$(fm_run_timed "$bound" \
+        "$bin" 'do' tab.rename --id "$tab" --name "$title" 2>"$err_file") || rc=$?
+      err=$(cat "$err_file" 2>/dev/null) || err=
+    else
+      out=$(fm_run_timed "$bound" \
+        "$bin" 'do' tab.rename --id "$tab" --name "$title" 2>/dev/null) || rc=$?
+      err=
+    fi
+    [ "$rc" -ne 0 ] || { ok=1; break; }
+    # A bound that expired is final: the app is holding the call, not that one
+    # tab's adoption, and waiting longer only holds the spawn open.
+    if [ "$rc" -eq 124 ]; then
+      reason="the app did not answer within ${bound}s"
+      break
+    fi
     reason=$(printf '%s' "$out" | jq -r '.error // empty' 2>/dev/null) || reason=
+    if [ -z "$reason" ] && [ -n "$err" ]; then
+      reason=$(printf '%s' "$err" | jq -r '.error // empty' 2>/dev/null) || reason=
+      [ -n "$reason" ] || reason=$(printf '%s\n' "$err" | head -n 1 | tr -d '\r')
+    fi
     reason=${reason:-no reason given}
     # Only an unknown tab is worth another try: it is the app saying it has not
     # adopted the labelled terminal yet. Every other answer is final.
@@ -1160,6 +1190,12 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
       no\ tab*) ;;
       *) break ;;
     esac
+    # Nothing can make an id the app does not hold appear on a clear, so that
+    # answer is final there and the labels go without waiting.
+    if [ -z "$title" ]; then
+      nothing=1
+      break
+    fi
     if [ "$attempt" -ge "$SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS" ]; then
       nothing=1
       break
@@ -1167,6 +1203,8 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     attempt=$((attempt + 1))
     sleep "$SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL"
   done
+  if [ -n "$err_file" ]; then rm -f "$err_file" 2>/dev/null || :; fi
+  [ "$ok" -eq 0 ] || return 0
   if [ "$nothing" -ne 0 ] && [ -n "$title" ]; then
     echo "warning: could not $act (reason: $reason); the tab may still appear later, but the task is unaffected. Set it by hand with: $hand" >&2
     return 1
