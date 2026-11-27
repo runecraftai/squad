@@ -1051,11 +1051,12 @@ hc label t7 herdr.space=spS3probe
 ```
 
 ```json
-{"address":"t7","keep":true,"labels":{"herdr.space":"spS3probe","where":"squad / 1"}}
+{"address":"t7","keep":true,"labels":{"herdr.space":"spS3probe","squad.base":"squad-f8f4d208","squad.task":"squad-herdr-core-adapter-s3","where":"squad / 1"}}
 ```
 
 So a background terminal with no pane is adopted by a label alone: the app created that space and a tab holding `t7`, and the core turned `keep: false` into `keep: true` and recorded `where`.
 Neither `--keep`, nor `attach`ing after the create, nor creating without `--bg` is required.
+The write adds its labels beside `squad.task` and `squad.base` and never instead of them, which is why every identity, status and teardown check still passes on a placed terminal.
 
 Clearing that label again did **not** undo it: `keep` stayed `true`, `where` stayed, and the space stayed in the app.
 Adoption is one-way on the app's side, so the reversal needs the app's own `terminal.park`.
@@ -1067,7 +1068,7 @@ hc label t7 herdr.space=sp7b9a496a3b6da2d94d5341c408030af3 herdr.tab=sq-f8f4d208
 ```
 
 ```json
-{"address":"t7","keep":true,"labels":{"herdr.space":"sp7b9a496a3b6da2d94d5341c408030af3","herdr.tab":"sq-f8f4d208-squad-herdr-core-adapter-s3","where":"squad / 2"}}
+{"address":"t7","keep":true,"labels":{"herdr.space":"sp7b9a496a3b6da2d94d5341c408030af3","herdr.tab":"sq-f8f4d208-squad-herdr-core-adapter-s3","squad.base":"squad-f8f4d208","squad.task":"squad-herdr-core-adapter-s3","where":"squad / 2"}}
 ```
 
 `herdr-app ls` then showed the person's own space with its untouched tab `1` holding `t4`, and a new tab `2` holding only `t7`.
@@ -1093,7 +1094,13 @@ SQUAD_BASE=<worktree> SQUAD_CONFIG_OVERRIDE=/tmp/sq-s3-live/config \
   fm_backend_herdr_core_create_task default sq-s3-live-proof /home/rehem/Projects/squad
 ```
 
-It returned `t15`, whose record carried the two placement labels, `keep: true` and `where: "squad / 2"`, and `herdr-app ls` showed the person's tab `1` with `t4` untouched beside a new tab `2` holding `t15`.
+It returned `t15`, whose record read:
+
+```json
+{"address":"t15","keep":true,"labels":{"herdr.space":"sp7b9a496a3b6da2d94d5341c408030af3","herdr.tab":"sq-38433e60-s3-live-proof","squad.base":"squad-38433e60","squad.task":"s3-live-proof","where":"squad / 2"}}
+```
+
+`herdr-app ls` showed the person's tab `1` with `t4` untouched beside a new tab `2` holding `t15`.
 Closing that address through the adapter (`fm_backend_herdr_core_kill default:t15 "" sq-s3-live-proof`, kill then confirmed removal) returned the app to exactly the baseline - one space, one tab, `t4` - so a task that ends needs no park: a killed terminal's pane closes with it, and only a terminal that keeps running needs `terminal.park`.
 
 Portable coverage of the write, the absent and unreadable setting, the idempotent repeat, the failing write that keeps the spawn, and the address-exact clear is in `tests/sq-backend-herdr-core.test.sh`; the live facts above are what that code is for.
