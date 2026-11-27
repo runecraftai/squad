@@ -1171,12 +1171,18 @@ sq-f8f4d208-herdr-core-tab-title => name "2"
 sq-f8f4d208-scaffold-dete-24b281 => name "scaffold-determinism-recon"
 ```
 
-Then the adapter's own function, unmodified, on that one recorded terminal:
+Then the adapter's own function, unmodified, on that one recorded terminal. The function itself is silent on success, so the wrapper echoes the inputs and the call's exit status around it:
 
 ```sh
 SQUAD_BASE=/home/rehem/Projects/squad bash -c '
   . ./bin/sq-backend.sh; fm_backend_source herdr-core
-  fm_backend_herdr_core_apply_presentation_space default t19 herdr-core-tab-title'
+  space=$(fm_backend_herdr_core_presentation_space)
+  tab=$(fm_backend_herdr_core_tab_for_task herdr-core-tab-title)
+  printf "configured space: %s\n" "$space"
+  printf "tab id:           %s\n" "$tab"
+  printf "title:            %s\n" "$(fm_backend_herdr_core_tab_title_for_task herdr-core-tab-title)"
+  fm_backend_herdr_core_apply_presentation_space default t19 herdr-core-tab-title
+  printf "apply rc=%s\n" "$?"'
 ```
 
 ```text

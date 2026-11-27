@@ -1103,13 +1103,17 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address>
 # machine's core doc, keyed by that same tab id, so it survives an app relaunch
 # and every client of that core sees it.
 # Best-effort by contract, exactly like the label write: a missing app, a
-# refusal, or a failed write warns on stderr with the exact by-hand command and
-# returns nonzero for a caller that cares; no caller may turn it into a spawn
-# failure.
-#   0  the tab carries the title, or there is nothing to title
-#   1  the app is not installed, refused, or answered an error; already reported
+# refusal, or a failed write warns on stderr and returns nonzero for a caller
+# that cares; no caller may turn it into a spawn failure.
+# A missing app and the app's own `no tab` answer are "there is nothing in this
+# app to title": no title exists and none was ever written, so a caller undoing
+# its own work may still finish. Every other refusal is final.
+#   0  the tab carries the title
+#   1  the app refused an existing tab or answered an error; already reported
+#   2  nothing in this app to title: not installed, or no such tab; reported
 fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
   local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out reason act hand rc=0
+  local nothing=0
   [ -n "$tab" ] || return 1
   bin=$(fm_backend_herdr_core_app_bin)
   if [ -n "$title" ]; then
@@ -1120,8 +1124,8 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     hand="$bin do tab.rename --id $tab --name \"\""
   fi
   if ! command -v "$bin" >/dev/null 2>&1; then
-    echo "warning: could not $act: '$bin' is not installed; the task is unaffected" >&2
-    return 1
+    echo "warning: could not $act: '$bin' is not installed; there is no such tab in the app, so nothing is left to undo" >&2
+    return 2
   fi
   while :; do
     out=$(fm_run_timed "$SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT" \
@@ -1138,12 +1142,20 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     # Only an unknown tab is worth another try: it is the app saying it has not
     # adopted the labelled terminal yet. Every other answer is final.
     case "$reason" in
-      no\ tab*) [ "$attempt" -lt "$SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS" ] || break ;;
+      no\ tab*) ;;
       *) break ;;
     esac
+    if [ "$attempt" -ge "$SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS" ]; then
+      nothing=1
+      break
+    fi
     attempt=$((attempt + 1))
     sleep "$SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL"
   done
+  if [ "$nothing" -ne 0 ]; then
+    echo "warning: could not $act (reason: $reason); there is no such tab in the app, so nothing is left to undo" >&2
+    return 2
+  fi
   echo "warning: could not $act (reason: $reason); the task is unaffected. Set it by hand with: $hand" >&2
   return 1
 }
@@ -1198,9 +1210,12 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 # address is recycled right after that read. The `herdr.tab` value must be the
 # tab id this adapter derives from that same record's `squad.task` label - with
 # or without a named task - or the clear refuses; a terminal that carries no
-# such label titles nothing. The title goes back before the labels, so a failed
-# rename leaves the label that names the tab in place and the whole removal is
-# re-runnable.
+# such label titles nothing. The title goes back before the labels, so an app
+# that refuses to rename the tab it holds leaves the label that names the tab in
+# place and the whole removal is re-runnable. An app that is not installed, or
+# that answers `no tab` for an id it does not hold, has no title left to clear:
+# that answer is reported and the labels are still removed, so the removal always
+# finishes for the core.
 # A recorded core id and session that no longer agree refuse, so a recycled
 # address is never cleared. A finished terminal is accepted, because a record
 # whose program already exited can still carry the labels.
@@ -1208,10 +1223,12 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 # app binds an adopted terminal one way and keeps it
 # (docs/herdr-core-backend.md owns the measured transcript), so the documented
 # reversal pairs this with `herdr-app do terminal.park --terminal <address>`.
-#   0  both labels are cleared on that terminal and its tab carries no title
-#   1  refused: a foreign, unreadable or unverifiable identity, or a failed write
+#   0  both labels are cleared on that terminal, and its tab carries no title or
+#      the app holds no such tab
+#   1  refused: a foreign, unreadable or unverifiable identity, or a write the
+#      app or the core refused
 fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
-  local target=${1:-} expected=${2:-} session address tab own_task own_tab
+  local target=${1:-} expected=${2:-} session address tab own_task own_tab rc=0
   fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
@@ -1237,10 +1254,12 @@ fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
     fi
   fi
   # The title goes first: while it is still there the label above still names
-  # this one tab, so a failed rename leaves the removal re-runnable instead of
-  # stranding a title no later run can find.
+  # this one tab, so a refused rename leaves the removal re-runnable instead of
+  # stranding a title no later run can find. Only "nothing in the app to title"
+  # may continue to the labels, because then no title was left behind.
   if [ -n "$tab" ]; then
-    fm_backend_herdr_core_rename_tab "$tab" '' "$session:$address" || return 1
+    fm_backend_herdr_core_rename_tab "$tab" '' "$session:$address" || rc=$?
+    [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] || return 1
   fi
   fm_backend_herdr_core_cli "$session" label "$address" \
     "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=" \

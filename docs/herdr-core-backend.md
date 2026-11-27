@@ -125,7 +125,8 @@ The write is best-effort and never changes a task's outcome:
 
 - **Absent, unreadable, or blank setting** - neither a label nor a title is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
 - **A failed label write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. No title is attempted, because without the labels the app has no tab for that terminal.
-- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. A missing `herdr-app`, an app that is not running, and an id the app does not know are all this case. Each attempt is bounded (5s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open.
+- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. Each attempt is bounded (5s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open.
+- **Nothing to title** - a missing `herdr-app` and the app's own `no tab` answer name no tab at all, so the warning says so and offers no by-hand command that would fail identically. The spawn still keeps the terminal, its labels, and its task.
 - **Outside the guard** - placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command, or an app whose CLI is absent, warns and keeps the task, because a missing display preference must never block real work.
 - **Idempotent** - the label write is a plain set, so repeating it leaves exactly one value per label, and renaming a tab to the title it already has leaves it named.
 
@@ -148,7 +149,9 @@ It runs the same identity check every other write runs - this base's `squad.base
 It resolves the tab from that verified terminal's own `herdr.tab` label before the label goes, so the title it clears is that tab and no other; a terminal that carries no such label titles nothing.
 That label must be the tab id this adapter derives from the same record's own `squad.task` label, whether or not a task is named, so a hand-edited label or a terminal with no task label refuses instead of renaming a tab this task never created.
 The tab and the task label come from the one record the identity check returned, so an address recycled after that read cannot swap one task's tab for another's.
-A read it cannot resolve refuses before any write, the title is given back before the labels are cleared, and a failed rename returns with the labels still in place, so the removal never does half its work and the same command can simply be run again.
+A read it cannot resolve refuses before any write, and the title is given back before the labels are cleared, so an app that refuses to rename the tab it holds returns with the labels still in place: that half-done removal is re-runnable, and the same command finishes it.
+An app that is not installed, or that answers `no tab` for a tab id it does not hold, has no title left to clear: the clear reports that on stderr and still removes both placement labels from the exact verified terminal, because the core's half of the reversal is complete either way.
+Only an app answer other than those refuses the clear, and then the labels are left untouched.
 
 Both writes in the order the adapter runs them, where a tab's id is the value the label held:
 

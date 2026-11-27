@@ -1450,6 +1450,17 @@ reset_label_state() {
 }
 space_labels() { awk -F'\t' -v key='herdr.space' '$2 == key { print $1 }' "$SQUAD_HC_LABELS"; }
 rename_count() { grep -c 'tab.rename' "$SQUAD_HERDR_APP_LOG" 2>/dev/null || true; }
+# One terminal carrying exactly the placement labels and the titled tab this
+# adapter writes, so a clear can be exercised against a known own state.
+place_own_titled_tab() {
+  SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+    write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+  reset_label_state
+  printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\tsq-%s-probe\n' "$BASE_HASH" > "$SQUAD_HC_LABELS"
+  jq --arg tab "sq-$BASE_HASH-probe" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
+    && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+  printf 'sq-%s-probe\tprobe\n' "$BASE_HASH" > "$SQUAD_HERDR_APP_TABS"
+}
 
 # Configured: the terminal this create returned carries the configured space,
 # and the call names exactly that one address and nothing else.
@@ -1671,6 +1682,38 @@ fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \
   || fail 'the re-run clears the labels it left behind'
 [ -z "$(awk -F'\t' -v t="sq-$BASE_HASH-probe" '$1 == t' "$SQUAD_HERDR_APP_TABS")" ] \
   || fail 'the re-run gives its tab its number back'
+
+# An app that is not installed has no title left to clear. The clear reports
+# that and still removes both placement labels from its own verified terminal,
+# so a terminal labelled while the app was present is never stranded.
+place_own_titled_tab
+absent_app="$TMP_ROOT/fakebin/herdr-app-absent"
+out=$(SQUAD_HERDR_APP_BIN="$absent_app" \
+  fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' 2>&1) && rc=0 || rc=$?
+[ "$rc" -eq 0 ] || fail "an uninstalled app must not block the label clear (rc=$rc: $out)"
+assert_contains "$out" "'$absent_app' is not installed" \
+  'the clear reports the missing app instead of refusing'
+assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
+  'a missing app still clears both placement labels on the exact address'
+[ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
+  || fail "a missing app still clears both placement labels (got: $(cat "$SQUAD_HC_LABELS"))"
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a missing app must still remove no terminal'
+
+# An id the app does not hold is its own `no tab` answer and is nothing to
+# title: the labels still go, so the removal finishes for the core.
+place_own_titled_tab
+out=$(SQUAD_HERDR_APP_UNKNOWN_TAB=1 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=1 \
+  SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 \
+  fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' 2>&1) && rc=0 || rc=$?
+[ "$rc" -eq 0 ] || fail "an unknown tab must not block the label clear (rc=$rc: $out)"
+assert_contains "$out" "no tab \"sq-$BASE_HASH-probe\"" \
+  "the clear reports the app's own answer for its tab"
+[ "$(rename_count)" = 1 ] || fail "an unknown tab is tried once, not refused (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
+assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
+  'an unknown tab still clears both placement labels on the exact address'
+[ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
+  || fail "an unknown tab still clears both placement labels (got: $(cat "$SQUAD_HC_LABELS"))"
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'an unknown tab must still remove no terminal'
 
 # A tab label that is not this task's own derived id is another tab: the clear
 # refuses before writing anything, so a recycled address never renames it.
