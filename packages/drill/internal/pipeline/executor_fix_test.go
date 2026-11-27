@@ -1342,8 +1342,10 @@ func TestNonEndorsedFixStillRefusedWhenBudgetExhausted(t *testing.T) {
 
 // TestEndorsedDecisionInstructionsApplyWithoutAutoFixBudget proves the same
 // carve-out on the documented AXI route: `drill axi respond --action fix
-// --instructions` answers the ask-user finding, so the automatic fixes that
-// already spent the shared budget cannot refuse it.
+// --instructions` answers an objective finding the gate raised, so the
+// automatic fixes that already spent the shared budget cannot refuse it. The
+// selected finding is not an ask-user finding, so only the instruction map can
+// mark the response as an endorsed decision.
 func TestEndorsedDecisionInstructionsApplyWithoutAutoFixBudget(t *testing.T) {
 	database, p, run, repo := setupTest(t)
 	workDir := t.TempDir()
@@ -1375,8 +1377,8 @@ func TestEndorsedDecisionInstructionsApplyWithoutAutoFixBudget(t *testing.T) {
 	if err := exec.RespondWithOverrides(
 		types.StepReview,
 		types.ActionFix,
-		[]string{"requirement"},
-		map[string]string{"requirement": "apply the accepted requirement"},
+		[]string{"bug"},
+		map[string]string{"bug": "apply the accepted requirement"},
 		nil,
 	); err != nil {
 		t.Fatalf("responding with the endorsed instruction: %v", err)
@@ -1393,5 +1395,32 @@ func TestEndorsedDecisionInstructionsApplyWithoutAutoFixBudget(t *testing.T) {
 
 	if got := fixes.Load(); got != 2 {
 		t.Errorf("fix executions = %d, want the automatic fix plus the endorsed correction", got)
+	}
+
+	steps, err := database.GetStepsByRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range steps {
+		if s.StepName != types.StepReview {
+			continue
+		}
+		rounds, err := database.GetRoundsByStep(s.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rounds) != 3 {
+			t.Fatalf("rounds = %d, want initial + automatic fix + endorsed instruction", len(rounds))
+		}
+		if rounds[1].SelectionSource == nil || *rounds[1].SelectionSource != db.RoundSelectionSourceDecision {
+			t.Errorf("endorsed instruction round selection source = %v, want %q", rounds[1].SelectionSource, db.RoundSelectionSourceDecision)
+		}
+		log, err := os.ReadFile(filepath.Join(p.RunLogDir(run.ID), "review.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(log), "decision-fix execution 1/1") {
+			t.Errorf("log does not report the endorsed instruction against its own budget:\n%s", log)
+		}
 	}
 }

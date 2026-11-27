@@ -515,25 +515,20 @@ func (e *Executor) recoveredGate(runID string) (*recoveredGate, error) {
 			autoFixes := 0
 			decisionFixes := 0
 			executedFixes := 0
-			for _, round := range rounds {
-				if round.IsFixRound() {
-					executedFixes++
-				}
-				if round.SelectionSource == nil {
+			for i, round := range rounds {
+				if !round.IsFixRound() {
 					continue
 				}
-				switch *round.SelectionSource {
+				executedFixes++
+				if i == 0 || rounds[i-1].SelectionSource == nil {
+					continue
+				}
+				switch *rounds[i-1].SelectionSource {
 				case db.RoundSelectionSourceAutoFix:
 					autoFixes++
 				case db.RoundSelectionSourceDecision:
 					decisionFixes++
 				}
-			}
-			if autoFixes > executedFixes {
-				autoFixes = executedFixes
-			}
-			if decisionFixes > executedFixes-autoFixes {
-				decisionFixes = executedFixes - autoFixes
 			}
 			userFixes := executedFixes - autoFixes - decisionFixes
 			gate = &recoveredGate{

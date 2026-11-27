@@ -240,6 +240,73 @@ func TestExecutor_ResumeCountsFixWithoutSelection(t *testing.T) {
 	}
 }
 
+// A selection is recorded before the fix it requests executes, so a crash while
+// that fix is running leaves a source with no fix round after it. The recovered
+// gate must attribute each executed fix to the round that preceded it instead of
+// charging the interrupted request to either budget.
+func TestExecutor_ResumeIgnoresSelectionOfInterruptedFix(t *testing.T) {
+	database, p, run, repo := setupTest(t)
+	if err := database.UpdateRunStatus(run.ID, types.RunRunning); err != nil {
+		t.Fatal(err)
+	}
+	result, err := database.InsertStepResult(run.ID, types.StepReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.StartStep(result.ID); err != nil {
+		t.Fatal(err)
+	}
+	findings := `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"still unresolved"},{"id":"cleanup","severity":"warning","action":"no-op","description":"mechanical cleanup"}]}`
+	prior := []struct {
+		trigger string
+		source  string
+	}{
+		{"initial", db.RoundSelectionSourceDecision},
+		{"auto_fix", db.RoundSelectionSourceDecision},
+		{"auto_fix", db.RoundSelectionSourceAutoFix},
+	}
+	for i, round := range prior {
+		inserted, err := database.InsertStepRound(result.ID, i+1, round.trigger, &findings, nil, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := round.source
+		ids := `["requirement"]`
+		if err := database.SetStepRoundSelection(inserted.ID, &ids, source); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := database.ParkStepForApproval(run.ID, result.ID, types.StepStatusFixReview, 1, &findings); err != nil {
+		t.Fatal(err)
+	}
+	run, err = database.GetRun(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := &adaptiveCallStep{name: types.StepReview, fn: func(sctx *StepContext) (*StepOutcome, error) {
+		t.Error("recovery executed an endorsed fix beyond the decision budget")
+		return &StepOutcome{NeedsApproval: true, Findings: findings}, nil
+	}}
+	exec := NewExecutor(database, p, &config.Config{AutoFix: config.AutoFix{MaxFixRounds: 2}}, nil, []Step{step}, nil)
+	events := collectEvents(exec)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- exec.Resume(ctx, run, repo, t.TempDir()) }()
+	waitForEvent(t, events, ipc.EventStepCompleted, string(types.StepStatusFixReview))
+	if err := exec.RespondWithOverrides(types.StepReview, types.ActionFix, []string{"requirement"}, map[string]string{"requirement": "apply it"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "used 2/2 decision fix executions (0 auto + 0 user on the shared fix budget)") {
+			t.Fatalf("recovery miscounted decision fixes: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("recovery exceeded the budget instead of refusing")
+	}
+}
+
 // S7: a requirement is already known, but timeout documentation and a script
 // header must not consume the fix budget before that requirement is presented.
 func TestExecutor_DecisionBeforeInfoOnlyFix(t *testing.T) {

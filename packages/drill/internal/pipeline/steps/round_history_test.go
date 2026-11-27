@@ -98,6 +98,28 @@ func TestRoundHistoryPromptSection_RendersFindingsSelectionsAndFixSummary(t *tes
 	}
 }
 
+func TestRoundHistoryPromptSection_RendersDecisionSelectionAsUserChoice(t *testing.T) {
+	sctx, stepID := newRoundHistoryContext(t)
+
+	round1 := `{"findings":[{"id":"requirement","severity":"error","description":"accepted requirement","action":"ask-user"},{"id":"style","severity":"info","description":"style nit","action":"no-op"}]}`
+	r1, err := sctx.DB.InsertStepRound(stepID, 1, "initial", &round1, nil, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := `["requirement"]`
+	if err := sctx.DB.SetStepRoundSelection(r1.ID, &selected, db.RoundSelectionSourceDecision); err != nil {
+		t.Fatal(err)
+	}
+
+	got := roundHistoryPromptSection(sctx)
+	if !strings.Contains(got, "user_chose_to_fix:") || !strings.Contains(got, `"id":"requirement"`) {
+		t.Fatalf("expected an endorsed decision to render the endorsed finding as a user choice, got:\n%s", got)
+	}
+	if !strings.Contains(got, "user_chose_to_ignore:") || !strings.Contains(got, `"id":"style"`) {
+		t.Fatalf("expected an endorsed decision to render unselected findings, got:\n%s", got)
+	}
+}
+
 func TestRoundHistoryPromptSection_DoesNotTreatAutoFixFilteringAsUserIgnore(t *testing.T) {
 	sctx, stepID := newRoundHistoryContext(t)
 
