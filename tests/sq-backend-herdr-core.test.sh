@@ -1407,17 +1407,16 @@ printf 'squad-desk\n' > "$SPACE_CONFIG"
 address=$(SQUAD_HC_NEW_ADDRESS=t7 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
   || fail 'create_task must succeed with a configured presentation space'
 [ "$address" = t7 ] || fail "a labelled create still returns its opaque address (got '$address')"
-assert_grep 't7 herdr.space=squad-desk herdr.tab=' "$SQUAD_HC_LABEL_LOG" 'the created terminal carries the configured space and a tab of its own'
+expected_tab="sq-$BASE_HASH-probe"
+assert_grep "t7 herdr.space=squad-desk herdr.tab=$expected_tab" "$SQUAD_HC_LABEL_LOG" \
+  'the created terminal carries the configured space and its own derived tab'
 [ "$(grep -c . "$SQUAD_HC_LABEL_LOG" || true)" = 1 ] \
   || fail "one label write only (saw: $(cat "$SQUAD_HC_LABEL_LOG"))"
 assert_grep "t7	herdr.space	squad-desk" "$SQUAD_HC_LABELS" 'the label state holds the one address and value'
-task_tab=$(fm_backend_herdr_core_tab_for_task 'probe')
-assert_grep "$task_tab" "$SQUAD_HC_LABELS" "the tab label is the task's own derived id"
-[ "$task_tab" = "$(fm_backend_herdr_core_name_for_task 'probe')" ] \
-  || fail 'the tab id must be the same derived identity the terminal is named with'
-[ "$task_tab" != "$(fm_backend_herdr_core_tab_for_task 'another-task')" ] \
+assert_grep "t7	herdr.tab	$expected_tab" "$SQUAD_HC_LABELS" 'the tab label is the literal base-scoped task identity'
+[ "$(fm_backend_herdr_core_tab_for_task 'probe')" != "$(fm_backend_herdr_core_tab_for_task 'another-task')" ] \
   || fail 'two tasks must not share one tab id'
-expected_labels=$(printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\t%s' "$task_tab")
+expected_labels=$(printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\t%s' "$expected_tab")
 [ "$(cat "$SQUAD_HC_LABELS")" = "$expected_labels" ] \
   || fail "the create writes exactly the space and tab rows for its own address (saw: $(cat "$SQUAD_HC_LABELS"))"
 
@@ -1485,6 +1484,8 @@ address=$(SQUAD_HC_LABEL_FAIL=1 SQUAD_HC_NEW_ADDRESS=t7 \
 [ "$address" = t7 ] || fail "a failed label write still returns the created address (got '$address')"
 assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'could not place herdr-core terminal' \
   'a failed label write warns instead of failing'
+assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'label store busy' \
+  "the warning carries hc's own rejection reason"
 assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'hc label t7 herdr.space=squad-desk herdr.tab=' \
   'the warning names the exact by-hand command'
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a failed label write must not close the terminal it could not label'

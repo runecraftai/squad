@@ -1036,15 +1036,25 @@ fm_backend_herdr_core_tab_for_task() {  # <task-id> -> app tab id
 #   0  the labels are in place, or nothing is configured
 #   1  a configured label could not be written; already reported
 fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-id>
-  local session=${1:-default} address=${2:-} task_id=${3:-} space tab
+  local session=${1:-default} address=${2:-} task_id=${3:-} space tab err_file reason rc=0
   [ -n "$address" ] || return 1
   space=$(fm_backend_herdr_core_presentation_space)
   [ -n "$space" ] || return 0
   tab=$(fm_backend_herdr_core_tab_for_task "$task_id")
-  fm_backend_herdr_core_cli "$session" label "$address" \
-    "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space" \
-    "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >/dev/null 2>&1 && return 0
-  echo "warning: could not place herdr-core terminal $session:$address in the configured desktop space '$space'; the task is unaffected and stays in 'hc ls'. Set it by hand with: HC_SESSION=$session hc label $address $SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >&2
+  err_file=$(mktemp "${TMPDIR:-/tmp}/sq-hc-label.XXXXXX") || err_file=
+  if [ -n "$err_file" ]; then
+    fm_backend_herdr_core_cli "$session" label "$address" \
+      "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space" \
+      "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >/dev/null 2>"$err_file" || rc=$?
+    reason=$(head -n 1 "$err_file" 2>/dev/null | tr -d '\r')
+    rm -f "$err_file"
+  else
+    fm_backend_herdr_core_cli "$session" label "$address" \
+      "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space" \
+      "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >/dev/null 2>&1 || rc=$?
+  fi
+  [ "$rc" -eq 0 ] && return 0
+  echo "warning: could not place herdr-core terminal $session:$address in the configured desktop space '$space'; the task is unaffected and stays in 'hc ls' (reason: ${reason:-no reason given}). Set it by hand with: HC_SESSION=$session hc label $address $SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >&2
   return 1
 }
 

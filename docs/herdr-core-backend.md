@@ -97,7 +97,7 @@ The full transcript, including the reversal, is recorded in [`verification/runti
 The write is best-effort and never changes a task's outcome:
 
 - **Absent, unreadable, or blank setting** - no label is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
-- **A failed write** - the spawn keeps the terminal it created and prints a warning naming the exact address and the command that sets the labels by hand. Placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command warns and keeps the task, because a missing display preference must never block real work.
+- **A failed write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. Placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command warns and keeps the task, because a missing display preference must never block real work.
 - **Idempotent** - it is a plain label set, so repeating it leaves exactly one value per label.
 
 Adoption has two product-side consequences worth knowing.
@@ -118,13 +118,23 @@ fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>
 It runs the same identity check every other write runs - this base's `squad.base` label, the recorded core id, and, when the optional `sq-<task-id>` is passed, this task's `squad.task` label - so it can only ever reach one of this base's own terminals, and it removes or relabels nothing else.
 The equivalent by hand is `hc label <address> herdr.space= herdr.tab=`.
 
+That clear is deliberately not a full restore of the app's label set: it removes only the two labels this adapter wrote, because the app keeps its own `where` record, and adopting a terminal does not give Squad ownership of every label on it.
+A remaining `where: "squad / N"` after the clear is the app's own bookkeeping, not a placement Squad still claims.
+
 Clearing the labels is not enough to undo the presentation, so the reversal is completed in the app, which takes the pane away and disables core keep:
 
 ```text
 herdr-app do terminal.park --terminal <address>
 ```
 
-A task that is torn down needs neither step for its pane: a terminal that ends closes its pane.
+To return a terminal to its exact prior label set by hand, clear the app's `where` record in the same call and then park it:
+
+```text
+hc label <address> herdr.space= herdr.tab= where=
+herdr-app do terminal.park --terminal <address>
+```
+
+A terminal that ends closes its own pane, so a task that is torn down needs neither step for its pane.
 Removing `config/herdr-core-space` stops new terminals from being labeled; terminals already created keep their labels until they are cleared that way.
 
 ## Commands this backend runs
