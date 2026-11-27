@@ -184,7 +184,7 @@ herdr-app do terminal.park --terminal <address>
 ```
 
 A terminal that ends closes its own pane, so a task that is torn down needs neither step for its pane.
-Removing `config/herdr-core-space` stops new terminals from being labeled; terminals already created keep their labels until they are cleared that way.
+Removing `config/herdr-core-space` stops new terminals from being labeled or titled; terminals already created keep their labels and their tab titles until they are cleared that way.
 
 ## Commands this backend runs
 
@@ -324,7 +324,7 @@ The core serves the person's own terminals, the desktop app, and their phone.
 - The product's terminal name is base-scoped for the same reason: the name registry is core-global, so `sq-<base-hash>-<task-id>` keeps task `1` in two bases from colliding on `name_taken`.
 - Never a `--all` sweep, a server-global verb, or a name selector on a destructive call.
 - Never change the person's app settings, telemetry, or core configuration.
-- The adapter only writes its own labels, and only on terminals it created: the two Squad identity labels, plus the optional `herdr.space`/`herdr.tab` placement from `config/herdr-core-space`.
+- The adapter writes app state only on what it created: the two Squad identity labels on its own terminals, the optional `herdr.space`/`herdr.tab` placement from `config/herdr-core-space`, and the title of the one tab those labels create - addressed by that tab's id, never by position or the active tab, so the person's own working tab is never named.
 - Mobile access is SSH into this machine: anyone holding that key can type into Squad's operators. That is a person-side security decision, not something Squad can bound.
 
 ## Recovery when the core is absent
