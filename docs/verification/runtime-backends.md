@@ -1062,7 +1062,7 @@ The write adds its labels beside `squad.task` and `squad.base` and never instead
 Clearing that label again did **not** undo it: `keep` stayed `true`, `where` stayed, and the space stayed in the app.
 Adoption is one-way on the app's side, so the reversal needs the app's own `terminal.park`.
 
-Label write against the person's real space, with the tab derived from the task identity:
+Label write against the person's real space, with a hand-written tab id in the adapter's `sq-<base-hash>-<slug>` shape (which shortens a long id, as the adapter's own create below shows):
 
 ```sh
 hc label t7 herdr.space=sp7b9a496a3b6da2d94d5341c408030af3 herdr.tab=sq-f8f4d208-squad-herdr-core-adapter-s3
@@ -1114,9 +1114,13 @@ herdr-app ls             # the person's space lists a tab whose terminal is that
 herdr-app do terminal.park --terminal "$addr"
 hc label "$addr" herdr.space= herdr.tab= where=
 herdr-app ls             # back to the baseline
+hc kill "$addr"          # retiring the probe is a separate step: parking leaves it live
+hc rm "$addr"
 ```
 
-This is the one command that refreshes the app-side claim. The app owns the pane, so the `terminal.park` step is what removes it, and a task that ends needs neither step.
+This is the one command that refreshes the app-side claim.
+The app owns the pane, so the `terminal.park` step is what removes it, and a task that ends needs neither step.
+The block then kills and removes the one probe terminal it created, because parking takes away only its pane.
 
 Portable coverage of the write, the absent and unreadable setting, the idempotent repeat, the failing write that keeps the spawn, and the address-exact clear is in `tests/sq-backend-herdr-core.test.sh`; the live facts above are what that code is for.
 

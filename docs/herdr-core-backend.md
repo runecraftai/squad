@@ -5,7 +5,8 @@ It owns terminal endpoints only; Squad and fob keep task identity, task state, a
 Shared backend selection and metadata semantics are documented in [`configuration.md`](configuration.md#runtime-backend-configbackend--squad_backend); [`verification/runtime-backends.md`](verification/runtime-backends.md#herdr-core) owns the live evidence and states what is not yet established.
 
 The adapter is `bin/backends/herdr-core.sh`.
-It drives the commander's already-running `herdr-core` core through its `hc` CLI, so the desktop app and the phone see the same terminals Squad creates.
+It drives the commander's already-running `herdr-core` core through its `hc` CLI, so a task's terminal lives on the same core the desktop app and the phone attach to.
+The desktop app shows that terminal inside one of its spaces once a space is configured - see "Desktop and phone presentation" below.
 
 ## Setup
 
@@ -78,7 +79,7 @@ To have Squad's tasks appear there, put one space id in the local file `config/h
 sp7b9a496a3b6da2d94d5341c408030af3
 ```
 
-It is one positive identifier, read once per create from the effective config dir (`$SQUAD_CONFIG_OVERRIDE`, otherwise `$SQUAD_BASE/config`) on its first non-empty line, with surrounding whitespace stripped - the same convention `config/backend` and `config/crew-harness` already use.
+It is one positive identifier, read once per create from the effective config dir (`$SQUAD_CONFIG_OVERRIDE`, otherwise `$SQUAD_BASE/config`) on its first non-empty line, with whitespace stripped - the same convention `config/backend` and `config/crew-harness` already use.
 Nothing is inferred: the file names the space, and an id the app does not know becomes a new space under the app's own name.
 Space ids are local to this machine's app, exactly as the product's own labels are, and `herdr-app ls` prints them.
 
@@ -112,7 +113,7 @@ fm_backend_source herdr-core
 fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>]
 ```
 
-It runs the same identity check every other write runs - this base's `squad.base` label, this task's `squad.task` label, and the recorded core id - so it can only ever reach one of this base's own terminals, and it removes or relabels nothing else.
+It runs the same identity check every other write runs - this base's `squad.base` label, the recorded core id, and, when the optional `sq-<task-id>` is passed, this task's `squad.task` label - so it can only ever reach one of this base's own terminals, and it removes or relabels nothing else.
 The equivalent by hand is `hc label <address> herdr.space= herdr.tab=`.
 
 Clearing the labels is not enough to undo the presentation, so the reversal is completed in the app, which takes the pane away and disables core keep:

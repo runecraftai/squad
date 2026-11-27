@@ -50,19 +50,19 @@
 #   * PRESENTATION IS TWO OPTIONAL LABELS ON ONE TERMINAL. When the local
 #     config/herdr-core-space setting names a desktop space, the terminal this
 #     adapter just created also carries `herdr.space=<space>` and
-#     `herdr.tab=<this task's own id>`, which is what makes the app show it: a
-#     measured `hc run --bg --no-parent` terminal with no pane joins that space
-#     as its own tab and needs neither `--keep` nor an attach. Absent or
-#     unreadable setting means no label is written and nothing else changes. The
-#     write is best-effort: it never fails a spawn, it is a plain set (repeating
-#     it leaves the same state), and it names the one address this create just
-#     returned. Clearing it takes the labels off; the app's own
-#     `herdr-app do terminal.park --terminal <address>` is what takes the pane
-#     away, because adoption is one-way on the app's side
-#     (docs/herdr-core-backend.md owns the measured transcript). Placement is
-#     deliberately outside the guard below: a core whose CLI lacks the label
-#     command warns and keeps the task, because a missing display preference
-#     must never block real work.
+#     `herdr.tab=<the base-scoped name its terminal is created with>`, which is
+#     what makes the app show it: a measured `hc run --bg --no-parent` terminal
+#     with no pane joins that space as its own tab and needs neither `--keep`
+#     nor an attach. An absent or unreadable setting means no label is written
+#     and nothing else changes. The write is best-effort: it never fails a
+#     spawn, it is a plain set (repeating it leaves the same state), and it
+#     names the one address this create just returned. Clearing it takes the
+#     labels off; the app's own `herdr-app do terminal.park --terminal
+#     <address>` is what takes the pane away, because adoption is one-way on
+#     the app's side (docs/herdr-core-backend.md owns the measured
+#     transcript). Placement is deliberately outside the guard below: a core
+#     whose CLI lacks the label command warns and keeps the task, because a
+#     missing display preference must never block real work.
 #
 # Sourced only through bin/sq-backend.sh's fm_backend_source, never directly.
 SQUAD_BACKEND_HERDR_CORE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -987,8 +987,9 @@ EOF
 # fm_backend_herdr_core_presentation_space: the desktop space this base's task
 # terminals belong to, or empty when the person configured none. It is a single
 # positive identifier read fresh from the effective config dir's
-# config/herdr-core-space, using the whole-file whitespace-stripped convention
-# the other scalar config items already use (config/backend, config/crew-harness).
+# config/herdr-core-space, using the first-non-empty-line, whitespace-stripped
+# convention the other scalar config items already use (config/backend,
+# config/crew-harness).
 # Nothing is inferred: an absent, unreadable, or blank file answers empty, and an
 # empty answer means this adapter writes no app state at all.
 # The id is local to this machine's app, exactly as the product's own labels are;
