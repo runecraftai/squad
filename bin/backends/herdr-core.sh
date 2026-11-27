@@ -1160,7 +1160,11 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
   deadline=$((SECONDS + SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT))
   while :; do
     if [ "$SECONDS" -ge "$deadline" ]; then
-      reason="the app did not answer within ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s"
+      if [ -n "$reason" ]; then
+        reason="gave up after ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s (last answer: $reason)"
+      else
+        reason="the app did not answer within ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s"
+      fi
       break
     fi
     bound=$((deadline - SECONDS))
