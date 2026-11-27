@@ -1690,6 +1690,56 @@ assert_contains "$out" 'refusing to rename a tab this task did not create' 'the 
 assert_grep "$(printf 'sq-%s-othertask\tother mission' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
   "another tab's title is left exactly as it was"
 
+# The same identity rule holds when no task is named: the terminal's own
+# `squad.task` label names the tab, so a mismatched `herdr.tab` still refuses.
+SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_label_state
+printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\tsq-%s-othertask\n' "$BASE_HASH" > "$SQUAD_HC_LABELS"
+jq --arg tab "sq-$BASE_HASH-othertask" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
+  && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+printf 'sq-%s-othertask\tother mission\n' "$BASE_HASH" > "$SQUAD_HERDR_APP_TABS"
+out=$(fm_backend_herdr_core_clear_presentation_space 'default:t7' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail "an unnamed clear must still refuse another tab's id"
+assert_contains "$out" 'refusing to rename a tab this task did not create' \
+  'the unnamed refusal names why'
+[ ! -s "$SQUAD_HERDR_APP_LOG" ] \
+  || fail "an unnamed mismatched tab label must rename nothing (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] || fail 'an unnamed mismatched tab label must clear no label'
+assert_grep "$(printf 'sq-%s-othertask\tother mission' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  "another tab's title is left exactly as it was by an unnamed clear"
+
+# A terminal with a tab label but no task label has no identity to derive that
+# tab from, so the clear refuses rather than renaming an unowned tab.
+SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_label_state
+printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\tsq-%s-probe\n' "$BASE_HASH" > "$SQUAD_HC_LABELS"
+jq --arg tab "sq-$BASE_HASH-probe" 'del(.labels["squad.task"]) | .labels["herdr.tab"] = $tab' \
+  "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+printf 'sq-%s-probe\tprobe\n' "$BASE_HASH" > "$SQUAD_HERDR_APP_TABS"
+out=$(fm_backend_herdr_core_clear_presentation_space 'default:t7' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a terminal with no task label must refuse the clear'
+[ ! -s "$SQUAD_HERDR_APP_LOG" ] || fail 'an underivable tab must rename nothing'
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] || fail 'an underivable tab must clear no label'
+
+# Without a named task the clear derives the tab from the verified terminal's
+# own task label, so the matching tab is still cleared and titled back.
+SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_label_state
+printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\tsq-%s-probe\n' "$BASE_HASH" > "$SQUAD_HC_LABELS"
+jq --arg tab "sq-$BASE_HASH-probe" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
+  && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+printf 'sq-%s-probe\tprobe\n' "$BASE_HASH" > "$SQUAD_HERDR_APP_TABS"
+fm_backend_herdr_core_clear_presentation_space 'default:t7' \
+  || fail 'an unnamed clear of its own terminal must succeed'
+assert_grep "do tab.rename --id sq-$BASE_HASH-probe --name " "$SQUAD_HERDR_APP_LOG" \
+  'an unnamed clear gives its own derived tab its number back'
+[ "$(rename_count)" = 1 ] || fail "an unnamed clear renames one tab only (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
+[ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
+  || fail 'an unnamed clear clears both placement labels it wrote'
+
 # A terminal that carries no placement label titles no tab: there is nothing
 # this adapter set, so the clear writes nothing to the app at all.
 SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \

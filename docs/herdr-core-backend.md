@@ -146,7 +146,8 @@ fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>
 
 It runs the same identity check every other write runs - this base's `squad.base` label, the recorded core id, and, when the optional `sq-<task-id>` is passed, this task's `squad.task` label - so it can only ever reach one of this base's own terminals, and it removes or relabels nothing else.
 It resolves the tab from that verified terminal's own `herdr.tab` label before the label goes, so the title it clears is that tab and no other; a terminal that carries no such label titles nothing.
-When a task is named, the label must also be the tab id this adapter derives for that task, so a recycled address or a hand-edited label refuses instead of renaming a tab this task never created.
+That label must be the tab id this adapter derives from the same record's own `squad.task` label, whether or not a task is named, so a hand-edited label or a terminal with no task label refuses instead of renaming a tab this task never created.
+The tab and the task label come from the one record the identity check returned, so an address recycled after that read cannot swap one task's tab for another's.
 A read it cannot resolve refuses before any write, the title is given back before the labels are cleared, and a failed rename returns with the labels still in place, so the removal never does half its work and the same command can simply be run again.
 
 Both writes in the order the adapter runs them, where a tab's id is the value the label held:

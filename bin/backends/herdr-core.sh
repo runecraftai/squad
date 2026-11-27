@@ -466,6 +466,7 @@ fm_backend_herdr_core_recorded_core_id() {  # <target> [task-id]
 fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [expected-base]
   local target=${1:-} expected=${2:-} allow_finished=${3:-} expected_base=${4:-}
   local session address json recorded live state label rc=0 expected_id meta_rc=0
+  SQUAD_BACKEND_HERDR_CORE_VERIFIED_JSON=
   [ -n "$expected_base" ] || expected_base=$(fm_backend_herdr_core_base_name)
   fm_backend_herdr_core_parse_target "$target" || {
     echo "error: malformed herdr-core target '$target'; expected <session>:<address>" >&2
@@ -526,6 +527,7 @@ fm_backend_herdr_core_verify() {  # <target> [expected-label] [allow-finished] [
     echo "error: herdr-core address $address carries base label '${label:-none}', not '$expected_base'; refusing to touch another base's terminal" >&2
     return 4
   fi
+  SQUAD_BACKEND_HERDR_CORE_VERIFIED_JSON=$json
 }
 
 # --- status projection ------------------------------------------------------
@@ -1069,6 +1071,16 @@ fm_backend_herdr_core_tab_title_for_task() {  # <task-id> -> tab title
   printf '%s' "${1:-}"
 }
 
+# fm_backend_herdr_core_record_label: one label's value on an already-read
+# terminal record, or empty when the record carries none. Reading from a record
+# the identity check returned, rather than the terminal again, is what keeps a
+# recycled address from swapping one terminal's labels for another's between two
+# reads.
+fm_backend_herdr_core_record_label() {  # <record-json> <label-key>
+  printf '%s' "${1:-}" | jq -r --arg key "${2:-}" \
+    '(.labels // {})[$key] // ""' 2>/dev/null
+}
+
 # fm_backend_herdr_core_presentation_tab_of: the app tab id recorded on ONE
 # exact terminal's own `herdr.tab` label, or empty when it carries none. A caller
 # resolves the tab it titled from the label this adapter wrote, never by
@@ -1079,8 +1091,7 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address>
   local session=${1:-default} address=${2:-} json
   [ -n "$address" ] || return 1
   json=$(fm_backend_herdr_core_get_json "$session" "$address" 2>/dev/null) || return 1
-  printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL" \
-    '(.labels // {})[$key] // ""' 2>/dev/null
+  fm_backend_herdr_core_record_label "$json" "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL"
 }
 
 # fm_backend_herdr_core_rename_tab: write the visible title of ONE desktop tab,
@@ -1182,13 +1193,14 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 # plus this task's `squad.task` label when one is named), and it never removes,
 # kills, or relabels a terminal - the address keeps running exactly as it was.
 # It also gives back the tab's own number, which is the one title this adapter
-# set: the tab is resolved from the `herdr.tab` label on that verified terminal
-# before the label goes, so it is that tab and no other, and a terminal that
-# carries no such label titles nothing. When the caller names the task, that
-# label must also be the tab id this adapter derives for it; anything else is
-# another tab and refuses, because an address can be recycled between reads.
-# The title goes back before the labels, so a failed rename leaves the label
-# that names the tab in place and the whole removal is re-runnable.
+# set: the tab and the task label are both read from the one record the identity
+# check returned, so the removal sees a consistent terminal even when the
+# address is recycled right after that read. The `herdr.tab` value must be the
+# tab id this adapter derives from that same record's `squad.task` label - with
+# or without a named task - or the clear refuses; a terminal that carries no
+# such label titles nothing. The title goes back before the labels, so a failed
+# rename leaves the label that names the tab in place and the whole removal is
+# re-runnable.
 # A recorded core id and session that no longer agree refuse, so a recycled
 # address is never cleared. A finished terminal is accepted, because a record
 # whose program already exited can still carry the labels.
@@ -1199,28 +1211,31 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 #   0  both labels are cleared on that terminal and its tab carries no title
 #   1  refused: a foreign, unreadable or unverifiable identity, or a failed write
 fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
-  local target=${1:-} expected=${2:-} session address tab own_tab
+  local target=${1:-} expected=${2:-} session address tab own_task own_tab
   fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
-  # Read the tab this adapter titled before its label is gone; refusing here
-  # keeps the removal from doing half its work on a terminal it cannot resolve.
-  tab=$(fm_backend_herdr_core_presentation_tab_of "$session" "$address") || {
-    echo "error: could not read the desktop tab herdr-core terminal $address was placed in (session '$session'); refusing to clear a presentation this process cannot resolve" >&2
-    return 1
-  }
-  # A label is terminal state and the address that carries it can be recycled
-  # between the two reads, so the read value is only usable when it is the tab
-  # this task's own derivation names. Anything else would rename a tab this task
-  # never created, which no clear may do.
-  own_tab=
-  if [ -n "$expected" ]; then
+  # Resolve the tab from the record the identity check just validated, before
+  # its label is gone, so the removal can never act on a terminal other than the
+  # one it checked.
+  tab=$(fm_backend_herdr_core_record_label \
+    "$SQUAD_BACKEND_HERDR_CORE_VERIFIED_JSON" "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL")
+  own_task=$(fm_backend_herdr_core_record_label \
+    "$SQUAD_BACKEND_HERDR_CORE_VERIFIED_JSON" "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL")
+  # The tab id must be the one this adapter derives from the terminal's own task
+  # label, whether or not the caller named a task. Anything else is another
+  # tab, which no clear may rename.
+  if [ -n "$tab" ]; then
+    if [ -z "$own_task" ]; then
+      echo "error: herdr-core terminal $address carries $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL '${tab}' but no $SQUAD_BACKEND_HERDR_CORE_TASK_LABEL to derive its own tab from; refusing to rename a tab this task did not create" >&2
+      return 1
+    fi
     own_tab=$(fm_backend_herdr_core_tab_for_task \
-      "$(fm_backend_herdr_core_task_id_of_label "$expected")")
-  fi
-  if [ -n "$tab" ] && [ -n "$own_tab" ] && [ "$tab" != "$own_tab" ]; then
-    echo "error: herdr-core terminal $address carries $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL '${tab}', not this task's '$own_tab'; refusing to rename a tab this task did not create" >&2
-    return 1
+      "$(fm_backend_herdr_core_task_id_of_label "$own_task")")
+    if [ "$tab" != "$own_tab" ]; then
+      echo "error: herdr-core terminal $address carries $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL '${tab}', not its own task's '$own_tab'; refusing to rename a tab this task did not create" >&2
+      return 1
+    fi
   fi
   # The title goes first: while it is still there the label above still names
   # this one tab, so a failed rename leaves the removal re-runnable instead of
