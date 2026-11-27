@@ -1732,6 +1732,50 @@ assert_contains "$(cat "$TMP_ROOT/hang-stderr.txt")" 'did not answer within 1s' 
 [ "$(rename_count)" = 1 ] \
   || fail "a stalled app is not retried (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
 
+# A budget that is already spent when the write starts is a reported title, not
+# a spawn failure: the adapter runs under `set -eu` after the terminal exists, so
+# nothing here may abort the create - not an exhausted budget, not a value the
+# interval or the arithmetic cannot use.
+for budget in 0 -1 abc; do
+  write_world
+  reset_label_state
+  printf 'squad-desk\n' > "$SPACE_CONFIG"
+  address=$(SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT=$budget SQUAD_HC_NEW_ADDRESS=t7 \
+    fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/no-budget-stderr.txt") \
+    || fail "a title budget of '$budget' must not fail the spawn"
+  [ "$address" = t7 ] \
+    || fail "a title budget of '$budget' still returns the created address (got '$address')"
+  assert_contains "$(cat "$TMP_ROOT/no-budget-stderr.txt")" 'could not set the desktop tab title' \
+    "a title budget of '$budget' is reported as the title that could not be set"
+  [ "$(rename_count)" = 0 ] \
+    || fail "a title budget of '$budget' does not call the app (saw: $(cat "$SQUAD_HERDR_APP_LOG"))"
+  assert_grep "t7 herdr.space=squad-desk herdr.tab=sq-$BASE_HASH-probe" "$SQUAD_HC_LABEL_LOG" \
+    "a title budget of '$budget' still leaves the placement labels in place"
+done
+
+# An app that is not installed has a created tab left at its number, so the set
+# reports exactly that: it is nothing like the clear's "nothing to undo".
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+absent_app="$TMP_ROOT/fakebin/herdr-app-absent"
+address=$(SQUAD_HERDR_APP_BIN="$absent_app" SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/absent-set-stderr.txt") \
+  || fail 'an uninstalled app must not fail the spawn'
+[ "$address" = t7 ] || fail "an uninstalled app still returns the created address (got '$address')"
+absent_out=$(cat "$TMP_ROOT/absent-set-stderr.txt")
+assert_contains "$absent_out" "'$absent_app' is not installed" \
+  'the set reports the missing app instead of refusing'
+assert_contains "$absent_out" 'the tab keeps its number' \
+  'the set says the created tab stays at its number'
+assert_not_contains "$absent_out" 'nothing is left to undo' \
+  'the set never claims a created tab has nothing to undo'
+assert_contains "$absent_out" 'tab.rename --id ' \
+  'the set names the by-hand rename that would title the tab'
+assert_grep "t7 herdr.space=squad-desk herdr.tab=sq-$BASE_HASH-probe" "$SQUAD_HC_LABEL_LOG" \
+  'a missing app still leaves the placement labels that name the tab'
+[ ! -s "$SQUAD_HERDR_APP_LOG" ] || fail 'a missing app is never called'
+
 # The reversal: clearing names exactly its own terminal and removes nothing.
 SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
   write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'

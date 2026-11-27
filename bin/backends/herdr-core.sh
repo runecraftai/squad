@@ -1137,8 +1137,8 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
 #   2  nothing in this app to title: not installed, or no such tab on a clear;
 #      reported
 fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
-  local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out err reason act hand rc=0
-  local nothing=0 ok=0 err_file='' deadline bound
+  local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out err reason='' act hand rc=0
+  local nothing=0 ok=0 err_file='' deadline bound timeout
   [ -n "$tab" ] || return 1
   bin=$(fm_backend_herdr_core_app_bin)
   if [ -n "$title" ]; then
@@ -1149,7 +1149,11 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     hand="$bin do tab.rename --id $tab --name \"\""
   fi
   if ! command -v "$bin" >/dev/null 2>&1; then
-    echo "warning: could not $act: '$bin' is not installed; there is no such tab in the app, so nothing is left to undo" >&2
+    if [ -n "$title" ]; then
+      echo "warning: could not $act: '$bin' is not installed, so nothing is titled; the tab keeps its number. Install the app, or set it by hand with: $hand" >&2
+    else
+      echo "warning: could not $act: '$bin' is not installed; there is no such tab in the app, so nothing is left to undo" >&2
+    fi
     return 2
   fi
   err_file=$(mktemp "${TMPDIR:-/tmp}/sq-hc-title.XXXXXX") || err_file=
@@ -1157,13 +1161,17 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
   # bounds elapsed time as well as the number of answers, so an app that keeps
   # answering `no tab` slowly cannot hold the spawn for attempt-count times the
   # per-call bound.
-  deadline=$((SECONDS + SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT))
+  timeout=$SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT
+  case "$timeout" in
+    ''|*[!0-9]*) timeout=0 ;;
+  esac
+  deadline=$((SECONDS + timeout))
   while :; do
     if [ "$SECONDS" -ge "$deadline" ]; then
       if [ -n "$reason" ]; then
-        reason="gave up after ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s (last answer: $reason)"
+        reason="gave up after ${timeout}s (last answer: $reason)"
       else
-        reason="the app did not answer within ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s"
+        reason="the app did not answer within ${timeout}s"
       fi
       break
     fi
@@ -1217,7 +1225,7 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
       break
     fi
     attempt=$((attempt + 1))
-    sleep "$SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL"
+    sleep "$SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL" 2>/dev/null || :
   done
   if [ -n "$err_file" ]; then rm -f "$err_file" 2>/dev/null || :; fi
   [ "$ok" -eq 0 ] || return 0
