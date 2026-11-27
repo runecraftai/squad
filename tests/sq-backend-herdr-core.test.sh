@@ -1855,21 +1855,38 @@ fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \
 [ -z "$(awk -F'\t' -v t="sq-$BASE_HASH-probe" '$1 == t' "$SQUAD_HERDR_APP_TABS")" ] \
   || fail 'the re-run gives its tab its number back'
 
-# An app that is not installed has no title left to clear. The clear reports
-# that and still removes both placement labels from its own verified terminal,
-# so a terminal labelled while the app was present is never stranded.
+# An app that is not installed cannot be asked whether its tab is titled, so the
+# clear refuses here and leaves BOTH placement labels in place: the label is the
+# only thing that resolves the tab, so dropping it would strand a title nobody
+# could find again. The removal stays re-runnable once the CLI is present.
 place_own_titled_tab
 absent_app="$TMP_ROOT/fakebin/herdr-app-absent"
 out=$(SQUAD_HERDR_APP_BIN="$absent_app" \
   fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' 2>&1) && rc=0 || rc=$?
-[ "$rc" -eq 0 ] || fail "an uninstalled app must not block the label clear (rc=$rc: $out)"
+[ "$rc" -ne 0 ] || fail "an uninstalled app must refuse the label clear (rc=$rc: $out)"
 assert_contains "$out" "'$absent_app' is not installed" \
-  'the clear reports the missing app instead of refusing'
-assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
-  'a missing app still clears both placement labels on the exact address'
-[ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
-  || fail "a missing app still clears both placement labels (got: $(cat "$SQUAD_HC_LABELS"))"
+  'the clear reports the missing app as the reason it refused'
+assert_contains "$out" 'nothing can be asked about that tab' \
+  'the refusal says why a missing app is not an answer'
+assert_contains "$out" "HC_SESSION=default hc label t7 herdr.space= herdr.tab=" \
+  'the refusal names the by-hand label clear'
+assert_contains "$out" "$absent_app do tab.rename --id sq-$BASE_HASH-probe --name \"\"" \
+  'the refusal names the by-hand title clear for that exact tab'
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] \
+  || fail "a missing app must clear no label (saw: $(cat "$SQUAD_HC_LABEL_LOG"))"
+assert_grep "$(printf 't7\therdr.tab\tsq-%s-probe' "$BASE_HASH")" "$SQUAD_HC_LABELS" \
+  'the tab label survives a missing app, so the removal is re-runnable'
+assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  'the title the clear could not check is untouched'
 [ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a missing app must still remove no terminal'
+# The same clear finishes once the app CLI is there: the labels it kept are what
+# makes that possible.
+fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \
+  || fail 'the same clear must finish once the app CLI is available'
+[ -z "$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")" ] \
+  || fail 'the re-run clears the labels the refused clear left in place'
+[ -z "$(awk -F'\t' -v t="sq-$BASE_HASH-probe" '$1 == t' "$SQUAD_HERDR_APP_TABS")" ] \
+  || fail 'the re-run gives its tab its number back'
 
 # An id the app does not hold is its own `no tab` answer and is nothing to
 # title: nothing can make it appear, so the clear tries it once inside the
