@@ -60,7 +60,7 @@ func TestExecutor_ExhaustedBudgetStillPresentsAskUser(t *testing.T) {
 	if gate.Findings == nil || len(mustParseFindingItems(t, *gate.Findings)) != 2 {
 		t.Fatalf("decision not presented with complete known list: %+v", gate)
 	}
-	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"decision", "bug"}); err != nil {
+	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"bug"}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -94,7 +94,10 @@ func TestExecutor_ResumeHonorsFixExecutionBudget(t *testing.T) {
 			if err := database.StartStep(result.ID); err != nil {
 				t.Fatal(err)
 			}
-			findings := `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"still unresolved"}]}`
+			// The selection is deliberately the objective finding alone: selecting
+			// the ask-user requirement would endorse the parked decision, which is
+			// charged to its own budget instead of the shared one.
+			findings := `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"still unresolved"},{"id":"cleanup","severity":"warning","action":"no-op","description":"mechanical cleanup"}]}`
 			for i := 0; i <= previousFixes; i++ {
 				trigger := "auto_fix"
 				if i == 0 {
@@ -105,7 +108,7 @@ func TestExecutor_ResumeHonorsFixExecutionBudget(t *testing.T) {
 					t.Fatal(err)
 				}
 				if i < previousFixes {
-					ids := `["requirement"]`
+					ids := `["cleanup"]`
 					if err := database.SetStepRoundSelection(round.ID, &ids, db.RoundSelectionSourceAutoFix); err != nil {
 						t.Fatal(err)
 					}
@@ -134,12 +137,12 @@ func TestExecutor_ResumeHonorsFixExecutionBudget(t *testing.T) {
 			workDir := t.TempDir()
 			go func() { done <- exec.Resume(ctx, run, repo, workDir) }()
 			waitForEvent(t, events, ipc.EventStepCompleted, string(types.StepStatusFixReview))
-			if err := exec.Respond(types.StepReview, types.ActionFix, []string{"requirement"}); err != nil {
+			if err := exec.Respond(types.StepReview, types.ActionFix, []string{"cleanup"}); err != nil {
 				t.Fatal(err)
 			}
 			if previousFixes < 3 {
 				waitForFixReviewRound(t, database, run.ID, 4)
-				if err := exec.Respond(types.StepReview, types.ActionFix, []string{"requirement"}); err != nil {
+				if err := exec.Respond(types.StepReview, types.ActionFix, []string{"cleanup"}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -164,6 +167,9 @@ func TestExecutor_ResumeHonorsFixExecutionBudget(t *testing.T) {
 
 // A user-triggered fix can be authorized without selected finding ids, so a
 // recovered gate must count executed fix rounds, not recorded selections.
+// The selection here stays on the objective finding, keeping the round on the
+// shared budget; selecting the ask-user requirement would endorse that decision
+// and charge the round to the separate decision budget.
 func TestExecutor_ResumeCountsFixWithoutSelection(t *testing.T) {
 	database, p, run, repo := setupTest(t)
 	if err := database.UpdateRunStatus(run.ID, types.RunRunning); err != nil {
@@ -176,7 +182,7 @@ func TestExecutor_ResumeCountsFixWithoutSelection(t *testing.T) {
 	if err := database.StartStep(result.ID); err != nil {
 		t.Fatal(err)
 	}
-	findings := `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"still unresolved"}]}`
+	findings := `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"still unresolved"},{"id":"cleanup","severity":"warning","action":"no-op","description":"mechanical cleanup"}]}`
 	prior := []struct {
 		trigger string
 		source  string
@@ -193,7 +199,7 @@ func TestExecutor_ResumeCountsFixWithoutSelection(t *testing.T) {
 		}
 		if round.source != "" {
 			source := round.source
-			ids := `["requirement"]`
+			ids := `["cleanup"]`
 			if err := database.SetStepRoundSelection(inserted.ID, &ids, source); err != nil {
 				t.Fatal(err)
 			}
@@ -217,7 +223,7 @@ func TestExecutor_ResumeCountsFixWithoutSelection(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- exec.Resume(ctx, run, repo, t.TempDir()) }()
 	waitForEvent(t, events, ipc.EventStepCompleted, string(types.StepStatusFixReview))
-	if err := exec.Respond(types.StepReview, types.ActionFix, nil); err != nil {
+	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"cleanup"}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -313,7 +319,9 @@ func TestExecutor_DecisionBeforeInfoOnlyFix(t *testing.T) {
 }
 
 // The durable log names the shared execution budget: after one automatic fix,
-// the next user-triggered fix is execution 2 of 3, not a user-only 1 of 3.
+// the next fix the supervisor selects on an objective finding is execution 2 of
+// 3, not a user-only 1 of 3. (A selected ask-user finding endorses a decision and
+// is charged to the separate decision budget instead.)
 func TestExecutor_UserFixLogReportsSharedExecutionBudget(t *testing.T) {
 	database, p, run, repo := setupTest(t)
 	cfg := &config.Config{AutoFix: config.AutoFix{Review: 3}}
@@ -323,7 +331,7 @@ func TestExecutor_UserFixLogReportsSharedExecutionBudget(t *testing.T) {
 		if calls == 1 {
 			return &StepOutcome{AutoFixable: true, Findings: `{"findings":[{"id":"docs","severity":"info","action":"auto-fix","description":"timeout documentation"}]}`}, nil
 		}
-		return &StepOutcome{NeedsApproval: true, Findings: `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"central requirement"}]}`}, nil
+		return &StepOutcome{NeedsApproval: true, Findings: `{"findings":[{"id":"requirement","severity":"error","action":"ask-user","description":"central requirement"},{"id":"cleanup","severity":"info","action":"auto-fix","description":"cosmetic cleanup"}]}`}, nil
 	}}
 	exec := NewExecutor(database, p, cfg, nil, []Step{step}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -333,7 +341,7 @@ func TestExecutor_UserFixLogReportsSharedExecutionBudget(t *testing.T) {
 	go func() { done <- exec.Execute(ctx, run, repo, workDir) }()
 
 	waitForFixReviewRound(t, database, run.ID, 2)
-	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"requirement"}); err != nil {
+	if err := exec.Respond(types.StepReview, types.ActionFix, []string{"cleanup"}); err != nil {
 		t.Fatal(err)
 	}
 	waitForFixReviewRound(t, database, run.ID, 3)

@@ -165,6 +165,12 @@ Safest local verification sequence after non-trivial changes:
 - `codex exec resume` has a narrower flag surface than `codex exec`, so an unsupported override fails the resume and falls back; the e2e fakeagent must keep parsing both codex argv shapes (`extractCodexPrompt`).
 - Regressions: `internal/pipeline/sessions_test.go`, `internal/pipeline/steps/review_session_test.go` (incl. `TestReviewLoop_RereviewNeverResumesTheSessionThatPrescribedItsFixes`), `TestReviewStep_RereviewTreatsFixRoundsAsPipelineAuthoredCode`, `internal/agent/session_test.go`.
 
+**Fix Budget Accounting (`internal/pipeline/executor.go`)**
+
+- `auto_fix.max_fix_rounds` bounds two separate counters, never one: the shared budget (`autoFixAttempts + userFixAttempts`, automatic loop plus an ordinary fix selection) and the endorsed-decision budget (`decisionFixRounds`, a fix that answers a parked gate decision through per-finding instructions, user-authored findings, or a selected `ask-user` finding, recognised by `endorsedDecisionFix`). Charging an endorsed decision to the shared budget is the field bug where automatic fixes spent the cap and an answered decision was refused as non-convergence, which could ship a green PR that never applied the accepted requirement.
+- The split is durable, not in-memory: an endorsed round records `selection_source = db.RoundSelectionSourceDecision`, and `recoveredGate` counts `auto`, `decision`, and the remainder as `user` from that column. Any new fix-charging path must be added to that counting too, or a resumed parked run reclassifies the rounds and the budgets drift.
+- Tests: `TestEndorsedDecisionFixDoesNotConsumeAutoFixBudget`, `TestEndorsedDecisionInstructionsApplyWithoutAutoFixBudget`, `TestNonEndorsedFixStillRefusedWhenBudgetExhausted`, `TestSymmetricGuardPlacement`, `TestExecutor_ResumeHonorsFixExecutionBudget`.
+
 **Review Fixer Verification Discipline (`internal/pipeline/steps/review.go`)**
 
 - The review-fix prompt requires all fixes before one focused verification limited to the changed area and forbids the whole repository test/lint suite during the fix round.

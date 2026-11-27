@@ -285,6 +285,7 @@ drill axi logs --step review --run <id>
 Without `--full`, long logs show the last 40 lines and a help hint for the full log.
 Step logs include native subprocess agent lifecycle lines such as `codex started pid=4242`, `codex exited pid=4242 status=success`, and transient retry messages when the selected agent supports lifecycle events.
 They also include fix-loop markers such as `auto-fix execution 1/3 starting after round 1` and `user-fix execution 2/3 starting after round 2`, where the count is the shared execution budget across automatic and user-triggered fixes.
+A fix that endorses a parked `ask-user` finding is marked `decision-fix execution 1/3 starting after round 2`, where the count is the separate budget of the same size that keeps automatic fixes from spending the room an endorsed decision needs.
 
 ## drill axi abort
 

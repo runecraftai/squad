@@ -5,6 +5,11 @@ import "fmt"
 const (
 	RoundSelectionSourceUser    = "user"
 	RoundSelectionSourceAutoFix = "auto_fix"
+	// RoundSelectionSourceDecision marks a fix the supervisor endorsed from a
+	// gate decision (per-finding instructions, user-authored findings, or a
+	// selected ask-user finding). It is charged to its own decision budget, so
+	// recording it separately keeps a recovered run's accounting faithful.
+	RoundSelectionSourceDecision = "decision"
 )
 
 // StepRound represents one execution round within a pipeline step.

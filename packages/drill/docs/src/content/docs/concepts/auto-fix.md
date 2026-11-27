@@ -101,6 +101,8 @@ That history includes which finding IDs were selected for a prior fix attempt, w
 On follow-up review passes, that history tells the agent not to re-report user-ignored findings unless the code now presents a materially different issue.
 
 After a user-triggered fix, the step re-runs and pauses again to show you the results (`fix_review` status). You can then approve, fix again, skip, or abort.
+A fix that answers a parked `ask-user` finding is an endorsed decision, not a repeat of the automatic loop, so it runs on its own budget instead of consuming the shared one: per-finding instructions, user-authored findings, and a selected `ask-user` finding all qualify, and the automatic fixes that already ran can no longer crowd the answer out.
+Its budget is the same size as `max_fix_rounds`, so the correction lands and the run still reaches a verdict rather than looping.
 Yolo and AXI `--yes` approve that fix review automatically after their one fix round, so a finding that remains after the fix does not trigger an unbounded fix loop.
 
 ## Fix commits
@@ -119,10 +121,10 @@ The CI step uses `drill: apply CI fixes`, and the Push step uses `drill: apply a
 ## Step rounds
 
 Each execution of a step (initial run or follow-up auto-fix run) is recorded as a "round" in the database.
-A round stores its findings, duration, any selected finding IDs and whether that selection came from the user or auto-fix filtering, the merged finding payload actually sent to the fix agent for that round, and any one-line fix summary from that execution.
+A round stores its findings, duration, any selected finding IDs and whether that selection came from the user, auto-fix filtering, or an endorsed gate decision, the merged finding payload actually sent to the fix agent for that round, and any one-line fix summary from that execution.
 That merged payload can include per-finding user notes and user-authored findings added from the TUI or AXI interface.
 AXI status uses the same round history and the persisted auto-fix limit to show the active fix attempt, for example `auto-fix 1/3` or `fix 2`.
-The step log records a marker with the shared execution count when each automatic or user-triggered fix execution starts.
+The step log records a marker with the shared execution count when each automatic or user-triggered fix execution starts, and a `decision-fix` marker with the decision budget's own count when an endorsed correction starts.
 The generated PR surfaces this recorded evidence in deterministic Risk Assessment, Testing, and Pipeline sections. The [pipeline steps reference](/drill/reference/pipeline-steps/#pr) owns the PR body composition and size-limit contract.
 The full round history remains available in the run log.
 A fix request the shared budget refuses adds no round, so the round history keeps only executions that actually ran; a non-convergence failure names the refusal in the step error.
