@@ -63,10 +63,49 @@ The shared target a reader sees is `<hc_session>:<hc_address>`, with `hc_session
 
 Task metadata therefore carries `backend=herdr-core`, `endpoint_task_id=`, `hc_session=`, `hc_address=`, and `hc_core_id=`.
 Every created terminal carries two labels: `squad.task=<task-id>` (the identity a destructive step checks) and `squad.base=<base-label>` (Squad's grouping, since herdr-core has no workspace or session layer).
+A third, optional label places the terminal in the person's desktop app - see "Desktop and phone presentation" below.
 The base label is the readable base directory name plus a short hash of the physical resolved base path, for example `squad-1a2b3c4d`, so two bases whose directory name matches (the ordinary `squad` clone name) never share one label.
 The terminal name is derived from the base identity as well as the task id, because the product's name registry is core-global while every base numbers its tasks from the same start.
 It is `sq-<base-hash>-<task-id>` when the id survives slugification unchanged and the whole name fits, so task `1` in two bases becomes `sq-1a2b3c4d-1` and `sq-9f8e7d6c-1`.
 Every other id - a longer one, or one whose sanitized slug differs from it - is truncated and disambiguated by a hash of the full id, so `demo` and `sq-demo` cannot share one name inside a base either, and every name fits the product's 32-character limit of a-z 0-9 - _.
+
+## Desktop and phone presentation
+
+An unlabeled terminal shows in `hc ls` and on the phone, but not in the desktop app's spaces.
+To have Squad's terminals appear there, put one space id in the local file `config/herdr-core-space`:
+
+```text
+squad
+```
+
+It is one positive identifier, read once per create from the effective config dir (`$SQUAD_CONFIG_OVERRIDE`, otherwise `$SQUAD_BASE/config`) on its first non-empty line, with surrounding whitespace stripped - the same convention `config/backend` and `config/crew-harness` already use.
+Nothing is inferred: the file names the space, and an id the app does not know becomes a new space under the app's own name.
+Space ids are local to this machine's app, exactly as the product's own labels are.
+
+With the setting present, every terminal the adapter creates also carries `herdr.space=<id>`.
+The write happens right after the create returned its address, so it names that one terminal and nothing else.
+Only `herdr.space` is written: the setting names a space, and the app owns everything inside it, including which tab a terminal lands in, so no tab id is guessed.
+
+The write is best-effort and never changes a task's outcome:
+
+- **Absent, unreadable, or blank setting** - no label is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
+- **A failed write** - the spawn keeps the terminal it created and prints a warning naming the exact address and the command that sets the label by hand. Placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command warns and keeps the task, because a missing display preference must never block real work.
+- **Idempotent** - it is a plain label set, so repeating it leaves exactly one value.
+
+Adoption has one product-side consequence worth knowing: a terminal adopted into a space is kept by the core, so a terminal lost with the core comes back as a shell in its last folder instead of disappearing.
+
+### Reversal
+
+Clearing the label takes the terminal out of the app's spaces and changes nothing else: it keeps running, keeps both Squad labels, and stays visible in `hc ls` and on the phone.
+The adapter's `fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>]` clears it after the same identity check every other write runs - this base's `squad.base` label, this task's `squad.task` label, and the recorded core id - so it can only ever reach one of this base's own terminals.
+The equivalent by-hand command for one exact address is:
+
+```text
+hc label <address> herdr.space=
+```
+
+Removing `config/herdr-core-space` stops new terminals from being labeled.
+Terminals already created keep their label until it is cleared that way.
 
 ## Commands this backend runs
 
@@ -84,6 +123,8 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Screen and history | `hc read --json --lines <n> <t>` |
 | Complete rendered viewport (busy hashing) | `hc read --json --lines 0 <t>`, accepted only when `.complete` is true, `.how` is `screen`, and the text is non-empty |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
+| Place the terminal in the configured desktop space | `hc label <t> herdr.space=<id>` |
+| Clear that placement | `hc label <t> herdr.space=` |
 | Deliver text | `hc send --json --if idle <t> <text>` (a program reporting `idle`), `hc send --json <t> <text>` (a program reporting `done`, or a silent one) |
 | Press one named key | `hc keys --json <t> <key>` |
 | Close | `hc kill --json <t>`, confirm `.state == finished`, then `hc rm --json <t>`, confirm `.removed == <t>` |
@@ -203,7 +244,7 @@ The core serves the person's own terminals, the desktop app, and their phone.
 - The product's terminal name is base-scoped for the same reason: the name registry is core-global, so `sq-<base-hash>-<task-id>` keeps task `1` in two bases from colliding on `name_taken`.
 - Never a `--all` sweep, a server-global verb, or a name selector on a destructive call.
 - Never change the person's app settings, telemetry, or core configuration.
-- The adapter only writes the two Squad labels it owns, on terminals it created.
+- The adapter only writes its own labels, and only on terminals it created: the two Squad identity labels, plus the optional `herdr.space` placement from `config/herdr-core-space`.
 - Mobile access is SSH into this machine: anyone holding that key can type into Squad's operators. That is a person-side security decision, not something Squad can bound.
 
 ## Recovery when the core is absent
