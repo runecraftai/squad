@@ -122,6 +122,10 @@ SQUAD_BACKEND_HERDR_CORE_APP_BIN='herdr-app'
 # tab, and that adoption arrives on the core's event stream, so a create can
 # reach the write before the tab exists. Only that one answer ("no tab") is
 # retried, within this bounded budget; anything else is reported at once.
+# Measured on herdr-app 0.1.18 against the live app: a freshly labelled tab
+# first appeared 221 ms after the label write returned, while tab.rename
+# answered `no tab` in 5 ms before it. This budget covers about 1.4 s, more than
+# six times that measurement, so an ordinary create lands the title in place.
 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=8
 SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL='0.2'
 # A create runs the title write inline, so it carries the same hard bound as the
@@ -1110,12 +1114,18 @@ fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
 # Best-effort by contract, exactly like the label write: a missing app, a
 # refusal, or a failed write warns on stderr and returns nonzero for a caller
 # that cares; no caller may turn it into a spawn failure.
-# A missing app and the app's own `no tab` answer are "there is nothing in this
-# app to title": no title exists and none was ever written, so a caller undoing
-# its own work may still finish. Every other refusal is final.
+# A missing app is "there is nothing in this app to title": no title exists and
+# none was ever written, so a caller undoing its own work may still finish. The
+# app's own `no tab` answer is also nothing to undo on a clear. On a set, a
+# budget that exhausts that answer is reported as a failed title, because the
+# tab may still appear just after it and the warning names the by-hand rename.
+# Every other refusal is final.
 #   0  the tab carries the title
-#   1  the app refused an existing tab or answered an error; already reported
-#   2  nothing in this app to title: not installed, or no such tab; reported
+#   1  the app refused an existing tab or answered an error; already reported. A
+#      set that exhausts its retries also lands here, because the mission tab is
+#      still at its number and the warning names the by-hand rename
+#   2  nothing in this app to title: not installed, or no such tab on a clear;
+#      reported
 fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
   local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out reason act hand rc=0
   local nothing=0
@@ -1142,7 +1152,7 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
       reason="the app did not answer within ${SQUAD_BACKEND_HERDR_CORE_TITLE_TIMEOUT}s"
       break
     fi
-    reason=$(printf '%s' "$out" | jq -r '.error // empty' 2>/dev/null)
+    reason=$(printf '%s' "$out" | jq -r '.error // empty' 2>/dev/null) || reason=
     reason=${reason:-no reason given}
     # Only an unknown tab is worth another try: it is the app saying it has not
     # adopted the labelled terminal yet. Every other answer is final.
@@ -1157,6 +1167,10 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
     attempt=$((attempt + 1))
     sleep "$SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL"
   done
+  if [ "$nothing" -ne 0 ] && [ -n "$title" ]; then
+    echo "warning: could not $act (reason: $reason); the tab may still appear later, but the task is unaffected. Set it by hand with: $hand" >&2
+    return 1
+  fi
   if [ "$nothing" -ne 0 ]; then
     echo "warning: could not $act (reason: $reason); there is no such tab in the app, so nothing is left to undo" >&2
     return 2
@@ -1177,8 +1191,9 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
 # into a spawn failure.
 #   0  the labels and the title are in place, or nothing is configured
 #   1  a configured label write failed; already reported
-#   2  the labels are in place but the app holds no tab of that id to title (not
-#      installed, or its own `no tab` answer); already reported
+#   2  the labels are in place but the app is not installed; already reported. A
+#      configured title that exhausts its retries returns 1, not 2, because the
+#      tab may still appear and the warning names the by-hand rename
 fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-id>
   local session=${1:-default} address=${2:-} task_id=${3:-} space tab title err_file reason rc=0
   [ -n "$address" ] || return 1

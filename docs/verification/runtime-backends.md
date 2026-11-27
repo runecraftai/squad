@@ -1203,6 +1203,13 @@ sq-f8f4d208-scaffold-dete-24b281 => name "scaffold-determinism-recon"
 ```
 
 The mission's tab reads its task id; the person's own tab kept both its number and its name; the neighbouring task's tab was untouched; and the labels on `t19` were byte-identical before and after, because the label write is a set.
+Across those renames `herdr-app status` still reported the person's own tab `tbbcd24f8312e2392a4ab80395932ece08` with its focused pane `pbf33ae45b9e3f5dd3060f3f81c7c32f6`, and `herdr-app ls` still showed that tab `active`, so the shown and focused tab did not move.
+
+Fresh-create adoption latency was measured separately on the same build and machine, with one short-lived probe terminal created by `hc run --bg --json --no-parent --cwd /tmp`, labelled with the configured space and a probe `herdr.tab`, then cleared, killed and removed; `herdr-app ls` afterwards listed exactly the same tabs with the same names as before.
+`tab.rename` for that id before the labels existed answered `{"error": "no tab \"<id>\""}` in 5 ms, and the first call right after the label write returned (what a create does at t=0) answered the same in 5 ms.
+The tab id first appeared in `herdr-app ls` 221 ms after the label write returned, polled about 4 ms apart, and `tab.rename` once adopted answered `{"ok": true}` in 6 ms.
+The adapter's retry budget is about 1.4 s (8 attempts at 0.2 s), more than six times that measurement, so an ordinary create titles its tab in place.
+An app slower than that budget leaves that spawn untitled with a stderr warning naming the by-hand rename, and the next create titles it.
 
 Clearing is the same call with an empty name, through the same adapter function the removal path uses, and it also left every other tab alone:
 
@@ -1211,7 +1218,7 @@ fm_backend_herdr_core_rename_tab sq-f8f4d208-herdr-core-tab-title "" default:t19
 fm_backend_herdr_core_rename_tab sq-f8f4d208-herdr-core-tab-title herdr-core-tab-title default:t19   # back
 ```
 
-Not measured live, and therefore not claimed: the rename while the app is closed (there is no tab to address, so it warns and the spawn continues - the fake `herdr-app` in `tests/sq-backend-herdr-core.test.sh` proves the spawn survives), the title call's 5s bound when the app accepts the request and never answers (the same fake held open past the bound proves the create still returns), and a fresh create's adoption latency (the adapter retries only the app's `no tab` answer, inside a bounded budget).
+Not measured live, and therefore not claimed: the rename while the app is closed (there is no tab to address, so it warns and the spawn continues - the fake `herdr-app` in `tests/sq-backend-herdr-core.test.sh` proves the spawn survives; stopping or restarting the app is forbidden here) and the title call's 5s bound when the app accepts the request and never answers (the same fake held open past the bound proves the create still returns).
 
 Portable coverage of the write, the absent and unreadable setting, the idempotent repeat, the failing write that keeps the spawn, and the address-exact clear is in `tests/sq-backend-herdr-core.test.sh`; the live facts above are what that code is for.
 

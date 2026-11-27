@@ -268,6 +268,18 @@ done
 [ "$cmd" = tab.rename ] || exit 1
 # The product answers an id it does not know with this exact record on stdout
 # and exit 1: that is the app saying it has not adopted the terminal yet.
+unknown_count=${SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT:-0}
+case "$unknown_count" in ''|*[!0-9]*) unknown_count=0 ;; esac
+if [ "$unknown_count" -gt 0 ]; then
+  unknown_counter="${SQUAD_HERDR_APP_LOG:?}.unknown-tab"
+  unknown_seen=$(cat "$unknown_counter" 2>/dev/null || printf 0)
+  case "$unknown_seen" in ''|*[!0-9]*) unknown_seen=0 ;; esac
+  if [ "$unknown_seen" -lt "$unknown_count" ]; then
+    printf '%s\n' "$((unknown_seen + 1))" > "$unknown_counter"
+    printf '{\n  "error": "no tab \\"%s\\""\n}\n' "$tab"
+    exit 1
+  fi
+fi
 if [ "${SQUAD_HERDR_APP_UNKNOWN_TAB:-0}" = 1 ]; then
   printf '{\n  "error": "no tab \\"%s\\""\n}\n' "$tab"
   exit 1
@@ -348,6 +360,7 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HC_KILL_SWAP SQUAD_HC_LIST_ALL
   unset SQUAD_HC_LABEL_TASK SQUAD_HC_LABEL_FAIL
   unset SQUAD_HERDR_APP_FAIL SQUAD_HERDR_APP_UNKNOWN_TAB SQUAD_HERDR_APP_HANG
+  unset SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT
   unset SQUAD_CONFIG_OVERRIDE
   export SQUAD_HC_LABEL_BASE="$BASE_LABEL" SQUAD_HC_RUN_BASE="$BASE_LABEL"
   unset SQUAD_HC_READ_SHAPE
@@ -1446,6 +1459,7 @@ reset_label_state() {
   : > "$SQUAD_HC_KILL_LOG"
   : > "$SQUAD_HERDR_APP_LOG"
   : > "$SQUAD_HERDR_APP_TABS"
+  rm -f "$SQUAD_HERDR_APP_LOG.unknown-tab"
   printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
 }
 space_labels() { awk -F'\t' -v key='herdr.space' '$2 == key { print $1 }' "$SQUAD_HC_LABELS"; }
@@ -1602,11 +1616,34 @@ reset_label_state
 printf 'squad-desk\n' > "$SPACE_CONFIG"
 address=$(SQUAD_HERDR_APP_UNKNOWN_TAB=1 SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=3 \
   SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 SQUAD_HC_NEW_ADDRESS=t7 \
-  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>/dev/null) \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/exhaust-stderr.txt") \
   || fail 'an app that never learns the tab must not fail the spawn'
 [ "$address" = t7 ] || fail "an untitled tab still returns the created address (got '$address')"
 [ "$(rename_count)" = 3 ] \
   || fail "an unknown tab is retried inside its bounded budget only (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
+assert_contains "$(cat "$TMP_ROOT/exhaust-stderr.txt")" \
+  "herdr-app do tab.rename --id sq-$BASE_HASH-probe --name \"probe\"" \
+  'an exhausted set names the exact by-hand rename'
+assert_not_contains "$(cat "$TMP_ROOT/exhaust-stderr.txt")" 'nothing is left to undo' \
+  'an exhausted set does not claim there is nothing to undo'
+
+# The retry exists for adoption that arrives just after the first write: a tab
+# the app does not know on its first answer and does know on a later one must be
+# titled, with no warning at all.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+address=$(SQUAD_HERDR_APP_UNKNOWN_TAB_COUNT=2 SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL=0 \
+  SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/retry-stderr.txt") \
+  || fail 'a tab adopted after a retry must not fail the spawn'
+[ "$address" = t7 ] || fail "a retried title still returns the created address (got '$address')"
+[ ! -s "$TMP_ROOT/retry-stderr.txt" ] \
+  || fail "a successful retry must be silent (saw: $(cat "$TMP_ROOT/retry-stderr.txt"))"
+[ "$(rename_count)" = 3 ] \
+  || fail "the create retries until the tab exists (saw $(rename_count): $(cat "$SQUAD_HERDR_APP_LOG"))"
+assert_grep "$(printf 'sq-%s-probe\tprobe' "$BASE_HASH")" "$SQUAD_HERDR_APP_TABS" \
+  'the retried create leaves its own tab titled'
 
 # A rename that never answers is bounded like every other external client call:
 # the spawn reports it and continues instead of holding the create open.

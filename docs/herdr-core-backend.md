@@ -12,6 +12,7 @@ The desktop app shows that terminal inside one of its spaces once a space is con
 
 Requirements: herdr-core 0.1.22 or newer with an API compatible with protocol generation 1, `jq`, and `fob` for the worktree.
 The `hc` binary (or its `herdr-core` name) must be on `PATH`; `SQUAD_HC_BIN` overrides the resolved command.
+The desktop app's own `herdr-app` CLI is optional: it is needed only when `config/herdr-core-space` is set, and only to give the tab its title. When it is absent no title is written and the spawn is unaffected; `SQUAD_HERDR_APP_BIN` overrides the resolved command.
 
 A core must already be running: started by the desktop app, by systemd, or by the person with `hc server start`.
 Squad never starts one - see "Never starts a core" below.
@@ -89,7 +90,7 @@ With the setting present, every terminal the adapter creates also carries two la
 - `herdr.space=<configured id>` - the space the task belongs to.
 - `herdr.tab=sq-<base-hash>-<slug>` - the tab inside that space: the same base-scoped, collision-safe name the terminal is created with (for example `sq-1a2b3c4d-demo`, or that name with the id hashed when its slug is long or lossy), so one mission owns one tab and a relaunch returns to that tab instead of stacking a second one.
 
-That pair is all the product needs.
+That pair is all the product needs to adopt the terminal as its own tab.
 Measured on the live core: a terminal created exactly as Squad creates it - `hc run --bg --no-parent` - has no pane, but writing those two labels makes the app show it as its own tab in the configured space, leaving the tab the person was using untouched.
 Neither `--keep`, nor `attach`ing after the create, nor creating without `--bg` was needed.
 The full transcript, including the reversal, is recorded in [`verification/runtime-backends.md`](verification/runtime-backends.md#herdr-core).
@@ -116,17 +117,20 @@ The title is therefore a pure function of the task id, which is what makes a rel
 The title lives in the app's own state, not on the terminal: the app keeps it in that machine's core doc, keyed by tab id (`~/.local/state/herdr-core/default/docs.json` holds it, next to the space and tab records), so it survives an app relaunch and is what every client of that core shows.
 Repeating it is harmless, and the adapter writes it on every create, so a task that already has a title converges on the same one.
 This also means the write needs the app: when the app is not running there is no tab to name, and the spawn reports it and continues.
+The product's own skill text (`herdr-app --skill`) says `ls` and `status` talk to the running window rather than a new app, and warns that launching bare `herdr-app` opens or raises the window, so the adapter relies on the app's documented behavior and does not add an app-liveness check.
+The app-closed case was not measured here, because stopping or restarting the app is forbidden.
 
 Only that one tab is ever addressed, by id.
-The write never targets a position and never "the active tab", so the person's own working tab can neither be renamed, focused, nor reordered.
+The write never targets a position and never "the active tab", so no other tab is ever named.
+The live capture shows the person's own tab kept its number, its name, and remained the shown and focused tab across those renames.
 After the labels land the app learns about the tab on the core's event stream, so a create can arrive before the tab exists; that one answer (`no tab`) is retried for a bounded budget and every other answer is reported at once.
 
 The write is best-effort and never changes a task's outcome:
 
 - **Absent, unreadable, or blank setting** - neither a label nor a title is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
 - **A failed label write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. No title is attempted, because without the labels the app has no tab for that terminal.
-- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. Each attempt is bounded (5s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open.
-- **Nothing to title** - a missing `herdr-app` and the app's own `no tab` answer name no tab at all, so the warning says so and offers no by-hand command that would fail identically. The spawn still keeps the terminal, its labels, and its task.
+- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. Each attempt is bounded (5s), so an app that accepts the call and never answers is reported the same way instead of holding the spawn open. A create that exhausts the `no tab` retries is reported the same way, because its tab may still appear just after the budget and the by-hand rename is what finishes it.
+- **Nothing to title** - a missing `herdr-app` names no tab at all, so the warning says so and offers no by-hand command that would fail identically. The spawn still keeps the terminal, its labels, and its task. On a clear, the app's own `no tab` answer is also nothing to undo, and the labels still go.
 - **Outside the guard** - placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command, or an app whose CLI is absent, warns and keeps the task, because a missing display preference must never block real work.
 - **Idempotent** - the label write is a plain set, so repeating it leaves exactly one value per label, and renaming a tab to the title it already has leaves it named.
 
