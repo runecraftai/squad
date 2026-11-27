@@ -47,22 +47,28 @@
 #   * Status is the program's own OSC 7501 report. `busy_state` maps it, and
 #     `blocked` is a person-needed verdict, never ordinary work. A lane that
 #     reports no status is supervised by polling exactly as a tmux lane is.
-#   * PRESENTATION IS TWO OPTIONAL LABELS ON ONE TERMINAL. When the local
-#     config/herdr-core-space setting names a desktop space, the terminal this
-#     adapter just created also carries `herdr.space=<space>` and
-#     `herdr.tab=<the base-scoped name its terminal is created with>`, which is
-#     what makes the app show it: a measured `hc run --bg --no-parent` terminal
-#     with no pane joins that space as its own tab and needs neither `--keep`
-#     nor an attach. An absent or unreadable setting means no label is written
-#     and nothing else changes. The write is best-effort: it never fails a
-#     spawn, it is a plain set (repeating it leaves the same state), and it
-#     names the one address this create just returned. Clearing it takes the
-#     labels off; the app's own `herdr-app do terminal.park --terminal
-#     <address>` is what takes the pane away, because adoption is one-way on
-#     the app's side (docs/herdr-core-backend.md owns the measured
-#     transcript). Placement is deliberately outside the guard below: a core
-#     whose CLI lacks the label command warns and keeps the task, because a
-#     missing display preference must never block real work.
+#   * PRESENTATION IS TWO OPTIONAL LABELS ON ONE TERMINAL AND ONE TITLE ON
+#     ITS TAB. When the local config/herdr-core-space setting names a desktop
+#     space, the terminal this adapter just created also carries
+#     `herdr.space=<space>` and `herdr.tab=<the base-scoped name its terminal is
+#     created with>`, which is what makes the app show it: a measured `hc run
+#     --bg --no-parent` terminal with no pane joins that space as its own tab
+#     and needs neither `--keep` nor an attach. The label names the tab's ID, so
+#     a relaunch returns to the same tab; it is never the tab's visible title.
+#     The title is one more write, the app's own `tab.rename` addressed to that
+#     exact tab id: it sets the task id a person reads at a glance instead of
+#     the bare number the app draws for an unnamed tab. An absent or unreadable
+#     setting means neither is written and nothing else changes. Both writes are
+#     best-effort: neither fails a spawn, the label write is a plain set
+#     (repeating it leaves the same state), and both name the one address and
+#     the one tab this create just returned or derived. Clearing takes the
+#     labels off and gives the tab its number back; the app's own `herdr-app do
+#     terminal.park --terminal <address>` is what takes the pane away, because
+#     adoption is one-way on the app's side (docs/herdr-core-backend.md owns the
+#     measured transcript). Placement is deliberately outside the guard below: a
+#     core whose CLI lacks the label command, or an app that is not running,
+#     warns and keeps the task, because a missing display preference must never
+#     block real work.
 #
 # Sourced only through bin/sq-backend.sh's fm_backend_source, never directly.
 SQUAD_BACKEND_HERDR_CORE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -105,6 +111,20 @@ SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL='herdr.space'
 SQUAD_BACKEND_HERDR_CORE_TAB_LABEL='herdr.tab'
 SQUAD_BACKEND_HERDR_CORE_SPACE_CONFIG='herdr-core-space'
 
+# The desktop app's own CLI, for the one presentation value that is not a core
+# label. `hc` has no tab concept at all, so a tab's visible title can only be
+# written by the app that owns the tab (docs/herdr-core-backend.md owns the
+# measured contract). The suite points this at its own fake so no test can ever
+# reach a person's real window.
+SQUAD_BACKEND_HERDR_CORE_APP_BIN='herdr-app'
+
+# The title is written once the app has adopted the labelled terminal as its own
+# tab, and that adoption arrives on the core's event stream, so a create can
+# reach the write before the tab exists. Only that one answer ("no tab") is
+# retried, within this bounded budget; anything else is reported at once.
+SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS=8
+SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL='0.2'
+
 # Per-target dedupe markers for the blocked-transition producer, keyed like the
 # sentry's own .stale-<key> files.
 SQUAD_BACKEND_HERDR_CORE_ESCALATED_PREFIX='.herdr-core-escalated-'
@@ -114,6 +134,10 @@ SQUAD_BACKEND_HERDR_CORE_PROMPT_PREFIX='.herdr-core-prompt-'
 
 fm_backend_herdr_core_bin() {
   printf '%s' "${SQUAD_HC_BIN:-hc}"
+}
+
+fm_backend_herdr_core_app_bin() {
+  printf '%s' "${SQUAD_HERDR_APP_BIN:-$SQUAD_BACKEND_HERDR_CORE_APP_BIN}"
 }
 
 # fm_backend_herdr_core_session: the core session this process resolves.
@@ -1022,21 +1046,98 @@ fm_backend_herdr_core_presentation_space() {
 # and a relaunch returns to that tab instead of stacking a second one. The id is
 # app-local, so nothing is configured for it and nothing is guessed: two bases
 # and two tasks never share one.
+# This is the tab's IDENTITY. It is not what the tab shows: the app draws a tab
+# by its title, and an untouched tab shows its number.
 fm_backend_herdr_core_tab_for_task() {  # <task-id> -> app tab id
   fm_backend_herdr_core_name_for_task "${1:-}"
 }
 
+# fm_backend_herdr_core_tab_title_for_task: what this task's tab reads as. The
+# task id is already the readable mission name (`robotyard-skeleton-complete`),
+# so it is used whole; the base-scoped, hashed tab id above
+# (`sq-f8f4d208-scaffold-dete-24b281`) identifies the tab but is unreadable.
+# Measured on herdr-app 0.1.18, `tab.rename` keeps a 300-character name
+# unchanged, so the app forces no truncation and this derives none: the title
+# stays a pure function of the task id, so a relaunch of the same task writes the
+# same title on the same tab.
+fm_backend_herdr_core_tab_title_for_task() {  # <task-id> -> tab title
+  printf '%s' "${1:-}"
+}
+
+# fm_backend_herdr_core_presentation_tab_of: the app tab id recorded on ONE
+# exact terminal's own `herdr.tab` label, or empty when it carries none. A caller
+# resolves the tab it titled from the label this adapter wrote, never by
+# position and never from whichever tab is selected.
+#   0  printed the label's value (possibly empty)
+#   1  the terminal could not be read
+fm_backend_herdr_core_presentation_tab_of() {  # <session> <address>
+  local session=${1:-default} address=${2:-} json
+  [ -n "$address" ] || return 1
+  json=$(fm_backend_herdr_core_get_json "$session" "$address" 2>/dev/null) || return 1
+  printf '%s' "$json" | jq -r --arg key "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL" \
+    '(.labels // {})[$key] // ""' 2>/dev/null
+}
+
+# fm_backend_herdr_core_rename_tab: write the visible title of ONE desktop tab,
+# addressed by that tab's own id and nothing else - never a position, never
+# "the active tab" - so the person's own working tab can never be reached here.
+# An empty <title> gives the tab its number back, which is the product's own
+# spelling of "unnamed".
+# The title is the app's own state, not a core label: the app keeps it in the
+# machine's core doc, keyed by that same tab id, so it survives an app relaunch
+# and every client of that core sees it.
+# Best-effort by contract, exactly like the label write: a missing app, a
+# refusal, or a failed write warns on stderr with the exact by-hand command and
+# returns nonzero for a caller that cares; no caller may turn it into a spawn
+# failure.
+#   0  the tab carries the title, or there is nothing to title
+#   1  the app is not installed, refused, or answered an error; already reported
+fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
+  local tab=${1:-} title=${2:-} context=${3:-} bin attempt=1 out reason act hand
+  [ -n "$tab" ] || return 1
+  bin=$(fm_backend_herdr_core_app_bin)
+  if [ -n "$title" ]; then
+    act="set the desktop tab title of the herdr-core terminal ${context:-$tab} (tab '$tab') to '$title'"
+    hand="$bin do tab.rename --id $tab --name \"$title\""
+  else
+    act="clear the desktop tab title of the herdr-core terminal ${context:-$tab} (tab '$tab')"
+    hand="$bin do tab.rename --id $tab --name \"\""
+  fi
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "warning: could not $act: '$bin' is not installed; the task is unaffected" >&2
+    return 1
+  fi
+  while :; do
+    out=$("$bin" 'do' tab.rename --id "$tab" --name "$title" 2>/dev/null) && return 0
+    reason=$(printf '%s' "$out" | jq -r '.error // empty' 2>/dev/null)
+    reason=${reason:-no reason given}
+    # Only an unknown tab is worth another try: it is the app saying it has not
+    # adopted the labelled terminal yet. Every other answer is final.
+    case "$reason" in
+      no\ tab*) [ "$attempt" -lt "$SQUAD_BACKEND_HERDR_CORE_TITLE_ATTEMPTS" ] || break ;;
+      *) break ;;
+    esac
+    attempt=$((attempt + 1))
+    sleep "$SQUAD_BACKEND_HERDR_CORE_TITLE_INTERVAL"
+  done
+  echo "warning: could not $act (reason: $reason); the task is unaffected. Set it by hand with: $hand" >&2
+  return 1
+}
+
 # fm_backend_herdr_core_apply_presentation_space: place ONE terminal in the
-# configured space, as its own tab. Two labels, one address, one call.
-# Idempotent by the product's own set semantics - writing the same pair again
-# leaves exactly one value each - and best-effort by contract: a refused or
-# failed write warns on stderr and returns nonzero for a caller that cares, and
-# no caller may turn it into a spawn failure. Every write names the one address
-# the create just returned, so it can never reach another terminal.
-#   0  the labels are in place, or nothing is configured
-#   1  a configured label could not be written; already reported
+# configured space, as its own tab, and give that tab a readable title. Two
+# labels and one title, all resolved from this create's own address and its own
+# derived tab id, so none of them can reach another terminal, another tab, or
+# the person's own working tab.
+# Idempotent by the product's own semantics - writing the same pair again leaves
+# exactly one value each, and renaming a tab to the title it already has leaves
+# it named - and best-effort by contract: a refused or failed write warns on
+# stderr and returns nonzero for a caller that cares, and no caller may turn it
+# into a spawn failure.
+#   0  the labels and the title are in place, or nothing is configured
+#   1  a configured write failed; already reported
 fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-id>
-  local session=${1:-default} address=${2:-} task_id=${3:-} space tab err_file reason rc=0
+  local session=${1:-default} address=${2:-} task_id=${3:-} space tab title err_file reason rc=0
   [ -n "$address" ] || return 1
   space=$(fm_backend_herdr_core_presentation_space)
   [ -n "$space" ] || return 0
@@ -1053,9 +1154,13 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
       "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space" \
       "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >/dev/null 2>&1 || rc=$?
   fi
-  [ "$rc" -eq 0 ] && return 0
-  echo "warning: could not place herdr-core terminal $session:$address in the configured desktop space '$space'; the task is unaffected and stays in 'hc ls' (reason: ${reason:-no reason given}). Set it by hand with: HC_SESSION=$session hc label $address $SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >&2
-  return 1
+  if [ "$rc" -ne 0 ]; then
+    echo "warning: could not place herdr-core terminal $session:$address in the configured desktop space '$space'; the task is unaffected and stays in 'hc ls' (reason: ${reason:-no reason given}). Set it by hand with: HC_SESSION=$session hc label $address $SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >&2
+    # Without the labels the app has no tab for this terminal to name.
+    return 1
+  fi
+  title=$(fm_backend_herdr_core_tab_title_for_task "$task_id")
+  fm_backend_herdr_core_rename_tab "$tab" "$title" "$session:$address"
 }
 
 # fm_backend_herdr_core_clear_presentation_space: the adapter's half of the
@@ -1063,6 +1168,10 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 # same identity check every other write runs (this base's `squad.base` label,
 # plus this task's `squad.task` label when one is named), and it never removes,
 # kills, or relabels a terminal - the address keeps running exactly as it was.
+# It also gives back the tab's own number, which is the one title this adapter
+# set: the tab is resolved from the `herdr.tab` label on that verified terminal
+# before the label goes, so it is that tab and no other, and a terminal that
+# carries no such label titles nothing.
 # A recorded core id and session that no longer agree refuse, so a recycled
 # address is never cleared. A finished terminal is accepted, because a record
 # whose program already exited can still carry the labels.
@@ -1070,19 +1179,28 @@ fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-
 # app binds an adopted terminal one way and keeps it
 # (docs/herdr-core-backend.md owns the measured transcript), so the documented
 # reversal pairs this with `herdr-app do terminal.park --terminal <address>`.
-#   0  both labels are cleared on that terminal
+#   0  both labels are cleared on that terminal and its tab carries no title
 #   1  refused: a foreign, unreadable or unverifiable identity, or a failed write
 fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
-  local target=${1:-} expected=${2:-} session address
+  local target=${1:-} expected=${2:-} session address tab rc=0
   fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
   session=$SQUAD_BACKEND_HERDR_CORE_SESSION
   address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
+  # Read the tab this adapter titled before its label is gone; refusing here
+  # keeps the removal from doing half its work on a terminal it cannot resolve.
+  tab=$(fm_backend_herdr_core_presentation_tab_of "$session" "$address") || {
+    echo "error: could not read the desktop tab herdr-core terminal $address was placed in (session '$session'); refusing to clear a presentation this process cannot resolve" >&2
+    return 1
+  }
   fm_backend_herdr_core_cli "$session" label "$address" \
     "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=" \
     "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=" >/dev/null || {
     echo "error: herdr-core refused to clear the presentation labels on $address in session '$session'" >&2
     return 1
   }
+  [ -n "$tab" ] || return 0
+  fm_backend_herdr_core_rename_tab "$tab" '' "$session:$address" || rc=1
+  return "$rc"
 }
 
 fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
@@ -1138,9 +1256,9 @@ fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
     return 1
   fi
   # Presentation comes after the terminal exists and carries its own two Squad
-  # labels, so the placement labels can only ever land on the terminal this
-  # create just returned. It is best-effort by contract: a failed write is
-  # reported and the spawn keeps its endpoint.
+  # labels, so the placement labels and the tab title can only ever land on the
+  # terminal and the tab this create just returned. It is best-effort by
+  # contract: a failed write is reported and the spawn keeps its endpoint.
   fm_backend_herdr_core_apply_presentation_space "$session" "$address" "$task_id" || true
   printf '%s' "$address"
 }

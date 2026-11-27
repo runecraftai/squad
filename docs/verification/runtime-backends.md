@@ -971,7 +971,7 @@ tests/sq-backend-herdr-core.test.sh
 tests/sq-backend-pretool-check.test.sh
 ```
 
-`tests/sq-backend-herdr-core.test.sh` binds one private unix socket to stand in for a listening core and then asserts, in order: zero `hc` invocations on a session with no socket and on a session whose socket file is stale with nothing listening behind it (the never-start-a-core rule, for every primitive); a state-directory core found with `XDG_RUNTIME_DIR` unset (and with only `HOME` to derive the state home), so the socket rule matches `hc`'s own two placements instead of a `/run/user/<uid>` path `hc` never uses; a probe client that cannot decide (`curl` exiting before it connects, or timing out without a byte) refusing with zero `hc` invocations, curl's could-not-connect counting as a refusal, and a live unix-socket fixture that answers in `hc`'s HTTP/0.9 style - raw JSON-RPC and no HTTP framing, then a held-open connection - counting as a listener through real `curl`; every guard refusal (newer generation, the core's own `unsupported_generation` hint, a version below the floor, a malformed handshake, a missing method, a missing feature, a missing catalog method, a missing parameter, an unreadable catalog, an unreadable core id) with a named reason; the version-floor comparison; capture and busy state from the program report; the complete-screen rendered capture accepted only from a `.complete` true, `.how: "screen"`, non-empty envelope, with a history read, a partial read, an empty screen, and a failed or malformed read all refusing and printing nothing; a silent lane staying `unknown`; every delivery verdict (`empty`, `agent_blocked`, `not_ready`, `no_agent`, `uncertain-delivery`); delivery to a program reporting `idle` gated by `--if idle` and to one reporting `done` sent without it; a foreign `squad.task` label refusing before typing; `kill`+`rm` on the exact address only; the cleanup identity quadruple (label mismatch, changed core id, non-live address); tearing down a previous endpoint before a relaunch for both the finished-husk and live-agentless-shell shapes, including a relaunch proceeding past an address the core no longer has or that another task or another core now owns without closing the stranger; teardown's confirmation classifying the recorded address as absent, still this task's, a stranger's, or unreadable, where only a record that still carries this task's own labels and an identity the process cannot verify refuse, and no classification ever closes the stranger's terminal; a foreign recorded session refusing without an address read; agent state across `alive`/`dead`/`missing`/`unreadable`, where a failed ad hoc read or a malformed target is `unreadable` and collapses to an `unknown` alive verdict; key-name translation with an unmapped key refused; `create_task` labelling, duplicate refusal, the base-scoped duplicate and recovery inventories, the 32-character name limit, distinct terminal names for the ids `demo` and `sq-demo`, a successful create whose stderr also carries an informational notice, and the failed-create recovery that closes exactly the terminal its `squad.task` and `squad.base` labels identify, including a terminal that is already `finished`, while a recycled address carrying another task's label is left alone and named; two bases with the same directory name deriving different base labels, the same base deriving a stable label, this base's recovery refusing a terminal labelled by the other, and a recorded-address close and status read refusing a recycled address that now carries the other base's terminal, with the same task id and the same core id, without killing or removing it; two bases deriving different terminal names for the same task id, each within the 32-character limit; a real `bin/sq-spawn.sh` on a fake `hc` whose launch delivery is refused, asserting the exact created terminal is killed and removed instead of left behind, and a delivered launch that leaves its terminal in place; a relaunch over a recorded `finished` endpoint that retires that exact address before recording the replacement, a cross-backend relaunch of a dead herdr-core task onto `tmux` that closes exactly the recorded herdr-core address without creating a herdr-core replacement, and a released task whose relaunch is refused with its recorded terminal left untouched; the poll producer's one-prompt dedupe, a changed prompt re-waking, and a non-blocked edge clearing the markers; and the full `hc_session`/`hc_address`/`hc_core_id` endpoint-metadata triple.
+`tests/sq-backend-herdr-core.test.sh` binds one private unix socket to stand in for a listening core and then asserts, in order: zero `hc` invocations on a session with no socket and on a session whose socket file is stale with nothing listening behind it (the never-start-a-core rule, for every primitive); a state-directory core found with `XDG_RUNTIME_DIR` unset (and with only `HOME` to derive the state home), so the socket rule matches `hc`'s own two placements instead of a `/run/user/<uid>` path `hc` never uses; a probe client that cannot decide (`curl` exiting before it connects, or timing out without a byte) refusing with zero `hc` invocations, curl's could-not-connect counting as a refusal, and a live unix-socket fixture that answers in `hc`'s HTTP/0.9 style - raw JSON-RPC and no HTTP framing, then a held-open connection - counting as a listener through real `curl`; every guard refusal (newer generation, the core's own `unsupported_generation` hint, a version below the floor, a malformed handshake, a missing method, a missing feature, a missing catalog method, a missing parameter, an unreadable catalog, an unreadable core id) with a named reason; the version-floor comparison; capture and busy state from the program report; the complete-screen rendered capture accepted only from a `.complete` true, `.how: "screen"`, non-empty envelope, with a history read, a partial read, an empty screen, and a failed or malformed read all refusing and printing nothing; a silent lane staying `unknown`; every delivery verdict (`empty`, `agent_blocked`, `not_ready`, `no_agent`, `uncertain-delivery`); delivery to a program reporting `idle` gated by `--if idle` and to one reporting `done` sent without it; a foreign `squad.task` label refusing before typing; `kill`+`rm` on the exact address only; the cleanup identity quadruple (label mismatch, changed core id, non-live address); tearing down a previous endpoint before a relaunch for both the finished-husk and live-agentless-shell shapes, including a relaunch proceeding past an address the core no longer has or that another task or another core now owns without closing the stranger; teardown's confirmation classifying the recorded address as absent, still this task's, a stranger's, or unreadable, where only a record that still carries this task's own labels and an identity the process cannot verify refuse, and no classification ever closes the stranger's terminal; a foreign recorded session refusing without an address read; agent state across `alive`/`dead`/`missing`/`unreadable`, where a failed ad hoc read or a malformed target is `unreadable` and collapses to an `unknown` alive verdict; key-name translation with an unmapped key refused; `create_task` labelling, duplicate refusal, the base-scoped duplicate and recovery inventories, the 32-character name limit, distinct terminal names for the ids `demo` and `sq-demo`, a successful create whose stderr also carries an informational notice, and the failed-create recovery that closes exactly the terminal its `squad.task` and `squad.base` labels identify, including a terminal that is already `finished`, while a recycled address carrying another task's label is left alone and named; two bases with the same directory name deriving different base labels, the same base deriving a stable label, this base's recovery refusing a terminal labelled by the other, and a recorded-address close and status read refusing a recycled address that now carries the other base's terminal, with the same task id and the same core id, without killing or removing it; two bases deriving different terminal names for the same task id, each within the 32-character limit; a real `bin/sq-spawn.sh` on a fake `hc` whose launch delivery is refused, asserting the exact created terminal is killed and removed instead of left behind, and a delivered launch that leaves its terminal in place; a relaunch over a recorded `finished` endpoint that retires that exact address before recording the replacement, a cross-backend relaunch of a dead herdr-core task onto `tmux` that closes exactly the recorded herdr-core address without creating a herdr-core replacement, and a released task whose relaunch is refused with its recorded terminal left untouched; the poll producer's one-prompt dedupe, a changed prompt re-waking, and a non-blocked edge clearing the markers; and the full `hc_session`/`hc_address`/`hc_core_id` endpoint-metadata triple; and the presentation write, where a configured space labels exactly the created address and titles exactly the tab those labels derive (the readable task id, not that id), an absent setting writes neither a label nor a title, a failed label write titles nothing, a failed title write still returns the created address and names the exact by-hand rename, only the app's `no tab` answer is retried and only inside its bounded budget, a terminal that carries no placement label titles nothing on the clear, and the clear renames its own tab back to its number while leaving a neighbouring tab's title and every other terminal exactly as they were.
 `tests/sq-backend-pretool-check.test.sh` additionally pins that both `herdr-core` and `hc` command words are refused by the primary raw-CLI guard.
 
 ### The guarded private-core lab
@@ -1117,6 +1117,92 @@ herdr-app ls             # back to the baseline
 hc kill "$addr"          # retiring the probe is a separate step: parking leaves it live
 hc rm "$addr"
 ```
+
+### The tab title (hand capture, 2026-11-27)
+
+Captured by hand on the same machine, `herdr-app 0.1.18` and `hc 0.1.22`, against the running app.
+The subject was this unit's own task tab - the one this task's spawn created, `sq-f8f4d208-herdr-core-tab-title`, holding `t19` - and it was left in exactly the state it started in.
+Nothing else on the screen was addressed at any point, and the person's own working tab was never the target.
+
+`tab.rename` is the only sanctioned title, and no label is one: the app's own manual documents exactly two honoured labels (`herdr.space`, `herdr.tab`), and `hc --help` has no tab concept at all, so a title cannot come from the core.
+`herdr-app commands` gives the command, its arguments and its contract:
+
+```json
+{"name":"tab.rename","args":[{"name":"id","required":false},{"name":"name","required":false}],
+ "about":"Rename a tab (asks the person when no name; an empty name: called by its number again)."}
+```
+
+An id the app does not know answers `{"error": "no tab \"<id>\""}` on **stdout** and exit 1, which is the answer that tells a create the tab has not been adopted yet; a good rename answers `{"ok": true}`.
+
+No truncation is imposed: a 300-character name came back as all 300 characters.
+
+```sh
+herdr-app do tab.rename --id sq-f8f4d208-herdr-core-tab-title --name "$(printf 'c%.0s' $(seq 1 300))"
+herdr-app ls   # that tab's name is 300 characters, unchanged
+```
+
+Where the title lives, and why it survives a relaunch - the tab record in that machine's core doc, keyed by tab id, beside the space:
+
+```sh
+jq -r '."herdr-app".value.spaces[].tabs[] | "\(.id) name=\(.name|tojson)"' \
+  ~/.local/state/herdr-core/default/docs.json
+```
+
+```text
+tbbcd24f8312e2392a4ab80395932ece08 name=""
+sq-f8f4d208-herdr-core-tab-title name="herdr-core-tab-title"
+sq-f8f4d208-scaffold-dete-24b281 name="scaffold-determinism-recon"
+```
+
+Before the adapter's own write, the tab was cleared to its number so the change would be visible; the terminal's labels were already the ones the adapter wrote:
+
+```sh
+hc get --json t19 | jq -c '{address,state,labels}'
+# {"address":"t19","state":"live","labels":{"herdr.space":"sp7b9a496a3b6da2d94d5341c408030af3",
+#  "herdr.tab":"sq-f8f4d208-herdr-core-tab-title","squad.base":"squad-f8f4d208",
+#  "squad.task":"herdr-core-tab-title","where":"squad / herdr-core-tab-title"}}
+herdr-app do tab.rename --id sq-f8f4d208-herdr-core-tab-title --name ""
+herdr-app ls
+```
+
+```text
+tbbcd24f8312e2392a4ab80395932ece08 => name "1"
+sq-f8f4d208-herdr-core-tab-title => name "2"
+sq-f8f4d208-scaffold-dete-24b281 => name "scaffold-determinism-recon"
+```
+
+Then the adapter's own function, unmodified, on that one recorded terminal:
+
+```sh
+SQUAD_BASE=/home/rehem/Projects/squad bash -c '
+  . ./bin/sq-backend.sh; fm_backend_source herdr-core
+  fm_backend_herdr_core_apply_presentation_space default t19 herdr-core-tab-title'
+```
+
+```text
+configured space: sp7b9a496a3b6da2d94d5341c408030af3
+tab id:           sq-f8f4d208-herdr-core-tab-title
+title:            herdr-core-tab-title
+apply rc=0
+```
+
+```text
+tbbcd24f8312e2392a4ab80395932ece08 => name "1"
+sq-f8f4d208-herdr-core-tab-title => name "herdr-core-tab-title"
+sq-f8f4d208-scaffold-dete-24b281 => name "scaffold-determinism-recon"
+```
+
+The mission's tab reads its task id; the person's own tab kept both its number and its name; the neighbouring task's tab was untouched; and the labels on `t19` were byte-identical before and after, because the label write is a set.
+
+Clearing is the same call with an empty name, through the same adapter function the removal path uses, and it also left every other tab alone:
+
+```sh
+fm_backend_herdr_core_rename_tab sq-f8f4d208-herdr-core-tab-title "" default:t19   # that tab reads "2"
+fm_backend_herdr_core_rename_tab sq-f8f4d208-herdr-core-tab-title herdr-core-tab-title default:t19   # back
+```
+
+Not measured live, and therefore not claimed: the rename while the app is closed (there is no tab to address, so it warns and the spawn continues - the fake `herdr-app` in `tests/sq-backend-herdr-core.test.sh` proves the spawn survives), and a fresh create's adoption latency (the adapter retries only the app's `no tab` answer, inside a bounded budget).
+
 
 This is the one command that refreshes the app-side claim.
 The app owns the pane, so the `terminal.park` step is what removes it, and a task that ends needs neither step.

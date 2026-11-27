@@ -94,11 +94,40 @@ Measured on the live core: a terminal created exactly as Squad creates it - `hc 
 Neither `--keep`, nor `attach`ing after the create, nor creating without `--bg` was needed.
 The full transcript, including the reversal, is recorded in [`verification/runtime-backends.md`](verification/runtime-backends.md#herdr-core).
 
+### What names the tab, and what only identifies it
+
+The label is an IDENTITY, never a title.
+`herdr.tab` is the tab's id, which is why a relaunch finds the same tab again - and an id the app does not know becomes a new tab the app calls by its number, so a labelled terminal alone still reads as `pi - squad` in the tab bar, identical for every mission.
+
+No label names a tab.
+The app honours exactly two labels on a terminal, `herdr.space` and `herdr.tab`, and its own `tab.rename` (`f2` when a person does it) is the only sanctioned way to write a title.
+`hc` has no tab concept at all, so the title cannot come from the core.
+
+One write follows the labels, addressed to the tab id those labels just created:
+
+```text
+herdr-app do tab.rename --id <herdr.tab> --name <task-id>
+```
+
+The title is the task id itself - `robotyard-skeleton-complete` - because that is already the readable mission name, while the derived id (`sq-f8f4d208-scaffold-dete-24b281`) identifies the tab without being readable.
+It is used whole: measured on herdr-app 0.1.18, `tab.rename` keeps a 300-character name unchanged, so the app forces no truncation and the adapter derives none.
+The title is therefore a pure function of the task id, which is what makes a relaunch stable - the same task writes the same title on the same tab id.
+
+The title lives in the app's own state, not on the terminal: the app keeps it in that machine's core doc, keyed by tab id (`~/.local/state/herdr-core/default/docs.json` holds it, next to the space and tab records), so it survives an app relaunch and is what every client of that core shows.
+Repeating it is harmless, and the adapter writes it on every create, so a task that already has a title converges on the same one.
+This also means the write needs the app: when the app is not running there is no tab to name, and the spawn reports it and continues.
+
+Only that one tab is ever addressed, by id.
+The write never targets a position and never "the active tab", so the person's own working tab can neither be renamed, focused, nor reordered.
+After the labels land the app learns about the tab on the core's event stream, so a create can arrive before the tab exists; that one answer (`no tab`) is retried for a bounded budget and every other answer is reported at once.
+
 The write is best-effort and never changes a task's outcome:
 
-- **Absent, unreadable, or blank setting** - no label is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
-- **A failed write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. Placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command warns and keeps the task, because a missing display preference must never block real work.
-- **Idempotent** - it is a plain label set, so repeating it leaves exactly one value per label.
+- **Absent, unreadable, or blank setting** - neither a label nor a title is written and nothing else changes. This is the default, and it is exactly the behavior before this setting existed.
+- **A failed label write** - the spawn keeps the terminal it created and prints a warning naming the exact address, the core's own rejection reason, and the command that sets the labels by hand. No title is attempted, because without the labels the app has no tab for that terminal.
+- **A failed title write** - the spawn keeps the terminal, its labels, and its task; the warning names the exact terminal, the exact tab, the app's own reason, and the command that renames the tab by hand. A missing `herdr-app`, an app that is not running, and an id the app does not know are all this case.
+- **Outside the guard** - placement is deliberately outside the version and protocol guard: a core whose CLI lacks the label command, or an app whose CLI is absent, warns and keeps the task, because a missing display preference must never block real work.
+- **Idempotent** - the label write is a plain set, so repeating it leaves exactly one value per label, and renaming a tab to the title it already has leaves it named.
 
 Adoption has two product-side consequences worth knowing.
 A terminal adopted into a space is kept by the core: `keep` is measured flipping from false to true, and the product's own contract for a kept terminal is that one lost with the core comes back as a shell in its last folder instead of disappearing.
@@ -107,7 +136,7 @@ Adoption is also one-way on the app's side: clearing the labels does not take th
 
 ### Reversal
 
-The adapter's half clears both labels on one exact terminal:
+The adapter's half clears both labels and gives the tab its number back, on one exact terminal:
 
 ```text
 . bin/sq-backend.sh
@@ -116,7 +145,16 @@ fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>
 ```
 
 It runs the same identity check every other write runs - this base's `squad.base` label, the recorded core id, and, when the optional `sq-<task-id>` is passed, this task's `squad.task` label - so it can only ever reach one of this base's own terminals, and it removes or relabels nothing else.
-The equivalent by hand is `hc label <address> herdr.space= herdr.tab=`.
+It resolves the tab from that verified terminal's own `herdr.tab` label before the label goes, so the title it clears is that tab and no other; a terminal that carries no such label titles nothing.
+A read it cannot resolve refuses before any write, so the removal never does half its work.
+
+The equivalent by hand is both writes, and a tab's id is the value the label held:
+
+```text
+hc get --json <address> | jq -r '.labels["herdr.tab"]'
+hc label <address> herdr.space= herdr.tab=
+herdr-app do tab.rename --id <tab> --name ""
+```
 
 That clear is deliberately not a full restore of the app's label set: it removes only the two labels this adapter wrote, because the app keeps its own `where` record, and adopting a terminal does not give Squad ownership of every label on it.
 A remaining `where: "squad / N"` after the clear is the app's own bookkeeping, not a placement Squad still claims.
@@ -139,7 +177,7 @@ Removing `config/herdr-core-space` stops new terminals from being labeled; termi
 
 ## Commands this backend runs
 
-Every command is addressed to one opaque terminal; `<s>` is the recorded session and `<t>` the recorded address.
+Every core command is addressed to one opaque terminal, and every app command to one tab id, so nothing is addressed by name or by position; `<s>` is the recorded session, `<t>` the recorded address and `<tab>` the recorded tab id.
 
 | Why | Exact command |
 | --- | --- |
@@ -154,6 +192,8 @@ Every command is addressed to one opaque terminal; `<s>` is the recorded session
 | Complete rendered viewport (busy hashing) | `hc read --json --lines 0 <t>`, accepted only when `.complete` is true, `.how` is `screen`, and the text is non-empty |
 | Create a task terminal | `hc run --bg --json --no-parent --name <name> --cwd <project> --label squad.task=<id> --label squad.base=<base>` |
 | Place the terminal in the configured desktop space, as its own tab | `hc label <t> herdr.space=<id> herdr.tab=sq-<base-hash>-<slug>` |
+| Name that tab with the mission title | `herdr-app do tab.rename --id sq-<base-hash>-<slug> --name <task-id>` |
+| Clear the title again (the same id, empty name: its number back) | `herdr-app do tab.rename --id <tab> --name ""` |
 | Deliver text | `hc send --json --if idle <t> <text>` (a program reporting `idle`), `hc send --json <t> <text>` (a program reporting `done`, or a silent one) |
 | Press one named key | `hc keys --json <t> <key>` |
 | Close | `hc kill --json <t>`, confirm `.state == finished`, then `hc rm --json <t>`, confirm `.removed == <t>` |
