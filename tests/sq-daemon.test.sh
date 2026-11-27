@@ -2884,11 +2884,21 @@ test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers() {
     fm_backend_tuios_target_ready() { return 0; }
     fm_pid_identity() { printf 'identity'; }
     SQUAD_SUPERVISOR_BACKEND=tuios
-    local now primary=sq:primary worker=sq:worker verdict
-    now=$(date '+%s%3N' 2>/dev/null)
-    case "$now" in *[!0-9]*|'') now=$(($(date '+%s') * 1000)) ;; esac
+    local now primary=sq:primary worker=sq:worker verdict ready window
+    stamp_now() {
+      local stamp
+      stamp=$(date '+%s%3N' 2>/dev/null)
+      case "$stamp" in *[!0-9]*|'') stamp=$(($(date '+%s') * 1000)) ;; esac
+      printf '%s' "$stamp"
+    }
     write_record() {  # <file> <session> <window> [heartbeat] [pid] [version]
-      jq -n --arg s "$2" --arg w "$3" --argjson hb "${4:-$now}" --argjson pid "${5:-$$}" --argjson v "${6:-3}" \
+      # Stamp the heartbeat per write, as a live extension does. A timestamp
+      # captured once before earlier work goes stale when a loaded runner spends
+      # more than the 5s window before the write, so a fresh assertion would
+      # correctly refuse it as stale for a reason unrelated to target identity.
+      local heartbeat=${4:-}
+      [ -n "$heartbeat" ] || heartbeat=$(stamp_now)
+      jq -n --arg s "$2" --arg w "$3" --argjson hb "$heartbeat" --argjson pid "${5:-$$}" --argjson v "${6:-3}" \
         '{version:$v,pid:$pid,identity:"identity",session:$s,window:$w,idle:true,draft:false,prompts:0,sending:false,heartbeat:$hb}' > "$1"
     }
     # Name derivation is part of the contract with the extension.
@@ -2899,10 +2909,11 @@ test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers() {
     write_record "$(fm_afk_pi_handoff_ready_file "$state" "$primary")" sq primary
     write_record "$(fm_afk_pi_handoff_ready_file "$state" "$worker")" sq worker
     write_record "$state/.pi-away-handoff/ready.json" sq worker
-    fm_afk_pi_handoff_ready "$state" "$primary" >/dev/null \
-      || fail "a worker's records must not evict the primary's readiness"
-    [ "$(fm_afk_pi_handoff_ready "$state" "$primary" | jq -r '.window')" = primary ] \
-      || fail "readiness must return the primary's own record"
+    ready=$(fm_afk_pi_handoff_ready "$state" "$primary") \
+      || fail "a worker's records must not evict the primary's readiness (verdict: $(fm_afk_pi_handoff_evaluate "$state" "$primary"))"
+    window=$(printf '%s' "$ready" | jq -r '.window')
+    [ "$window" = primary ] \
+      || fail "readiness must return the primary's own record (got window '$window')"
     # Only another window's record is on file: not ready, and the reason says so.
     rm -f "$(fm_afk_pi_handoff_ready_file "$state" "$primary")"
     if fm_afk_pi_handoff_ready "$state" "$primary" >/dev/null; then
@@ -2918,6 +2929,7 @@ test_pi_handoff_ready_is_per_target_and_not_evicted_by_workers() {
     # Every refusal names its reason, so a fallback is never silent.
     local f
     f=$(fm_afk_pi_handoff_ready_file "$state" "$primary")
+    now=$(stamp_now)
     write_record "$f" sq primary $((now - 60000))
     [ "$(fm_afk_pi_handoff_evaluate "$state" "$primary")" = "refused stale-heartbeat" ] || fail "stale heartbeat reason"
     write_record "$f" sq primary "$now" 999999
