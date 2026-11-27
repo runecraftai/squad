@@ -37,10 +37,14 @@ export SQUAD_HC_SEND_RC="$TMP_ROOT/send-rc.txt"
 export SQUAD_HC_READ_TEXT="$TMP_ROOT/read.txt"
 export SQUAD_HC_KEYS_LOG="$TMP_ROOT/keys.log"
 export SQUAD_HC_KILL_LOG="$TMP_ROOT/kill.log"
+export SQUAD_HC_LABEL_LOG="$TMP_ROOT/label.log"
+export SQUAD_HC_LABELS="$TMP_ROOT/labels.tsv"
 export SQUAD_HC_GET_COUNT="$TMP_ROOT/get-count.txt"
 : > "$SQUAD_HC_LOG"
 : > "$SQUAD_HC_KEYS_LOG"
 : > "$SQUAD_HC_KILL_LOG"
+: > "$SQUAD_HC_LABEL_LOG"
+: > "$SQUAD_HC_LABELS"
 printf 'probe screen\n> ' > "$SQUAD_HC_READ_TEXT"
 printf '0' > "$SQUAD_HC_SEND_RC"
 : > "$SQUAD_HC_SEND_KIND"
@@ -184,6 +188,27 @@ case "$cmd" in
     printf '%s\n' "${shift_args[*]}" >> "$SQUAD_HC_KEYS_LOG"
     printf '{"status":null,"turn":0}\n'
     ;;
+  label)
+    # `hc label <t> k=v...`: one address, then set semantics - a value is
+    # replaced, and an empty value removes the key.
+    address=${positional[1]:-}
+    pairs=()
+    [ "${#positional[@]}" -gt 2 ] && pairs=("${positional[@]:2}")
+    printf '%s %s\n' "$address" "${pairs[*]:-}" >> "$SQUAD_HC_LABEL_LOG"
+    if [ "${SQUAD_HC_LABEL_FAIL:-0}" = 1 ]; then
+      printf '{"error":{"kind":"internal","message":"label store busy","hint":"retry"}}\n' >&2
+      exit 1
+    fi
+    for pair in ${pairs[@]+"${pairs[@]}"}; do
+      key=${pair%%=*}
+      value=${pair#*=}
+      awk -F'\t' -v a="$address" -v k="$key" '!($1 == a && $2 == k)' "$SQUAD_HC_LABELS" \
+        > "$SQUAD_HC_LABELS.next" 2>/dev/null || :
+      [ -z "$value" ] || printf '%s\t%s\t%s\n' "$address" "$key" "$value" >> "$SQUAD_HC_LABELS.next"
+      mv "$SQUAD_HC_LABELS.next" "$SQUAD_HC_LABELS"
+    done
+    printf '{"address":"%s"}\n' "$address"
+    ;;
   kill)
     address=${positional[1]:-}
     printf 'kill %s\n' "$address" >> "$SQUAD_HC_KILL_LOG"
@@ -273,7 +298,8 @@ write_world() {  # write a baseline hello + schema so only the case under test d
   unset SQUAD_HC_HELLO SQUAD_HC_STATUS_FAIL SQUAD_HC_SCHEMA_FAIL SQUAD_HC_GET_RC
   unset SQUAD_HC_RUN_FAIL SQUAD_HC_KILL_FAIL SQUAD_HC_RM_FAIL SQUAD_HC_SEND_ERROR
   unset SQUAD_HC_KILL_SWAP SQUAD_HC_LIST_ALL
-  unset SQUAD_HC_LABEL_TASK
+  unset SQUAD_HC_LABEL_TASK SQUAD_HC_LABEL_FAIL
+  unset SQUAD_CONFIG_OVERRIDE
   export SQUAD_HC_LABEL_BASE="$BASE_LABEL" SQUAD_HC_RUN_BASE="$BASE_LABEL"
   unset SQUAD_HC_READ_SHAPE
   export SQUAD_HC_CORE_ID=core-a
@@ -1358,6 +1384,139 @@ other_name=$(fm_backend_herdr_core_name_for_task 'a-very-long-task-id-that-excee
 [ "$long_name" != "$other_name" ] || fail 'two long task ids must not share one name'
 case "$long_name" in *[!a-z0-9_-]*) fail "a name may only use a-z 0-9 - _ (got '$long_name')" ;; esac
 pass 'create_task is exact, labelled, duplicate-safe and name-limited'
+
+# --- presentation: one optional desktop space (S3) -------------------------
+
+# SQUAD_BASE is $TMP_ROOT/base (set with the other fixtures); the config dir is
+# named directly because a subshell in the create_task block also assigns it.
+SPACE_CONFIG="$TMP_ROOT/base/config/herdr-core-space"
+mkdir -p "$TMP_ROOT/base/config"
+reset_label_state() {
+  : > "$SQUAD_HC_LABEL_LOG"
+  : > "$SQUAD_HC_LABELS"
+  : > "$SQUAD_HC_KILL_LOG"
+  printf '{"terminals":[]}\n' > "$SQUAD_HC_LIST"
+}
+space_labels() { awk -F'\t' -v key='herdr.space' '$2 == key { print $1 }' "$SQUAD_HC_LABELS"; }
+
+# Configured: the terminal this create returned carries the configured space,
+# and the call names exactly that one address and nothing else.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+address=$(SQUAD_HC_NEW_ADDRESS=t7 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
+  || fail 'create_task must succeed with a configured presentation space'
+[ "$address" = t7 ] || fail "a labelled create still returns its opaque address (got '$address')"
+expected_tab="sq-$BASE_HASH-probe"
+assert_grep "t7 herdr.space=squad-desk herdr.tab=$expected_tab" "$SQUAD_HC_LABEL_LOG" \
+  'the created terminal carries the configured space and its own derived tab'
+[ "$(grep -c . "$SQUAD_HC_LABEL_LOG" || true)" = 1 ] \
+  || fail "one label write only (saw: $(cat "$SQUAD_HC_LABEL_LOG"))"
+assert_grep "t7	herdr.space	squad-desk" "$SQUAD_HC_LABELS" 'the label state holds the one address and value'
+assert_grep "t7	herdr.tab	$expected_tab" "$SQUAD_HC_LABELS" 'the tab label is the literal base-scoped task identity'
+[ "$(fm_backend_herdr_core_tab_for_task 'probe')" != "$(fm_backend_herdr_core_tab_for_task 'another-task')" ] \
+  || fail 'two tasks must not share one tab id'
+expected_labels=$(printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\t%s' "$expected_tab")
+[ "$(cat "$SQUAD_HC_LABELS")" = "$expected_labels" ] \
+  || fail "the create writes exactly the space and tab rows for its own address (saw: $(cat "$SQUAD_HC_LABELS"))"
+
+# Idempotent: running the same write again returns success and leaves exactly
+# one value, because the product's own label write is a set.
+fm_backend_herdr_core_apply_presentation_space default t7 probe \
+  || fail 'a repeated label write for the same space must succeed'
+[ "$(space_labels | grep -c . || true)" = 1 ] \
+  || fail "a repeated write must leave one space label (got: $(space_labels | tr '\n' ' '))"
+assert_grep "t7	herdr.space	squad-desk" "$SQUAD_HC_LABELS" 'the repeated write leaves the same value'
+
+# The effective config dir wins: with SQUAD_CONFIG_OVERRIDE set, the override's
+# value is the one written and the base's own config is never read, so an
+# ambient override can neither supply nor mask a space.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+override_config="$TMP_ROOT/override-config"
+mkdir -p "$override_config"
+printf 'squad-override\n' > "$override_config/herdr-core-space"
+address=$(SQUAD_CONFIG_OVERRIDE="$override_config" SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
+  || fail 'create_task must succeed with an override config dir'
+[ "$address" = t7 ] || fail "an override-configured create returns its opaque address (got '$address')"
+assert_grep 't7 herdr.space=squad-override' "$SQUAD_HC_LABEL_LOG" \
+  'the override config dir wins over the base config dir'
+assert_no_grep 'squad-desk' "$SQUAD_HC_LABELS" \
+  'a value under the base config dir is never used when the override names a space'
+
+# Absent setting: nothing is written, exactly as before this unit existed.
+write_world
+reset_label_state
+rm -f "$SPACE_CONFIG"
+address=$(SQUAD_HC_NEW_ADDRESS=t7 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT") \
+  || fail 'create_task must succeed with no presentation space configured'
+[ "$address" = t7 ] || fail "an unlabelled create returns its opaque address (got '$address')"
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] \
+  || fail "an absent setting must write no label (saw: $(cat "$SQUAD_HC_LABEL_LOG"))"
+[ ! -s "$SQUAD_HC_LABELS" ] || fail "an absent setting must leave the label state alone"
+
+# A blank setting is the same as an absent one: an empty answer is never a space.
+reset_label_state
+printf '   \n\n' > "$SPACE_CONFIG"
+SQUAD_HC_NEW_ADDRESS=t7 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" >/dev/null \
+  || fail 'a blank setting must not stop the create'
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] || fail 'a blank setting must write no label'
+
+# An unreadable setting (here: the path is a directory) is an empty answer too.
+reset_label_state
+rm -f "$SPACE_CONFIG"
+mkdir -p "$SPACE_CONFIG"
+SQUAD_HC_NEW_ADDRESS=t7 fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" >/dev/null \
+  || fail 'an unreadable setting must not stop the create'
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] || fail 'an unreadable setting must write no label'
+rmdir "$SPACE_CONFIG"
+
+# A failed label write is reported and never fails the spawn: the task keeps the
+# terminal it created, and the warning names the by-hand command.
+write_world
+reset_label_state
+printf 'squad-desk\n' > "$SPACE_CONFIG"
+address=$(SQUAD_HC_LABEL_FAIL=1 SQUAD_HC_NEW_ADDRESS=t7 \
+  fm_backend_herdr_core_create_task default 'sq-probe' "$TMP_ROOT" 2>"$TMP_ROOT/label-stderr.txt") \
+  || fail 'a failing label write must not fail the spawn'
+[ "$address" = t7 ] || fail "a failed label write still returns the created address (got '$address')"
+assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'could not place herdr-core terminal' \
+  'a failed label write warns instead of failing'
+assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'label store busy' \
+  "the warning carries hc's own rejection reason"
+assert_contains "$(cat "$TMP_ROOT/label-stderr.txt")" 'hc label t7 herdr.space=squad-desk herdr.tab=' \
+  'the warning names the exact by-hand command'
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'a failed label write must not close the terminal it could not label'
+
+# The reversal: clearing names exactly its own terminal and removes nothing.
+SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE="$BASE_LABEL" \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+reset_label_state
+printf 't7	herdr.space	squad-desk\nt7	herdr.tab	sq-tab-one\nt8	herdr.space	squad-desk\nt8	herdr.tab	sq-tab-two\n' > "$SQUAD_HC_LABELS"
+fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \
+  || fail 'clearing the presentation labels on its own terminal must succeed'
+assert_grep 't7 herdr.space= herdr.tab=' "$SQUAD_HC_LABEL_LOG" \
+  'the clear names the exact address with both values empty'
+assert_no_grep 't8' "$SQUAD_HC_LABEL_LOG" 'another terminal is never named by the clear'
+cleared=$(awk -F'\t' '$1 == "t7"' "$SQUAD_HC_LABELS")
+[ -z "$cleared" ] || fail "the cleared terminal lost both placement labels (got: $cleared)"
+assert_grep "t8	herdr.space	squad-desk" "$SQUAD_HC_LABELS" "another terminal's space label is left exactly as it was"
+assert_grep "t8	herdr.tab	sq-tab-two" "$SQUAD_HC_LABELS" "another terminal's tab label is left exactly as it was"
+[ ! -s "$SQUAD_HC_KILL_LOG" ] || fail 'the reversal removes no terminal'
+
+# A foreign identity refuses: another base's terminal is never relabelled.
+SQUAD_HC_LABEL_TASK=probe SQUAD_HC_LABEL_BASE=anotherbase \
+  write_live_terminal t7 live pi '{"app":"pi","state":"idle"}'
+: > "$SQUAD_HC_LABEL_LOG"
+out=$(fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' 2>&1) && rc=0 || rc=$?
+[ "$rc" -ne 0 ] || fail "another base's terminal must refuse the clear"
+assert_contains "$out" 'refusing to touch another base' 'the refusal names why'
+[ ! -s "$SQUAD_HC_LABEL_LOG" ] || fail 'a refused clear must write no label'
+write_world
+rm -f "$SPACE_CONFIG"
+pass 'presentation labels: one configured space, exact address, best-effort, reversible'
 
 # --- transition producer --------------------------------------------------
 

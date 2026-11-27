@@ -47,6 +47,22 @@
 #   * Status is the program's own OSC 7501 report. `busy_state` maps it, and
 #     `blocked` is a person-needed verdict, never ordinary work. A lane that
 #     reports no status is supervised by polling exactly as a tmux lane is.
+#   * PRESENTATION IS TWO OPTIONAL LABELS ON ONE TERMINAL. When the local
+#     config/herdr-core-space setting names a desktop space, the terminal this
+#     adapter just created also carries `herdr.space=<space>` and
+#     `herdr.tab=<the base-scoped name its terminal is created with>`, which is
+#     what makes the app show it: a measured `hc run --bg --no-parent` terminal
+#     with no pane joins that space as its own tab and needs neither `--keep`
+#     nor an attach. An absent or unreadable setting means no label is written
+#     and nothing else changes. The write is best-effort: it never fails a
+#     spawn, it is a plain set (repeating it leaves the same state), and it
+#     names the one address this create just returned. Clearing it takes the
+#     labels off; the app's own `herdr-app do terminal.park --terminal
+#     <address>` is what takes the pane away, because adoption is one-way on
+#     the app's side (docs/herdr-core-backend.md owns the measured
+#     transcript). Placement is deliberately outside the guard below: a core
+#     whose CLI lacks the label command warns and keeps the task, because a
+#     missing display preference must never block real work.
 #
 # Sourced only through bin/sq-backend.sh's fm_backend_source, never directly.
 SQUAD_BACKEND_HERDR_CORE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -81,6 +97,13 @@ events.subscribe:labels'
 # its own terminals (herdr-core has no workspace or session grouping of its own).
 SQUAD_BACKEND_HERDR_CORE_TASK_LABEL='squad.task'
 SQUAD_BACKEND_HERDR_CORE_BASE_LABEL='squad.base'
+
+# The desktop app's own placement label, and the local setting that names the
+# space it points at. The setting is commander-private config, never inferred:
+# an absent or unreadable file means this adapter writes no app state at all.
+SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL='herdr.space'
+SQUAD_BACKEND_HERDR_CORE_TAB_LABEL='herdr.tab'
+SQUAD_BACKEND_HERDR_CORE_SPACE_CONFIG='herdr-core-space'
 
 # Per-target dedupe markers for the blocked-transition producer, keyed like the
 # sentry's own .stale-<key> files.
@@ -395,9 +418,11 @@ fm_backend_herdr_core_recorded_core_id() {  # <target> [task-id]
 # refuses when the recorded core id no longer matches, requires the address to be
 # live, and requires its `squad.task` label to be this task's. An `<expected>`
 # label of `sq-<id>` selects that task; an empty one still requires a readable
-# address. `<allow-finished>` is set only by the cleanup path, because a task
-# whose program already exited is a `finished` address that a close must still
-# be able to retire - it never licenses a write of any other kind.
+# address. `<allow-finished>` is set by the cleanup path and by the presentation
+# clear, because a task whose program already exited is a `finished` address
+# that a close must still be able to retire, and a record whose program already
+# exited can still carry the placement labels a clear must remove. It never
+# licenses a create or any write other than that label removal.
 # `<expected-base>` names the `squad.base` label the terminal must carry, and an
 # empty one means this base's own: two bases sharing one core both number their
 # tasks from 1, so the task label alone never proves ownership, and no close or
@@ -957,6 +982,109 @@ $addresses
 EOF
 }
 
+# --- presentation: one optional desktop-app placement label ------------------
+
+# fm_backend_herdr_core_presentation_space: the desktop space this base's task
+# terminals belong to, or empty when the person configured none. It is a single
+# positive identifier read fresh from the effective config dir's
+# config/herdr-core-space, using the first-non-empty-line, whitespace-stripped
+# convention the other scalar config items already use (config/backend,
+# config/crew-harness).
+# Nothing is inferred: an absent, unreadable, or blank file answers empty, and an
+# empty answer means this adapter writes no app state at all.
+# The id is local to this machine's app, exactly as the product's own labels are;
+# an id the app does not know becomes a new space with the app's own name.
+# Only the space id is configured. The tab id comes from the task's own identity
+# (see fm_backend_herdr_core_tab_for_task), so nothing else in the person's app
+# state is touched and no tab is guessed.
+#
+# Note the product's own consequence of adopting a terminal into a space: the
+# core keeps it, so a terminal lost with the core comes back as a shell in its
+# last folder instead of disappearing (docs/herdr-core-backend.md).
+fm_backend_herdr_core_presentation_space() {
+  local base=${SQUAD_BASE:-${SQUAD_ROOT:-}} config_dir file line value
+  config_dir=${SQUAD_CONFIG_OVERRIDE:-${base:+$base/config}}
+  [ -n "$config_dir" ] || return 0
+  file=$config_dir/$SQUAD_BACKEND_HERDR_CORE_SPACE_CONFIG
+  [ -f "$file" ] && [ -r "$file" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    value=$(printf '%s' "$line" | tr -d '[:space:]') || value=
+    [ -n "$value" ] || continue
+    printf '%s' "$value"
+    return 0
+  done < "$file"
+  return 0
+}
+
+# fm_backend_herdr_core_tab_for_task: the app tab this task's terminal belongs
+# to. The tab id is the task's own derived identity - the same base-scoped,
+# collision-safe value the terminal is named with - so one mission owns one tab
+# and a relaunch returns to that tab instead of stacking a second one. The id is
+# app-local, so nothing is configured for it and nothing is guessed: two bases
+# and two tasks never share one.
+fm_backend_herdr_core_tab_for_task() {  # <task-id> -> app tab id
+  fm_backend_herdr_core_name_for_task "${1:-}"
+}
+
+# fm_backend_herdr_core_apply_presentation_space: place ONE terminal in the
+# configured space, as its own tab. Two labels, one address, one call.
+# Idempotent by the product's own set semantics - writing the same pair again
+# leaves exactly one value each - and best-effort by contract: a refused or
+# failed write warns on stderr and returns nonzero for a caller that cares, and
+# no caller may turn it into a spawn failure. Every write names the one address
+# the create just returned, so it can never reach another terminal.
+#   0  the labels are in place, or nothing is configured
+#   1  a configured label could not be written; already reported
+fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-id>
+  local session=${1:-default} address=${2:-} task_id=${3:-} space tab err_file reason rc=0
+  [ -n "$address" ] || return 1
+  space=$(fm_backend_herdr_core_presentation_space)
+  [ -n "$space" ] || return 0
+  tab=$(fm_backend_herdr_core_tab_for_task "$task_id")
+  err_file=$(mktemp "${TMPDIR:-/tmp}/sq-hc-label.XXXXXX") || err_file=
+  if [ -n "$err_file" ]; then
+    fm_backend_herdr_core_cli "$session" label "$address" \
+      "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space" \
+      "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >/dev/null 2>"$err_file" || rc=$?
+    reason=$(head -n 1 "$err_file" 2>/dev/null | tr -d '\r')
+    rm -f "$err_file"
+  else
+    fm_backend_herdr_core_cli "$session" label "$address" \
+      "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space" \
+      "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >/dev/null 2>&1 || rc=$?
+  fi
+  [ "$rc" -eq 0 ] && return 0
+  echo "warning: could not place herdr-core terminal $session:$address in the configured desktop space '$space'; the task is unaffected and stays in 'hc ls' (reason: ${reason:-no reason given}). Set it by hand with: HC_SESSION=$session hc label $address $SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=$space $SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=$tab" >&2
+  return 1
+}
+
+# fm_backend_herdr_core_clear_presentation_space: the adapter's half of the
+# reversal. It clears both placement labels from ONE exact terminal, after the
+# same identity check every other write runs (this base's `squad.base` label,
+# plus this task's `squad.task` label when one is named), and it never removes,
+# kills, or relabels a terminal - the address keeps running exactly as it was.
+# A recorded core id and session that no longer agree refuse, so a recycled
+# address is never cleared. A finished terminal is accepted, because a record
+# whose program already exited can still carry the labels.
+# Clearing the labels alone does NOT take the pane off the person's screen: the
+# app binds an adopted terminal one way and keeps it
+# (docs/herdr-core-backend.md owns the measured transcript), so the documented
+# reversal pairs this with `herdr-app do terminal.park --terminal <address>`.
+#   0  both labels are cleared on that terminal
+#   1  refused: a foreign, unreadable or unverifiable identity, or a failed write
+fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
+  local target=${1:-} expected=${2:-} session address
+  fm_backend_herdr_core_verify "$target" "$expected" 1 || return 1
+  session=$SQUAD_BACKEND_HERDR_CORE_SESSION
+  address=$SQUAD_BACKEND_HERDR_CORE_ADDRESS
+  fm_backend_herdr_core_cli "$session" label "$address" \
+    "$SQUAD_BACKEND_HERDR_CORE_SPACE_LABEL=" \
+    "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL=" >/dev/null || {
+    echo "error: herdr-core refused to clear the presentation labels on $address in session '$session'" >&2
+    return 1
+  }
+}
+
 fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
   local session=${1:-} label=${2:-} cwd=${3:-} task_id base name out address duplicate err_file reason
   [ -n "$label" ] || { echo 'error: herdr-core create_task needs a task label' >&2; return 1; }
@@ -1009,6 +1137,11 @@ fm_backend_herdr_core_create_task() {  # <session> <task-label> <cwd> -> address
     echo "error: herdr-core returned no usable opaque address for $label" >&2
     return 1
   fi
+  # Presentation comes after the terminal exists and carries its own two Squad
+  # labels, so the placement labels can only ever land on the terminal this
+  # create just returned. It is best-effort by contract: a failed write is
+  # reported and the spawn keeps its endpoint.
+  fm_backend_herdr_core_apply_presentation_space "$session" "$address" "$task_id" || true
   printf '%s' "$address"
 }
 

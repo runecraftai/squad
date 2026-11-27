@@ -1030,11 +1030,106 @@ Measured during the design recon on the same binary, and still relied on here:
 - `hc get` reports `status_ms`, `reported`, the decoded `status.msg`, and `foreground.{argv,cwd,name,pid}`; `foreground.cwd` follows the foreground process, which is what the worktree poll reads.
 - `hc kill` is idempotent and `hc rm` refuses a live terminal with `kind:"live"`, so the adapter confirms `state=finished` after `kill` and `.removed == <address>` after `rm`.
 
+### Desktop-app presentation (hand capture, 2026-11-27)
+
+The transcript below was captured by hand on this machine on 2026-11-27 against the running app (`herdr-app 0.1.18`, `hc 0.1.22`); it was not re-captured inside the validation pipeline, whose environment has no `herdr-app` on `PATH`.
+What the app needs in order to show a Squad task was measured on the commander's live `default` core with `hc 0.1.22` and `herdr-app 0.1.18`.
+The subject was this unit's own task terminal (`t7`), addressed exactly, and every step was reversed afterwards.
+`herdr-app ls` is the instrument: it prints what the window actually shows, space by space and tab by tab.
+
+Baseline - a terminal created exactly as Squad creates one, with `hc run --bg --no-parent`:
+
+```json
+{"address":"t7","keep":false,"labels":{"squad.base":"squad-f8f4d208","squad.task":"squad-herdr-core-adapter-s3"}}
+```
+
+`herdr-app ls` showed one space, one tab and one terminal (`t4`); the Squad terminal was in `hc ls` and nowhere on the screen.
+
+Label write, space only, on an id the app did not know:
+
+```sh
+hc label t7 herdr.space=spS3probe
+```
+
+```json
+{"address":"t7","keep":true,"labels":{"herdr.space":"spS3probe","squad.base":"squad-f8f4d208","squad.task":"squad-herdr-core-adapter-s3","where":"squad / 1"}}
+```
+
+So a background terminal with no pane is adopted by a label alone: the app created that space and a tab holding `t7`, and the core turned `keep: false` into `keep: true` and recorded `where`.
+Neither `--keep`, nor `attach`ing after the create, nor creating without `--bg` is required.
+The write adds its labels beside `squad.task` and `squad.base` and never instead of them, which is why every identity, status and teardown check still passes on a placed terminal.
+
+Clearing that label again did **not** undo it: `keep` stayed `true`, `where` stayed, and the space stayed in the app.
+Adoption is one-way on the app's side, so the reversal needs the app's own `terminal.park`.
+
+Label write against the person's real space, with a hand-written tab id in the adapter's `sq-<base-hash>-<slug>` shape (which shortens a long id, as the adapter's own create below shows):
+
+```sh
+hc label t7 herdr.space=sp7b9a496a3b6da2d94d5341c408030af3 herdr.tab=sq-f8f4d208-squad-herdr-core-adapter-s3
+```
+
+```json
+{"address":"t7","keep":true,"labels":{"herdr.space":"sp7b9a496a3b6da2d94d5341c408030af3","herdr.tab":"sq-f8f4d208-squad-herdr-core-adapter-s3","squad.base":"squad-f8f4d208","squad.task":"squad-herdr-core-adapter-s3","where":"squad / 2"}}
+```
+
+`herdr-app ls` then showed the person's own space with its untouched tab `1` holding `t4`, and a new tab `2` holding only `t7`.
+That is why the adapter writes both labels: the space places the mission, and the task-derived tab keeps it out of the tab the person is working in.
+
+Reversal, in two steps, confirmed by `herdr-app ls` returning to the baseline exactly:
+
+```sh
+herdr-app do terminal.park --terminal t7
+hc label t7 herdr.space= herdr.tab= where=
+```
+
+```json
+{"address":"t7","keep":false,"labels":{"squad.base":"squad-f8f4d208","squad.task":"squad-herdr-core-adapter-s3"}}
+```
+
+The app was left with one space, one tab and one terminal (`t4`); the terminal itself kept running throughout, and only the app's pane for it was taken away.
+
+Finally the adapter's own code path was driven live, with `config/herdr-core-space` pointing at the person's space:
+
+```sh
+SQUAD_BASE=<worktree> SQUAD_CONFIG_OVERRIDE=/tmp/sq-s3-live/config \
+  fm_backend_herdr_core_create_task default sq-s3-live-proof /home/rehem/Projects/squad
+```
+
+It returned `t15`, whose record read:
+
+```json
+{"address":"t15","keep":true,"labels":{"herdr.space":"sp7b9a496a3b6da2d94d5341c408030af3","herdr.tab":"sq-38433e60-s3-live-proof","squad.base":"squad-38433e60","squad.task":"s3-live-proof","where":"squad / 2"}}
+```
+
+`herdr-app ls` showed the person's tab `1` with `t4` untouched beside a new tab `2` holding `t15`.
+Closing that address through the adapter (`fm_backend_herdr_core_kill default:t15 "" sq-s3-live-proof`, kill then confirmed removal) returned the app to exactly the baseline - one space, one tab, `t4` - so a task that ends needs no park: a killed terminal's pane closes with it, and only a terminal that keeps running needs `terminal.park`.
+
+To refresh the app-side claim, run this block on the machine where the app is running; it touches only the address it creates:
+
+```sh
+addr=$(hc run --bg --json --no-parent --name recapture --cwd "$PWD" | jq -r .address)
+hc label "$addr" herdr.space=<space-id> herdr.tab=<tab-id>
+hc get --json "$addr"    # labels carry herdr.space, herdr.tab and where, keep true
+herdr-app ls             # the person's space lists a tab whose terminal is that address
+herdr-app do terminal.park --terminal "$addr"
+hc label "$addr" herdr.space= herdr.tab= where=
+herdr-app ls             # back to the baseline
+hc kill "$addr"          # retiring the probe is a separate step: parking leaves it live
+hc rm "$addr"
+```
+
+This is the one command that refreshes the app-side claim.
+The app owns the pane, so the `terminal.park` step is what removes it, and a task that ends needs neither step.
+The block then kills and removes the one probe terminal it created, because parking takes away only its pane.
+
+Portable coverage of the write, the absent and unreadable setting, the idempotent repeat, the failing write that keeps the spawn, and the address-exact clear is in `tests/sq-backend-herdr-core.test.sh`; the live facts above are what that code is for.
+
 Not established:
 
 - **Native event push (S2).** This backend is supervised by the sentry's ordinary poll only; `fm_backend_has_push` returns false for it, so the event-wait splice is never used. The wake latency of a blocked program is therefore at most one poll interval, not the near-immediate wake TUIOS and Herdr get from a stream.
 - **Answering a blocked operator prompt.** No prompt-id-bound answer exists in `hc`, and this backend does not type keys into a blocked program. `bin/sq-send.sh` refuses with `agent_blocked` and a person answers in the terminal.
-- **Presentation labels on the desktop app (S3).** Squad writes only its own two labels, so a Squad terminal appears in `hc ls` and on the phone, but not in a desktop app space.
+- **Presentation labels on the desktop app (S3)** are hand-captured for placement and reversal - see "Desktop-app presentation" above - but were not re-captured inside the validation pipeline, the phone view was not observed, and no mission has run a full spawn-to-teardown cycle with the labels in place yet.
+- **The kept-terminal restore** behind `keep: true` is the product's documented behavior, not a measured one: what was captured is the flag flipping on adoption, and no core restart was driven to watch a lost terminal come back as a shell.
 - **The primary session and away mode on this backend (S4),** and the default switch (S5a), are separate units; `config/backend` was not changed and TUIOS keeps running in production.
 - **Vendor harness rendering.** The lab's program is a scripted OSC 7501 reporter, not a vendor CLI, so the lab proves the adapter, the product's status plumbing, delivery, and cleanup - not any particular harness's rendering or a model turn. The recon separately confirmed that `pi 1.6.1` and Claude Code report status while `codex 0.172.0` and the `opencode` on `PATH` (1.18.18) report nothing.
 - **`--no-daemon` for codex** is applied by the launch template on this backend only, from the product's own guidance; no live codex turn was run to confirm it (answering codex's trust dialog would write the commander's `~/.codex`).
