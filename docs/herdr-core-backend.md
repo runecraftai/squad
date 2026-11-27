@@ -107,7 +107,8 @@ Adoption is also one-way on the app's side: clearing the labels does not take th
 The adapter's half clears both labels on one exact terminal:
 
 ```text
-. bin/backends/herdr-core.sh
+. bin/sq-backend.sh
+fm_backend_source herdr-core
 fm_backend_herdr_core_clear_presentation_space <session>:<address> [sq-<task-id>]
 ```
 

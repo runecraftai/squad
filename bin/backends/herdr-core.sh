@@ -418,9 +418,11 @@ fm_backend_herdr_core_recorded_core_id() {  # <target> [task-id]
 # refuses when the recorded core id no longer matches, requires the address to be
 # live, and requires its `squad.task` label to be this task's. An `<expected>`
 # label of `sq-<id>` selects that task; an empty one still requires a readable
-# address. `<allow-finished>` is set only by the cleanup path, because a task
-# whose program already exited is a `finished` address that a close must still
-# be able to retire - it never licenses a write of any other kind.
+# address. `<allow-finished>` is set by the cleanup path and by the presentation
+# clear, because a task whose program already exited is a `finished` address
+# that a close must still be able to retire, and a record whose program already
+# exited can still carry the placement labels a clear must remove. It never
+# licenses a create or any write other than that label removal.
 # `<expected-base>` names the `squad.base` label the terminal must carry, and an
 # empty one means this base's own: two bases sharing one core both number their
 # tasks from 1, so the task label alone never proves ownership, and no close or
