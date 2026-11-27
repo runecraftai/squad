@@ -99,7 +99,7 @@ Pi's `/calm` toggle hides supported transcript chrome - including canonically cl
 
 ### More backends
 
-[tmux](docs/tmux-backend.md) is Squad's verified reference backend; Herdr, Zellij, Orca, cmux, and TUIOS are experimental, with feature support that varies by backend.
+[tmux](docs/tmux-backend.md) is Squad's verified reference backend; Herdr, Zellij, Orca, cmux, TUIOS, and herdr-core are experimental, with feature support that varies by backend.
 See [runtime backend configuration](docs/configuration.md#runtime-backend-configbackend--squad_backend) and each linked backend guide for current requirements and limits.
 
 ## Updates and releases
@@ -210,6 +210,7 @@ The sq-report package uses both: the public skill for agent discovery and `setup
 - [docs/sq-sidebar.md](docs/sq-sidebar.md) - the Squad tmux sidebar (vendored workmux): per-window status cards from the ground-truth state files in a togglable pane.
 - [docs/web-view.md](docs/web-view.md) - a read-only web dashboard of operator state, served over the LAN for viewing from another machine or a phone.
 - [docs/herdr-backend.md](docs/herdr-backend.md) - current setup, safety boundaries, and limits for the experimental Herdr backend.
+- [docs/herdr-core-backend.md](docs/herdr-core-backend.md) - current setup, protocol guard, shared-core safety rules, and limits for the experimental herdr-core (`hc`) backend.
 - [docs/zellij-backend.md](docs/zellij-backend.md) - current setup and limits for the experimental Zellij backend.
 - [docs/orca-backend.md](docs/orca-backend.md) - current setup and limits for the experimental Orca backend.
 - [docs/cmux-backend.md](docs/cmux-backend.md) - current setup, socket security, and limits for the experimental cmux backend.

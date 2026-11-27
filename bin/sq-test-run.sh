@@ -195,7 +195,7 @@ family_for_basename() {
     sq-quota-array-dispatch-live-e2e.test.sh|sq-send-XO-marker-herdr-e2e.test.sh)
       printf '%s\n' live-harness-optin
       ;;
-    sq-backend-herdr.test.sh|sq-backend-tmux-smoke.test.sh|sq-backend-tuios.test.sh|sq-backend.test.sh|\
+    sq-backend-herdr.test.sh|sq-backend-tmux-smoke.test.sh|sq-backend-tuios.test.sh|sq-backend-herdr-core.test.sh|sq-backend.test.sh|\
     sq-tmux-agent-liveness.test.sh|\
     sq-claude-account.test.sh|\
     sq-herdr-session-cleanup.test.sh|sq-send-resolve-key.test.sh|sq-send-strict.test.sh|sq-spawn-batch.test.sh|\
@@ -854,6 +854,17 @@ families_for_changed_path() {
       ;;
     bin/sq-test-run.sh|bin/sq-test-isolation-proof.sh)
       printf '%s\n' pure-contract-unit
+      ;;
+    bin/backends/herdr-core*)
+      # The herdr-core adapter drives the commander's already-running core over one
+      # opaque address; it has no real-daemon lane of its own (its live proof is the
+      # guarded private-core lab), so only the portable dispatch suite applies.
+      printf '%s\n' backend-dispatch
+      ;;
+    bin/sq-herdr-core-lab.sh)
+      # The guarded private-core lab is opt-in and never runs in CI; changing it
+      # belongs to the same backend lane as the adapter it drives.
+      printf '%s\n' backend-dispatch
       ;;
     bin/backends/herdr*|bin/sq-herdr-lab.sh|tests/herdr-test-safety.sh)
       printf '%s\n' real-herdr-gated

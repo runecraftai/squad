@@ -143,14 +143,29 @@ test_supported_backend_endpoint_records_validate() {
   fm_backend_validate_task_endpoint "$dir/home/state/$id.meta" "$id" || fail "valid TUIOS endpoint refused"
   [ "$SQUAD_BACKEND_VALIDATED_TARGET" = "owned:w-opaque_7" ] || fail "TUIOS validation returned wrong identity"
 
-  for backend in tmux herdr zellij orca cmux tuios; do
+  id=herdr-core-task
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=default:t5" "endpoint_task_id=$id" "worktree=$dir/worktree" "project=$dir/project" \
+    "backend=herdr-core" "hc_session=default" "hc_address=t5" "hc_core_id=core-a"
+  fm_backend_validate_task_endpoint "$dir/home/state/$id.meta" "$id" || fail "valid herdr-core endpoint refused"
+  [ "$SQUAD_BACKEND_VALIDATED_TARGET" = "default:t5" ] || fail "herdr-core validation returned wrong identity"
+  # The cleanup identity is a triple: an address without its core id could name
+  # a terminal in another core's registry, so it must never validate.
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=default:t5" "endpoint_task_id=$id" "worktree=$dir/worktree" "project=$dir/project" \
+    "backend=herdr-core" "hc_session=default" "hc_address=t5"
+  if fm_backend_validate_task_endpoint "$dir/home/state/$id.meta" "$id" 2>/dev/null; then
+    fail "a herdr-core endpoint without its core id unexpectedly validated"
+  fi
+
+  for backend in tmux herdr zellij orca cmux tuios herdr-core; do
     set +e
     fm_backend_kill "$backend" "" >/dev/null 2>&1
     target=$?
     set -e
     [ "$target" -ne 0 ] || fail "$backend generic kill accepted an empty target"
   done
-  pass "cleanup identity: valid tmux, Herdr, Zellij, Orca, cmux, and TUIOS records validate while every empty backend target refuses"
+  pass "cleanup identity: valid tmux, Herdr, Zellij, Orca, cmux, TUIOS, and herdr-core records validate while every empty backend target refuses"
 }
 
 test_tmux_empty_target_refuses_without_invocation() {

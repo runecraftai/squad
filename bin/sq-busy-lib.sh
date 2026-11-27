@@ -612,11 +612,11 @@ fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
   # No record at all. A backend's own native verdict is semantic enough to
   # trust for BUSY (a reported or streaming turn is in flight) and for BLOCKED
   # (its native state says a person is needed, e.g. TUIOS `needs_input` or
-  # `errored`); native idle is narrower
+  # `errored`, or herdr-core's own `blocked`/`error`); native idle is narrower
   # than turn state (a long foreground tool call reads idle) and stays
   # unknown here.
   case "$backend" in
-    herdr|tuios)
+    herdr|tuios|herdr-core)
       if command -v fm_backend_busy_state >/dev/null 2>&1; then
         native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null || true)
         case "$native" in

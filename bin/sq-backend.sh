@@ -71,9 +71,16 @@ SQUAD_BACKEND_STATE_DIR="${SQUAD_STATE_OVERRIDE:-$SQUAD_BASE/state}"
 # tuios is EXPERIMENTAL (P6) and spawn-capable, session-provider-only like
 # herdr/zellij/cmux; it binds to an explicitly configured existing session and
 # permits no auto-detection or session creation (docs/tuios-backend.md).
+# herdr-core is EXPERIMENTAL (S1 of the approved herdr-core plan) and
+# spawn-capable, session-provider-only like herdr/zellij/cmux. It drives the
+# commander's already-running herdr-core (`hc`) daemon over one opaque address
+# per task, never starts a core, and is never auto-detected: an `hc`-managed
+# terminal carries no marker this layer may trust, and a core started by a Squad
+# call would inherit this process's environment (docs/herdr-core-backend.md;
+# data/squad-herdr-core-adapter-recon/report.md).
 # codex-app remains deliberately absent; see docs/codex-app-backend.md.
-SQUAD_BACKEND_KNOWN="tmux herdr zellij orca cmux tuios"
-SQUAD_BACKEND_SPAWN="tmux herdr zellij orca cmux tuios"
+SQUAD_BACKEND_KNOWN="tmux herdr zellij orca cmux tuios herdr-core"
+SQUAD_BACKEND_SPAWN="tmux herdr zellij orca cmux tuios herdr-core"
 
 # fm_backend_list_contains: whitespace-delimited membership without relying on
 # shell word splitting. sq-backend.sh is normally sourced by bash scripts, but
@@ -322,6 +329,7 @@ fm_backend_required_tools() {  # <backend>
     zellij) printf '%s' 'zellij jq fob' ;;
     cmux)   printf '%s' 'cmux jq fob' ;;
     tuios)  printf '%s' 'tuios jq fob flock' ;;
+    herdr-core) printf '%s' 'hc jq fob' ;;
     orca)   printf '%s' 'orca' ;;
     *) return 1 ;;
   esac
@@ -339,6 +347,10 @@ fm_backend_required_tool_available() {  # <backend> <tool>
     cmux:cmux)
       fm_backend_source cmux >/dev/null 2>&1 || return 1
       fm_backend_cmux_bin >/dev/null 2>&1
+      ;;
+    herdr-core:hc)
+      fm_backend_source herdr-core >/dev/null 2>&1 || return 1
+      command -v "$(fm_backend_herdr_core_bin)" >/dev/null 2>&1
       ;;
     *) command -v "$tool" >/dev/null 2>&1 ;;
   esac
@@ -408,6 +420,16 @@ fm_backend_endpoint_atom_valid() {  # <value>
   esac
 }
 
+# fm_backend_opaque_address_valid: the strict grammar an opaque endpoint
+# address must satisfy to be addressable by name. It is narrower than the
+# generic atom because an adapter that treats the address as one token has no
+# way to address a value whose first character is punctuation.
+fm_backend_opaque_address_valid() {  # <value>
+  case "$1" in
+    ''|*[!A-Za-z0-9._-]*|[!A-Za-z0-9]*) return 1 ;;
+  esac
+}
+
 # fm_backend_orca_worktree_id_valid: accept both recorded Orca worktree id
 # shapes. macOS builds return a bare atom (UUID); Linux builds (verified live
 # against v1.4.188) return the composite form `<repo-id>::<absolute-path>`,
@@ -447,7 +469,7 @@ fm_backend_orca_declares_no_terminal() {  # <meta-file>
 
 fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
   local meta=$1 id=$2 backend_count backend window worktree project binding_count binding
-  local session pane recorded_session workspace tab terminal worktree_id surface
+  local session pane recorded_session workspace tab terminal worktree_id surface core_id
   SQUAD_BACKEND_VALIDATED_BACKEND=
   SQUAD_BACKEND_VALIDATED_TARGET=
   [ -f "$meta" ] && [ ! -L "$meta" ] || {
@@ -611,6 +633,27 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
         return 1
       fi
       ;;
+    herdr-core)
+      # The cleanup identity is the quadruple: the recorded opaque address, the
+      # task label and base label the terminal itself carries (both checked again
+      # in the adapter immediately before kill and again before rm), and the core
+      # id whose registry owns that address.
+      [ "$binding" = "$id" ] || {
+        echo "REFUSED: herdr-core endpoint metadata for task $id lacks an exact task binding; preserving task state." >&2
+        return 1
+      }
+      recorded_session=$(fm_backend_meta_exact_value "$meta" hc_session) || recorded_session=
+      pane=$(fm_backend_meta_exact_value "$meta" hc_address) || pane=
+      core_id=$(fm_backend_meta_exact_value "$meta" hc_core_id) || core_id=
+      if [ -z "$recorded_session" ] || [ -z "$pane" ] || [ -z "$core_id" ] \
+        || [ "$window" != "$recorded_session:$pane" ] \
+        || ! fm_backend_endpoint_atom_valid "$recorded_session" \
+        || ! fm_backend_opaque_address_valid "$pane" \
+        || ! fm_backend_endpoint_atom_valid "$core_id"; then
+        echo "REFUSED: herdr-core endpoint metadata for task $id is malformed or inconsistent; preserving task state." >&2
+        return 1
+      fi
+      ;;
   esac
   # shellcheck disable=SC2034 # Output globals are consumed by sourcing callers.
   SQUAD_BACKEND_VALIDATED_BACKEND=$backend
@@ -726,6 +769,13 @@ fm_backend_source() {  # <name>
         _SQUAD_BACKEND_TUIOS_SOURCED=1
       fi
       ;;
+    herdr-core)
+      if [ -z "${_SQUAD_BACKEND_HERDR_CORE_SOURCED:-}" ]; then
+        # shellcheck source=/dev/null
+        . "$SQUAD_BACKEND_LIB_DIR/backends/herdr-core.sh" || return 1
+        _SQUAD_BACKEND_HERDR_CORE_SOURCED=1
+      fi
+      ;;
   esac
 }
 
@@ -798,6 +848,7 @@ fm_backend_capture() {  # <backend> <target> <lines> [expected-label]
     orca) fm_backend_orca_capture "$@" ;;
     cmux) fm_backend_cmux_capture "$@" ;;
     tuios) fm_backend_tuios_capture "$@" ;;
+    herdr-core) fm_backend_herdr_core_capture "$@" ;;
     *) echo "error: no capture implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -816,6 +867,7 @@ fm_backend_capture_rendered() {  # <backend> <target> [expected-label]
     herdr) fm_backend_herdr_capture_rendered "$@" ;;
     tuios) fm_backend_tuios_capture_rendered "$@" ;;
     orca) fm_backend_orca_capture_rendered "$@" ;;
+    herdr-core) fm_backend_herdr_core_capture_rendered "$@" ;;
     *) echo "error: no rendered-viewport capture for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -832,6 +884,7 @@ fm_backend_send_key() {  # <backend> <target> <key> [expected-label]
     orca) fm_backend_orca_send_key "$@" ;;
     cmux) fm_backend_cmux_send_key "$@" ;;
     tuios) fm_backend_tuios_send_key "$@" ;;
+    herdr-core) fm_backend_herdr_core_send_key "$@" ;;
     *) echo "error: no send-key implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -850,6 +903,7 @@ fm_backend_send_text_submit() {  # <backend> <target> <text> <retries> <enter-sl
     orca) fm_backend_orca_send_text_submit "$@" ;;
     cmux) fm_backend_cmux_send_text_submit "$@" ;;
     tuios) fm_backend_tuios_send_text_submit "$@" ;;
+    herdr-core) fm_backend_herdr_core_send_text_submit "$@" ;;
     *) echo "error: no send-text implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -869,6 +923,7 @@ fm_backend_kill() {  # <backend> <target>
     orca) fm_backend_orca_kill "$@" ;;
     cmux) fm_backend_cmux_kill "$@" ;;
     tuios) fm_backend_tuios_kill "$@" ;;
+    herdr-core) fm_backend_herdr_core_kill "$@" ;;
     *) echo "error: no kill implementation for backend '$backend'" >&2; return 1 ;;
   esac
 }
@@ -902,7 +957,9 @@ fm_backend_worktree_path() {  # <backend> <worktree-id>
 # harness's signature before treating a no-run operator as not busy. `blocked`
 # is the extra verdict for a backend whose native state says a person is needed
 # (TUIOS `needs_input`/`errored`), so a blocked operator is surfaced as blocked
-# instead of being read as ordinary work.
+# instead of being read as ordinary work. herdr-core answers from the program's
+# own OSC 7501 report: `working` is busy, `blocked` and `error` both mean a person
+# is needed, `idle` and `done` are idle, and a silent program is unknown.
 #
 # fm_backend_prompt_summary: one bounded line of the blocking prompt the target
 # is waiting on, for backends that can read it (TUIOS `peek-prompt`, Orca's
@@ -922,6 +979,7 @@ fm_backend_busy_state() {  # <backend> <target>
   case "$backend" in
     herdr) fm_backend_herdr_busy_state "$@" ;;
     tuios) fm_backend_tuios_busy_state "$@" ;;
+    herdr-core) fm_backend_herdr_core_busy_state "$@" ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -933,6 +991,7 @@ fm_backend_prompt_summary() {  # <backend> <target>
   case "$backend" in
     tuios) fm_backend_tuios_prompt_summary "$@" ;;
     orca) fm_backend_orca_prompt_summary "$@" ;;
+    herdr-core) fm_backend_herdr_core_prompt_summary "$@" ;;
     *) return 0 ;;
   esac
 }
@@ -959,6 +1018,7 @@ fm_backend_composer_state() {  # <backend> <target> -> empty|pending|pending-unp
     orca) fm_backend_orca_composer_state "$@" ;;
     cmux) fm_backend_cmux_composer_state "$@" ;;
     tuios) fm_backend_tuios_composer_state "$@" ;;
+    herdr-core) fm_backend_herdr_core_composer_state "$@" ;;
     *) printf 'unknown' ;;
   esac
 }
@@ -1012,6 +1072,10 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
       fm_backend_source tuios || return 1
       fm_backend_tuios_target_exists "$target" "$expected_label"
       ;;
+    herdr-core)
+      fm_backend_source herdr-core || return 1
+      fm_backend_herdr_core_target_exists "$target" "$expected_label"
+      ;;
     *)
       return 1
       ;;
@@ -1045,6 +1109,7 @@ fm_backend_agent_state() {  # <backend> <target>
     tmux) fm_backend_tmux_agent_state "$target" ;;
     herdr) fm_backend_herdr_agent_state "$target" ;;
     tuios) fm_backend_tuios_agent_state "$target" ;;
+    herdr-core) fm_backend_herdr_core_agent_state "$target" ;;
     *) printf 'unverified' ;;
   esac
 }
@@ -1102,7 +1167,7 @@ fm_backend_has_push() {  # <backend>
 # per-session capability probe decides whether the event-wait splice runs.
 fm_backend_can_poll_transition() {  # <backend>
   case "$1" in
-    tuios|orca) return 0 ;;
+    tuios|orca|herdr-core) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1128,6 +1193,7 @@ fm_backend_poll_transition() {  # <backend> <state_dir> <session> <window>
   case "$backend" in
     tuios) fm_backend_tuios_poll_transition "$@" ;;
     orca) fm_backend_orca_poll_transition "$@" ;;
+    herdr-core) fm_backend_herdr_core_poll_transition "$@" ;;
     *) return 2 ;;
   esac
 }
@@ -1176,6 +1242,7 @@ fm_backend_commit_transition() {  # <backend> <state_dir> <session> <record>
     herdr) fm_backend_herdr_commit_transition "$@" ;;
     tuios) fm_backend_tuios_commit_transition "$@" ;;
     orca) fm_backend_orca_commit_transition "$@" ;;
+    herdr-core) fm_backend_herdr_core_commit_transition "$@" ;;
     *) return 1 ;;
   esac
 }
@@ -1189,6 +1256,7 @@ fm_backend_clear_transition() {  # <backend> <state_dir> <window>
     herdr) fm_backend_herdr_clear_transition "$@" ;;
     tuios) fm_backend_tuios_clear_transition "$@" ;;
     orca) fm_backend_orca_clear_transition "$@" ;;
+    herdr-core) fm_backend_herdr_core_clear_transition "$@" ;;
     *) return 0 ;;
   esac
 }

@@ -28,6 +28,7 @@
   "docs/wedge-alarm.md",
   "docs/tmux-backend.md",
   "docs/herdr-backend.md",
+  "docs/herdr-core-backend.md",
   "docs/zellij-backend.md",
   "docs/orca-backend.md",
   "docs/cmux-backend.md",
@@ -104,6 +105,10 @@
   },
   {
    "source": "docs/tuios-backend.md",
+   "target": "docs/verification/runtime-backends.md"
+  },
+  {
+   "source": "docs/herdr-core-backend.md",
    "target": "docs/verification/runtime-backends.md"
   },
   {
@@ -458,6 +463,10 @@
   },
   {
    "path": "docs/herdr-backend.md",
+   "audience": "operator-current"
+  },
+  {
+   "path": "docs/herdr-core-backend.md",
    "audience": "operator-current"
   },
   {

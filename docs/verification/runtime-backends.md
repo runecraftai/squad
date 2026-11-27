@@ -140,6 +140,7 @@ Backend applicability was reviewed across every spawn adapter.
 Tmux needs the exact `pi-launcher`, `pi-signed`, `pi`, and `Pi` process identities for recovery-grade liveness.
 Herdr uses native registered-agent state and needs no process-name branch.
 Zellij has no verified recovery-grade agent process probe, while Orca and cmux do not support XO spawns, so those three retain their existing generic ordinary-launch semantics without a new liveness matcher. TUIOS also refuses XO spawns but adds a recovery-grade classifier that corroborates the exact window against agent inventory.
+herdr-core, added after that review, refuses XO spawns and reuses the shared tmux process-name classifier for its operator liveness.
 
 The structural multi-row composer reader, Kimi pointer-delivery path, and OpenCode 1.18.4 busy-queue behavior are pinned by:
 
@@ -163,21 +164,24 @@ tests/sq-backend-herdr.test.sh
 tests/sq-backend-zellij.test.sh
 tests/sq-backend-orca.test.sh
 tests/sq-backend-cmux.test.sh
+tests/sq-backend-herdr-core.test.sh
 ```
 
 Bounded output from the incident regression:
 
 ```text
 ok - sq-teardown: missing, empty, malformed, ambiguous, and task-mismatched endpoints refuse before every mutation or runtime call
-ok - cleanup identity: valid tmux, Herdr, Zellij, Orca, cmux, and TUIOS records validate while every empty backend target refuses
+ok - cleanup identity: valid tmux, Herdr, Zellij, Orca, cmux, TUIOS, and herdr-core records validate while every empty backend target refuses
 ok - tmux backend: direct empty target returns nonzero without invoking tmux
 ok - process cleanup: creation-time PID identity removes only the exact child and preserves the control child
-ok - sq-teardown: dedicated-socket invalid cleanup preserves target/control and valid cleanup removes only the exact target
+ok - sq-teardown: a TUIOS task sharing its workspace with a neighbour closes only its own window, and the freed workspace is allocatable
+ok - sq-teardown: exact tmux cleanup preserves invalid and prefix-matched neighbors while removing only the recorded target
 ```
 
 The dedicated tmux cell removed ambient tmux variables, required a socket-bound wrapper, kept one target and one independent control window, and proved the wrapper was not called for invalid metadata or a direct empty target.
 Valid cleanup removed only the exact task-bound target and left the control window live.
-The metadata-only validation covers tmux, Herdr, Zellij, Orca, cmux, and TUIOS before backend dispatch.
+The metadata-only validation covers tmux, Herdr, Zellij, Orca, cmux, TUIOS, and herdr-core before backend dispatch.
+The herdr-core fixture joined that set on 2026-11-26 and also requires its recorded core id, so an address without one never validates.
 Claude, Codex, OpenCode, Pi, pi-signed, Grok, Kimi, and Muse share that backend cleanup boundary; their harness-specific hook files, tokens, and session-log sidecars are cleaned only after it, so no harness needs a separate endpoint parser.
 
 ## Herdr
@@ -955,3 +959,85 @@ Not established:
 - The away-mode lab replaces the model with a loopback stub, so the verified claim is delivery into Pi's own queue and the start of a real agent turn, not any particular model's response or the content of a completed turn.
 
 Never use the commander's watched sessions as a test fixture. A live TUIOS run creates and destroys its own disposable session, and a restart experiment uses a private daemon with fresh `XDG_RUNTIME_DIR`/`XDG_STATE_HOME`/`XDG_CONFIG_HOME` as the installed product skill documents.
+
+## herdr-core
+
+The backend was measured against the installed `hc 0.1.22` (`herdr-core`, with `hc` as its symlink) on 2026-11-26, protocol generation 1, OpenRPC `1.3.2`, `info.version` `0.1.22`.
+Mechanisms are validated against the binary's own `--version`, `--help`, `--skill`, `hello` handshake, and `schema --json` catalog, never against web documentation alone; the design and the first measurement record live in `data/squad-herdr-core-adapter-recon/report.md`.
+Portable regression coverage (fake `hc` on `PATH`, no live core):
+
+```sh
+tests/sq-backend-herdr-core.test.sh
+tests/sq-backend-pretool-check.test.sh
+```
+
+`tests/sq-backend-herdr-core.test.sh` binds one private unix socket to stand in for a listening core and then asserts, in order: zero `hc` invocations on a session with no socket and on a session whose socket file is stale with nothing listening behind it (the never-start-a-core rule, for every primitive); a state-directory core found with `XDG_RUNTIME_DIR` unset (and with only `HOME` to derive the state home), so the socket rule matches `hc`'s own two placements instead of a `/run/user/<uid>` path `hc` never uses; a probe client that cannot decide (`curl` exiting before it connects, or timing out without a byte) refusing with zero `hc` invocations, curl's could-not-connect counting as a refusal, and a live unix-socket fixture that answers in `hc`'s HTTP/0.9 style - raw JSON-RPC and no HTTP framing, then a held-open connection - counting as a listener through real `curl`; every guard refusal (newer generation, the core's own `unsupported_generation` hint, a version below the floor, a malformed handshake, a missing method, a missing feature, a missing catalog method, a missing parameter, an unreadable catalog, an unreadable core id) with a named reason; the version-floor comparison; capture and busy state from the program report; the complete-screen rendered capture accepted only from a `.complete` true, `.how: "screen"`, non-empty envelope, with a history read, a partial read, an empty screen, and a failed or malformed read all refusing and printing nothing; a silent lane staying `unknown`; every delivery verdict (`empty`, `agent_blocked`, `not_ready`, `no_agent`, `uncertain-delivery`); delivery to a program reporting `idle` gated by `--if idle` and to one reporting `done` sent without it; a foreign `squad.task` label refusing before typing; `kill`+`rm` on the exact address only; the cleanup identity quadruple (label mismatch, changed core id, non-live address); tearing down a previous endpoint before a relaunch for both the finished-husk and live-agentless-shell shapes, including a relaunch proceeding past an address the core no longer has or that another task or another core now owns without closing the stranger; teardown's confirmation classifying the recorded address as absent, still this task's, a stranger's, or unreadable, where only a record that still carries this task's own labels and an identity the process cannot verify refuse, and no classification ever closes the stranger's terminal; a foreign recorded session refusing without an address read; agent state across `alive`/`dead`/`missing`/`unreadable`, where a failed ad hoc read or a malformed target is `unreadable` and collapses to an `unknown` alive verdict; key-name translation with an unmapped key refused; `create_task` labelling, duplicate refusal, the base-scoped duplicate and recovery inventories, the 32-character name limit, distinct terminal names for the ids `demo` and `sq-demo`, a successful create whose stderr also carries an informational notice, and the failed-create recovery that closes exactly the terminal its `squad.task` and `squad.base` labels identify, including a terminal that is already `finished`, while a recycled address carrying another task's label is left alone and named; two bases with the same directory name deriving different base labels, the same base deriving a stable label, this base's recovery refusing a terminal labelled by the other, and a recorded-address close and status read refusing a recycled address that now carries the other base's terminal, with the same task id and the same core id, without killing or removing it; two bases deriving different terminal names for the same task id, each within the 32-character limit; a real `bin/sq-spawn.sh` on a fake `hc` whose launch delivery is refused, asserting the exact created terminal is killed and removed instead of left behind, and a delivered launch that leaves its terminal in place; a relaunch over a recorded `finished` endpoint that retires that exact address before recording the replacement, a cross-backend relaunch of a dead herdr-core task onto `tmux` that closes exactly the recorded herdr-core address without creating a herdr-core replacement, and a released task whose relaunch is refused with its recorded terminal left untouched; the poll producer's one-prompt dedupe, a changed prompt re-waking, and a non-blocked edge clearing the markers; and the full `hc_session`/`hc_address`/`hc_core_id` endpoint-metadata triple.
+`tests/sq-backend-pretool-check.test.sh` additionally pins that both `herdr-core` and `hc` command words are refused by the primary raw-CLI guard.
+
+### The guarded private-core lab
+
+`bin/sq-herdr-core-lab.sh` drives the production path end to end against a core it creates itself.
+
+```sh
+SQUAD_HC_LAB=1 bin/sq-herdr-core-lab.sh
+```
+
+The lab records the commander's ambient `default` core (identity, pid, version, and full terminal inventory) only after the adapter's own unix-socket listener probe proves a core answers there, so the record itself cannot start a core and a socket file left behind by a dead core is a hard stop rather than a start.
+The ambient socket itself is resolved by the adapter's own rule under the caller's environment, so a host without `XDG_RUNTIME_DIR` finds the core in the state directory exactly as `hc` does.
+It then creates a private core from a scratch `XDG_RUNTIME_DIR`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME` under a short temp root and a private `HC_SESSION`, with a short socket path.
+Everything after that - `bin/sq-spawn.sh`, `bin/sq-crew-state.sh`, `bin/sq-peek.sh`, `bin/sq-send.sh`, `bin/sq-teardown.sh` - runs on that private core, and the lab stops only that core, by session, after asserting its socket lives inside its own temp root.
+Observed output (2026-11-26, `hc 0.1.22`), captured at commit `1f871f37` (the feature commit that added the adapter and this lab) and **not** re-captured since:
+the transcript evidences that revision, whose lab derived the base label as `basename` of the lab base, checked the ambient tripwire after a socket-presence test, and asked for no base-scoped terminal name.
+Later review commits changed the label to `<basename>-<physical-path-hash>`, made the terminal name `sq-<base-hash>-<task-id>`, required the base label on every read and close, and gave the tripwire the listener probe.
+The lab at this head asserts the base label through the adapter (`fm_backend_herdr_core_base_name`) and reads it back from the terminal's own `labels["squad.base"]` rather than matching a literal, so the label and name this transcript shows are that commit's derivation and must not be treated as current output.
+Re-run the lab at any later head before quoting the block as current evidence.
+
+```text
+tripwire default-core-before={"core":"ff44ef1b71645ade87fc818adfd507b9","pid":1826875,"live":1,"finished":1,"terminals":[{"address":"t4","state":"live","name":null},{"address":"t5","state":"finished","name":null}]}
+lab session=sq-lab-3871672-22658 socket=/tmp/sqhc-lab.0hafNe/r/herdr-core/sq-lab-3871672-22658.sock
+no-start proof: refused with no listening core, and the private socket is still absent
+private core id=0118d39d375e958faab896d1a7913e93
+spawning sq-hc-lab-20261126113329-3871672 on project /home/rehem/Projects/squad
+spawn: spawned sq-hc-lab-20261126113329-3871672 harness=bash kind=recon window=sq-lab-3871672-22658:t1 worktree=/home/rehem/.fob/squad-b4752b/6/squad
+recorded backend=herdr-core hc_session=sq-lab-3871672-22658 hc_address=t1 hc_core_id=0118d39d375e958faab896d1a7913e93 worktree=/home/rehem/.fob/squad-b4752b/6/squad
+terminal: address=t1 label=squad.task:sq-hc-lab-20261126113329-3871672 foreground-cwd=/home/rehem/.fob/squad-b4752b/6/squad
+private inventory after spawn: [{"address":"t1","name":"sq-hc-lab-20261126113329-3871672","status":"working"}]
+crew-state: state: blocked · source: pane · harness waiting on a prompt (question: Answer the lab question) · exec_state=running
+peek: read the program screen through the adapter
+send: confirmed (exit 0)
+delivery: the program received 'lab answer one'
+teardown: teardown sq-hc-lab-20261126113329-3871672 complete (window sq-lab-3871672-22658:t1, worktree /home/rehem/.fob/squad-b4752b/6/squad)
+teardown: exact address gone, private inventory empty, worktree /home/rehem/.fob/squad-b4752b/6/squad available again
+tripwire default-core-after={"core":"ff44ef1b71645ade87fc818adfd507b9","pid":1826875,"live":1,"finished":1,"terminals":[{"address":"t4","state":"live","name":null},{"address":"t5","state":"finished","name":null}]}
+LIVE-UNCHANGED: the commander default core is byte-identical before and after
+PASS
+```
+
+Established live:
+
+- **The adapter never starts a core.** With the private session's socket absent, `fm_backend_herdr_core_container_ensure` refused with `Squad never starts the core - start Herdr or run 'hc server start' yourself`, and the private socket was still absent afterwards. Every later step ran only after the lab had started its own core.
+- **A real spawn lands on the backend and records the exact identity.** `bin/sq-spawn.sh <id> <project> '<raw launch command>' --backend herdr-core --recon` printed `spawned ... window=<private-session>:t1 worktree=...`, the metadata carried `backend=herdr-core`, `hc_session=`, `hc_address=t1` and `hc_core_id=` matching the private core, and `hc get t1 --json` showed `labels["squad.task"]` equal to the task id, `labels["squad.base"]` equal to the derived base label, and `foreground.cwd` equal to the recorded worktree.
+- **Native status drives the state the supervisor reads.** The program's own OSC 7501 reports produced `busy_state` `working` → `blocked` → `idle`, and `bin/sq-crew-state.sh` rendered `state: blocked · source: pane · harness waiting on a prompt (question: Answer the lab question)`, carrying the prompt text the program itself wrote.
+- **Read and delivery work address-exactly.** `bin/sq-peek.sh` returned the program's screen through `hc read`, and `bin/sq-send.sh` returned a confirmed verdict after the program received exactly the sent text.
+- **Teardown closes one address and nothing else.** `bin/sq-teardown.sh` reported `complete (window <private-session>:t1, ...)`, the address was authoritatively gone, the private core's whole inventory was empty (it had only ever held that one terminal), and `fob status` showed the leased worktree `available` again.
+- **The commander's core is untouched.** The tripwire's `default` core identity, pid, version, and terminal inventory were byte-identical before and after, reported as `LIVE-UNCHANGED`.
+
+Measured during the design recon on the same binary, and still relied on here:
+
+- `hc send` refuses a blocked program with `kind:"blocked"` and exit 9 without typing, refuses a non-idle reporting program with `kind:"status_mismatch"` and exit 10, and refuses a finished terminal with `kind:"finished"` and exit 11.
+- `hc keys` does **not** refuse while a program is blocked: `hc keys t3 y` typed the key and advanced the turn. An answer path would therefore have to re-read the blocked record itself, which is why this backend does not answer prompts.
+- Two consecutive different blocked prompts were observed with the **same** `status_ms`, so the poll producer's dedupe identity is the pair `(kind, msg)` rather than the timestamp the recon proposed.
+- `hc get` reports `status_ms`, `reported`, the decoded `status.msg`, and `foreground.{argv,cwd,name,pid}`; `foreground.cwd` follows the foreground process, which is what the worktree poll reads.
+- `hc kill` is idempotent and `hc rm` refuses a live terminal with `kind:"live"`, so the adapter confirms `state=finished` after `kill` and `.removed == <address>` after `rm`.
+
+Not established:
+
+- **Native event push (S2).** This backend is supervised by the sentry's ordinary poll only; `fm_backend_has_push` returns false for it, so the event-wait splice is never used. The wake latency of a blocked program is therefore at most one poll interval, not the near-immediate wake TUIOS and Herdr get from a stream.
+- **Answering a blocked operator prompt.** No prompt-id-bound answer exists in `hc`, and this backend does not type keys into a blocked program. `bin/sq-send.sh` refuses with `agent_blocked` and a person answers in the terminal.
+- **Presentation labels on the desktop app (S3).** Squad writes only its own two labels, so a Squad terminal appears in `hc ls` and on the phone, but not in a desktop app space.
+- **The primary session and away mode on this backend (S4),** and the default switch (S5a), are separate units; `config/backend` was not changed and TUIOS keeps running in production.
+- **Vendor harness rendering.** The lab's program is a scripted OSC 7501 reporter, not a vendor CLI, so the lab proves the adapter, the product's status plumbing, delivery, and cleanup - not any particular harness's rendering or a model turn. The recon separately confirmed that `pi 1.6.1` and Claude Code report status while `codex 0.172.0` and the `opencode` on `PATH` (1.18.18) report nothing.
+- **`--no-daemon` for codex** is applied by the launch template on this backend only, from the product's own guidance; no live codex turn was run to confirm it (answering codex's trust dialog would write the commander's `~/.codex`).
+- **Multiple bases sharing one core** have not been exercised live. Each base labels its terminals with its own `squad.base=<readable base label>-<short physical-path hash>`, so two bases with the same directory name are still distinguished, and one core's registry is shared, so two bases could see each other's terminals in an unfiltered `ls`; only label-filtered reads and exact addresses are used, and the duplicate check, the failed-create recovery, every recorded-address close and every status read require `squad.task` **and** `squad.base`, so another base's terminal with the same task id is neither refused as a duplicate, closed, nor projected. The terminal name is base-scoped too (`sq-<base-hash>-<task-id>`), because the product's name registry is core-global and both bases number their tasks from 1. An address a core has recycled is classified by the record's own identities: teardown and a relaunch treat a record now carrying another task's, base's, or core's identity as this task's endpoint being gone, so a recycled address cannot wedge a teardown or block a relaunch, and neither path ever closes the stranger. The portable suite proves the label derivation, the name derivation, both refusals, and the four-way ownership classification for two bases that share a directory name.
+- **`hc read --json --lines 0` viewport completeness** is not independently measured live. The adapter therefore trusts only the product's own `.complete: true` and `.how: "screen"` envelope over non-empty text, and every other shape refuses, so static-busy expiry and the pane-signature check do not run for this backend on unproven evidence.
+- **Instant blocking-clear detection** (the boundary between `blocked` and `idle` inside one poll) is not separately measured; a person-answered prompt clears on the next read.

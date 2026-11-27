@@ -713,6 +713,10 @@ if [ "$BACKEND" = tuios ] && [ "$KIND" = xo ]; then
   echo "error: backend=tuios does not support --xo spawns yet" >&2
   exit 1
 fi
+if [ "$BACKEND" = herdr-core ] && [ "$KIND" = xo ]; then
+  echo "error: backend=herdr-core does not support --xo spawns yet" >&2
+  exit 1
+fi
 ORCA_HOST_WORKSPACE_ID=
 if [ "$BACKEND" = orca ]; then
   fm_backend_orca_runtime_check || exit 1
@@ -724,6 +728,12 @@ ORCA_TERMINAL=
 ORCA_MISSION_TAB=
 TUIOS_ABORT_CLEANUP=0
 TUIOS_WORKSPACE_ID=
+# A herdr-core spawn records the opaque address it created so a failure before
+# the meta is published closes exactly that terminal, and nothing else.
+HERDR_CORE_SESSION=
+HERDR_CORE_ADDRESS=
+HERDR_CORE_CORE_ID=
+HERDR_CORE_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_PANE=
@@ -826,6 +836,13 @@ spawn_abort_cleanup() {
     fm_backend_tuios_kill "$TUIOS_SES:$TUIOS_WINDOW_ID" '' "sq-$ID" >/dev/null 2>&1 || true
     fm_backend_tuios_unname_workspace_if_empty "$TUIOS_SES" "$TUIOS_WORKSPACE_ID" "sq-$ID" >/dev/null 2>&1 || \
       echo "warning: could not release the task workspace for $ID; its exact workspace name is preserved" >&2
+  fi
+  if [ "$HERDR_CORE_ABORT_CLEANUP" = 1 ] && [ -n "$HERDR_CORE_ADDRESS" ]; then
+    HERDR_CORE_ABORT_CLEANUP=0
+    # Exactly the address this spawn created, verified against its own task
+    # label by the adapter: no sweep, no name, and no other terminal.
+    fm_backend_herdr_core_kill "$HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS" '' "sq-$ID" >/dev/null 2>&1 || \
+      echo "warning: could not close the herdr-core terminal $HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS for $ID; close that exact address by hand: HC_SESSION=$HERDR_CORE_SESSION hc kill $HERDR_CORE_ADDRESS; HC_SESSION=$HERDR_CORE_SESSION hc rm $HERDR_CORE_ADDRESS" >&2
   fi
   if [ -n "${SPAWN_TUIOS_LEASE:-}" ]; then
     tuios_release_lease "$SPAWN_TUIOS_LEASE" || true
@@ -972,10 +989,17 @@ launch_template() {
     # the defense-in-depth backstop for any pane this flag cannot reach.
     claude) printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions __MODELFLAG____EFFORTFLAG__"$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
     codex)
+      # herdr-core only: codex must run with --no-daemon, or the commands it
+      # runs execute outside hc's terminal and disappear from its record
+      # (docs/herdr-core-backend.md "Harness note"). The flag is applied on this
+      # backend alone, so every other backend's codex launch stays
+      # byte-identical.
+      local codex_nodaemon=
+      [ "${BACKEND:-}" = herdr-core ] && codex_nodaemon='--no-daemon '
       if [ "$kind" = xo ]; then
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' "codex $codex_nodaemon"'__MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       else
-        printf '%s' 'codex __MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+        printf '%s' "codex $codex_nodaemon"'__MODELFLAG____EFFORTFLAG__--dangerously-bypass-approvals-and-sandbox -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
       fi
       ;;
     opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}}'\'' opencode __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
@@ -1850,6 +1874,23 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
   esac
 }
 
+# retire_previous_endpoint: retire the exact endpoint a relaunch replaces
+# through the OLD recorded backend's own identity-checked close, before any new
+# terminal exists. A task relaunched onto a different backend must not leave its
+# previous terminal unmanaged on the old provider, so this runs wherever the
+# relaunch resolved, not only when the replacement uses the same backend. An
+# endpoint the old backend authoritatively no longer has, or one that now
+# belongs to another task or base, is already retired and is left untouched.
+retire_previous_endpoint() {  # <old-backend> <old-target>
+  local backend=${1:-} target=${2:-}
+  case "$backend" in
+    herdr-core)
+      fm_backend_source herdr-core || return 1
+      fm_backend_herdr_core_retire_endpoint "$target" "sq-$ID"
+      ;;
+  esac
+}
+
 # Existing metadata is a relaunch only after the recorded endpoint is
 # authoritatively gone or agent-free. Requeue an active execution sidecar before
 # creating the replacement endpoint so claim starts a new attempt instead of
@@ -1898,6 +1939,14 @@ prepare_relaunch_execution() {
   RELAUNCH_MODEL=$(fm_backend_meta_exact_value "$meta" model 2>/dev/null) || RELAUNCH_MODEL=
   old_backend=$(fm_backend_of_meta "$meta")
   old_target=$(fm_backend_target_of_meta "$meta")
+  # A relaunch reads the OLD endpoint through the OLD backend but launches
+  # through the CURRENTLY resolved one, so a task whose backend changed would
+  # silently move to another provider with a new endpoint. Refuse unless that
+  # backend was passed explicitly for this task.
+  if [ "$old_backend" != "$BACKEND" ] && [ "$BACKEND_SET" -ne 1 ]; then
+    echo "error: task $ID is recorded on backend=$old_backend but this spawn resolved backend=$BACKEND; pass --backend $old_backend (or --backend $BACKEND) explicitly to relaunch it" >&2
+    return 1
+  fi
   # Recorded daemon-boot evidence and worktree for a TUIOS relaunch (see the
   # TUIOS backend case). Empty for every other backend, and for a task spawned
   # before the boot marker existed: an empty boot id only rules out the
@@ -1941,6 +1990,16 @@ prepare_relaunch_execution() {
       return 1
       ;;
   esac
+  # Every refusal above leaves the recorded endpoint untouched. Only now, with
+  # the endpoint accepted as replaced and the relaunch no longer refusable,
+  # retire it through its own backend before the new arm creates anything. A
+  # herdr-core endpoint that cannot be closed refuses the relaunch, because
+  # creating a second terminal beside it would split the task or strand the old
+  # one on the shared core.
+  retire_previous_endpoint "$old_backend" "$old_target" || {
+    echo "error: could not retire the previous $old_backend endpoint $old_target for $ID; refusing relaunch" >&2
+    return 1
+  }
 }
 
 # Harness resume contract (see the header): the argument that reopens a recorded
@@ -2240,6 +2299,23 @@ EOF
     fi
     T="$TUIOS_SES:$TUIOS_WINDOW_ID"
     ;;
+  herdr-core)
+    # The session is validated and its protocol guarded BEFORE a terminal exists:
+    # a narrower or older core, an unreachable one, or a different session must
+    # refuse here, with no task endpoint created and no core started.
+    HERDR_CORE_SESSION=$(fm_backend_herdr_core_container_ensure "$PROJ_ABS") || exit 1
+    HERDR_CORE_CORE_ID=$(fm_backend_herdr_core_core_id "$HERDR_CORE_SESSION") || {
+      echo 'error: herdr-core core identity is unreadable; refusing to create a task endpoint' >&2
+      exit 1
+    }
+    HERDR_CORE_ADDRESS=$(fm_backend_herdr_core_create_task "$HERDR_CORE_SESSION" "$W" "$PROJ_ABS") || exit 1
+    HERDR_CORE_ABORT_CLEANUP=1
+    if ! fm_backend_opaque_address_valid "$HERDR_CORE_ADDRESS"; then
+      echo "error: herdr-core did not return a usable opaque address for $W" >&2
+      exit 1
+    fi
+    T="$HERDR_CORE_SESSION:$HERDR_CORE_ADDRESS"
+    ;;
   cmux)
     fm_backend_cmux_container_ensure || exit 1
     CMUX_TASK_IDS=$(fm_backend_cmux_create_task "$W" "$PROJ_ABS") || exit 1
@@ -2302,6 +2378,7 @@ spawn_send_text_line() {  # <target> <text>
     orca) fm_backend_orca_send_text_line "$1" "$2" ;;
     cmux) fm_backend_cmux_send_text_line "$1" "$2" "$W" ;;
     tuios) fm_backend_tuios_send_text_line "$1" "$2" "$W" ;;
+    herdr-core) fm_backend_herdr_core_send_text_line "$1" "$2" "$W" ;;
   esac
 }
 spawn_current_path() {  # <target>
@@ -2311,6 +2388,7 @@ spawn_current_path() {  # <target>
     zellij) fm_backend_zellij_current_path "$1" "$W" ;;
     cmux) fm_backend_cmux_current_path "$1" "$W" ;;
     tuios) fm_backend_tuios_current_path "$1" ;;
+    herdr-core) fm_backend_herdr_core_current_path "$1" ;;
   esac
 }
 spawn_send_literal() {  # <target> <text>
@@ -2321,6 +2399,14 @@ spawn_send_literal() {  # <target> <text>
     orca) fm_backend_orca_send_literal "$1" "$2" ;;
     cmux) fm_backend_cmux_send_literal "$1" "$2" "$W" ;;
     tuios) fm_backend_tuios_send_literal "$1" "$2" "$W" ;;
+    herdr-core)
+      # herdr-core has no type-without-submit primitive: its `send` pastes and
+      # submits in one call. The launch path therefore submits the command
+      # directly (see the launch section) instead of sending literals plus a
+      # separate Enter, and nothing silently drops a literal send here.
+      echo 'error: backend=herdr-core has no literal type-without-submit primitive' >&2
+      return 1
+      ;;
   esac
 }
 spawn_send_key() {  # <target> <key>
@@ -2331,6 +2417,7 @@ spawn_send_key() {  # <target> <key>
     orca) fm_backend_orca_send_key "$1" "$2" ;;
     cmux) fm_backend_cmux_send_key "$1" "$2" "$W" ;;
     tuios) fm_backend_tuios_send_key "$1" "$2" "$W" ;;
+    herdr-core) fm_backend_herdr_core_send_key "$1" "$2" "$W" ;;
   esac
 }
 
@@ -3171,6 +3258,17 @@ if [ -n "${RELAUNCH_EXISTING_META:-}" ]; then
   fi
 fi
 
+if [ "$BACKEND" = herdr-core ]; then
+  # The guarded core id is recorded with the task and every later write refuses
+  # when it no longer matches, so a core that restarted while this spawn ran must
+  # be caught before the record names the wrong core. The terminal this spawn
+  # created is still covered by the armed abort cleanup on this exit.
+  HERDR_CORE_LIVE_CORE_ID=$(fm_backend_herdr_core_read_core_id "$HERDR_CORE_SESSION" 2>/dev/null) || HERDR_CORE_LIVE_CORE_ID=
+  if [ -z "$HERDR_CORE_LIVE_CORE_ID" ] || [ "$HERDR_CORE_LIVE_CORE_ID" != "$HERDR_CORE_CORE_ID" ]; then
+    echo "error: the herdr-core core for session '$HERDR_CORE_SESSION' changed while $ID was being created (guarded ${HERDR_CORE_CORE_ID:-unreadable}, live ${HERDR_CORE_LIVE_CORE_ID:-unreadable}); refusing to record a terminal that may belong to another core" >&2
+    exit 1
+  fi
+fi
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 {
@@ -3231,12 +3329,21 @@ META_WINDOW=$T
     echo "cmux_workspace_id=$CMUX_WORKSPACE_ID"
     echo "cmux_surface_id=$CMUX_SURFACE_ID"
   fi
+  if [ "$BACKEND" = herdr-core ]; then
+    echo "hc_session=${HERDR_CORE_SESSION:-default}"
+    echo "hc_address=$HERDR_CORE_ADDRESS"
+    echo "hc_core_id=$HERDR_CORE_CORE_ID"
+  fi
   if [ "$KIND" = xo ]; then
     echo "home=$PROJ_ABS"
     echo "projects=$XO_PROJECTS"
   fi
 } > "$STATE/$ID.meta"
 TUIOS_ABORT_CLEANUP=0
+# The herdr-core terminal is created and recorded before the launch is delivered,
+# so its abort cleanup stays armed until that delivery is confirmed: a refused or
+# uncertain launch must close the exact address it created instead of leaving a
+# live labelled terminal behind a published record.
 SPAWN_TUIOS_LEASE=
 # Claim the per-attempt sidecar only after all dispatch validation and metadata
 # publication have succeeded, so a competing dispatch cannot launch this task.
@@ -3390,13 +3497,23 @@ if [ "$BACKEND" = orca ]; then
   LAUNCH="sh $(shell_quote "$ORCA_LAUNCH_SCRIPT")"
 fi
 sleep 0.3
-spawn_send_literal "$T" "$LAUNCH"
-sleep 0.3
+if [ "$BACKEND" = herdr-core ]; then
+  # One delivery, one submit: `hc send` pastes the command and presses Enter
+  # itself, and it owns its own quiet/draft settling. Nothing is retyped. The
+  # abort cleanup stays armed through this call and is disarmed only once the
+  # launch is confirmed, so a refused or uncertain delivery closes exactly the
+  # terminal this spawn created.
+  spawn_send_text_line "$T" "$LAUNCH" || exit 1
+  HERDR_CORE_ABORT_CLEANUP=0
+else
+  spawn_send_literal "$T" "$LAUNCH"
+  sleep 0.3
+fi
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   HERDR_PROJECTION_ABORT_CLEANUP=0
   spawn_herdr_presentation_order_lock_release
 fi
-spawn_send_key "$T" Enter
+[ "$BACKEND" = herdr-core ] || spawn_send_key "$T" Enter
 "$SCRIPT_DIR/sq-exec-state.sh" running "$ID" >/dev/null
 if [ -n "${RELAUNCH_EXISTING_META:-}" ] && [ "$PI_TEMPLATE" = 1 ]; then
   if [ -n "$RESUME_SESSION_ID" ]; then

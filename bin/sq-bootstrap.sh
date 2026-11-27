@@ -735,7 +735,10 @@ XO_liveness_one() {  # <meta> <id>
       else
         cause="recorded endpoint confidently missing"
       fi
-      if out=$(SQUAD_SPAWN_NO_GUARD=1 "$SQUAD_ROOT/bin/sq-spawn.sh" "$id" --xo 2>&1); then
+      # Pass the recorded backend explicitly: the relaunch guard refuses a task
+      # whose recorded backend differs from this process's resolution unless the
+      # caller names it, and this sweep has just retired the old endpoint.
+      if out=$(SQUAD_SPAWN_NO_GUARD=1 "$SQUAD_ROOT/bin/sq-spawn.sh" "$id" --xo --backend "$backend" 2>&1); then
         XO_RESPAWNED_IDS="$XO_RESPAWNED_IDS $id"
         report_relaunch "$id" "$cause" "backend=$backend"
       else
@@ -795,6 +798,7 @@ install_cmd() {
 manual_install_url() {
   case "$1" in
     herdr) echo "https://herdr.dev" ;;
+    hc) echo "https://herdr.dev/docs/install" ;;
     tuios) echo "https://tuios.dev/docs/getting-started#install" ;;
     *) return 1 ;;
   esac
