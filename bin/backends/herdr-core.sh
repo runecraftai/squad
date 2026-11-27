@@ -1085,13 +1085,18 @@ fm_backend_herdr_core_record_label() {  # <record-json> <label-key>
 # exact terminal's own `herdr.tab` label, or empty when it carries none. A caller
 # resolves the tab it titled from the label this adapter wrote, never by
 # position and never from whichever tab is selected.
+# <record> is that terminal as the caller already read it. A caller that has one
+# passes it, and its labels come from that one read; reading the terminal again
+# here could return a different terminal once the core has recycled the address.
 #   0  printed the label's value (possibly empty)
 #   1  the terminal could not be read
-fm_backend_herdr_core_presentation_tab_of() {  # <session> <address>
-  local session=${1:-default} address=${2:-} json
+fm_backend_herdr_core_presentation_tab_of() {  # <session> <address> [<record>]
+  local session=${1:-default} address=${2:-} record=${3:-}
   [ -n "$address" ] || return 1
-  json=$(fm_backend_herdr_core_get_json "$session" "$address" 2>/dev/null) || return 1
-  fm_backend_herdr_core_record_label "$json" "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL"
+  if [ -z "$record" ]; then
+    record=$(fm_backend_herdr_core_get_json "$session" "$address" 2>/dev/null) || return 1
+  fi
+  fm_backend_herdr_core_record_label "$record" "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL"
 }
 
 # fm_backend_herdr_core_rename_tab: write the visible title of ONE desktop tab,
@@ -1171,7 +1176,9 @@ fm_backend_herdr_core_rename_tab() {  # <tab-id> <title> [<terminal-context>]
 # stderr and returns nonzero for a caller that cares, and no caller may turn it
 # into a spawn failure.
 #   0  the labels and the title are in place, or nothing is configured
-#   1  a configured write failed; already reported
+#   1  a configured label write failed; already reported
+#   2  the labels are in place but the app holds no tab of that id to title (not
+#      installed, or its own `no tab` answer); already reported
 fm_backend_herdr_core_apply_presentation_space() {  # <session> <address> <task-id>
   local session=${1:-default} address=${2:-} task_id=${3:-} space tab title err_file reason rc=0
   [ -n "$address" ] || return 1
@@ -1235,8 +1242,8 @@ fm_backend_herdr_core_clear_presentation_space() {  # <target> [expected-label]
   # Resolve the tab from the record the identity check just validated, before
   # its label is gone, so the removal can never act on a terminal other than the
   # one it checked.
-  tab=$(fm_backend_herdr_core_record_label \
-    "$SQUAD_BACKEND_HERDR_CORE_VERIFIED_JSON" "$SQUAD_BACKEND_HERDR_CORE_TAB_LABEL")
+  tab=$(fm_backend_herdr_core_presentation_tab_of \
+    "$session" "$address" "$SQUAD_BACKEND_HERDR_CORE_VERIFIED_JSON")
   own_task=$(fm_backend_herdr_core_record_label \
     "$SQUAD_BACKEND_HERDR_CORE_VERIFIED_JSON" "$SQUAD_BACKEND_HERDR_CORE_TASK_LABEL")
   # The tab id must be the one this adapter derives from the terminal's own task

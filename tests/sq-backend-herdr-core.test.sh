@@ -1636,6 +1636,10 @@ printf 't7\therdr.space\tsquad-desk\nt7\therdr.tab\t%s\nt8\therdr.space\tsquad-d
 # fake's own record for t7 carries the placement it was given.
 jq --arg tab "sq-$BASE_HASH-probe" '.labels["herdr.tab"] = $tab' "$SQUAD_HC_GET" > "$SQUAD_HC_GET.next" \
   && mv "$SQUAD_HC_GET.next" "$SQUAD_HC_GET"
+[ "$(fm_backend_herdr_core_presentation_tab_of default t7)" = "sq-$BASE_HASH-probe" ] \
+  || fail 'the tab of one exact terminal is read from that terminal alone'
+[ -z "$(fm_backend_herdr_core_presentation_tab_of default t8)" ] \
+  || fail "an address that is not this terminal resolves no tab"
 printf 'sq-%s-probe\tprobe\nsq-%s-scaffold\tscaffold\n' "$BASE_HASH" "$BASE_HASH" \
   > "$SQUAD_HERDR_APP_TABS"
 fm_backend_herdr_core_clear_presentation_space 'default:t7' 'sq-probe' \

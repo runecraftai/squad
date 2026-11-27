@@ -1118,6 +1118,10 @@ hc kill "$addr"          # retiring the probe is a separate step: parking leaves
 hc rm "$addr"
 ```
 
+This is the one command that refreshes the app-side claim.
+The app owns the pane, so the `terminal.park` step is what removes it, and a task that ends needs neither step.
+The block then kills and removes the one probe terminal it created, because parking takes away only its pane.
+
 ### The tab title (hand capture, 2026-11-27)
 
 Captured by hand on the same machine, `herdr-app 0.1.18` and `hc 0.1.22`, against the running app.
@@ -1208,11 +1212,6 @@ fm_backend_herdr_core_rename_tab sq-f8f4d208-herdr-core-tab-title herdr-core-tab
 ```
 
 Not measured live, and therefore not claimed: the rename while the app is closed (there is no tab to address, so it warns and the spawn continues - the fake `herdr-app` in `tests/sq-backend-herdr-core.test.sh` proves the spawn survives), the title call's 5s bound when the app accepts the request and never answers (the same fake held open past the bound proves the create still returns), and a fresh create's adoption latency (the adapter retries only the app's `no tab` answer, inside a bounded budget).
-
-
-This is the one command that refreshes the app-side claim.
-The app owns the pane, so the `terminal.park` step is what removes it, and a task that ends needs neither step.
-The block then kills and removes the one probe terminal it created, because parking takes away only its pane.
 
 Portable coverage of the write, the absent and unreadable setting, the idempotent repeat, the failing write that keeps the spawn, and the address-exact clear is in `tests/sq-backend-herdr-core.test.sh`; the live facts above are what that code is for.
 
