@@ -124,11 +124,10 @@ export function tileWidth(width, cols) {
   return Math.max(0, Math.min(CARD_MAX, each));
 }
 
-// Display columns one code point takes in this UI: astral and East Asian wide
-// glyphs take two, a combining mark or a joiner takes none, everything else one.
-export function glyphColumns(ch) {
-  const point = ch.codePointAt(0);
-  if (
+// Code points that draw nothing on their own: combining marks, variation
+// selectors, and the zero-width joiner that binds two glyphs into one cluster.
+function zeroWidth(point) {
+  return (
     point === 0x200d ||
     (point >= 0x0300 && point <= 0x036f) ||
     (point >= 0x1ab0 && point <= 0x1aff) ||
@@ -136,8 +135,14 @@ export function glyphColumns(ch) {
     (point >= 0x20d0 && point <= 0x20ff) ||
     (point >= 0xfe00 && point <= 0xfe0f) ||
     (point >= 0xfe20 && point <= 0xfe2f)
-  )
-    return 0;
+  );
+}
+
+// Display columns one code point takes in this UI: astral and East Asian wide
+// glyphs take two, a combining mark or a joiner takes none, everything else one.
+function glyphColumns(ch) {
+  const point = ch.codePointAt(0);
+  if (zeroWidth(point)) return 0;
   if (
     point >= 0x1100 &&
     (point <= 0x115f ||
@@ -155,12 +160,47 @@ export function glyphColumns(ch) {
   return 1;
 }
 
+// The glyph clusters a title really renders as: a base code point with its
+// combining marks and emoji-presentation selector, plus any ZWJ chain. A cluster
+// is wide (two columns) when any member is astral or wide, or when it carries
+// U+FE0F, which is what turns `❤` into one wide `❤️`; everything else is one
+// column. Clusters, not code points, are the unit a cut may fall between.
+function titleClusters(text) {
+  const points = Array.from(String(text ?? ""));
+  const clusters = [];
+  let i = 0;
+  while (i < points.length) {
+    const members = [points[i]];
+    let wide = glyphColumns(points[i]) === 2;
+    i += 1;
+    for (;;) {
+      while (i < points.length && zeroWidth(points[i].codePointAt(0)) && points[i].codePointAt(0) !== 0x200d) {
+        if (points[i].codePointAt(0) === 0xfe0f) wide = true;
+        members.push(points[i]);
+        i += 1;
+      }
+      if (i + 1 < points.length && points[i].codePointAt(0) === 0x200d) {
+        members.push(points[i], points[i + 1]);
+        if (glyphColumns(points[i + 1]) === 2) wide = true;
+        i += 2;
+        continue;
+      }
+      break;
+    }
+    clusters.push({ text: members.join(""), width: wide ? 2 : 1 });
+  }
+  return clusters;
+}
+
+const clusterColumns = (clusters) => clusters.reduce((n, cluster) => n + cluster.width, 0);
+
 // This UI layer has no line clamp, so the three-line budget is spent here: a
-// column estimate from the tile's inner width, spent one glyph at a time (a wide
-// glyph costs two columns, a combining mark none), cut at a word boundary with an
-// ellipsis that always lands inside the tile. The card also caps the text block's
-// height, but that cap is only a backstop: the text itself already fits, so no
-// glyph is ever sliced by the card boundary.
+// column estimate from the tile's inner width, spent one cluster at a time (a
+// wide glyph or an FE0F cluster costs two columns, a combining mark none), cut at
+// a cluster and then at a word boundary, with an ellipsis that always lands
+// inside the tile. The card also caps the text block's height, but that cap is
+// only a backstop: the text itself already fits, so no glyph is ever sliced by
+// the card boundary.
 export function clampTitle(title, innerWidth, lines = TITLE_MAX_LINES) {
   const text = String(title ?? "")
     .replace(/\s+/g, " ")
@@ -170,20 +210,21 @@ export function clampTitle(title, innerWidth, lines = TITLE_MAX_LINES) {
   // Two and a bit lines of columns for a three-line box: word wrapping loses a
   // few columns per line, and this margin is what keeps the ellipsis inside.
   const budget = Math.max(8, Math.floor(perLine * lines * 0.9));
-  const points = Array.from(text);
-  const columns = (list) => list.reduce((n, ch) => n + glyphColumns(ch), 0);
-  if (columns(points) <= budget) return text;
+  const clusters = titleClusters(text);
+  if (clusterColumns(clusters) <= budget) return text;
   let used = 0;
   let end = 0;
-  while (end < points.length && used + glyphColumns(points[end]) <= budget) {
-    used += glyphColumns(points[end]);
+  while (end < clusters.length && used + clusters[end].width <= budget) {
+    used += clusters[end].width;
     end += 1;
   }
-  while (end < points.length && glyphColumns(points[end]) === 0) end += 1;
-  const cut = points.slice(0, end).join("");
+  const cut = clusters.slice(0, end).map((cluster) => cluster.text).join("");
   const space = cut.lastIndexOf(" ");
   const head = space > 0 ? cut.slice(0, space) : "";
-  const kept = (head && columns(Array.from(head)) > budget * 0.5 ? head : cut).replace(/[\s,;:.\-]+$/, "");
+  const kept = (head && clusterColumns(titleClusters(head)) > budget * 0.5 ? head : cut).replace(
+    /[\s,;:.\-\u200d]+$/,
+    "",
+  );
   return kept ? `${kept}…` : "…";
 }
 

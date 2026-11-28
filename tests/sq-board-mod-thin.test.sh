@@ -218,29 +218,71 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   assert.equal(mod.tileWidth(700, 2), 280, "tile edge capped at 280");
   assert.equal(mod.tileWidth(200, 1), 180, "a narrow pane gets a tile as wide as it can hold");
 
-  const titleCols = (s) => Array.from(s).reduce((n, ch) => n + mod.glyphColumns(ch), 0);
   // 258 px of inner tile is about 34 columns a line, so the three-line box holds ~91.
   const BOX_COLS = 91;
+  // An independent width model, written from the documented expectation and using
+  // the platform's own grapheme boundaries: one glyph cluster is two columns when
+  // it carries U+FE0F or an astral code point, otherwise one. It never calls the
+  // mod's width table, so a regressed table cannot move the bar with it.
+  const segmenter = new Intl.Segmenter("pt-BR", { granularity: "grapheme" });
+  const glyphs = (s) => [...segmenter.segment(s)].map((part) => part.segment);
+  const mark = (ch) => {
+    const point = ch.codePointAt(0);
+    return point === 0x200d || point === 0xfe0f || (point >= 0x0300 && point <= 0x036f);
+  };
+  const textCols = (s) =>
+    glyphs(s).reduce((n, glyph) => {
+      const wide = Array.from(glyph).some((ch) => {
+        const point = ch.codePointAt(0);
+        return point === 0xfe0f || point >= 0x10000;
+      });
+      return n + (wide ? 2 : 1);
+    }, 0);
 
   const clamped = mod.clampTitle(longTitle, 258);
   assert.ok(clamped.endsWith("…"), "a title longer than three lines ends with an ellipsis");
-  assert.ok(titleCols(clamped) <= BOX_COLS + 1, `the ellipsis lands inside the three-line box, got ${titleCols(clamped)} columns`);
+  assert.ok(textCols(clamped) <= BOX_COLS + 1, `the ellipsis lands inside the three-line box, got ${textCols(clamped)} columns`);
   assert.equal(mod.clampTitle("Curto", 258), "Curto", "a short title is left alone");
+  assert.equal(mod.clampTitle("😀".repeat(10), 258), "😀".repeat(10), "a wide-glyph title that fits is left unclamped");
   const narrow = mod.clampTitle(longTitle, 160);
   assert.ok(narrow.endsWith("…") && narrow.length < clamped.length, "a narrower tile truncates sooner");
-  const emoji = mod.clampTitle("😀".repeat(120), 258);
-  assert.ok(emoji.endsWith("…"), "an emoji title still ends with an ellipsis");
-  assert.ok(titleCols(emoji) <= BOX_COLS + 1, `a wide glyph costs two columns, got ${titleCols(emoji)}`);
+
+  // Four glyph shapes, all longer than the box, all cut inside it and at a whole
+  // cluster: no trailing joiner or selector, no lone surrogate, ellipsis after a
+  // complete glyph.
+  const shapes = [
+    ["plain", longTitle],
+    ["astral", "😀".repeat(120)],
+    ["presentation", "\u2764\ufe0f".repeat(100)],
+    ["joined", "👩‍💻".repeat(80)],
+  ];
+  for (const [name, source] of shapes) {
+    const out = mod.clampTitle(source, 258);
+    const body = out.slice(0, -1);
+    assert.ok(out.endsWith("…"), `${name}: the title ends with an ellipsis`);
+    assert.ok(textCols(out) <= BOX_COLS + 1, `${name}: the ellipsis stays inside the three-line box, got ${textCols(out)} columns`);
+    assert.ok(!body.endsWith("\u200d"), `${name}: the cut never leaves a dangling zero-width joiner`);
+    assert.ok(
+      glyphs(body).length > 0 && !Array.from(glyphs(body).at(-1)).every(mark),
+      `${name}: the last retained glyph is a whole cluster, not a stray mark or selector`,
+    );
+    assert.ok(
+      Array.from(body).every((ch) => {
+        const point = ch.codePointAt(0);
+        return point < 0xd800 || point > 0xdfff;
+      }),
+      `${name}: truncation never leaves a lone surrogate`,
+    );
+    assert.equal(glyphs(out).at(-1), "…", `${name}: the ellipsis directly follows a whole cluster`);
+  }
+
+  // An anchor that does not go through any width table: a wide glyph costs two
+  // columns, so a title of wide glyphs keeps about half the glyphs a plain one does.
+  const plainRun = mod.clampTitle("a".repeat(200), 258);
+  const wideRun = mod.clampTitle("😀".repeat(120), 258);
   assert.ok(
-    Math.abs(titleCols(emoji) - titleCols(clamped)) <= 8,
-    `an emoji title keeps about the columns a plain title does (${titleCols(emoji)} vs ${titleCols(clamped)})`,
-  );
-  assert.ok(
-    Array.from(emoji.slice(0, -1)).every((ch) => {
-      const point = ch.codePointAt(0);
-      return point < 0xd800 || point > 0xdfff;
-    }),
-    "truncation never leaves a lone surrogate",
+    glyphs(wideRun).length <= glyphs(plainRun).length * 0.6 + 2,
+    `a wide glyph keeps about half the glyphs of a plain one (${glyphs(wideRun).length} vs ${glyphs(plainRun).length})`,
   );
   assert.equal(
     mod.clampTitle("a".repeat(BOX_COLS) + "\u0301" + "b".repeat(50), 258),
