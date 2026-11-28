@@ -756,10 +756,62 @@ test_pruned_resolved_hold_satisfies_verify() {
   assert_present "$archive" "retention did not archive the pruned Done record"
   [ "$(grep -cE "^- \[x\] $hold - " "$archive")" = 1 ] \
     || fail "the archived Done record is not exactly one identity line: $(grep -E "^- \[x\] $hold" "$archive")"
-  assert_absent "$ROOT/data/done-archive.md" "the fixture must use its own data directory, not the checkout's"
   run_decisions "$home" verify "$origin" >/dev/null \
     || fail "verify refused a resolved hold that retention archived"
+  : > "$archive"
+  if run_decisions "$home" verify "$origin" > "$home/archive-removed.out" 2> "$home/archive-removed.err"; then
+    fail "verify passed after the fixture archive was emptied"
+  fi
+  assert_grep "commander decision $hold is absent from" "$home/archive-removed.err" \
+    "the active home's archive, not the checkout, must be the source of truth for an archived hold"
   pass "a resolved hold archived by retention still satisfies verify from the active home's data"
+}
+
+# Retention can archive the same identity more than once: an out-of-band close lands
+# a marker-less block first, and a later recreated-and-resolved hold lands a second
+# block that carries the resolution. The durable read must not stop at the first.
+test_resolved_block_after_archived_out_of_band_close_still_verifies() {
+  local home origin hold archive
+  home=$(make_home archived-out-of-band-close)
+  origin=sample-repeat-review
+  mkdir -p "$home/data/$origin"
+  tasks_in "$home" add "$origin" "Review the sample repeat path" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create the repeat-path origin"
+  write_origin_meta "$home" "$origin"
+  printf 'done: report complete\n' > "$home/state/$origin.status"
+  printf '# Sample repeat review\n\nOne commander choice remains.\n' > "$home/data/$origin/report.md"
+
+  hold=$(run_decisions "$home" hold "$origin" layout \
+    --title "Choose the sample layout" --reason "commander layout choice pending" --repo sample) \
+    || fail "could not register the repeat-path hold"
+  run_decisions "$home" complete "$origin" layout >/dev/null \
+    || fail "could not complete the repeat-path inventory"
+  tasks_in "$home" add sample-repeat-followup "Apply the chosen sample layout" \
+    --kind ship --repo sample --blocked-by "$hold" >/dev/null \
+    || fail "could not create the repeat-path dependent"
+  tasks_in "$home" "done" "$hold" >/dev/null \
+    || fail "could not close the repeat-path hold out of band"
+  tasks_in "$home" prune --keep 0 >/dev/null || fail "could not prune the out-of-band close"
+  archive="$home/data/done-archive.md"
+  assert_grep "- [x] $hold - " "$archive" \
+    "precondition: the out-of-band close must be archived first"
+  if run_decisions "$home" verify "$origin" > "$home/out-of-band.out" 2> "$home/out-of-band.err"; then
+    fail "verify accepted a marker-less archived hold"
+  fi
+
+  run_decisions "$home" hold "$origin" layout \
+    --title "Choose the sample layout" --reason "commander layout choice pending" --repo sample >/dev/null \
+    || fail "could not recreate the pruned hold"
+  printf 'Use the three-column layout.\n' > "$home/repeat-decision.txt"
+  run_decisions "$home" resolve "$origin" layout --decision-file "$home/repeat-decision.txt" \
+    --routed-to sample-repeat-followup >/dev/null \
+    || fail "could not resolve the recreated hold"
+  tasks_in "$home" prune --keep 0 >/dev/null || fail "could not prune the recreated resolved hold"
+  [ "$(grep -cE "^- \[x\] $hold - " "$archive")" = 2 ] \
+    || fail "precondition: retention must archive two blocks for one identity"
+  run_decisions "$home" verify "$origin" >/dev/null \
+    || fail "verify read only the first archived block for a recreated resolved hold"
+  pass "a resolved archived block is found even after a marker-less block for the same identity"
 }
 
 # The gate must not be what stops teardown once the answered decision is archived:
@@ -917,6 +969,7 @@ test_resolve_matches_quoted_blocked_by_edges
 test_teardown_refuses_with_open_status_decisions
 test_reconcile_closes_moot_decision_with_evidence
 test_pruned_resolved_hold_satisfies_verify
+test_resolved_block_after_archived_out_of_band_close_still_verifies
 test_pruned_resolved_hold_reaches_teardown_ordinary_checks
 test_never_registered_decision_still_fails_after_retention
 test_open_and_similar_records_still_fail_the_durable_check

@@ -121,31 +121,40 @@ show_field() {  # <show-output> <field>
   printf '%s\n' "$output" | sed -n "s/^  $field: //p" | head -1
 }
 
-archived_hold_block() {  # <hold-id>
+archived_hold_blocks() {  # <hold-id>
   local id=$1 archive="$DATA/done-archive.md"
-  [ -f "$archive" ] || return 1
+  [ -f "$archive" ] || return 0
   # The identity is the exact `- [x] <hold-id> - ` line prefix, so a similar
-  # archived id that merely starts with it is a different record. The block runs
-  # until the next archived item or archive heading, keeping its body intact.
+  # archived id that merely starts with it is a different record. Every matching
+  # block is returned because retention can archive the same identity more than
+  # once; each block ends at the next archived item or archive heading.
   LC_ALL=C awk -v prefix="- [x] $id - " '
-    index($0, prefix) == 1 { in_block = 1; print; next }
-    in_block && (/^- \[[ x]\] / || /^## /) { exit }
+    index($0, prefix) == 1 {
+      if (in_block) printf "\036"
+      in_block = 1
+      print
+      next
+    }
+    in_block && (/^- \[[ x]\] / || /^## /) { in_block = 0; printf "\036"; next }
     in_block { print }
+    END { if (in_block) printf "\036" }
   ' "$archive"
 }
 
 verify_hold_archived() {  # <hold-id>
-  local block
-  block=$(archived_hold_block "$1")
-  [ -n "$block" ] || return 1
-  case "$block" in
-    *"(kind: commander)"*) : ;;
-    *) return 1 ;;
-  esac
-  case "$block" in
-    *"Resolution recorded by sq-decision-hold."*"Routed identities:"*"Routed work:"*) return 0 ;;
-    *"Reconciliation recorded by sq-decision-hold."*"Reconciliation evidence:"*) return 0 ;;
-  esac
+  local blocks block
+  blocks=$(archived_hold_blocks "$1")
+  [ -n "$blocks" ] || return 1
+  while IFS= read -r -d $'\036' block; do
+    case "$block" in
+      *"(kind: commander)"*) : ;;
+      *) continue ;;
+    esac
+    case "$block" in
+      *"Resolution recorded by sq-decision-hold."*"Routed identities:"*"Routed work:"*) return 0 ;;
+      *"Reconciliation recorded by sq-decision-hold."*"Reconciliation evidence:"*) return 0 ;;
+    esac
+  done <<< "$blocks"
   return 1
 }
 
