@@ -470,6 +470,10 @@
    "audience": "operator-current"
   },
   {
+   "path": "herdr-mods/squad-board/README.md",
+   "audience": "operator-current"
+  },
+  {
    "path": "docs/orca-backend.md",
    "audience": "operator-current"
   },

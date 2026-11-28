@@ -71,7 +71,8 @@ sq-board --with-done
 
 ### JSON mode (`--json`)
 
-Array of objects with: `id`, `state`, `kind`, `repo`, `title`, `model`, `effort`, `mode`, `backend`, `endpoint_label`, `endpoint_state`, `endpoint_detail`, `last_event`, `busy_elapsed`, `window`.
+Array of objects with: `id`, `state`, `kind`, `repo`, `title`, `model`, `effort`, `mode`, `backend`, `endpoint_label`, `endpoint_state`, `endpoint_detail`, `last_event`, `busy_elapsed`, `window`, `priority`.
+Every row carries `priority`, taken from the backlog's own `(priority: N)` tag, else the task's meta record, and left empty when neither has one.
 
 ### Compact mode (`--compact`)
 
