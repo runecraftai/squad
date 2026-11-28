@@ -762,6 +762,147 @@ test_pruned_resolved_hold_satisfies_verify() {
   pass "a resolved hold archived by retention still satisfies verify from the active home's data"
 }
 
+# The gate must not be what stops teardown once the answered decision is archived:
+# teardown must reach and finish its ordinary cleanup instead of refusing.
+test_pruned_resolved_hold_reaches_teardown_ordinary_checks() {
+  local home origin hold
+  home=$(make_home pruned-resolved-teardown)
+  origin=sample-pruned-teardown
+  mkdir -p "$home/data/$origin"
+  tasks_in "$home" add "$origin" "Review the sample teardown path" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create the prune-teardown origin"
+  write_origin_meta "$home" "$origin"
+  printf 'done: report complete\n' > "$home/state/$origin.status"
+  printf '# Sample prune teardown review\n\nOne commander choice remains.\n' > "$home/data/$origin/report.md"
+
+  hold=$(run_decisions "$home" hold "$origin" layout \
+    --title "Choose the sample layout" --reason "commander layout choice pending" --repo sample) \
+    || fail "could not register the prune-teardown hold"
+  run_decisions "$home" complete "$origin" layout >/dev/null \
+    || fail "could not complete the prune-teardown inventory"
+  tasks_in "$home" add sample-teardown-followup "Apply the chosen sample layout" \
+    --kind ship --repo sample --blocked-by "$hold" >/dev/null \
+    || fail "could not create the prune-teardown dependent"
+  printf 'Use the single-column layout.\n' > "$home/teardown-decision.txt"
+  run_decisions "$home" resolve "$origin" layout --decision-file "$home/teardown-decision.txt" \
+    --routed-to sample-teardown-followup >/dev/null \
+    || fail "could not resolve the prune-teardown hold"
+  tasks_in "$home" prune --keep 0 >/dev/null || fail "could not prune the retained Done section"
+  assert_no_grep "$hold" "$home/data/backlog.md" "the pruned hold stayed in the live backlog"
+
+  run_teardown "$home" "$origin" > "$home/pruned-teardown.out" 2> "$home/pruned-teardown.err" \
+    || fail "teardown refused a pruned and resolved decision: $(cat "$home/pruned-teardown.err")"
+  assert_no_grep "unresolved-decision completion gate" "$home/pruned-teardown.err" \
+    "teardown stopped at the decision gate instead of its ordinary checks"
+  assert_grep "teardown $origin complete" "$home/pruned-teardown.out" \
+    "teardown did not finish its ordinary cleanup"
+  assert_absent "$home/state/$origin.meta" "teardown left the finished task's metadata behind"
+  pass "an archived resolved hold lets recon teardown reach its ordinary checks"
+}
+
+# Archiving must not become a blanket pass: a key that was never registered is
+# still absent, and the refusal still names it.
+test_never_registered_decision_still_fails_after_retention() {
+  local home origin
+  home=$(make_home never-registered-decision)
+  origin=sample-unregistered-review
+  mkdir -p "$home/data/$origin"
+  tasks_in "$home" add "$origin" "Review an unregistered sample decision" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create the unregistered-decision origin"
+  write_origin_meta "$home" "$origin"
+  printf 'done: report complete\n' > "$home/state/$origin.status"
+  printf '# Unregistered sample review\n\nThe inventory claims a decision nobody registered.\n' \
+    > "$home/data/$origin/report.md"
+  tasks_in "$home" add "$origin-decision-layout" "Archived sample layout choice" \
+    --kind strike --repo sample >/dev/null || fail "could not create the archive fixture"
+  tasks_in "$home" "done" "$origin-decision-layout" >/dev/null \
+    || fail "could not close the archive fixture"
+  tasks_in "$home" prune --keep 0 >/dev/null || fail "could not prune the archive fixture"
+  assert_grep "- [x] $origin-decision-layout - " "$home/data/done-archive.md" \
+    "precondition: a non-commander record must be archived for this control"
+  printf 'decisions_reviewed=1\ndecision_keys=layout\n' >> "$home/state/$origin.meta"
+
+  if run_decisions "$home" verify "$origin" > "$home/unregistered.out" 2> "$home/unregistered.err"; then
+    fail "verify accepted a decision key that was never registered"
+  fi
+  assert_grep "$origin-decision-layout" "$home/unregistered.err" \
+    "the refusal must name the unregistered decision key"
+  pass "a never-registered decision still fails and the refusal names it"
+}
+
+# A live backlog card that is not an active commander hold, a Done card with no
+# resolution record, and an archived identity that only starts with the requested
+# one are three different things from a durably answered decision.
+test_open_and_similar_records_still_fail_the_durable_check() {
+  local home origin hold
+  home=$(make_home open-and-similar-records)
+  origin=sample-open-review
+  mkdir -p "$home/data/$origin"
+  tasks_in "$home" add "$origin" "Review an open sample decision" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create the open-decision origin"
+  write_origin_meta "$home" "$origin"
+  printf 'done: report complete\n' > "$home/state/$origin.status"
+  printf '# Open sample review\n\nOne commander choice remains.\n' > "$home/data/$origin/report.md"
+  tasks_in "$home" add "$origin-decision-layout" "Unheld sample layout choice" \
+    --kind commander --repo sample >/dev/null || fail "could not create the open-card fixture"
+  printf 'decisions_reviewed=1\ndecision_keys=layout\n' >> "$home/state/$origin.meta"
+  if run_decisions "$home" verify "$origin" > "$home/open.out" 2> "$home/open.err"; then
+    fail "verify accepted a present and open card that is not an active commander hold"
+  fi
+  assert_grep "neither actively held nor durably resolved" "$home/open.err" \
+    "the open non-hold refusal changed"
+
+  home=$(make_home done-without-resolution)
+  origin=sample-unresolved-done
+  mkdir -p "$home/data/$origin"
+  tasks_in "$home" add "$origin" "Review a done sample decision" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create the done-decision origin"
+  write_origin_meta "$home" "$origin"
+  printf 'done: report complete\n' > "$home/state/$origin.status"
+  printf '# Done sample review\n\nOne commander choice remains.\n' > "$home/data/$origin/report.md"
+  tasks_in "$home" add "$origin-decision-layout" "Resolved sample layout choice" \
+    --kind commander --repo sample >/dev/null || fail "could not create the done-card fixture"
+  tasks_in "$home" "done" "$origin-decision-layout" >/dev/null \
+    || fail "could not close the done-card fixture"
+  printf 'decisions_reviewed=1\ndecision_keys=layout\n' >> "$home/state/$origin.meta"
+  if run_decisions "$home" verify "$origin" > "$home/done.out" 2> "$home/done.err"; then
+    fail "verify accepted a Done card that records no resolution"
+  fi
+  assert_grep "neither actively held nor durably resolved" "$home/done.err" \
+    "the unresolved Done refusal changed"
+
+  home=$(make_home archived-similar-identity)
+  origin=sample-prefix-review
+  mkdir -p "$home/data/$origin"
+  tasks_in "$home" add "$origin" "Review a prefix sample decision" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create the prefix origin"
+  write_origin_meta "$home" "$origin"
+  printf 'done: report complete\n' > "$home/state/$origin.status"
+  printf '# Prefix sample review\n\nOne commander choice remains.\n' > "$home/data/$origin/report.md"
+  hold=$(run_decisions "$home" hold "$origin" layout-extra \
+    --title "Choose the extra sample layout" --reason "commander layout choice pending" --repo sample) \
+    || fail "could not register the prefix hold"
+  [ "$hold" = "$origin-decision-layout-extra" ] || fail "prefix hold identity was not deterministic: $hold"
+  tasks_in "$home" add sample-prefix-followup "Apply the chosen sample layout" \
+    --kind ship --repo sample --blocked-by "$hold" >/dev/null \
+    || fail "could not create the prefix dependent"
+  printf 'Use the drei-column layout.\n' > "$home/prefix-decision.txt"
+  run_decisions "$home" resolve "$origin" layout-extra --decision-file "$home/prefix-decision.txt" \
+    --routed-to sample-prefix-followup >/dev/null \
+    || fail "could not resolve the prefix hold"
+  tasks_in "$home" prune --keep 0 >/dev/null || fail "could not prune the prefix Done section"
+  assert_no_grep "$hold" "$home/data/backlog.md" "the pruned prefix hold stayed in the live backlog"
+  assert_grep "- [x] $hold - " "$home/data/done-archive.md" \
+    "precondition: a resolved similar identity must be archived"
+  printf 'decisions_reviewed=1\ndecision_keys=layout\n' >> "$home/state/$origin.meta"
+  if run_decisions "$home" verify "$origin" > "$home/prefix.out" 2> "$home/prefix.err"; then
+    fail "verify accepted an archived identity that merely starts with the requested one"
+  fi
+  assert_grep "commander decision $origin-decision-layout is absent from" "$home/prefix.err" \
+    "the refusal must name the requested identity, not the similar archived one"
+  pass "open, unresolved Done, and merely similar archived records all still fail the durable check"
+}
+
 test_uninventoried_report_decision_refuses_completion
 
 test_scout_teardown_always_requires_inventory_verification
@@ -776,3 +917,6 @@ test_resolve_matches_quoted_blocked_by_edges
 test_teardown_refuses_with_open_status_decisions
 test_reconcile_closes_moot_decision_with_evidence
 test_pruned_resolved_hold_satisfies_verify
+test_pruned_resolved_hold_reaches_teardown_ordinary_checks
+test_never_registered_decision_still_fails_after_retention
+test_open_and_similar_records_still_fail_the_durable_check
