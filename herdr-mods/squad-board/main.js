@@ -197,7 +197,9 @@ export function parseBody(stdout) {
   const lines = String(stdout ?? "").split("\n");
   const at = lines.findIndex((line) => /^\s{0,4}body:/.test(line));
   if (at === -1) return String(stdout ?? "").trim();
-  const rest = lines[at].replace(/^\s{0,4}body:\s?/, "");
+  const end = lines.findIndex((line, i) => i > at && /^help\[/.test(line));
+  const kept = lines.slice(at, end === -1 ? undefined : end);
+  const rest = kept[0].replace(/^\s{0,4}body:\s?/, "");
   if (rest.startsWith('"')) {
     try {
       return JSON.parse(rest);
@@ -205,7 +207,7 @@ export function parseBody(stdout) {
       // An unterminated or non-JSON quote falls through to the plain text.
     }
   }
-  return [rest, ...lines.slice(at + 1)].join("\n").trim();
+  return [rest, ...kept.slice(1)].join("\n").trim();
 }
 
 export default class SquadBoard extends View {

@@ -143,7 +143,7 @@ claim here.
 ## No lifecycle action
 
 The board can only show and focus.
-It contains no `sq-tasks`, no `sq-spawn`, no `sq-teardown`, no `hc` write, no `push`, and no merge: its only app command is `agent.focus`, and the only program it runs is `bin/sq-board.sh`.
+It contains no `sq-tasks` write verb (only the read-only `sq-tasks show`), no `sq-spawn`, no `sq-teardown`, no `hc` write, no `push`, and no merge: its only app command is `agent.focus`, and the only programs it runs are `bin/sq-board.sh` and `sq-tasks show`.
 Dispatching, cleaning up, and merging stay Squad's, exactly as before this mod existed.
 
 ## Removing it

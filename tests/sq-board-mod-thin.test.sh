@@ -296,6 +296,38 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   console.log("  ok in-flight cards focus their pane; queue and held cards open a read-only body panel that Escape and its control close");
 }
 
+// ---- the panel body stops before sq-tasks' own help block -------------------
+{
+  const plainBody = [
+    "task:",
+    "  id: waiting",
+    "  title: Na fila",
+    "  body: current status only",
+    "help[2]:",
+    "- Run sq-tasks show <id> for the whole task",
+    "- Run sq-tasks update <id> to change it",
+  ].join("\n");
+  const withBody = (rows) => {
+    const base = okExec(rows);
+    return (cmd, args, opts) => {
+      if (String(args?.[1] ?? "").includes("sq-tasks show")) {
+        stub.execs.push({ cmd, args, opts });
+        return Promise.resolve({ code: 0, stdout: plainBody, stderr: "" });
+      }
+      return base(cmd, args, opts);
+    };
+  };
+  const { view, cx } = await boot({ exec: withBody(fixture) });
+  await flush();
+  byId(view.render(cx), "card-waiting").click({}, cx);
+  await flush();
+  const panelText = allText(byId(view.render(cx), "detail"));
+  assert.ok(panelText.includes("current status only"), "a plain single-line body is shown in full");
+  assert.ok(!panelText.includes("help["), "the panel stops before sq-tasks' help header");
+  assert.ok(!panelText.includes("Run sq-tasks"), "sq-tasks' suggestions never become part of the task body");
+  console.log("  ok the panel body stops before sq-tasks' help block");
+}
+
 // ---- the sort control: display order only, remembered in shared() -----------
 {
   const { view, cx } = await boot();
@@ -515,6 +547,8 @@ HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
 [ "$(find "$tmp_home/mods" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1 ] || fail "install must be idempotent"
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
 [ ! -e "$target" ] || fail "--uninstall must remove what it installed"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must be idempotent: a second run with nothing to remove exits 0"
+[ ! -e "$target" ] || fail "a second --uninstall must leave nothing behind"
 
 # The editor aids `herdr-app check` writes must not block removal.
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
