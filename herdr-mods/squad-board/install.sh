@@ -10,8 +10,11 @@
 #   ./install.sh --copy       same as the default: install a copy
 #   ./install.sh --link       symlink the target to this folder instead, so edits
 #                             here reload live (not verified on herdr-app 0.1.18)
-#   ./install.sh --uninstall  remove the copy or link it created, plus the editor
-#                             files the app regenerates beside a copy, and nothing else
+#   ./install.sh --uninstall  on a copy, remove this mod's own files, its marker,
+#                             and the two editor files herdr-app regenerates
+#                             beside a copy; on a --link install, remove only the
+#                             link (those editor files stay in this repository's
+#                             folder). Never anything else.
 #   ./install.sh --print      print the target path, then exit
 #   ./install.sh --help       print this usage
 #

@@ -87,6 +87,8 @@ A tab can also open with one task already on show: `--props '{"base":"/path/to/s
 
 A small control in the header reads `ordem: prioridade` and cycles through the display keys the board
 already carries: priority, elapsed time, kind, repo, title and state.
+The header drops the sort control below 480 px, the read line below 560 px and the title below the
+280 px pane minimum, so the view toggle is never pushed out at any width.
 Priority sorts by the backlog's own number, lowest first, with an unprioritised task last, and it
 leads the list, so it is also the default order.
 Every key comes from the board's JSON, including the `priority` that `bin/sq-board.sh --json`
@@ -127,7 +129,7 @@ So the read is bounded and paced:
 - never a read while the pane is not visible, and the board re-reads on the first paint after it is visible again;
 - an explicit 180 s `exec` timeout, so a hung board is killed instead of holding the read open.
 
-The header shows the last read's own measured milliseconds and item count, for example `[16312ms · 340]`.
+At 560 px and wider, the header shows the last read's own measured milliseconds and item count, for example `[16312ms · 340]`.
 
 ## Keyboard
 
@@ -159,7 +161,7 @@ That removes the copy or the link it created, plus the two editor files the app 
 If the folder holds any other file, or has no install marker, the script refuses and names the manual removal: delete `mods/squad-board` by hand, which removes the same files.
 Deleting `mods/squad-board` by hand has the same effect; no layout, key binding, or app setting was ever changed, so nothing else needs undoing.
 Close the board's tabs before removing the folder: a tab left open points at a folder that is gone, and the app reports it in `herdr-app status` until that tab closes.
-The app's shared state keeps the `board.view` value the board last wrote: nothing reads it once the mod is gone and the app leaves it in place, so removal is not literally traceless, but it is harmless.
+The app's shared state keeps the `board.view` and `board.sort` values the board last wrote: nothing reads them once the mod is gone and the app leaves them in place, so removal is not literally traceless, but it is harmless.
 
 ## Evidence
 
