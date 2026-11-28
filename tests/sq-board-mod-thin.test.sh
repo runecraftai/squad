@@ -211,7 +211,12 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   assert.match(call.args[1], /bin\/sq-board\.sh --json/);
   assert.doesNotMatch(call.args[1], /--state/, "one read of the whole board supplies all three sections");
   assert.equal(call.opts.timeout, 180000, "the read is bounded by an explicit timeout");
-  assert.equal(call.opts.cwd, "/repo", "props base is where the board is read");
+  assert.equal(call.opts.cwd, undefined, "the read never depends on the host honouring exec's cwd option");
+  assert.match(
+    call.args[1],
+    /^cd '\/repo' && SQUAD_BASE='\/repo' exec bin\/sq-board\.sh --json$/,
+    "the chosen base is cd-ed to and exported as SQUAD_BASE inside the command itself",
+  );
   assert.equal(stub.timer.ms, 60000, "at most one read per minute, never tighter than 15 s");
 
   const tree = view.render(cx);
@@ -288,6 +293,17 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
     const ids = view.items.map((m) => m.id);
     assert.ok(ids.includes("chosen"), `the props base is what the board reads, saw ${JSON.stringify(ids)}`);
     assert.ok(!ids.includes("ambient"), "an ambient SQUAD_BASE must not override the chosen base");
+
+    // A base path with a space proves the command quotes it instead of
+    // splitting it into extra shell words.
+    const spaced = makeBase("chosen base");
+    const { view: spacedView } = await boot({ exec: realExec, props: { base: spaced } });
+    await flush();
+    assert.deepEqual(
+      spacedView.items.map((m) => m.id),
+      ["chosen base"],
+      "a chosen base with a space in its path is passed as one shell word",
+    );
   } finally {
     if (saved === undefined) delete process.env.SQUAD_BASE;
     else process.env.SQUAD_BASE = saved;
