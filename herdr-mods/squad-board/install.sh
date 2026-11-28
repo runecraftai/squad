@@ -2,8 +2,9 @@
 # install.sh - install or remove the squad-board mod from the Herdr app.
 #
 # The app loads a mod by NAME from its own mods directory, so the folder has to
-# live at <app home>/mods/squad-board. This script touches exactly that one
-# path and nothing else: no layout, no other mod, no app or core state.
+# live at <app home>/mods/squad-board. This script creates the mods directory
+# when absent and touches nothing else under the app home: no layout, no other
+# mod, no app or core state.
 #
 # Usage:
 #   ./install.sh              copy main.js and mod.json to <app home>/mods/squad-board
