@@ -34,6 +34,8 @@
 # complete against the surviving report and holds without recreating task state.
 # `verify` is read-only and is called by recon teardown so teardown cannot erase a
 # source before this gate has succeeded.
+# A resolved decision also counts once retention has pruned its Done record into the
+# active home's data/done-archive.md. Pruning therefore never reopens a closed gate.
 #
 # `resolve` requires every --routed-to task to exist and to be blocked by the hold.
 # It writes the commander decision and routed identities into the hold body, clears
@@ -119,6 +121,34 @@ show_field() {  # <show-output> <field>
   printf '%s\n' "$output" | sed -n "s/^  $field: //p" | head -1
 }
 
+archived_hold_block() {  # <hold-id>
+  local id=$1 archive="$DATA/done-archive.md"
+  [ -f "$archive" ] || return 1
+  # The identity is the exact `- [x] <hold-id> - ` line prefix, so a similar
+  # archived id that merely starts with it is a different record. The block runs
+  # until the next archived item or archive heading, keeping its body intact.
+  LC_ALL=C awk -v prefix="- [x] $id - " '
+    index($0, prefix) == 1 { in_block = 1; print; next }
+    in_block && (/^- \[[ x]\] / || /^## /) { exit }
+    in_block { print }
+  ' "$archive"
+}
+
+verify_hold_archived() {  # <hold-id>
+  local block
+  block=$(archived_hold_block "$1")
+  [ -n "$block" ] || return 1
+  case "$block" in
+    *"(kind: commander)"*) : ;;
+    *) return 1 ;;
+  esac
+  case "$block" in
+    *"Resolution recorded by sq-decision-hold."*"Routed identities:"*"Routed work:"*) return 0 ;;
+    *"Reconciliation recorded by sq-decision-hold."*"Reconciliation evidence:"*) return 0 ;;
+  esac
+  return 1
+}
+
 origin_exists_here() {  # <origin-id>
   [ -f "$STATE/$1.meta" ] && return 0
   [ -f "$DATA/$1/report.md" ] && return 0
@@ -191,22 +221,27 @@ verify_hold_resolved() {  # <hold-id>
 
 verify_hold_durable() {  # <hold-id>
   local id=$1 show state held kind hold_kind body
-  show=$(task_show "$id") || fail "commander decision $id is absent from $SQUAD_BASE/data/backlog.md"
-  state=$(show_field "$show" state)
-  held=$(show_field "$show" held)
-  kind=$(show_field "$show" kind)
-  hold_kind=$(show_field "$show" hold_kind)
-  body=$(show_field "$show" body)
-  if [ "$state" = queued ] && [ "$held" = yes ] && [ "$kind" = commander ] && [ "$hold_kind" = commander ]; then
+  if show=$(task_show "$id"); then
+    state=$(show_field "$show" state)
+    held=$(show_field "$show" held)
+    kind=$(show_field "$show" kind)
+    hold_kind=$(show_field "$show" hold_kind)
+    body=$(show_field "$show" body)
+    if [ "$state" = queued ] && [ "$held" = yes ] && [ "$kind" = commander ] && [ "$hold_kind" = commander ]; then
+      return 0
+    fi
+    if [ "$state" = "done" ] && [ "$kind" = commander ]; then
+      case "$body" in
+        *"Resolution recorded by sq-decision-hold."*"Routed work:"*) return 0 ;;
+        *"Reconciliation recorded by sq-decision-hold."*"Reconciliation evidence:"*) return 0 ;;
+      esac
+    fi
+    fail "commander decision $id is neither actively held nor durably resolved"
+  fi
+  if verify_hold_archived "$id"; then
     return 0
   fi
-  if [ "$state" = "done" ] && [ "$kind" = commander ]; then
-    case "$body" in
-      *"Resolution recorded by sq-decision-hold."*"Routed work:"*) return 0 ;;
-      *"Reconciliation recorded by sq-decision-hold."*"Reconciliation evidence:"*) return 0 ;;
-    esac
-  fi
-  fail "commander decision $id is neither actively held nor durably resolved"
+  fail "commander decision $id is absent from $SQUAD_BASE/data/backlog.md"
 }
 
 verify_resolution_identity() {
