@@ -15,7 +15,7 @@ herdr-mods/squad-board/install.sh --link   # or link the folder, so edits here r
 
 `--link` is untested on herdr-app 0.1.18: prefer `--copy` unless you are changing the mod and want the app's own hot reload.
 The script is idempotent, touches only `mods/squad-board`, refuses to overwrite a folder it cannot prove it wrote, and never deletes a file it did not write.
-On a copy, `--uninstall` removes this mod's `main.js` and `mod.json` plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` writes beside it, so the folder goes away too.
+On a copy, `--uninstall` removes this mod's `main.js` and `mod.json` plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` writes beside it, so the folder goes away when nothing else is in it.
 On a `--link` install it removes only the link, and any editor files stay in this repository's folder.
 
 ## Open and close it

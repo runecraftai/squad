@@ -417,6 +417,19 @@ if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
 fi
 [ -f "$tmp_home/mods/squad-board/notes.txt" ] || fail "--link must never delete a person's file"
 [ -f "$tmp_home/mods/squad-board/main.js" ] || fail "a refused --link must leave the copy in place"
+rm -rf "$tmp_home/mods/squad-board"
+
+# --uninstall never writes through a link this folder did not create.
+other="$tmp_home/other-copy"
+mkdir -p "$other"
+cp "$MOD/main.js" "$MOD/mod.json" "$other/"
+ln -s "$other" "$tmp_home/mods/squad-board"
+if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
+  fail "--uninstall must refuse a link it did not create"
+fi
+[ -f "$other/main.js" ] || fail "--uninstall must never write through a foreign link"
+[ -f "$other/mod.json" ] || fail "--uninstall must never write through a foreign link"
+rm -f "$tmp_home/mods/squad-board"
 pass "install copies once, is idempotent, and only removes what it wrote"
 
 # ---- the app's own validator, where the app is installed ---------------------

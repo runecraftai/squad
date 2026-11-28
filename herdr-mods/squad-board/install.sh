@@ -77,6 +77,8 @@ do_uninstall() {
   if is_our_link; then
     rm "$TARGET"
     printf 'removed link %s\n' "$TARGET"
+  elif [ -L "$TARGET" ]; then
+    die "refusing to remove $TARGET: it links to $(readlink "$TARGET"), not to this folder"
   elif [ -d "$TARGET" ]; then
     is_our_copy "$TARGET" ||
       die "refusing to remove $TARGET: it does not hold this mod's main.js and mod.json; delete it by hand if you are sure"
