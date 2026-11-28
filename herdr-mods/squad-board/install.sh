@@ -9,7 +9,7 @@
 #   ./install.sh              copy main.js and mod.json to <app home>/mods/squad-board
 #   ./install.sh --link       symlink the target to this folder instead, so edits
 #                             here reload live (not verified on herdr-app 0.1.18)
-#   ./install.sh --uninstall  remove exactly what an install created
+#   ./install.sh --uninstall  remove exactly the files an install created
 #   ./install.sh --print      print the target path, then exit
 #   ./install.sh --help       print this usage
 #
@@ -73,18 +73,23 @@ do_print() {
 }
 
 do_uninstall() {
-  local stray
+  local file
   if is_our_link; then
     rm "$TARGET"
     printf 'removed link %s\n' "$TARGET"
   elif [ -d "$TARGET" ]; then
-    is_our_copy "$TARGET" || die "refusing to delete $TARGET: it is not a copy of this folder"
-    stray="$(strays "$TARGET")"
-    if [ -n "$stray" ]; then
-      die "refusing to delete $TARGET: it also holds files this script did not write: ${stray//$'\n'/ }"
+    is_our_copy "$TARGET" ||
+      die "refusing to remove $TARGET: it does not hold this mod's main.js and mod.json; delete it by hand if you are sure"
+    for file in "${FILES[@]}" "${GENERATED[@]}"; do
+      rm -f "$TARGET/$file"
+    done
+    printf 'removed the mod files from %s\n' "$TARGET"
+    if rmdir "$TARGET" 2>/dev/null; then
+      printf 'removed %s\n' "$TARGET"
+    else
+      printf 'left %s in place: it still holds files this script did not write:\n' "$TARGET"
+      strays "$TARGET"
     fi
-    rm -rf "$TARGET"
-    printf 'removed copy %s\n' "$TARGET"
   else
     printf 'nothing to remove: %s does not exist\n' "$TARGET"
   fi
