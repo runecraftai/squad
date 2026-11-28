@@ -561,6 +561,39 @@ HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --uninstall >/dev/null ||
 [ -f "$MOD/main.js" ] || fail "--uninstall of a link must never touch the checkout"
 rm -f "$checkout_link"
 
+# The requested mode wins: a copy run replaces a link this script created, and a
+# second identical invocation changes nothing.
+physical_mod="$(cd -P "$MOD" && pwd -P)"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null
+[ -L "$target" ] || fail "--link must create a link"
+[ "$(readlink "$target")" = "$physical_mod" ] || fail "--link must point at this folder"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null
+[ "$(readlink "$target")" = "$physical_mod" ] || fail "a second identical --link must change nothing"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null || fail "the default run must replace an owned link with a copy"
+[ ! -L "$target" ] || fail "the default run over an owned link must leave a real folder, not a link"
+cmp -s "$MOD/main.js" "$target/main.js" || fail "a copy made from an owned link must hold this folder's main.js"
+cmp -s "$MOD/mod.json" "$target/mod.json" || fail "a copy made from an owned link must hold this folder's mod.json"
+[ -f "$marker" ] || fail "a copy made from an owned link must carry the marker"
+[ -f "$MOD/main.js" ] || fail "converting an owned link to a copy must never touch the checkout"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+[ ! -e "$target" ] || fail "--uninstall must remove a copy made from an owned link"
+
+# --copy names the same conversion explicitly.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --copy >/dev/null || fail "--copy must replace an owned link with a copy"
+[ ! -L "$target" ] || fail "--copy over an owned link must leave a real folder, not a link"
+[ -f "$marker" ] || fail "--copy over an owned link must write the marker"
+cmp -s "$MOD/main.js" "$target/main.js" || fail "--copy over an owned link must hold this folder's main.js"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+
+# A second identical copy install changes nothing.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+before_install="$(cksum "$target/main.js" "$target/mod.json" "$marker")"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+[ "$(cksum "$target/main.js" "$target/mod.json" "$marker")" = "$before_install" ] || fail "a second identical copy install must change nothing"
+[ ! -L "$target" ] || fail "a second identical copy install must leave the copy a real folder"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+
 # --link replaces its own copy, and refuses a copy without a marker.
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null || fail "--link must replace a copy this script owns"
@@ -598,7 +631,7 @@ if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
   fail "--link must refuse a foreign link"
 fi
 rm -f "$target"
-pass "install keeps a marker, updates and removes stale copies, and refuses anything it cannot prove it wrote"
+pass "install keeps a marker, updates and removes stale copies, converts between modes, and refuses anything it cannot prove it wrote"
 
 # ---- the app's own validator, where the app is installed ---------------------
 if command -v herdr-app >/dev/null 2>&1; then

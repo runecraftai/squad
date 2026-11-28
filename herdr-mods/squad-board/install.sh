@@ -7,6 +7,7 @@
 #
 # Usage:
 #   ./install.sh              copy main.js and mod.json to <app home>/mods/squad-board
+#   ./install.sh --copy       same as the default: install a copy
 #   ./install.sh --link       symlink the target to this folder instead, so edits
 #                             here reload live (not verified on herdr-app 0.1.18)
 #   ./install.sh --uninstall  remove the copy or link it created, plus the editor
@@ -19,8 +20,10 @@
 # after main.js and mod.json, so an interrupted copy never carries one. Installing
 # over an existing folder and --uninstall both require that marker, and both
 # refuse a folder holding any other entry; the refusal names the manual removal
-# (delete the folder, then install). The script is idempotent: a second run of the
-# same mode changes nothing and exits 0.
+# (delete the folder, then install). The requested mode wins over what the target
+# already is: a copy run replaces a link this script created, and --link replaces
+# its own copy. The script is idempotent: a second run of the same mode changes
+# nothing and exits 0.
 set -euo pipefail
 
 NAME=squad-board
@@ -128,7 +131,15 @@ do_install() {
   local file stray
   mkdir -p "$APP_HOME/mods"
   if is_our_link; then
-    printf 'already linked: %s\n' "$TARGET"
+    if [ "$MODE" = link ]; then
+      printf 'already linked: %s\n' "$TARGET"
+    else
+      rm "$TARGET"
+      mkdir -p "$TARGET"
+      cp "${FILES[@]/#/$SELF_DIR/}" "$TARGET/"
+      write_marker "$TARGET"
+      printf 'replaced the link with a copy at %s\n' "$TARGET"
+    fi
   elif [ -L "$TARGET" ]; then
     die "refusing to replace $TARGET: it links to $(readlink "$TARGET"); delete the link by hand if you are sure"
   elif [ -d "$TARGET" ]; then
