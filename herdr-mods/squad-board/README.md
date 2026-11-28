@@ -15,6 +15,7 @@ herdr-mods/squad-board/install.sh --link   # or link the folder, so edits here r
 
 `--link` is untested on herdr-app 0.1.18: prefer `--copy` unless you are changing the mod and want the app's own hot reload.
 The script is idempotent, touches only `mods/squad-board`, and proves ownership with a marker file, `.squad-board-install`, that it writes last so an interrupted copy carries none.
+The requested mode wins over what the target already is: the default run or `--copy` replaces a link this script created with a copy, and `--link` replaces its own copy.
 Installing over an existing folder and `--uninstall` both require that marker, and both refuse a folder holding any other entry; the refusal names the manual removal (delete the folder, then install) and deletes nothing.
 On a copy, `--uninstall` removes this mod's `main.js`, `mod.json` and marker plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` regenerates beside it, and never anything else.
 On a `--link` install it removes only the link, and any editor files stay in this repository's folder.
@@ -86,6 +87,9 @@ It contains no `sq-tasks`, no `sq-spawn`, no `sq-teardown`, no `hc` write, no `p
 Dispatching, cleaning up, and merging stay Squad's, exactly as before this mod existed.
 
 ## Removing it
+
+Close the board tab first, with `herdr-app do tab.close --id <tab-id>`: a board tab still open on a removed folder makes `herdr-app status` report the missing mod until that tab closes.
+Then remove the install:
 
 ```sh
 herdr-mods/squad-board/install.sh --uninstall
