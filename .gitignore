@@ -26,3 +26,6 @@ node_modules/
 .lavish/
 respostas-squad.md
 .skill-lock.json
+# Herdr writes these beside any mod folder it checks; they are editor aids, not source.
+herdr-mods/*/gpui-kit.d.ts
+herdr-mods/*/jsconfig.json
