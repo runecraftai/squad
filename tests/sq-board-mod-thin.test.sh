@@ -441,6 +441,7 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
 
   const at200 = at(200);
   assert.ok(byId(at200, "view-list"), "the toggle stays reachable at the 200 px readable minimum");
+  assert.ok(!allText(at200).includes("Missões"), "below TITLE_MIN the title is dropped, so it cannot crowd the toggle");
 
   const at479 = at(479);
   assert.equal(byId(at479, "sort"), null, "the sort control stays out below 480 px");
