@@ -34,8 +34,9 @@
 # complete against the surviving report and holds without recreating task state.
 # `verify` is read-only and is called by recon teardown so teardown cannot erase a
 # source before this gate has succeeded.
-# A resolved decision also counts once retention has pruned its Done record into the
-# active home's data/done-archive.md. Pruning therefore never reopens a closed gate.
+# A resolved or reconciled decision also counts once retention has pruned its Done
+# record into done-archive.md under the effective data directory. Pruning therefore
+# never reopens a closed gate.
 #
 # `resolve` requires every --routed-to task to exist and to be blocked by the hold.
 # It writes the commander decision and routed identities into the hold body, clears
