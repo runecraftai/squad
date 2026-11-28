@@ -166,17 +166,28 @@ fm_lint_changed_base_ref() {
 # or a direct *.tmux child of tmux/) without the shell case statement's
 # non-pathname wildcard matching a path separator by accident.
 fm_lint_is_canonical_root() {
-  local path=$1 dir base
+  local path=$1 dir base mod
   case "$path" in
     */*) dir=${path%/*}; base=${path##*/} ;;
     *) dir=; base=$path ;;
   esac
   case "$base" in
-    *.sh|*.tmux) : ;;
+    *.tmux)
+      [ "$dir" = tmux ] || return 1
+      return 0
+      ;;
+    *.sh) : ;;
     *) return 1 ;;
   esac
   case "$dir" in
-    bin|bin/backends|tests|tmux|herdr-mods/*) return 0 ;;
+    bin|bin/backends|tests) return 0 ;;
+    herdr-mods/*)
+      mod=${dir#herdr-mods/}
+      case "$mod" in
+        ''|*/*) return 1 ;;
+        *) return 0 ;;
+      esac
+      ;;
     *) return 1 ;;
   esac
 }
