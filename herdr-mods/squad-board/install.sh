@@ -153,6 +153,8 @@ do_install() {
       write_marker "$TARGET"
       printf 'updated copy %s\n' "$TARGET"
     fi
+  elif [ -e "$TARGET" ]; then
+    die "refusing to replace $TARGET: it is not a folder this script installed; delete it by hand if you are sure, then install"
   elif [ "$MODE" = link ]; then
     ln -s "$SELF_DIR" "$TARGET"
     printf 'linked %s -> %s\n' "$TARGET" "$SELF_DIR"

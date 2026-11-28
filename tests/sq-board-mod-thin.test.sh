@@ -503,6 +503,35 @@ esac
 [ -f "$target/mod.json" ] || fail "a refused install must not delete a partial copy"
 rm -rf "$target"
 
+# A path that is not a folder at all (someone's file, a fifo, a hardlink) is
+# refused with the manual removal instead of a raw mkdir/ln error, in both modes
+# and on --uninstall, and nothing is overwritten.
+printf 'not a folder\n' >"$target"
+if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" 2>&1); then
+  fail "install must refuse a path that is not a folder"
+fi
+case "$out" in
+  *"delete it by hand"*) : ;;
+  *) fail "install refusal of a non-folder must name the manual removal, got: $out" ;;
+esac
+if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link 2>&1); then
+  fail "--link must refuse a path that is not a folder"
+fi
+case "$out" in
+  *"delete it by hand"*) : ;;
+  *) fail "--link refusal of a non-folder must name the manual removal, got: $out" ;;
+esac
+if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall 2>&1); then
+  fail "--uninstall must refuse a path that is not a folder"
+fi
+case "$out" in
+  *"delete it by hand"*) : ;;
+  *) fail "--uninstall refusal of a non-folder must name the manual removal, got: $out" ;;
+esac
+[ -f "$target" ] && [ ! -L "$target" ] || fail "a refused install must leave a non-folder path as it was"
+[ "$(cat "$target")" = "not a folder" ] || fail "a refused install must never overwrite a non-folder path"
+rm -f "$target"
+
 # --link works from a checkout reached through a symlink, is idempotent there,
 # and --uninstall removes only the link, never the checkout.
 checkout_link="$tmp_home/checkout-link"
