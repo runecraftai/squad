@@ -12,7 +12,7 @@ The desktop app shows that terminal inside one of its spaces once a space is con
 
 Requirements: herdr-core 0.1.22 or newer with an API compatible with protocol generation 1, `jq`, and `fob` for the worktree.
 The `hc` binary (or its `herdr-core` name) must be on `PATH`; `SQUAD_HC_BIN` overrides the resolved command.
-The desktop app's own `herdr-app` CLI is optional: it is needed only when `config/herdr-core-space` is set, to give that tab its title and to clear the title again on removal. When it is absent no title is written and the spawn is unaffected, but a presentation clear refuses and leaves both placement labels in place rather than assume the tab is untitled; `SQUAD_HERDR_APP_BIN` overrides the resolved command.
+The desktop app's own `herdr-app` CLI is optional for this adapter: it is needed only when `config/herdr-core-space` is set, to give that tab its title and to clear the title again on removal. When it is absent no title is written and the spawn is unaffected, but a presentation clear refuses and leaves both placement labels in place rather than assume the tab is untitled; `SQUAD_HERDR_APP_BIN` overrides the resolved command.
 
 A core must already be running: started by the desktop app, by systemd, or by the person with `hc server start`.
 Squad never starts one - see "Never starts a core" below.
@@ -187,10 +187,10 @@ herdr-app do terminal.park --terminal <address>
 A terminal that ends closes its own pane, so a task that is torn down needs neither step for its pane.
 Removing `config/herdr-core-space` stops new terminals from being labeled or titled; terminals already created keep their labels and their tab titles until they are cleared that way.
 
-### The card board tab
+## The card board tab
 
 `herdr-mods/squad-board/` is a Herdr mod that draws this board - `bin/sq-board.sh --json` - as mission cards inside the app:
-three sections with their real counts, a list and a kanban view, and a click that focuses a mission's agent through the board's own `window` field only while that herdr-core terminal is still live.
+three sections with their real counts, a list and a kanban view, a click that focuses a mission's agent through the board's own `window` field only while that herdr-core terminal is still live, and a detail panel with the task body for a queued or held card.
 It is read-only and independent of this adapter: it reads the board command, never a core label, and its only app command is `agent.focus`.
 It opens as its own tab and closes like any tab:
 
@@ -200,7 +200,7 @@ herdr-app do tab.new --space <space-id> --mod squad-board --name "Squad board"
 herdr-app do tab.close --id <tab-id>
 ```
 
-[`../herdr-mods/squad-board/README.md`](../herdr-mods/squad-board/README.md) owns install, removal, the two views, the pointer-only statement, and the read budget.
+[`../herdr-mods/squad-board/README.md`](../herdr-mods/squad-board/README.md) owns install, removal, the two views, its keyboard and pointer scope, and the read budget.
 
 ## Commands this backend runs
 

@@ -1,6 +1,6 @@
 # squad-board - Squad's missions as cards, in the Herdr app
 
-A Herdr mod that draws Squad's own mission board as cards: one card per mission, three sections with their real counts, a list view and a kanban view, and a click that shows the mission's agent.
+A Herdr mod that draws Squad's own mission board as cards: one card per mission, three sections with their real counts, a list view and a kanban view, and a click that focuses a mission's agent or opens its task body.
 It is a read-only view.
 It opens as its own tab and closes like any tab, and it never docks a copy into anyone's layout on its own (`"place": "none"` in `mod.json`).
 
@@ -14,7 +14,7 @@ herdr-mods/squad-board/install.sh --link   # or link the folder, so edits here r
 ```
 
 `--link` is untested on herdr-app 0.1.18: prefer `--copy` unless you are changing the mod and want the app's own hot reload.
-The script is idempotent, touches only `mods/squad-board`, and proves ownership with a marker file, `.squad-board-install`, that it writes last so an interrupted copy carries none.
+The script is idempotent, touches nothing under the app home beyond `mods/` (created when missing) and `mods/squad-board`, and proves ownership with a marker file, `.squad-board-install`, that it writes last so an interrupted copy carries none.
 The requested mode wins over what the target already is: the default run or `--copy` replaces a link this script created with a copy, and `--link` replaces its own copy.
 Installing over an existing folder and `--uninstall` both require that marker, and both refuse a folder holding any other entry; the refusal names the manual removal (delete the folder, then install) and deletes nothing.
 On a copy, `--uninstall` removes this mod's `main.js`, `mod.json` and marker plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` regenerates beside it, and never anything else.
@@ -160,7 +160,6 @@ herdr-mods/squad-board/install.sh --uninstall
 That removes the copy or the link it created, plus the two editor files the app regenerates beside a copy, and nothing else.
 If the folder holds any other file, or has no install marker, the script refuses and names the manual removal: delete `mods/squad-board` by hand, which removes the same files.
 Deleting `mods/squad-board` by hand has the same effect; no layout, key binding, or app setting was ever changed, so nothing else needs undoing.
-Close the board's tabs before removing the folder: a tab left open points at a folder that is gone, and the app reports it in `herdr-app status` until that tab closes.
 The app's shared state keeps the `board.view` and `board.sort` values the board last wrote: nothing reads them once the mod is gone and the app leaves them in place, so removal is not literally traceless, but it is harmless.
 
 ## Evidence
