@@ -218,6 +218,12 @@ collect_board() {
     # Extract repo from (repo: X)
     repo=$(printf '%s' "$rest" | grep -oP '\(repo: \K[^)]+' 2>/dev/null || echo "-")
 
+    # Priority is the backlog's own (priority: N) tag, else the task's meta record,
+    # and stays empty rather than inventing a value when neither carries one.
+    local priority
+    priority=$(printf '%s' "$rest" | grep -oP '\(priority: \K[^)]+' 2>/dev/null || true)
+    [ -n "$priority" ] || priority=$(meta_field "$id" "priority")
+
     # Extract title: between "id - " and metadata tags
     # Metadata tags: (repo: X), (kind: X), (since DATE), (priority: N), (hold: ...), etc.
     title=$(printf '%s' "$rest" | sed -E 's/ \(repo: [^)]*\)//; s/ \(kind: [^)]*\)//; s/ \(since [^)]*\)//; s/ \(priority: [^)]*\)//; s/ \(hold: [^)]*\)//; s/ \(hold-kind: [^)]*\)//; s/ \(hold-until: [^)]*\)//; s/ \(blocked-by: [^)]*\)//; s/ \(start: [^)]*\)//' | head -c 200)
@@ -249,12 +255,12 @@ collect_board() {
     ws_detail=$(printf '%s' "$ws_detail" | tr '\t\n' '  ' | cut -c1-200)
     status_event=$(printf '%s' "$status_event" | tr '\t\n' '  ' | cut -c1-200)
 
-    # US: id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window
-    printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
+    # US: id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window priority
+    printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' \
       "$id" "$st" "$kind" "$repo" "$title" \
       "$model" "$effort" "$mode" "$backend" \
       "$ws_label" "$ws_state" "$ws_detail" \
-      "$status_event" "$elapsed" "$window"
+      "$status_event" "$elapsed" "$window" "$priority"
   done < "$BACKLOG" > "$out"
 
   cat "$out"
@@ -273,7 +279,7 @@ render_json() {
 
   printf '[\n'
   local first=true
-  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
+  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window priority; do
     $first || printf ',\n'
     first=false
     id=$(json_esc "$id")
@@ -291,11 +297,12 @@ render_json() {
     status_event=$(json_esc "$status_event")
     elapsed=$(json_esc "$elapsed")
     window=$(json_esc "$window")
-    printf '  {"id":"%s","state":"%s","kind":"%s","repo":"%s","title":"%s","model":"%s","effort":"%s","mode":"%s","backend":"%s","endpoint_label":"%s","endpoint_state":"%s","endpoint_detail":"%s","last_event":"%s","busy_elapsed":"%s","window":"%s"}\n' \
+    priority=$(json_esc "$priority")
+    printf '  {"id":"%s","state":"%s","kind":"%s","repo":"%s","title":"%s","model":"%s","effort":"%s","mode":"%s","backend":"%s","endpoint_label":"%s","endpoint_state":"%s","endpoint_detail":"%s","last_event":"%s","busy_elapsed":"%s","window":"%s","priority":"%s"}\n' \
       "$id" "$state" "$kind" "$repo" "$title" \
       "$model" "$effort" "$mode" "$backend" \
       "$ws_label" "$ws_state" "$ws_detail" \
-      "$status_event" "$elapsed" "$window"
+      "$status_event" "$elapsed" "$window" "$priority"
   done < "$board_data"
   printf '\n]\n'
   rm -f "$board_data"
@@ -307,7 +314,7 @@ render_compact() {
   board_data=$(mktemp)
   collect_board > "$board_data"
 
-  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
+  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window priority; do
     local icon
     icon=$(icon_for "$ws_label")
     local ep=""
@@ -332,7 +339,7 @@ render_table() {
     return
   fi
 
-  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window; do
+  while IFS=$'\x1f' read -r id state kind repo title model effort mode backend ws_label ws_state ws_detail status_event elapsed window priority; do
     if [ "$state" != "$prev_sec" ]; then
       prev_sec="$state"
       printf '\n  %b\n' "$(section_label "$state")"
