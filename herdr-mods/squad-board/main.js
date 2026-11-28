@@ -4,7 +4,8 @@
 // per READ_INTERVAL_MS, never while this copy is not visible, and never twice at
 // the same time. Nothing here changes a mission: no dispatch, no teardown, no
 // merge, and no `hc` write. The only command this mod ever runs besides the
-// board read is `agent.focus`, on a card whose mission recorded a live window.
+// board read is `agent.focus`, on a herdr-core card whose terminal the app still
+// lists as live.
 //
 // Open it as its own tab (`herdr-app do tab.new --mod squad-board`), close it
 // like any tab (`herdr-app do tab.close --id <tab>`).
@@ -20,10 +21,6 @@ const READ_INTERVAL_MS = 60000;
 // The host kills the child at this bound, so a slow or hung board cannot keep a
 // read (and this mod) busy forever. Ten minutes is the host's cap.
 const READ_TIMEOUT_MS = 180000;
-// The card layout is readable down to 200 px; 280 px is the shipped panel
-// minimum a pane or layout block gives it (this is `min_w` in mod.json).
-const MIN_W = 280;
-
 const SECTIONS = [
   { state: "in_flight", label: "EM VOO", empty: "nenhuma missão em voo" },
   { state: "queued", label: "FILA", empty: "nada na fila" },
@@ -42,6 +39,17 @@ function terminalOf(m) {
   if (!w) return "";
   const at = w.lastIndexOf(":");
   return at === -1 ? w : w.slice(at + 1).trim();
+}
+
+// A card is clickable only when its row is a herdr-core terminal the app still
+// lists: a core recycles an address as soon as its terminal closes, and two rows
+// can then record the same session:address, so a recorded window alone could
+// open a dead terminal or another mission's. A tmux or zellij row stores
+// session:window, which is not an app terminal id at all.
+function focusAddress(m, live) {
+  if (String(m?.backend ?? "") !== "herdr-core") return "";
+  const address = terminalOf(m);
+  return address && live.has(address) ? address : "";
 }
 
 // Where Squad lives: a tab may name it (`--props '{"base":"/path/to/squad"}'`),
@@ -92,8 +100,8 @@ export default class SquadBoard extends View {
     // environment. The app passes no folder of its own, so without a base the
     // board is looked for where the app was started or at `$SQUAD_BASE`.
     const script = base
-      ? 'SQUAD_BASE="$(pwd)" exec bin/sq-board.sh --json'
-      : 'cd "${SQUAD_BASE:-.}" && SQUAD_BASE="$(pwd)" exec bin/sq-board.sh --json';
+      ? 'SQUAD_BASE="$(pwd -P)" exec bin/sq-board.sh --json'
+      : 'cd "${SQUAD_BASE:-.}" && SQUAD_BASE="$(pwd -P)" exec bin/sq-board.sh --json';
     cx.spawn(async (cx) => {
       const started = Date.now();
       try {
@@ -132,15 +140,16 @@ export default class SquadBoard extends View {
   }
 
   card(m, t, live) {
-    const address = terminalOf(m);
-    // A card is clickable only when the board recorded a window for it: `window`
-    // (`default:t1k`) is the join to the terminal, and `agent.focus` needs a
-    // terminal id. A mission with no window has no agent to show, so its card
-    // stays a plain panel rather than offering a click that cannot land.
-    const liveState = live.get(address);
+    const recorded = terminalOf(m);
+    // A card is clickable only when the mission is on herdr-core and its
+    // terminal is still in the app's agents() list; focusAddress owns that rule
+    // and explains why a recorded window alone is not enough.
+    const address = focusAddress(m, live);
+    const liveState = live.get(recorded);
     const tone = t[m.endpoint_state || liveState] ?? t.unknown;
     return v_flex()
       .id(`card-${m.id}`)
+      .min_w(0)
       .gap(3)
       .p(8)
       .rounded(7)
@@ -154,9 +163,10 @@ export default class SquadBoard extends View {
           .on_click(() => run("agent.focus", { terminal: address })),
       )
       .child(
-        h_flex().gap(6).items_start().child(div().size(7).flex_none().mt(5).rounded(4).bg(tone)).child(
-          // The title is never cut by this mod: it wraps instead, so a long
-          // mission name stays whole at 200 px and at full width.
+        h_flex().gap(6).items_start().min_w(0).child(div().size(7).flex_none().mt(5).rounded(4).bg(tone)).child(
+          // The title is never cut by this mod: it wraps inside the column
+          // instead, so a long mission name stays whole at 200 px and at full
+          // width, and it never widens its own column.
           div()
             .flex_1()
             .min_w(0)
@@ -167,15 +177,16 @@ export default class SquadBoard extends View {
         ).child(div().flex_none().text_size(10.5).text_color(t.dim).child(m.busy_elapsed || "—")),
       )
       .child(
-        h_flex()
-          .gap(6)
+        // One wrapping line, not a row of fixed children, so `kind · repo ·
+        // state` reflows with the card instead of sizing it to its content.
+        div()
+          .min_w(0)
           .text_size(10.5)
           .text_color(t.muted)
-          .child(div().child(m.kind || "—"))
-          .child(div().text_color(t.dim).child("·"))
-          .child(div().child(m.repo || "—"))
-          .child(div().text_color(t.dim).child("·"))
-          .child(div().text_color(t.dim).child(m.endpoint_state || liveState || "—")),
+          .whitespace_normal()
+          .child(
+            [m.kind || "—", m.repo || "—", m.endpoint_state || liveState || "—"].join(" · "),
+          ),
       );
   }
 
@@ -185,6 +196,7 @@ export default class SquadBoard extends View {
       ? rows.map((m) => this.card(m, t, live))
       : [this.text(s.empty, t)];
     return v_flex()
+      .min_w(0)
       .gap(5)
       .child(
         h_flex()
@@ -221,25 +233,43 @@ export default class SquadBoard extends View {
 
   header(t) {
     const shown = this.ms === null ? "lendo…" : `[${this.ms}ms · ${this.items.length}]`;
-    return h_flex()
-      .gap(8)
-      .items_center()
+    // Two rows: the title shrinks and wraps so the Lista/Kanban control stays
+    // reachable at 200 px, and the read line wraps on its own row instead of
+    // being clipped beside the toggle.
+    return v_flex()
+      .min_w(0)
+      .gap(4)
       .px(10)
       .py(6)
       .flex_none()
-      .child(div().text_size(13).font_semibold().text_color(t.foreground).child("Missões"))
-      .child(div().flex_1())
       .child(
         h_flex()
-          .gap(2)
-          .p(2)
-          .rounded(6)
-          .bg(t.surface)
-          .border(1)
-          .border_color(t.border)
-          .children(VIEWS.map((v) => this.toggle(v, t))),
+          .min_w(0)
+          .gap(8)
+          .items_center()
+          .child(
+            div()
+              .flex_1()
+              .min_w(0)
+              .text_size(13)
+              .font_semibold()
+              .text_color(t.foreground)
+              .whitespace_normal()
+              .child("Missões"),
+          )
+          .child(
+            h_flex()
+              .flex_none()
+              .gap(2)
+              .p(2)
+              .rounded(6)
+              .bg(t.surface)
+              .border(1)
+              .border_color(t.border)
+              .children(VIEWS.map((v) => this.toggle(v, t))),
+          ),
       )
-      .child(this.text(shown, t, 10));
+      .child(div().min_w(0).text_size(10).text_color(t.dim).whitespace_normal().child(shown));
   }
 
   body(t, live) {
@@ -247,12 +277,21 @@ export default class SquadBoard extends View {
     const sections = SECTIONS.map((s) => this.section(s, t, live));
     if (this.view() === "kanban") {
       return [
-        // One column per section, the same cards, read left to right. Narrower
-        // than three columns the row scrolls sideways instead of shrinking the
-        // cards below their 200 px floor.
-        h_flex().items_start().gap(8).overflow_x_scrollbar().children(
-          SECTIONS.map((s, i) => v_flex().min_w(200).flex_1().gap(5).children([sections[i]])),
-        ),
+        // One column per section, the same cards, read left to right. Each
+        // column starts at width 0 and grows into an equal share of the pane,
+        // so the three always divide the available width at full width and only
+        // scroll sideways below three 200 px columns; no column, card or title
+        // is ever sized by its content.
+        h_flex()
+          .min_w(0)
+          .items_start()
+          .gap(8)
+          .overflow_x_scrollbar()
+          .children(
+            SECTIONS.map((s, i) =>
+              v_flex().w(0).flex_1().min_w(200).gap(5).children([sections[i]]),
+            ),
+          ),
       ];
     }
     return sections;
@@ -268,7 +307,6 @@ export default class SquadBoard extends View {
     const live = new Map(agents().map((a) => [a.address, a.status]));
     return v_flex()
       .size_full()
-      .min_w(MIN_W)
       .bg(t.background)
       .child(this.header(t))
       .child(

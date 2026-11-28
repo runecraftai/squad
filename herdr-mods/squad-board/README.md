@@ -14,8 +14,9 @@ herdr-mods/squad-board/install.sh --link   # or link the folder, so edits here r
 ```
 
 `--link` is untested on herdr-app 0.1.18: prefer `--copy` unless you are changing the mod and want the app's own hot reload.
-The script is idempotent, touches only `mods/squad-board`, refuses to overwrite a folder it cannot prove it wrote, and never deletes a file it did not write.
-On a copy, `--uninstall` removes this mod's `main.js` and `mod.json` plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` writes beside it, so the folder goes away when nothing else is in it.
+The script is idempotent, touches only `mods/squad-board`, and proves ownership with a marker file, `.squad-board-install`, that it writes last so an interrupted copy carries none.
+Installing over an existing folder and `--uninstall` both require that marker, and both refuse a folder holding any other entry; the refusal names the manual removal (delete the folder, then install) and deletes nothing.
+On a copy, `--uninstall` removes this mod's `main.js`, `mod.json` and marker plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` regenerates beside it, and never anything else.
 On a `--link` install it removes only the link, and any editor files stay in this repository's folder.
 
 ## Open and close it
@@ -33,11 +34,12 @@ A tab can name that base itself:
 herdr-app do tab.new --space <space-id> --mod squad-board --props '{"base":"/path/to/squad"}'
 ```
 
+A `base` in `props` is authoritative: the read runs in that folder with `SQUAD_BASE` set to it, so an ambient `SQUAD_BASE` in the app's environment cannot override it.
 Without `props`, the mod uses a `board.base` value in the app's shared state, then `$SQUAD_BASE` from the environment the app was started in, then the app's own working folder.
 When none of them finds `bin/sq-board.sh`, the board says so in the pane and names the two ways to point at the base.
 
-The pane needs at least 280 px, which is the shipped panel minimum, and the card layout stays readable down to 200 px because the mission title wraps instead of being cut.
-`mod.json` declares that requirement as `"min_w": 280`; the app itself does not read that key, it sizes panes from the layout block's `min`, so the declaration is for readers and for this mod's own checks.
+The pane opens at 280 px, which is the shipped panel minimum, and `mod.json` declares that as `"min_w": 280`; the app itself does not read that key, it sizes panes from the layout block's `min`, so the declaration is for readers and for this mod's own checks.
+The layout itself sets no such floor: the card layout stays readable down to 200 px, where the mission title wraps instead of being cut, the header keeps `Lista`/`Kanban` reachable, and its read line wraps onto its own row.
 
 ## What it draws
 
@@ -45,12 +47,12 @@ The pane needs at least 280 px, which is the shipped panel minimum, and the card
 - One card per mission: the status dot, the whole mission title, the elapsed time, then `kind · repo · state`.
   A mission whose title is long wraps onto more lines rather than being truncated.
 - `Lista` and `Kanban` in the header.
-  Kanban draws the same three sections as columns that scroll sideways when the pane is narrower than three of them.
+  Kanban draws the same three sections as equal-width columns that divide the pane at full width; every title wraps inside its own card, and the row only scrolls sideways when the pane is narrower than three 200 px columns.
   The choice is stored through the app's `shared()` as `board.view`, so it survives a restart.
 - Loading (`lendo o board…`), empty (`nenhuma missão em voo`, `nada na fila`, `nada em espera`) and a failed read are drawn as text, so the pane is never a blank board; the last good cards stay under the error line.
 
-Clicking a card runs `agent.focus` for that mission's terminal, taken from the board's own `window` field (`default:t1k` means terminal `t1k`).
-A mission with no recorded window has no agent to show, so its card is not clickable at all.
+Clicking a card runs `agent.focus` for that mission's terminal, taken from the board's own `window` field (`default:t1k` means terminal `t1k`), but only when the row's `backend` is `herdr-core` and that terminal is still in the app's `agents()` list.
+A mission with no recorded window, a mission recorded on tmux or zellij (whose `window` is `session:window`, not an app terminal id), or a herdr-core mission whose terminal has ended is not clickable at all: a core recycles a closed terminal's address, and two rows can record the same `session:address`, so a recorded window alone could open a dead terminal or another mission's.
 
 ## Read budget
 
@@ -89,9 +91,10 @@ Dispatching, cleaning up, and merging stay Squad's, exactly as before this mod e
 herdr-mods/squad-board/install.sh --uninstall
 ```
 
-That removes the copy or the link it created, plus the two editor files the app writes beside a copy, and nothing else.
-If the folder also holds files the script did not write, they are left where they are and named on exit, and the folder itself stays; the mod is gone either way.
+That removes the copy or the link it created, plus the two editor files the app regenerates beside a copy, and nothing else.
+If the folder holds any other file, or has no install marker, the script refuses and names the manual removal: delete `mods/squad-board` by hand, which removes the same files.
 Deleting `mods/squad-board` by hand has the same effect; no layout, key binding, or app setting was ever changed, so nothing else needs undoing.
+The app's shared state keeps the `board.view` value the board last wrote: nothing reads it once the mod is gone and the app leaves it in place, so removal is not literally traceless, but it is harmless.
 
 ## Evidence
 

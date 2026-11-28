@@ -70,8 +70,8 @@ export class El {
   on_click(fn) { this.click = fn; return this; }
   hover(fn) { this.hoverFn = fn; return this; }
 }
-for (const m of ["id","gap","p","px","py","pl","rounded","bg","border","border_color","cursor_pointer","size","flex_none","mt","flex_1","min_w","text_size","text_color","whitespace_normal","font_semibold","h","flex","items_center","items_start","size_full","overflow_x_scrollbar","overflow_y_scrollbar"]) {
-  El.prototype[m] = function (v) { this.props[m] = v; return this; };
+for (const m of ["id","gap","p","px","py","pl","rounded","bg","border","border_color","cursor_pointer","size","w","flex_none","mt","flex_1","min_w","text_size","text_color","whitespace_normal","font_semibold","h","flex","items_center","items_start","size_full","overflow_x_scrollbar","overflow_y_scrollbar"]) {
+  El.prototype[m] = function (v) { this.props[m] = v === undefined ? true : v; return this; };
 }
 export function div() { return new El("div"); }
 export class View {}
@@ -135,10 +135,12 @@ async function flush() {
 }
 
 const fixture = [
-  { id: "live", state: "in_flight", kind: "strike", repo: "squad", title: "Titulo completo da missao que precisa de varias linhas em 200 px", endpoint_state: "", busy_elapsed: "7m", window: "default:t1k" },
-  { id: "nowin", state: "in_flight", kind: "recon", repo: "robotyard", title: "Missao sem agente vivo", endpoint_state: "", busy_elapsed: "3m", window: "" },
-  { id: "waiting", state: "queued", kind: "commander", repo: "career-coach", title: "Na fila", endpoint_state: "", busy_elapsed: "", window: "" },
-  { id: "parked", state: "held", kind: "docs", repo: "squad", title: "Em espera", endpoint_state: "", busy_elapsed: "", window: "" },
+  { id: "live", state: "in_flight", kind: "strike", repo: "squad", title: "Titulo completo da missao que precisa de varias linhas em 200 px", backend: "herdr-core", endpoint_state: "", busy_elapsed: "7m", window: "default:t1k" },
+  { id: "nowin", state: "in_flight", kind: "recon", repo: "robotyard", title: "Missao sem agente vivo", backend: "herdr-core", endpoint_state: "", busy_elapsed: "3m", window: "" },
+  { id: "waiting", state: "queued", kind: "commander", repo: "career-coach", title: "Na fila", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "" },
+  { id: "parked", state: "held", kind: "docs", repo: "squad", title: "Em espera", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "" },
+  { id: "dead", state: "held", kind: "strike", repo: "squad", title: "Terminal que ja fechou", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "default:tgone" },
+  { id: "foreign", state: "held", kind: "strike", repo: "squad", title: "Rodando em tmux", backend: "tmux", endpoint_state: "", busy_elapsed: "", window: "work:0" },
 ];
 
 function okExec(rows) {
@@ -154,6 +156,12 @@ function texts(el, out = []) {
   return out;
 }
 const allText = (el) => texts(el).join("\n");
+function findAll(el, pred, out = []) {
+  if (!el || typeof el === "string") return out;
+  if (pred(el)) out.push(el);
+  for (const k of el.kids) findAll(k, pred, out);
+  return out;
+}
 function byId(el, id) {
   if (!el || typeof el === "string") return null;
   if (el.props?.id === id) return el;
@@ -198,16 +206,46 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   const tree = view.render(cx);
   const text = allText(tree);
   for (const label of ["EM VOO", "FILA", "EM ESPERA"]) assert.ok(text.includes(label), `section ${label}`);
-  const counts = ["2", "1", "1"];
+  const counts = ["2", "1", "3"];
   for (const c of counts) assert.ok(text.includes(c), `count ${c}`);
   for (const field of [fixture[0].title, "strike", "squad", "7m", "working"]) assert.ok(text.includes(field), `card field ${field}`);
 
-  // Click-to-focus: the window field decides, and only `default:t1k` has one.
-  byId(tree, "card-live").click({}, cx);
+  // Click-to-focus needs a herdr-core row whose terminal agents() still lists.
+  // A recorded window alone is not enough: a closed terminal's address is
+  // recycled, and a tmux row records session:window, not an app terminal id.
+  const liveCard = byId(tree, "card-live");
+  assert.equal(liveCard.props.cursor_pointer, true, "a live herdr-core card offers a pointer cursor");
+  liveCard.click({}, cx);
   assert.deepEqual(stub.calls, [{ name: "agent.focus", args: { terminal: "t1k" } }]);
-  assert.equal(byId(tree, "card-nowin").click, undefined, "a card with no live window is not clickable");
+  assert.equal(byId(tree, "card-nowin").click, undefined, "a card with no window is not clickable");
+  assert.equal(byId(tree, "card-nowin").props.cursor_pointer, undefined, "a dead card shows no pointer cursor");
   assert.equal(byId(tree, "card-waiting").click, undefined, "queued cards carry no window either");
-  console.log("  ok three sections with live counts, card fields, click only with a window");
+  assert.equal(byId(tree, "card-dead").click, undefined, "a recorded window whose terminal is gone is not clickable");
+  assert.equal(byId(tree, "card-foreign").click, undefined, "a tmux row carrying session:window is not clickable");
+  console.log("  ok three sections with live counts, card fields, click only with a live herdr-core window");
+}
+
+// ---- the kanban divides the pane and never sizes itself to its content ------
+{
+  const { view, cx } = await boot();
+  await flush();
+  stub.shared["board.view"] = "kanban";
+  const tree = view.render(cx);
+  // No floor above the 200 px the layout must wrap at, and the toggle stays
+  // reachable in the header whatever the width.
+  assert.equal(tree.props.min_w, undefined, "the surface must not enforce a 280 px floor on a 200 px pane");
+  assert.equal(byId(tree, "view-kanban")?.props.cursor_pointer, true, "Lista/Kanban stays reachable");
+  const columns = findAll(tree, (el) => el.props.min_w === 200);
+  assert.equal(columns.length, 3, "kanban has one 200 px-minimum column per section");
+  for (const col of columns) {
+    assert.equal(col.props.w, 0, "each column starts at width 0 so it grows into an equal share");
+    assert.equal(col.props.flex_1, true, "each column grows to its share of the pane");
+  }
+  const scroller = findAll(tree, (el) => el.props.overflow_x_scrollbar !== undefined);
+  assert.equal(scroller.length, 1, "only the kanban row scrolls sideways");
+  assert.equal(scroller[0].kids.length, 3, "the three columns sit in the scrolling row");
+  assert.equal(byId(tree, "card-live").props.min_w, 0, "a card does not size itself to its title");
+  console.log("  ok kanban columns divide the width, only scroll below three 200 px columns");
 }
 
 // ---- the chosen base wins over an ambient SQUAD_BASE -----------------------
@@ -374,63 +412,136 @@ pass "no lifecycle verb: no sq-tasks, no sq-spawn, no sq-teardown, no hc write"
 # ---- install and uninstall, in a throwaway app home -------------------------
 tmp_home="$(mktemp -d)"
 trap 'rm -rf "$tmp_home"' EXIT
+target="$tmp_home/mods/squad-board"
+marker="$target/.squad-board-install"
+
+# A fresh install copies the shipped files and writes its marker last.
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
-[ -f "$tmp_home/mods/squad-board/main.js" ] || fail "install must copy main.js under mods/squad-board"
+[ -f "$target/main.js" ] || fail "install must copy main.js under mods/squad-board"
+[ -f "$target/mod.json" ] || fail "install must copy mod.json under mods/squad-board"
+[ -f "$marker" ] || fail "install must write its marker so an installed copy is provably its own"
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
 [ "$(find "$tmp_home/mods" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1 ] || fail "install must be idempotent"
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
-[ ! -e "$tmp_home/mods/squad-board" ] || fail "--uninstall must remove what it installed"
+[ ! -e "$target" ] || fail "--uninstall must remove what it installed"
 
 # The editor aids `herdr-app check` writes must not block removal.
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
-printf 'declare const x: number;\n' >"$tmp_home/mods/squad-board/gpui-kit.d.ts"
-printf '{}\n' >"$tmp_home/mods/squad-board/jsconfig.json"
+printf 'declare const x: number;\n' >"$target/gpui-kit.d.ts"
+printf '{}\n' >"$target/jsconfig.json"
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
-[ ! -e "$tmp_home/mods/squad-board" ] || fail "--uninstall must remove the editor files herdr-app check wrote"
+[ ! -e "$target" ] || fail "--uninstall must remove the editor files herdr-app check wrote"
 
-mkdir -p "$tmp_home/mods/squad-board"
-printf 'someone else\n' >"$tmp_home/mods/squad-board/main.js"
+# Ownership is the marker, not byte-identity: an installed copy that is older
+# than this checkout can still be updated and removed.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+printf '// an older build of this mod\n' >"$target/main.js"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null || fail "a second install must update a stale copy it owns"
+cmp -s "$MOD/main.js" "$target/main.js" || fail "install must refresh a stale copy"
+[ -f "$marker" ] || fail "an updated copy keeps its marker"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must remove a stale copy it owns"
+[ ! -e "$target" ] || fail "a stale copy must still be removable"
+
+# A marker plus any other entry refuses both modes and deletes nothing.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+printf 'my notes\n' >"$target/notes.txt"
+printf 'finder junk\n' >"$target/.DS_Store"
 if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null 2>&1; then
-  fail "install must refuse a folder it did not write"
+  fail "install must refuse a marked folder that also holds a file it did not write"
 fi
 if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
-  fail "--uninstall must refuse to delete a folder it did not write"
+  fail "--uninstall must refuse a marked folder that also holds a file it did not write"
 fi
-rm -rf "$tmp_home/mods/squad-board"
+[ -f "$target/notes.txt" ] || fail "a refused install or uninstall must never delete a person's file"
+[ -f "$target/.DS_Store" ] || fail "a refused install or uninstall must never delete an entry it did not write"
+[ -f "$target/main.js" ] || fail "a refused install or uninstall must leave the mod in place"
+rm -rf "$target"
 
-# Files a person put there are never deleted, and a copy is still removed.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
-printf 'my notes\n' >"$tmp_home/mods/squad-board/notes.txt"
-printf 'finder junk\n' >"$tmp_home/mods/squad-board/.DS_Store"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must remove the mod from a folder that also holds other files"
-[ -f "$tmp_home/mods/squad-board/notes.txt" ] || fail "--uninstall must never delete a person's file"
-[ -f "$tmp_home/mods/squad-board/.DS_Store" ] || fail "--uninstall must never delete a file it did not write"
-[ ! -e "$tmp_home/mods/squad-board/main.js" ] || fail "--uninstall must remove the mod's own main.js"
-[ ! -e "$tmp_home/mods/squad-board/mod.json" ] || fail "--uninstall must remove the mod's own mod.json"
-rm -rf "$tmp_home/mods/squad-board"
+# A folder with no marker is refused by both modes, naming the manual removal.
+mkdir -p "$target"
+cp "$MOD/main.js" "$MOD/mod.json" "$target/"
+if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" 2>&1); then
+  fail "install must refuse a copy it cannot prove it wrote"
+fi
+case "$out" in
+  *"delete the folder"*) : ;;
+  *) fail "install refusal must name the manual removal, got: $out" ;;
+esac
+if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall 2>&1); then
+  fail "--uninstall must refuse a copy it cannot prove it wrote"
+fi
+case "$out" in
+  *"delete the folder"*) : ;;
+  *) fail "--uninstall refusal must name the manual removal, got: $out" ;;
+esac
+[ -f "$target/main.js" ] || fail "a refused uninstall must not delete anything"
+rm -rf "$target"
 
-# --link cannot turn a folder holding someone else's files into a link.
+# A partial copy carries no marker, because the marker is written last, and it
+# is refused with the same manual-removal route.
+mkdir -p "$target"
+cp "$MOD/mod.json" "$target/"
+if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" 2>&1); then
+  fail "install must refuse a partial copy that carries no marker"
+fi
+case "$out" in
+  *"delete the folder"*) : ;;
+  *) fail "a partial copy's refusal must name the manual removal, got: $out" ;;
+esac
+[ -f "$target/mod.json" ] || fail "a refused install must not delete a partial copy"
+rm -rf "$target"
+
+# --link works from a checkout reached through a symlink, is idempotent there,
+# and --uninstall removes only the link, never the checkout.
+checkout_link="$tmp_home/checkout-link"
+ln -s "$MOD" "$checkout_link"
+HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --link >/dev/null
+[ -L "$target" ] || fail "--link must create a link at the app's mods path"
+[ "$(readlink "$target")" = "$MOD" ] || fail "--link must point at this checkout's physical folder"
+HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --link >/dev/null || fail "a second --link through a symlinked checkout must be idempotent"
+HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --uninstall >/dev/null || fail "--uninstall must remove the link it created through a symlinked checkout"
+[ ! -e "$target" ] && [ ! -L "$target" ] || fail "--uninstall must remove only the link"
+[ -f "$MOD/main.js" ] || fail "--uninstall of a link must never touch the checkout"
+rm -f "$checkout_link"
+
+# --link replaces its own copy, and refuses a copy without a marker.
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
-printf 'my notes\n' >"$tmp_home/mods/squad-board/notes.txt"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null || fail "--link must replace a copy this script owns"
+[ -L "$target" ] || fail "--link over an owned copy must leave a link"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+mkdir -p "$target"
+cp "$MOD/main.js" "$MOD/mod.json" "$target/"
+if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
+  fail "--link must refuse a copy that carries no marker"
+fi
+[ -f "$target/main.js" ] || fail "a refused --link must leave the copy in place"
+rm -rf "$target"
+
+# --link refuses to replace a marked copy that also holds someone else's file.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+printf 'my notes\n' >"$target/notes.txt"
 if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
   fail "--link must refuse to replace a copy that holds files it did not write"
 fi
-[ -f "$tmp_home/mods/squad-board/notes.txt" ] || fail "--link must never delete a person's file"
-[ -f "$tmp_home/mods/squad-board/main.js" ] || fail "a refused --link must leave the copy in place"
-rm -rf "$tmp_home/mods/squad-board"
+[ -f "$target/notes.txt" ] || fail "--link must never delete a person's file"
+[ -f "$target/main.js" ] || fail "a refused --link must leave the copy in place"
+rm -rf "$target"
 
 # --uninstall never writes through a link this folder did not create.
 other="$tmp_home/other-copy"
 mkdir -p "$other"
 cp "$MOD/main.js" "$MOD/mod.json" "$other/"
-ln -s "$other" "$tmp_home/mods/squad-board"
+ln -s "$other" "$target"
 if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
   fail "--uninstall must refuse a link it did not create"
 fi
 [ -f "$other/main.js" ] || fail "--uninstall must never write through a foreign link"
 [ -f "$other/mod.json" ] || fail "--uninstall must never write through a foreign link"
-rm -f "$tmp_home/mods/squad-board"
-pass "install copies once, is idempotent, and only removes what it wrote"
+if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
+  fail "--link must refuse a foreign link"
+fi
+rm -f "$target"
+pass "install keeps a marker, updates and removes stale copies, and refuses anything it cannot prove it wrote"
 
 # ---- the app's own validator, where the app is installed ---------------------
 if command -v herdr-app >/dev/null 2>&1; then

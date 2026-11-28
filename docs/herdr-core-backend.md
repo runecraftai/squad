@@ -190,7 +190,7 @@ Removing `config/herdr-core-space` stops new terminals from being labeled or tit
 ### The card board tab
 
 `herdr-mods/squad-board/` is a Herdr mod that draws this board - `bin/sq-board.sh --json` - as mission cards inside the app:
-three sections with their real counts, a list and a kanban view, and a click that focuses a mission's agent through the board's own `window` field.
+three sections with their real counts, a list and a kanban view, and a click that focuses a mission's agent through the board's own `window` field only while that herdr-core terminal is still live.
 It is read-only and independent of this adapter: it reads the board command, never a core label, and its only app command is `agent.focus`.
 It opens as its own tab and closes like any tab:
 
