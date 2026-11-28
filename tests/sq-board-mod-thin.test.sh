@@ -7,11 +7,27 @@
 #     the click-to-focus join on the board's `window` field, the list/kanban choice
 #     in `shared()`, the loading/empty/error text, and the read cadence (one read at
 #     a time, never while hidden, no read from `herdr-app check`);
-#   - the absence of every lifecycle verb from the mod and its installer.
+#   - that the board and its installer never run a lifecycle or backlog-write
+#     command, proven by recording every command they reach and asserting none
+#     falls outside the two reads (the read-only proof below).
 #
 # The behavior checks load the real `main.js` in node with stub `herdr`, `gpui-kit`
 # and `gpui-base` modules, so the mod runs unmodified. `herdr-app check` runs only
 # where the app is installed, because CI has no Herdr.
+#
+# Read-only proof. Every Squad command name (each script under `bin/` and
+# `packages/*/bin/`, with and without its extension) plus `sq-tasks`, `hc`,
+# `herdr`, `herdr-app`, `git`, `gh`, `sq-gh` and `drill` is replaced by a shim
+# that appends its name and arguments to a log. The shims sit first on PATH and,
+# for repo-relative paths, inside a staged Squad base, so a call is recorded
+# however it is reached: directly, through `bash -c`, or through a variable.
+# The board's real `exec` requests are executed against that base, node's own
+# `child_process` is replaced by a recorder, and the installer runs both in place
+# and from a copy inside the staged base. The test then asserts the board's log
+# holds only `sq-board.sh --json` and `sq-tasks show <id> --full`, and the
+# installer's log is empty. No source grep remains, because every read-only
+# path is driven and observed; the one blind spot, a hard-coded absolute path to
+# a program outside PATH and the base, is named beside the installer proof.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,9 +48,56 @@ pass() {
 [ -x "$MOD/install.sh" ] || fail "$MOD/install.sh is not executable"
 pass "one folder with main.js, mod.json, README.md and an executable install.sh"
 
-MOD_DIR="$MOD" node --input-type=module <<'JS'
+# ---- recording shims: every command the board or installer could reach -------
+scratch="$(mktemp -d)"
+trap 'rm -rf "$scratch"' EXIT
+shim_bin="$scratch/shim-bin"
+stage="$scratch/base"
+shim_data="$scratch/shim-data"
+mkdir -p "$shim_bin" "$stage/bin" "$shim_data"
+cat >"$scratch/shim" <<'SH'
+#!/usr/bin/env bash
+# Record the call, then answer the two reads the board is allowed to make.
+name="$(basename "$0")"
+printf '%s %s\n' "$name" "$*" >>"${SHIM_LOG:?}"
+case "$name" in
+  sq-board.sh) [ ! -f "$SHIM_DATA/board.json" ] || cat "$SHIM_DATA/board.json" ;;
+  sq-tasks) [ "${1:-}" != show ] || [ ! -f "$SHIM_DATA/task.txt" ] || cat "$SHIM_DATA/task.txt" ;;
+esac
+exit 0
+SH
+chmod +x "$scratch/shim"
+shim_as() {
+  [ -e "$shim_bin/$1" ] || ln -s "$scratch/shim" "$shim_bin/$1"
+}
+for script in "$ROOT"/bin/* "$ROOT"/bin/*/* "$ROOT"/packages/*/bin/*; do
+  [ -f "$script" ] || continue
+  name="$(basename "$script")"
+  rel="${script#"$ROOT"/}"
+  mkdir -p "$stage/$(dirname "$rel")"
+  ln -s "$scratch/shim" "$stage/$rel"
+  shim_as "$name"
+  shim_as "${name%.*}"
+done
+for name in sq-tasks hc herdr herdr-app git gh sq-gh drill; do
+  shim_as "$name"
+done
+shim_path="$shim_bin:$PATH"
+
+# The net itself must catch a call, or an empty log below would prove nothing.
+probe_log="$scratch/probe.log"
+PATH="$shim_path" SHIM_LOG="$probe_log" sq-spawn.sh probe
+PATH="$shim_path" SHIM_LOG="$probe_log" hc run probe
+SHIM_LOG="$probe_log" "$stage/bin/sq-teardown.sh" probe
+[ "$(cat "$probe_log")" = "$(printf 'sq-spawn.sh probe\nhc run probe\nsq-teardown.sh probe')" ] ||
+  fail "the recording shims must catch a call by name and by repo path, got: $(cat "$probe_log")"
+pass "recording shims catch a lifecycle call by name on PATH and by path inside a Squad base"
+
+MOD_DIR="$MOD" STAGE="$stage" SHIM_BIN="$shim_bin" SHIM_DATA="$shim_data" node --input-type=module <<'JS'
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import cp from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -65,8 +128,12 @@ export class El {
   on_click(fn) { this.click = fn; return this; }
   hover(fn) { this.hoverFn = fn; return this; }
 }
-for (const m of ["id","gap","p","px","py","pl","pt","rounded","bg","border","border_color","cursor_pointer","size","flex","flex_none","flex_1","flex_wrap","mt","min_w","min_h","max_h","max_w","w","h","w_full","text_size","text_color","whitespace_normal","truncate","overflow_hidden","overflow_x_scrollbar","overflow_y_scrollbar","font_semibold","items_center","items_start","items_stretch","justify_between","size_full","aspect_square","on_size_change","track_focus","on_key_down","font_family","max_h_full","h_full"]) {
-  El.prototype[m] = function (...args) { this.props[m] = args.length === 0 ? true : args.length === 1 ? args[0] : args; return this; };
+// Every builder call is recorded, including the drag, drop and pointer-press
+// handlers the board must never register; a method missing here throws, so an
+// unlisted handler cannot be registered silently either.
+const called = (globalThis.__elCalls ??= new Set());
+for (const m of ["id","gap","p","px","py","pl","pt","rounded","bg","border","border_color","cursor_pointer","size","flex","flex_none","flex_1","flex_wrap","mt","min_w","min_h","max_h","max_w","w","h","w_full","text_size","text_color","whitespace_normal","truncate","overflow_hidden","overflow_x_scrollbar","overflow_y_scrollbar","font_semibold","items_center","items_start","items_stretch","justify_between","size_full","aspect_square","on_size_change","track_focus","on_key_down","font_family","max_h_full","h_full","on_drag","on_drag_move","on_drop","drag_over","can_drop","on_mouse_down","on_mouse_up","on_mouse_move"]) {
+  El.prototype[m] = function (...args) { called.add(m); this.props[m] = args.length === 0 ? true : args.length === 1 ? args[0] : args; return this; };
 }
 export function div() { return new El("div"); }
 export class View {}
@@ -643,108 +710,131 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   console.log("  ok herdr-app check renders the empty board without reading anything");
 }
 
-// ---- every control runs only agent.focus and stores only the two views ------
+// ---- read-only by behaviour: every command the board reaches is recorded -----
+// The board's `exec` requests really run, against a staged Squad base whose
+// commands are all recording shims, and node's own process API is a recorder,
+// across the whole lifecycle: first read, a focus click, the panel opening and
+// closing, every sort key, both views and a timed re-read.
 {
-  const { view, cx } = await boot();
-  await flush();
-  view.width = 1446;
-  const controls = [
-    "card-live",
-    "card-waiting",
-    "detail-close",
-    "card-parked",
-    "detail-close",
-    "view-kanban",
-    "sort",
-    "view-list",
-    "sort",
-  ];
-  for (const id of controls) {
-    const control = byId(view.render(cx), id);
-    if (control?.click) control.click({}, cx);
-    await flush();
+  const stage = process.env.STAGE;
+  const shimData = process.env.SHIM_DATA;
+  const log = join(shimData, "board.log");
+  writeFileSync(join(shimData, "board.json"), JSON.stringify(fixture));
+  writeFileSync(join(shimData, "task.txt"), taskBody);
+  const realExecFile = cp.execFile;
+  const runForReal = (cmd, args, opts) =>
+    new Promise((resolve) => {
+      stub.execs.push({ cmd, args, opts });
+      const env = { ...process.env, PATH: `${process.env.SHIM_BIN}:${process.env.PATH}`, SHIM_LOG: log, SHIM_DATA: shimData };
+      realExecFile(cmd, args, { env, timeout: 20000 }, (err, stdout, stderr) =>
+        resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, stdout, stderr }),
+      );
+    });
+  const direct = [];
+  const processApi = ["exec", "execFile", "execSync", "execFileSync", "spawn", "spawnSync", "fork"];
+  const saved = Object.fromEntries(processApi.map((name) => [name, cp[name]]));
+  for (const name of processApi) {
+    cp[name] = (...args) => {
+      direct.push({ name, args });
+      throw new Error(`the board called child_process.${name} directly`);
+    };
   }
-  assert.ok(stub.calls.length > 0, "a card ran the one focus command");
-  for (const call of stub.calls) assert.equal(call.name, "agent.focus", "the board runs no app command but agent.focus");
+  syncBuiltinESMExports();
+  globalThis.__elCalls.clear();
+  try {
+    const { view, cx } = await boot({ props: { base: stage }, exec: runForReal });
+    await flush();
+    view.width = 1446;
+    const controls = ["card-live", "card-waiting", "escape", "card-parked", "detail-close", "view-kanban", "view-list"];
+    for (let i = 0; i < 6; i++) controls.push("sort");
+    for (const id of controls) {
+      const tree = view.render(cx);
+      if (id === "escape") {
+        walk(tree).find((e) => typeof e.props?.on_key_down === "function").props.on_key_down({ key: "escape" }, cx);
+      } else {
+        const control = byId(tree, id);
+        assert.ok(control?.click, `the lifecycle reaches the ${id} control`);
+        control.click({}, cx);
+      }
+      await flush();
+    }
+    view.at = Date.now() - 120000;
+    stub.timer.cb(cx);
+    await flush();
+    view.render(cx);
+  } finally {
+    Object.assign(cp, saved);
+    syncBuiltinESMExports();
+  }
+
+  const ran = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : [];
+  const allowed = (line) => line === "sq-board.sh --json" || /^sq-tasks show [a-z]+ --full$/.test(line);
+  assert.deepEqual(ran.filter((line) => !allowed(line)), [], "zero lifecycle or backlog-write commands across the board lifecycle");
   assert.deepEqual(
-    Object.keys(stub.shared).sort(),
-    ["board.sort", "board.view"],
-    "the board stores exactly its two view preferences",
+    ran,
+    ["sq-board.sh --json", "sq-tasks show waiting --full", "sq-tasks show parked --full", "sq-board.sh --json"],
+    "the board ran exactly its two reads: the first and the timed board read, and one show per opened card",
   );
-  console.log("  ok every control runs only agent.focus and stores only board.view and board.sort");
+  assert.ok(stub.execs.every((call) => call.cmd === "/bin/bash"), "every host program request is a bash line the shims observed");
+  assert.deepEqual(direct, [], "the board never starts a process through node's own API");
+  assert.deepEqual(stub.calls, [{ name: "agent.focus", args: { terminal: "t1k" } }], "the only app command is the one focus");
+  assert.deepEqual(Object.keys(stub.shared).sort(), ["board.sort", "board.view"], "the board stores exactly its two view preferences");
+  const pointer = ["on_drag", "on_drag_move", "on_drop", "drag_over", "can_drop", "on_mouse_down", "on_mouse_up", "on_mouse_move"];
+  assert.ok(globalThis.__elCalls.has("w"), "the builder recorder saw the board render");
+  assert.deepEqual(pointer.filter((m) => globalThis.__elCalls.has(m)), [], "no drag, drop or press handler is ever registered");
+  console.log("  ok read-only by behaviour: zero lifecycle calls across read, click, panel, sort, views and re-read; only agent.focus and two preferences");
 }
 
 rmSync(root, { recursive: true, force: true });
 JS
 pass "behavior: sections, cards, click, budget, states, toggle, check"
 
-# ---- read-only by contract: no lifecycle verb and no backlog write ----------
-for verb in sq-spawn sq-teardown; do
-  if grep -q -- "$verb" "$MOD/main.js" "$MOD/install.sh"; then
-    fail "$verb must never appear in the mod or its installer"
-  fi
-done
-if grep -Eq '\bhc[[:space:]]+(run|kill|rm|label|start|stop|exec|file|send|spawn)\b' "$MOD/main.js" "$MOD/install.sh"; then
-  fail "no hc write verb may appear in the mod or its installer"
-fi
-# `sq-tasks show` is the one allowed verb: it only reads a task.
-verbs="$(grep -oE 'sq-tasks[[:space:]]+[a-z-]+' "$MOD/main.js" | sed -E 's/sq-tasks[[:space:]]+//' | sort -u)"
-if [ -n "$verbs" ] && [ "$verbs" != "show" ]; then
-  fail "the only sq-tasks verb allowed is show (reads a task); found: $verbs"
-fi
-for write in update hold unhold start stop add remove rm mv move set edit "done" close reopen block unblock new create import export sync; do
-  if grep -Eq "sq-tasks[[:space:]]+$write\b" "$MOD/main.js" "$MOD/install.sh"; then
-    fail "sq-tasks $write writes the backlog and must never appear here"
-  fi
-done
-if grep -Eq '\.on_drag\(|\.on_drop\(|draggable\(|drag_handle|set_priority|setPriority' "$MOD/main.js"; then
-  fail "no drag, drop or priority path may exist in the board"
-fi
-pass "read-only by contract: only sq-tasks show and agent.focus, only the two view preferences, no write verb"
-
 # ---- install and uninstall, in a throwaway app home -------------------------
-tmp_home="$(mktemp -d)"
-trap 'rm -rf "$tmp_home"' EXIT
+tmp_home="$scratch/app-home"
+mkdir -p "$tmp_home"
+# Every installer run below goes through the recording shims; the log must stay empty.
+install_log="$scratch/install.log"
+: >"$install_log"
 target="$tmp_home/mods/squad-board"
 marker="$target/.squad-board-install"
 
 # A fresh install copies the shipped files and writes its marker last.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 [ -f "$target/main.js" ] || fail "install must copy main.js under mods/squad-board"
 [ -f "$target/mod.json" ] || fail "install must copy mod.json under mods/squad-board"
 [ -f "$marker" ] || fail "install must write its marker so an installed copy is provably its own"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 [ "$(find "$tmp_home/mods" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1 ] || fail "install must be idempotent"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
 [ ! -e "$target" ] || fail "--uninstall must remove what it installed"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must be idempotent: a second run with nothing to remove exits 0"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must be idempotent: a second run with nothing to remove exits 0"
 [ ! -e "$target" ] || fail "a second --uninstall must leave nothing behind"
 
 # The editor aids `herdr-app check` writes must not block removal.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 printf 'declare const x: number;\n' >"$target/gpui-kit.d.ts"
 printf '{}\n' >"$target/jsconfig.json"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
 [ ! -e "$target" ] || fail "--uninstall must remove the editor files herdr-app check wrote"
 
 # Ownership is the marker, not byte-identity: an installed copy that is older
 # than this checkout can still be updated and removed.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 printf '// an older build of this mod\n' >"$target/main.js"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null || fail "a second install must update a stale copy it owns"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null || fail "a second install must update a stale copy it owns"
 cmp -s "$MOD/main.js" "$target/main.js" || fail "install must refresh a stale copy"
 [ -f "$marker" ] || fail "an updated copy keeps its marker"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must remove a stale copy it owns"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must remove a stale copy it owns"
 [ ! -e "$target" ] || fail "a stale copy must still be removable"
 
 # A marker plus any other entry refuses both modes and deletes nothing.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 printf 'my notes\n' >"$target/notes.txt"
 printf 'finder junk\n' >"$target/.DS_Store"
-if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null 2>&1; then
+if HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null 2>&1; then
   fail "install must refuse a marked folder that also holds a file it did not write"
 fi
-if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
+if HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
   fail "--uninstall must refuse a marked folder that also holds a file it did not write"
 fi
 [ -f "$target/notes.txt" ] || fail "a refused install or uninstall must never delete a person's file"
@@ -755,14 +845,14 @@ rm -rf "$target"
 # A folder with no marker is refused by both modes, naming the manual removal.
 mkdir -p "$target"
 cp "$MOD/main.js" "$MOD/mod.json" "$target/"
-if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" 2>&1); then
+if out=$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" 2>&1); then
   fail "install must refuse a copy it cannot prove it wrote"
 fi
 case "$out" in
   *"delete the folder"*) : ;;
   *) fail "install refusal must name the manual removal, got: $out" ;;
 esac
-if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall 2>&1); then
+if out=$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall 2>&1); then
   fail "--uninstall must refuse a copy it cannot prove it wrote"
 fi
 case "$out" in
@@ -776,7 +866,7 @@ rm -rf "$target"
 # is refused with the same manual-removal route.
 mkdir -p "$target"
 cp "$MOD/mod.json" "$target/"
-if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" 2>&1); then
+if out=$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" 2>&1); then
   fail "install must refuse a partial copy that carries no marker"
 fi
 case "$out" in
@@ -790,21 +880,21 @@ rm -rf "$target"
 # refused with the manual removal instead of a raw mkdir/ln error, in both modes
 # and on --uninstall, and nothing is overwritten.
 printf 'not a folder\n' >"$target"
-if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" 2>&1); then
+if out=$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" 2>&1); then
   fail "install must refuse a path that is not a folder"
 fi
 case "$out" in
   *"delete it by hand"*) : ;;
   *) fail "install refusal of a non-folder must name the manual removal, got: $out" ;;
 esac
-if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link 2>&1); then
+if out=$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link 2>&1); then
   fail "--link must refuse a path that is not a folder"
 fi
 case "$out" in
   *"delete it by hand"*) : ;;
   *) fail "--link refusal of a non-folder must name the manual removal, got: $out" ;;
 esac
-if out=$(HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall 2>&1); then
+if out=$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall 2>&1); then
   fail "--uninstall must refuse a path that is not a folder"
 fi
 case "$out" in
@@ -819,11 +909,11 @@ rm -f "$target"
 # and --uninstall removes only the link, never the checkout.
 checkout_link="$tmp_home/checkout-link"
 ln -s "$MOD" "$checkout_link"
-HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --link >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$checkout_link/install.sh" --link >/dev/null
 [ -L "$target" ] || fail "--link must create a link at the app's mods path"
 [ "$(readlink "$target")" = "$(cd -P "$MOD" && pwd -P)" ] || fail "--link must point at this checkout's physical folder"
-HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --link >/dev/null || fail "a second --link through a symlinked checkout must be idempotent"
-HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --uninstall >/dev/null || fail "--uninstall must remove the link it created through a symlinked checkout"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$checkout_link/install.sh" --link >/dev/null || fail "a second --link through a symlinked checkout must be idempotent"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$checkout_link/install.sh" --uninstall >/dev/null || fail "--uninstall must remove the link it created through a symlinked checkout"
 [ ! -e "$target" ] && [ ! -L "$target" ] || fail "--uninstall must remove only the link"
 [ -f "$MOD/main.js" ] || fail "--uninstall of a link must never touch the checkout"
 rm -f "$checkout_link"
@@ -831,53 +921,53 @@ rm -f "$checkout_link"
 # The requested mode wins: a copy run replaces a link this script created, and a
 # second identical invocation changes nothing.
 physical_mod="$(cd -P "$MOD" && pwd -P)"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link >/dev/null
 [ -L "$target" ] || fail "--link must create a link"
 [ "$(readlink "$target")" = "$physical_mod" ] || fail "--link must point at this folder"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link >/dev/null
 [ "$(readlink "$target")" = "$physical_mod" ] || fail "a second identical --link must change nothing"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null || fail "the default run must replace an owned link with a copy"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null || fail "the default run must replace an owned link with a copy"
 [ ! -L "$target" ] || fail "the default run over an owned link must leave a real folder, not a link"
 cmp -s "$MOD/main.js" "$target/main.js" || fail "a copy made from an owned link must hold this folder's main.js"
 cmp -s "$MOD/mod.json" "$target/mod.json" || fail "a copy made from an owned link must hold this folder's mod.json"
 [ -f "$marker" ] || fail "a copy made from an owned link must carry the marker"
 [ -f "$MOD/main.js" ] || fail "converting an owned link to a copy must never touch the checkout"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
 [ ! -e "$target" ] || fail "--uninstall must remove a copy made from an owned link"
 
 # --copy names the same conversion explicitly.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --copy >/dev/null || fail "--copy must replace an owned link with a copy"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --copy >/dev/null || fail "--copy must replace an owned link with a copy"
 [ ! -L "$target" ] || fail "--copy over an owned link must leave a real folder, not a link"
 [ -f "$marker" ] || fail "--copy over an owned link must write the marker"
 cmp -s "$MOD/main.js" "$target/main.js" || fail "--copy over an owned link must hold this folder's main.js"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
 
 # A second identical copy install changes nothing.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 before_install="$(cksum "$target/main.js" "$target/mod.json" "$marker")"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 [ "$(cksum "$target/main.js" "$target/mod.json" "$marker")" = "$before_install" ] || fail "a second identical copy install must change nothing"
 [ ! -L "$target" ] || fail "a second identical copy install must leave the copy a real folder"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
 
 # --link replaces its own copy, and refuses a copy without a marker.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null || fail "--link must replace a copy this script owns"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link >/dev/null || fail "--link must replace a copy this script owns"
 [ -L "$target" ] || fail "--link over an owned copy must leave a link"
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
 mkdir -p "$target"
 cp "$MOD/main.js" "$MOD/mod.json" "$target/"
-if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
+if HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link >/dev/null 2>&1; then
   fail "--link must refuse a copy that carries no marker"
 fi
 [ -f "$target/main.js" ] || fail "a refused --link must leave the copy in place"
 rm -rf "$target"
 
 # --link refuses to replace a marked copy that also holds someone else's file.
-HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
 printf 'my notes\n' >"$target/notes.txt"
-if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
+if HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link >/dev/null 2>&1; then
   fail "--link must refuse to replace a copy that holds files it did not write"
 fi
 [ -f "$target/notes.txt" ] || fail "--link must never delete a person's file"
@@ -889,16 +979,42 @@ other="$tmp_home/other-copy"
 mkdir -p "$other"
 cp "$MOD/main.js" "$MOD/mod.json" "$other/"
 ln -s "$other" "$target"
-if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
+if HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
   fail "--uninstall must refuse a link it did not create"
 fi
 [ -f "$other/main.js" ] || fail "--uninstall must never write through a foreign link"
 [ -f "$other/mod.json" ] || fail "--uninstall must never write through a foreign link"
-if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
+if HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --link >/dev/null 2>&1; then
   fail "--link must refuse a foreign link"
 fi
 rm -f "$target"
 pass "install keeps a marker, updates and removes stale copies, converts between modes, and refuses anything it cannot prove it wrote"
+
+# ---- the installer is read-only toward Squad, by behaviour --------------------
+# A copy run from inside the staged base reaches only shims for any repo-relative
+# Squad command; with every run above also shimmed on PATH, the log must be empty.
+# Not observable here: a hard-coded absolute path to a program outside PATH and the
+# base, which no shim can stand in for without tracing every exec of the process.
+staged_mod="$stage/herdr-mods/squad-board"
+mkdir -p "$staged_mod"
+cp "$MOD/main.js" "$MOD/mod.json" "$MOD/README.md" "$MOD/install.sh" "$staged_mod/"
+staged_home="$scratch/staged-home"
+staged() {
+  HERDR_APP_HOME="$staged_home" PATH="$shim_path" SHIM_LOG="$install_log" "$staged_mod/install.sh" "$@" >/dev/null ||
+    fail "staged install.sh $* failed"
+}
+staged
+staged
+staged --link
+staged --link
+staged --copy
+staged --print
+staged --help
+staged --uninstall
+staged --uninstall
+[ ! -e "$staged_home/mods/squad-board" ] || fail "the staged lifecycle must end with nothing installed"
+[ ! -s "$install_log" ] || fail "the installer must run no Squad, hc, git or app command, but ran: $(cat "$install_log")"
+pass "read-only by behaviour: zero Squad, hc, git or app commands across every install, link, copy, print and uninstall run"
 
 # ---- the app's own validator, where the app is installed ---------------------
 if command -v herdr-app >/dev/null 2>&1; then

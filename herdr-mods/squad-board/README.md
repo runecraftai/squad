@@ -119,7 +119,11 @@ The board is a view and never an editor: it reads `bin/sq-board.sh --json` and `
 `agent.focus`, and stores exactly two preferences (`board.view` and `board.sort`).
 It has no drag and drop, no reorder, no priority write, and no backlog write of any kind.
 Reordering the queue, changing a hold, and moving a task between states are Squad operations, not
-board operations, and the test greps this file for every one of those verbs.
+board operations.
+The test proves it by behaviour, not by reading the source: it replaces every Squad command, `sq-tasks`, `hc`, `herdr`, `herdr-app`, `git`, `gh`, `sq-gh` and `drill` with a shim that records each call, runs the board's own command requests against a staged Squad base built from those shims, and replaces node's process API with a recorder.
+Across the first read, a card click, the panel opening and closing, every sort key, both views and a timed re-read, it asserts that the only commands recorded are `bin/sq-board.sh --json` and `sq-tasks show <id> --full`, that the only app command is `agent.focus`, that only `board.view` and `board.sort` are stored, and that no drag, drop or press handler is ever registered.
+It runs every installer mode the same way, in place and from a copy inside the staged base, and asserts that the installer runs none of those commands at all.
+The one case no shim can observe is a hard-coded absolute path to a program outside PATH and the base, and the test names it beside the installer proof.
 
 ## Pinned view
 
@@ -161,7 +165,7 @@ claim here.
 ## No lifecycle action
 
 The board can only show and focus.
-It contains no `sq-tasks` write verb (only the read-only `sq-tasks show`), no `sq-spawn`, no `sq-teardown`, no `hc` write, no `push`, and no merge: its only app command is `agent.focus`, and the only programs it runs are `bin/sq-board.sh` and `sq-tasks show`.
+It runs no `sq-tasks` write verb (only the read-only `sq-tasks show`), no `sq-spawn`, no `sq-teardown`, no `hc` write, no `push`, and no merge: its only app command is `agent.focus`, and the only programs it runs are `bin/sq-board.sh` and `sq-tasks show`.
 Dispatching, cleaning up, and merging stay Squad's, exactly as before this mod existed.
 
 ## Removing it
@@ -180,5 +184,5 @@ The app's shared state keeps the `board.view` and `board.sort` values the board 
 
 ## Evidence
 
-This folder was validated with `herdr-app check herdr-mods/squad-board` (it loads and renders the empty board without reading anything) and with `tests/sq-board-mod-thin.test.sh`, which runs the unmodified `main.js` against stub `herdr`, `gpui-kit` and `gpui-base` modules and checks the board-to-card mapping, the click join, the two views, the three text states and the read budget.
+This folder was validated with `herdr-app check herdr-mods/squad-board` (it loads and renders the empty board without reading anything) and with `tests/sq-board-mod-thin.test.sh`, which runs the unmodified `main.js` against stub `herdr`, `gpui-kit` and `gpui-base` modules and checks the board-to-card mapping, the click join, the two views, the three text states, the read budget, and the recorded read-only proof above.
 It was not installed into a real app home by the change that added it, so no capture of it in a live window exists yet; the shape it follows was measured earlier with a probe mod.
