@@ -39,21 +39,76 @@ A `base` in `props` is authoritative: the read runs in that folder with `SQUAD_B
 Without `props`, the mod uses a `board.base` value in the app's shared state, then `$SQUAD_BASE` from the environment the app was started in, then the app's own working folder.
 When none of them finds `bin/sq-board.sh`, the board says so in the pane and names the two ways to point at the base.
 
-The pane opens at 280 px, which is the shipped panel minimum, and `mod.json` declares that as `"min_w": 280`; the app itself does not read that key, it sizes panes from the layout block's `min`, so the declaration is for readers and for this mod's own checks.
-The layout itself sets no such floor: the card layout stays readable down to 200 px, where the mission title wraps instead of being cut, the header keeps `Lista`/`Kanban` reachable, and its read line wraps onto its own row.
+The pane is whatever the app gives it and the layout adapts to it: nothing in the view forces a
+minimum on the pane, and `mod.json`'s `"min_w": 280` records the width the layout should open it at,
+which is the shipped panel minimum.
+The app itself does not read that key, it sizes panes from the layout block's `min`, so the
+declaration is for readers and for this mod's own checks.
 
 ## What it draws
 
 - `EM VOO`, `FILA` and `EM ESPERA`, one section per board state, each with the count the board reported.
-- One card per mission: the status dot, the whole mission title, the elapsed time, then `kind · repo · state`.
-  A mission whose title is long wraps onto more lines rather than being truncated.
-- `Lista` and `Kanban` in the header.
-  Kanban draws the same three sections as equal-width columns that divide the pane at full width; every title wraps inside its own card, and the row only scrolls sideways when the pane is narrower than three 200 px columns.
-  The choice is stored through the app's `shared()` as `board.view`, so it survives a restart.
-- Loading (`lendo o board…`), empty (`nenhuma missão em voo`, `nada na fila`, `nada em espera`) and a failed read are drawn as text, so the pane is never a blank board; the last good cards stay under the error line.
+- `Lista` draws a grid of square cards: every tile has a fixed 240 to 280 px edge (`279 px` at a
+  1450 px pane, which fits five per row; `280 px` at a narrower one, where four fit), and the rows
+  wrap, so a wide pane shows a grid and a narrow one shows fewer columns.
+  Nothing stretches, so no card can become a full-width bar.
+  Under 480 px the grid is a single column of the same squares, and a pane narrower than 240 px still
+  gets one tile as wide as it can hold.
+- `Kanban` draws the same three sections as equal-width columns that fill the pane, each scrolling on
+  its own, and every card capped at 320 px so a wide column never stretches a card into a bar.
+  Kanban needs three usable columns, so under 700 px it falls back to the list grid instead of
+  squeezing them.
+- Inside a tile: the elapsed time at the top right, then the mission title on at most three lines
+  ending in an ellipsis, then `kind · repo`, then a status dot with its label (`working`, `blocked`,
+  the board's own endpoint state, or `sem agente`).
+  Text is cut only by an ellipsis inside the tile: a glyph is never sliced by a card edge.
+- Loading (`lendo o board…`), empty (`nenhuma missão em voo`, `nada na fila`, `nada em espera`) and a
+  failed read are drawn as text, so the pane is never a blank board; the last good cards stay under
+  the error line.
 
-Clicking a card runs `agent.focus` for that mission's terminal, taken from the board's own `window` field (`default:t1k` means terminal `t1k`), but only when the row's `backend` is `herdr-core` and that terminal is still in the app's `agents()` list.
-A mission with no recorded window, a mission recorded on tmux or zellij (whose `window` is `session:window`, not an app terminal id), or a herdr-core mission whose terminal has ended is not clickable at all: a core recycles a closed terminal's address, and two rows can record the same `session:address`, so a recorded window alone could open a dead terminal or another mission's.
+## Clicking a card
+
+An `EM VOO` card focuses that mission's agent: it runs `agent.focus` on the terminal the board
+recorded, and only when the row is on `herdr-core` and that terminal is still in the app's `agents()`
+list.
+A recorded window alone would not be safe to focus: a core recycles a closed terminal's address, and
+two rows can record the same `session:address`, so the live list is what decides.
+An in-flight card with no live terminal offers no action.
+
+A `FILA` or `EM ESPERA` card opens a detail panel with the task's whole body, read on demand with
+`sq-tasks show <id> --full` - the read-only verb that prints one task.
+The panel shows the title unclamped, then `kind · repo · state · elapsed`, then the body in a
+monospace block that scrolls on its own.
+It closes with the `fechar (Esc)` control or with Escape, and it never offers to focus anything,
+because a queued or held mission has no terminal.
+A tab can also open with one task already on show: `--props '{"base":"/path/to/squad","detail":"<task-id>"}'`.
+
+## Sorting is a view preference
+
+A small control in the header reads `ordem: prioridade` and cycles through the display keys the board
+already carries: priority, elapsed time, kind, repo, title and state.
+Priority sorts by the backlog's own number, lowest first, with an unprioritised task last, and it
+leads the list, so it is also the default order.
+Every key comes from the board's JSON, including the `priority` that `bin/sq-board.sh --json`
+carries for every state (empty when the task records none).
+The chosen key is stored through the app's `shared()` as `board.sort`, so it survives a restart, and
+it changes only the order the cards are drawn in, inside each section.
+`estado` keeps the board's own order, because the sections already group by state.
+
+## Read-only by contract
+
+The board is a view and never an editor: it reads `bin/sq-board.sh --json` and `sq-tasks show`, runs
+`agent.focus`, and stores exactly two preferences (`board.view` and `board.sort`).
+It has no drag and drop, no reorder, no priority write, and no backlog write of any kind.
+Reordering the queue, changing a hold, and moving a task between states are Squad operations, not
+board operations, and the test greps this file for every one of those verbs.
+
+## Pinned view
+
+A tab can pin its view with `--props '{"base":"/path/to/squad","view":"kanban"}'` (or `"view":"list"`).
+A pinned tab draws no toggle, because the pin wins.
+Without a pin, the toggle's choice is stored in the app's `shared()` as `board.view` and survives a
+restart.
 
 ## Read budget
 
@@ -76,9 +131,14 @@ The header shows the last read's own measured milliseconds and item count, for e
 
 ## Keyboard
 
-The surface is **pointer-only**.
-`mod.json` does not declare `"focusable": true` and the mod has no `on_key_down` handler, so the view toggle and the cards are reached with the mouse or trackpad.
-The app's UI layer exposes no roles or labels to a mod either, so there is no screen-reader story to claim here.
+Escape closes the detail panel, and that is the board's only key: `mod.json` declares
+`"focusable": true`, the view takes a focus handle, and `on_key_down` handles Escape.
+Opening a task focuses the board, so Escape reaches it straight away.
+Reaching the board with `pane.go` is the app's own navigation and works because of that opt-in.
+Everything else - the view toggle, the sort control, a card - is pointer-only: there are no arrow
+keys, no shortcuts, and no focus ring.
+The app's UI layer exposes no roles or labels to a mod either, so there is no screen-reader story to
+claim here.
 
 ## No lifecycle action
 
@@ -98,6 +158,7 @@ herdr-mods/squad-board/install.sh --uninstall
 That removes the copy or the link it created, plus the two editor files the app regenerates beside a copy, and nothing else.
 If the folder holds any other file, or has no install marker, the script refuses and names the manual removal: delete `mods/squad-board` by hand, which removes the same files.
 Deleting `mods/squad-board` by hand has the same effect; no layout, key binding, or app setting was ever changed, so nothing else needs undoing.
+Close the board's tabs before removing the folder: a tab left open points at a folder that is gone, and the app reports it in `herdr-app status` until that tab closes.
 The app's shared state keeps the `board.view` value the board last wrote: nothing reads it once the mod is gone and the app leaves it in place, so removal is not literally traceless, but it is harmless.
 
 ## Evidence
