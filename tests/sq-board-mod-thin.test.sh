@@ -140,7 +140,7 @@ const fixture = [
   { id: "waiting", state: "queued", kind: "commander", repo: "career-coach", title: "Na fila", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "" },
   { id: "parked", state: "held", kind: "docs", repo: "squad", title: "Em espera", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "" },
   { id: "dead", state: "held", kind: "strike", repo: "squad", title: "Terminal que ja fechou", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "default:tgone" },
-  { id: "foreign", state: "held", kind: "strike", repo: "squad", title: "Rodando em tmux", backend: "tmux", endpoint_state: "", busy_elapsed: "", window: "work:0" },
+  { id: "foreign", state: "held", kind: "strike", repo: "squad", title: "Rodando em tmux", backend: "tmux", endpoint_state: "", busy_elapsed: "", window: "work:t1k" },
 ];
 
 function okExec(rows) {
@@ -230,15 +230,29 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   // Click-to-focus needs a herdr-core row whose terminal agents() still lists.
   // A recorded window alone is not enough: a closed terminal's address is
   // recycled, and a tmux row records session:window, not an app terminal id.
-  const liveCard = byId(tree, "card-live");
-  assert.equal(liveCard.props.cursor_pointer, true, "a live herdr-core card offers a pointer cursor");
+  const actionable = (id) => {
+    const card = byId(tree, id);
+    assert.equal(card.props.cursor_pointer, true, `${id} offers a pointer cursor`);
+    assert.equal(typeof card.click, "function", `${id} runs agent.focus on click`);
+    assert.equal(typeof card.hoverFn, "function", `${id} reacts to the pointer`);
+    return card;
+  };
+  const inert = (id, why) => {
+    const card = byId(tree, id);
+    assert.equal(card.click, undefined, `${id} is not clickable: ${why}`);
+    assert.equal(card.props.cursor_pointer, undefined, `${id} shows no pointer cursor: ${why}`);
+    assert.equal(card.hoverFn, undefined, `${id} shows no click hover: ${why}`);
+  };
+  const liveCard = actionable("card-live");
   liveCard.click({}, cx);
   assert.deepEqual(stub.calls, [{ name: "agent.focus", args: { terminal: "t1k" } }]);
-  assert.equal(byId(tree, "card-nowin").click, undefined, "a card with no window is not clickable");
-  assert.equal(byId(tree, "card-nowin").props.cursor_pointer, undefined, "a dead card shows no pointer cursor");
-  assert.equal(byId(tree, "card-waiting").click, undefined, "queued cards carry no window either");
-  assert.equal(byId(tree, "card-dead").click, undefined, "a recorded window whose terminal is gone is not clickable");
-  assert.equal(byId(tree, "card-foreign").click, undefined, "a tmux row carrying session:window is not clickable");
+  inert("card-nowin", "its window is empty");
+  inert("card-waiting", "a queued card carries no window");
+  inert("card-dead", "its recorded terminal is gone from agents()");
+  inert(
+    "card-foreign",
+    "it is a tmux row carrying the same live t1k through session:window, so only the backend gate makes it inert",
+  );
   console.log("  ok three sections with live counts, card fields, click only with a live herdr-core window");
 }
 
