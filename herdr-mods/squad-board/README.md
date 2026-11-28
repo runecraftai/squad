@@ -15,6 +15,7 @@ herdr-mods/squad-board/install.sh --link   # or link the folder, so edits here r
 
 `--link` is untested on herdr-app 0.1.18: prefer `--copy` unless you are changing the mod and want the app's own hot reload.
 The script is idempotent, touches only `mods/squad-board`, and refuses to overwrite or delete a folder it cannot prove it wrote.
+`--uninstall` also removes the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` writes in that folder, but refuses if it holds anything else.
 
 ## Open and close it
 
@@ -88,9 +89,10 @@ herdr-mods/squad-board/install.sh --uninstall
 ```
 
 That removes the copy or the link it created and nothing else.
+If the folder holds files the script did not write, `--uninstall` refuses and leaves everything in place rather than deleting them.
 Deleting `mods/squad-board` by hand has the same effect; no layout, key binding, or app setting was ever changed, so nothing else needs undoing.
 
 ## Evidence
 
 This folder was validated with `herdr-app check herdr-mods/squad-board` (it loads and renders the empty board without reading anything) and with `tests/sq-board-mod-thin.test.sh`, which runs the unmodified `main.js` against stub `herdr`, `gpui-kit` and `gpui-base` modules and checks the board-to-card mapping, the click join, the two views, the three text states and the read budget.
-It was not installed into a real app home by the change that added it, so no capture of it in a live window exists yet; the shape it follows was measured earlier with a probe mod, whose captures are the `02`/`03` references in `data/herdr-desktop-visualization-design/captures/`.
+It was not installed into a real app home by the change that added it, so no capture of it in a live window exists yet; the shape it follows was measured earlier with a probe mod.

@@ -24,6 +24,9 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_HOME="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 TARGET="$APP_HOME/mods/$NAME"
 FILES=(main.js mod.json)
+# `herdr-app check` writes these beside any mod folder it validates; the app
+# regenerates them, so they are as much the installer's to remove as its copies.
+GENERATED=(gpui-kit.d.ts jsconfig.json)
 MODE="copy"
 ACTION="install"
 
@@ -48,16 +51,38 @@ is_our_link() {
   [ -L "$TARGET" ] && [ "$(readlink -f "$TARGET")" = "$SELF_DIR" ]
 }
 
+# True when <name> is a file an install or `herdr-app check` writes beside a mod.
+is_known_file() {
+  local name=$1 known
+  for known in "${FILES[@]}" "${GENERATED[@]}"; do
+    [ "$name" = "$known" ] && return 0
+  done
+  return 1
+}
+
+# Print the entries of <dir> that neither this script nor `herdr-app check` wrote.
+strays() {
+  local dir=$1 entry
+  while IFS= read -r entry; do
+    is_known_file "${entry##*/}" || printf '%s\n' "${entry##*/}"
+  done < <(find "$dir" -mindepth 1 -maxdepth 1 2>/dev/null)
+}
+
 do_print() {
   printf '%s\n' "$TARGET"
 }
 
 do_uninstall() {
+  local stray
   if is_our_link; then
     rm "$TARGET"
     printf 'removed link %s\n' "$TARGET"
   elif [ -d "$TARGET" ]; then
     is_our_copy "$TARGET" || die "refusing to delete $TARGET: it is not a copy of this folder"
+    stray="$(strays "$TARGET")"
+    if [ -n "$stray" ]; then
+      die "refusing to delete $TARGET: it also holds files this script did not write: ${stray//$'\n'/ }"
+    fi
     rm -rf "$TARGET"
     printf 'removed copy %s\n' "$TARGET"
   else
@@ -66,6 +91,7 @@ do_uninstall() {
 }
 
 do_install() {
+  local stray
   mkdir -p "$APP_HOME/mods"
   if is_our_link; then
     printf 'already linked: %s\n' "$TARGET"
@@ -74,6 +100,10 @@ do_install() {
   elif [ -d "$TARGET" ]; then
     is_our_copy "$TARGET" || die "refusing to overwrite $TARGET: it holds files this folder did not write"
     if [ "$MODE" = link ]; then
+      stray="$(strays "$TARGET")"
+      if [ -n "$stray" ]; then
+        die "refusing to replace $TARGET: it also holds files this script did not write: ${stray//$'\n'/ }"
+      fi
       rm -rf "$TARGET"
       ln -s "$SELF_DIR" "$TARGET"
       printf 'linked %s -> %s\n' "$TARGET" "$SELF_DIR"

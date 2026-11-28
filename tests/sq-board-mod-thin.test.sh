@@ -34,6 +34,7 @@ pass "one folder with main.js, mod.json, README.md and an executable install.sh"
 
 MOD_DIR="$MOD" node --input-type=module <<'JS'
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -85,8 +86,8 @@ export function shared(k) { return s.shared[k]; }
 export function setShared(k, v) { s.shared[k] = v; return null; }
 export function agents() { return s.agents; }
 export function props() { return s.props; }
-export function run(name, args) { s.calls.push({ name, args }); return null; }
-export function exec(cmd, args, opts) { return s.exec(cmd, args, opts); }
+export function run(name, args) { s.calls.push({ name, args }); s.seen.runs.push(name); return null; }
+export function exec(cmd, args, opts) { s.seen.execs.push({ cmd, args, opts }); return s.exec(cmd, args, opts); }
 `,
 );
 pkg("gpui-kit");
@@ -103,6 +104,7 @@ const stub = (globalThis.__herdrStub = {
   props: null,
   calls: [],
   execs: [],
+  seen: { runs: [], execs: [] },
   timer: null,
   exec: () => {
     throw new Error("exec is not stubbed in this scenario");
@@ -177,7 +179,11 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
 }
 
 // ---- manifest ---------------------------------------------------------------
-assert.deepEqual(Object.keys(manifest).sort(), ["min_w", "place", "title"]);
+assert.equal(manifest.place, "none", "mod.json must declare place none so nothing docks into the layout");
+assert.ok(Number(manifest.min_w) >= 280, "mod.json must declare a min_w of at least the 280 px panel minimum");
+assert.equal(typeof manifest.title, "string", "mod.json needs a title the app can show");
+assert.ok(manifest.title.trim() !== "", "mod.json title is not empty");
+assert.notEqual(manifest.focusable, true, "the mod is pointer-only, so it must not claim focusable");
 console.log("  ok manifest: place none, min_w " + manifest.min_w);
 
 // ---- the three sections, their live counts, and the card fields --------------
@@ -206,6 +212,41 @@ console.log("  ok manifest: place none, min_w " + manifest.min_w);
   assert.equal(byId(tree, "card-nowin").click, undefined, "a card with no live window is not clickable");
   assert.equal(byId(tree, "card-waiting").click, undefined, "queued cards carry no window either");
   console.log("  ok three sections with live counts, card fields, click only with a window");
+}
+
+// ---- the chosen base wins over an ambient SQUAD_BASE -----------------------
+{
+  const realExec = (cmd, args, opts) =>
+    new Promise((resolve) => {
+      execFile(cmd, args, { cwd: opts.cwd, timeout: opts.timeout }, (err, stdout, stderr) => {
+        resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, stdout, stderr });
+      });
+    });
+  const makeBase = (name) => {
+    const dir = join(root, "bases", name);
+    mkdirSync(join(dir, "bin"), { recursive: true });
+    writeFileSync(
+      join(dir, "bin", "sq-board.sh"),
+      `#!/usr/bin/env bash\nprintf '[{"id":"%s","state":"in_flight","window":""}]\\n' "$(basename "$SQUAD_BASE")"\n`,
+      { mode: 0o755 },
+    );
+    return dir;
+  };
+  const chosen = makeBase("chosen");
+  const ambient = makeBase("ambient");
+  const saved = process.env.SQUAD_BASE;
+  process.env.SQUAD_BASE = ambient;
+  try {
+    const { view } = await boot({ exec: realExec, props: { base: chosen } });
+    await flush();
+    const ids = view.items.map((m) => m.id);
+    assert.ok(ids.includes("chosen"), `the props base is what the board reads, saw ${JSON.stringify(ids)}`);
+    assert.ok(!ids.includes("ambient"), "an ambient SQUAD_BASE must not override the chosen base");
+  } finally {
+    if (saved === undefined) delete process.env.SQUAD_BASE;
+    else process.env.SQUAD_BASE = saved;
+  }
+  console.log("  ok the chosen base wins over an ambient SQUAD_BASE");
 }
 
 // ---- the read budget: one at a time, never while hidden ----------------------
@@ -306,6 +347,19 @@ console.log("  ok manifest: place none, min_w " + manifest.min_w);
   console.log("  ok herdr-app check renders the empty board without reading anything");
 }
 
+// ---- the whole surface only ever runs the board read and agent.focus --------
+{
+  const runs = [...new Set(stub.seen.runs)];
+  assert.deepEqual(runs, ["agent.focus"], `only agent.focus is ever run, saw: ${runs.join(", ") || "nothing"}`);
+  assert.ok(stub.seen.execs.length > 0, "the board read actually ran");
+  for (const e of stub.seen.execs) {
+    assert.equal(e.cmd, "/bin/bash", "the board is read through bash");
+    assert.match(e.args[1], /bin\/sq-board\.sh --json$/, "every process launch is the one board read");
+    assert.doesNotMatch(e.args[1], /--state/, "no filtered read");
+  }
+  console.log(`  ok only agent.focus and bin/sq-board.sh --json ever run (${stub.seen.execs.length} reads)`);
+}
+
 rmSync(root, { recursive: true, force: true });
 JS
 pass "behavior: sections, cards, click, budget, states, toggle, check"
@@ -319,9 +373,7 @@ done
 if grep -Eq '\bhc[[:space:]]+(run|kill|rm|label|start|stop|exec|file|send|spawn)\b' "$MOD/main.js" "$MOD/install.sh"; then
   fail "no hc write verb may appear in the mod or its installer"
 fi
-commands="$(grep -oE 'run\("[a-z.]+"' "$MOD/main.js" | sed -E 's/run\("([a-z.]+)"/\1/' | sort -u)"
-[ "$commands" = "agent.focus" ] || fail "the mod's only app command must be agent.focus, found: ${commands:-none}"
-pass "no lifecycle verb: no sq-tasks, no sq-spawn, no sq-teardown, no hc write, only agent.focus"
+pass "no lifecycle verb: no sq-tasks, no sq-spawn, no sq-teardown, no hc write"
 
 # ---- install and uninstall, in a throwaway app home -------------------------
 tmp_home="$(mktemp -d)"
@@ -332,6 +384,14 @@ HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
 [ "$(find "$tmp_home/mods" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1 ] || fail "install must be idempotent"
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
 [ ! -e "$tmp_home/mods/squad-board" ] || fail "--uninstall must remove what it installed"
+
+# The editor aids `herdr-app check` writes must not block removal.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+printf 'declare const x: number;\n' >"$tmp_home/mods/squad-board/gpui-kit.d.ts"
+printf '{}\n' >"$tmp_home/mods/squad-board/jsconfig.json"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null
+[ ! -e "$tmp_home/mods/squad-board" ] || fail "--uninstall must remove the editor files herdr-app check wrote"
+
 mkdir -p "$tmp_home/mods/squad-board"
 printf 'someone else\n' >"$tmp_home/mods/squad-board/main.js"
 if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null 2>&1; then
@@ -340,7 +400,22 @@ fi
 if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
   fail "--uninstall must refuse to delete a folder it did not write"
 fi
-pass "install copies once, is idempotent, and only removes its own folder"
+rm -rf "$tmp_home/mods/squad-board"
+
+# Files a person put there are never deleted, by --uninstall or by --link.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+printf 'my notes\n' >"$tmp_home/mods/squad-board/notes.txt"
+if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
+  fail "--uninstall must refuse a folder that holds files it did not write"
+fi
+[ -f "$tmp_home/mods/squad-board/notes.txt" ] || fail "--uninstall must never delete a person's file"
+[ -f "$tmp_home/mods/squad-board/main.js" ] || fail "a refused --uninstall must leave the mod in place"
+if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
+  fail "--link must refuse to replace a copy that holds files it did not write"
+fi
+[ -f "$tmp_home/mods/squad-board/notes.txt" ] || fail "--link must never delete a person's file"
+[ -d "$tmp_home/mods/squad-board" ] || fail "a refused --link must leave the copy in place"
+pass "install copies once, is idempotent, and only removes what it wrote"
 
 # ---- the app's own validator, where the app is installed ---------------------
 if command -v herdr-app >/dev/null 2>&1; then
