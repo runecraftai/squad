@@ -423,6 +423,41 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   console.log("  ok pinned view draws no toggle, and the toggle's choice survives a restart");
 }
 
+// ---- the header gates its controls so the view toggle is always reachable --
+{
+  const { view, cx } = await boot();
+  await flush();
+  const at = (width) => {
+    view.width = width;
+    return view.render(cx);
+  };
+
+  const at280 = at(280);
+  assert.ok(byId(at280, "view-list"), "the list toggle stays reachable at the declared 280 px minimum");
+  assert.ok(byId(at280, "view-kanban"), "the kanban toggle stays reachable too");
+  assert.equal(byId(at280, "sort"), null, "below 480 px the sort control is not drawn");
+  assert.ok(allText(at280).includes("Missões"), "the short title is drawn beside the toggle at 280 px");
+  assert.ok(!allText(at280).includes("ms ·"), "below 560 px the read line is not drawn");
+
+  const at200 = at(200);
+  assert.ok(byId(at200, "view-list"), "the toggle stays reachable at the 200 px readable minimum");
+
+  const at479 = at(479);
+  assert.equal(byId(at479, "sort"), null, "the sort control stays out below 480 px");
+
+  const at480 = at(480);
+  assert.ok(byId(at480, "sort"), "the sort control appears at 480 px");
+  assert.ok(!allText(at480).includes("ms ·"), "the read line stays gated at 480 px");
+
+  const at559 = at(559);
+  assert.ok(!allText(at559).includes("ms ·"), "the read line stays gated below 560 px");
+
+  const at560 = at(560);
+  assert.ok(allText(at560).includes("ms ·"), "the read line appears at 560 px");
+  assert.ok(byId(at560, "sort"), "the sort control stays drawn above its threshold");
+  console.log("  ok the header gates title, sort and read line, so the view toggle is reachable at 280 px");
+}
+
 // ---- the read budget: one at a time, never while hidden ----------------------
 {
   const { view, cx } = await boot();

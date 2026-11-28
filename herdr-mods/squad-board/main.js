@@ -42,6 +42,8 @@ const TITLE_LINE_H = 19;
 const TITLE_MAX_LINES = 3;
 const CHAR_W = 0.6; // measured: about this many font sizes per character in this UI
 const BODY_FONT = 11.5;
+const TITLE_MIN = 280; // below the declared pane minimum the title is dropped, so the toggle keeps its room
+const SORT_MIN = 480; // below this the header drops the sort control
 const READ_LINE_MIN = 560; // below this the header drops the read line instead of clipping
 
 const SECTIONS = [
@@ -609,10 +611,12 @@ export default class SquadBoard extends View {
       .py(6)
       .flex_none()
       .min_w(0)
-      .child(div().text_size(13).font_semibold().text_color(t.foreground).child("Missões"))
+      .when(this.width >= TITLE_MIN, (el) =>
+        el.child(div().flex_none().text_size(13).font_semibold().text_color(t.foreground).child("Missões")),
+      )
       .child(div().flex_1())
-      .child(this.sortControl(t))
-      // A pinned tab has nothing to toggle, so the control is not drawn.
+      // A pinned tab has nothing to toggle, so the control is not drawn. It comes
+      // before the other controls, so a narrow pane can never push it out.
       .when(!this.pinnedView(), (el) =>
         el.child(
           h_flex()
@@ -626,9 +630,10 @@ export default class SquadBoard extends View {
             .children(VIEWS.map((v) => this.toggle(v, t))),
         ),
       )
+      .when(this.width >= SORT_MIN, (el) => el.child(this.sortControl(t)))
       // Below READ_LINE_MIN the read line is dropped rather than clipped: the
       // toggle is the only control, so it keeps its room.
-      .when(this.width >= READ_LINE_MIN, (el) => el.child(this.text(shown, t, 10)));
+      .when(this.width >= READ_LINE_MIN, (el) => el.child(div().flex_none().child(this.text(shown, t, 10))));
   }
 
   board(t, live) {
