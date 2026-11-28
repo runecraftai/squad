@@ -221,31 +221,26 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   // 258 px of inner tile is about 34 columns a line, so the three-line box holds ~91.
   const BOX_COLS = 91;
   // An independent width model, written from the documented three-rule policy and
-  // never calling the mod's own function: printable ASCII is one column, a
-  // combining mark, variation selector or zero-width joiner none, and every other
-  // code point two. Charging a cluster the sum of its code points can over-count
-  // (a ZWJ sequence, an accented letter) and so shorten a title early, but it can
-  // never under-count a glyph the renderer draws wider than ASCII.
+  // never calling the mod's own function: a cluster carrying a variation selector,
+  // a zero-width joiner or the keycap mark costs two columns whatever its base; a
+  // cluster of printable ASCII and combining marks costs one; anything else two.
+  // Charging per cluster can over-count (an accented letter, a joined emoji) and so
+  // shorten a title early, but a full title never costs more than two per cluster.
   const segmenter = new Intl.Segmenter("pt-BR", { granularity: "grapheme" });
   const glyphs = (s) => [...segmenter.segment(s)].map((part) => part.segment);
-  const mark = (ch) => {
-    const point = ch.codePointAt(0);
-    return (
-      point === 0x200d ||
-      (point >= 0x0300 && point <= 0x036f) ||
-      (point >= 0x1ab0 && point <= 0x1aff) ||
-      (point >= 0x1dc0 && point <= 0x1dff) ||
-      (point >= 0x20d0 && point <= 0x20ff) ||
-      (point >= 0xfe00 && point <= 0xfe0f) ||
-      (point >= 0xfe20 && point <= 0xfe2f)
-    );
+  const isMark = (point) =>
+    (point >= 0x0300 && point <= 0x036f) ||
+    (point >= 0x1ab0 && point <= 0x1aff) ||
+    (point >= 0x1dc0 && point <= 0x1dff) ||
+    (point >= 0x20d0 && point <= 0x20ff) ||
+    (point >= 0xfe00 && point <= 0xfe0f) ||
+    (point >= 0xfe20 && point <= 0xfe2f);
+  const clusterCols = (cluster) => {
+    const points = Array.from(cluster, (ch) => ch.codePointAt(0));
+    if (points.some((point) => point === 0xfe0f || point === 0x200d || point === 0x20e3)) return 2;
+    return points.every((point) => (point >= 0x20 && point <= 0x7e) || isMark(point)) ? 1 : 2;
   };
-  const textCols = (s) =>
-    Array.from(s).reduce((n, ch) => {
-      const point = ch.codePointAt(0);
-      if (point >= 0x20 && point <= 0x7e) return n + 1;
-      return n + (mark(ch) ? 0 : 2);
-    }, 0);
+  const textCols = (s) => glyphs(s).reduce((n, cluster) => n + clusterCols(cluster), 0);
 
   const clamped = mod.clampTitle(longTitle, 258);
   assert.ok(clamped.endsWith("…"), "a title longer than three lines ends with an ellipsis");
@@ -258,16 +253,18 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   const narrow = mod.clampTitle(longTitle, 160);
   assert.ok(narrow.endsWith("…") && narrow.length < clamped.length, "a narrower tile truncates sooner");
 
-  // Six glyph shapes, all longer than the box, each cut inside it and at a whole
+  // Seven glyph shapes, all longer than the box, each cut inside it and at a whole
   // cluster: no trailing joiner or selector, no lone surrogate, ellipsis after a
-  // complete glyph. BMP emoji and CJK are the classes a Unicode table priced
-  // wrong before; the three-rule policy prices them at two without a table.
+  // complete glyph. Keycaps, BMP emoji, VS16 clusters and CJK are the classes a
+  // per-code-point width table priced wrong before; the cluster policy prices them
+  // at two without a table.
   const shapes = [
     ["plain", longTitle],
     ["astral", "😀".repeat(120)],
     ["presentation", "\u2764\ufe0f".repeat(100)],
     ["joined", "👩\u200d💻".repeat(80)],
     ["bmp-emoji", "\u2705".repeat(120)],
+    ["keycap", "1\ufe0f\u20e3".repeat(120)],
     ["cjk", "\u6f22".repeat(120)],
   ];
   for (const [name, source] of shapes) {
@@ -280,7 +277,7 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
     );
     assert.ok(!body.endsWith("\u200d"), `${name}: the cut never leaves a dangling zero-width joiner`);
     assert.ok(
-      glyphs(body).length > 0 && !Array.from(glyphs(body).at(-1)).every(mark),
+      glyphs(body).length > 0 && !Array.from(glyphs(body).at(-1)).every((ch) => isMark(ch.codePointAt(0))),
       `${name}: the last retained glyph is a whole cluster, not a stray mark or selector`,
     );
     assert.ok(
@@ -306,6 +303,11 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   assert.ok(
     glyphs(bmpRun).length <= glyphs(plainRun).length * 0.6 + 2,
     `a BMP emoji keeps about half the glyphs of a plain one (${glyphs(bmpRun).length} vs ${glyphs(plainRun).length})`,
+  );
+  const keycapRun = mod.clampTitle("1\ufe0f\u20e3".repeat(120), 258);
+  assert.ok(
+    glyphs(keycapRun).length <= glyphs(plainRun).length * 0.6 + 2,
+    `an ASCII-based keycap keeps about half the glyphs of a plain one (${glyphs(keycapRun).length} vs ${glyphs(plainRun).length})`,
   );
   assert.equal(
     mod.clampTitle("a".repeat(BOX_COLS) + "\u0301" + "b".repeat(50), 258),

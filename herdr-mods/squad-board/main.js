@@ -138,19 +138,19 @@ function zeroWidth(point) {
   );
 }
 
-// Display columns one code point costs in this UI. The policy is deliberately
-// coarse and deliberately never short: printable ASCII is one column, a combining
-// mark, a variation selector or the zero-width joiner is none, and every other
-// code point is two. That covers accented Latin, BMP emoji such as U+2705, astral
-// emoji, CJK, fullwidth forms and anything Unicode adds later, because none of
-// them is ever priced at one. Over-counting (an accented letter blocked as if it
-// were two columns wide) only shortens a title a little; under-counting would let
-// it overflow the tile, which is the failure this budget exists to prevent.
-function glyphColumns(ch) {
-  const point = ch.codePointAt(0);
-  if (point >= 0x20 && point <= 0x7e) return 1;
-  if (zeroWidth(point)) return 0;
-  return 2;
+// Display columns one rendered cluster costs in this UI, priced once per cluster
+// and never per member. A cluster carrying a variation selector, a zero-width
+// joiner or the keycap mark draws about an em wide whatever its base, so it costs
+// two; otherwise a cluster of printable ASCII and combining marks costs one; every
+// other cluster costs two. There is no per-script table, so accented Latin, BMP and
+// astral emoji, CJK and fullwidth text all take the same conservative price: a
+// title never costs more than two columns per cluster, and over-counting can only
+// shorten it earlier than strictly needed.
+function glyphColumns(cluster) {
+  const points = Array.from(cluster, (ch) => ch.codePointAt(0));
+  if (points.some((point) => point === 0xfe0f || point === 0x200d || point === 0x20e3)) return 2;
+  const plain = points.every((point) => (point >= 0x20 && point <= 0x7e) || zeroWidth(point));
+  return plain ? 1 : 2;
 }
 
 // The glyph clusters a title really renders as: a base code point with its
@@ -178,7 +178,7 @@ function titleClusters(text) {
     }
     clusters.push({
       text: members.join(""),
-      width: members.reduce((n, member) => n + glyphColumns(member), 0),
+      width: glyphColumns(members.join("")),
     });
   }
   return clusters;
@@ -188,10 +188,11 @@ const clusterColumns = (clusters) => clusters.reduce((n, cluster) => n + cluster
 
 // This UI layer has no line clamp, so the three-line budget is spent here: a
 // column estimate from the tile's inner width, spent one cluster at a time under
-// glyphColumns' never-short policy, cut at a cluster and then at a word boundary,
-// with an ellipsis that always lands inside the tile. The card also caps the text
-// block's height, but that cap is only a backstop: the text itself already fits,
-// so no glyph is ever sliced by the card boundary.
+// glyphColumns' two-columns-per-cluster policy, cut at a cluster and then at a word
+// boundary, with an ellipsis that always lands inside the tile. The card also caps
+// the text block's height, and that cap is the backstop for any cluster the coarse
+// price still under-counts: the guarantee is the ellipsis inside the three-line
+// box, not a proof that no glyph is ever touched by the card edge.
 export function clampTitle(title, innerWidth, lines = TITLE_MAX_LINES) {
   const text = String(title ?? "")
     .replace(/\s+/g, " ")

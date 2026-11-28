@@ -64,13 +64,15 @@ readability claim rests on the measured captures and on the thresholds asserted 
 - Inside a tile: the elapsed time at the top right, then the mission title on at most three lines
   ending in an ellipsis, then `kind · repo`, then a status dot with its label (`working`, `blocked`,
   the board's own endpoint state, or `sem agente`).
-  Text is cut only by an ellipsis inside the tile: a glyph is never sliced by a card edge.
-  The three-line budget prices a glyph cluster by three rules only: printable ASCII is one column, a
-  combining mark, variation selector or zero-width joiner none, and every other code point two - so
-  accented Latin, BMP and astral emoji, CJK and fullwidth text all cost two without a Unicode table.
-  The estimate can over-count (an accented letter paid as two columns, a joined emoji paid per member)
-  and so shorten a title a little earlier than strictly needed, but it never under-counts, so a title
-  cannot overflow the tile.
+  Text is cut only by an ellipsis inside the tile; the height cap on that block is the backstop for
+  any cluster the estimate still under-counts, not a promise that a card edge never touches a glyph.
+  The three-line budget prices a whole glyph cluster by three rules only: a cluster carrying a
+  variation selector, a zero-width joiner or the keycap mark costs two columns whatever its base;
+  a cluster of printable ASCII and combining marks costs one; every other cluster costs two.
+  There is no per-script table, so accented Latin, BMP and astral emoji, CJK and fullwidth text all
+  cost two. The price is deliberately coarse and can over-count (an accented letter paid as two
+  columns, a joined emoji paid as two), which only shortens a title a little earlier than strictly
+  needed, while a full title never costs more than two columns per cluster.
 - Loading (`lendo o board…`), empty (`nenhuma missão em voo`, `nada na fila`, `nada em espera`) and a
   failed read are drawn as text, so the pane is never a blank board; the last good cards stay under
   the error line.
