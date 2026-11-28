@@ -1,5 +1,6 @@
 {
   "title": "Squad board",
   "place": "none",
+  "focusable": true,
   "min_w": 280
 }
