@@ -65,6 +65,12 @@ readability claim rests on the measured captures and on the thresholds asserted 
   ending in an ellipsis, then `kind · repo`, then a status dot with its label (`working`, `blocked`,
   the board's own endpoint state, or `sem agente`).
   Text is cut only by an ellipsis inside the tile: a glyph is never sliced by a card edge.
+  The three-line budget prices a glyph cluster by three rules only: printable ASCII is one column, a
+  combining mark, variation selector or zero-width joiner none, and every other code point two - so
+  accented Latin, BMP and astral emoji, CJK and fullwidth text all cost two without a Unicode table.
+  The estimate can over-count (an accented letter paid as two columns, a joined emoji paid per member)
+  and so shorten a title a little earlier than strictly needed, but it never under-counts, so a title
+  cannot overflow the tile.
 - Loading (`lendo o board…`), empty (`nenhuma missão em voo`, `nada na fila`, `nada em espera`) and a
   failed read are drawn as text, so the pane is never a blank board; the last good cards stay under
   the error line.

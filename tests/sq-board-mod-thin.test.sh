@@ -220,47 +220,64 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
 
   // 258 px of inner tile is about 34 columns a line, so the three-line box holds ~91.
   const BOX_COLS = 91;
-  // An independent width model, written from the documented expectation and using
-  // the platform's own grapheme boundaries: one glyph cluster is two columns when
-  // it carries U+FE0F or an astral code point, otherwise one. It never calls the
-  // mod's width table, so a regressed table cannot move the bar with it.
+  // An independent width model, written from the documented three-rule policy and
+  // never calling the mod's own function: printable ASCII is one column, a
+  // combining mark, variation selector or zero-width joiner none, and every other
+  // code point two. Charging a cluster the sum of its code points can over-count
+  // (a ZWJ sequence, an accented letter) and so shorten a title early, but it can
+  // never under-count a glyph the renderer draws wider than ASCII.
   const segmenter = new Intl.Segmenter("pt-BR", { granularity: "grapheme" });
   const glyphs = (s) => [...segmenter.segment(s)].map((part) => part.segment);
   const mark = (ch) => {
     const point = ch.codePointAt(0);
-    return point === 0x200d || point === 0xfe0f || (point >= 0x0300 && point <= 0x036f);
+    return (
+      point === 0x200d ||
+      (point >= 0x0300 && point <= 0x036f) ||
+      (point >= 0x1ab0 && point <= 0x1aff) ||
+      (point >= 0x1dc0 && point <= 0x1dff) ||
+      (point >= 0x20d0 && point <= 0x20ff) ||
+      (point >= 0xfe00 && point <= 0xfe0f) ||
+      (point >= 0xfe20 && point <= 0xfe2f)
+    );
   };
   const textCols = (s) =>
-    glyphs(s).reduce((n, glyph) => {
-      const wide = Array.from(glyph).some((ch) => {
-        const point = ch.codePointAt(0);
-        return point === 0xfe0f || point >= 0x10000;
-      });
-      return n + (wide ? 2 : 1);
+    Array.from(s).reduce((n, ch) => {
+      const point = ch.codePointAt(0);
+      if (point >= 0x20 && point <= 0x7e) return n + 1;
+      return n + (mark(ch) ? 0 : 2);
     }, 0);
 
   const clamped = mod.clampTitle(longTitle, 258);
   assert.ok(clamped.endsWith("…"), "a title longer than three lines ends with an ellipsis");
-  assert.ok(textCols(clamped) <= BOX_COLS + 1, `the ellipsis lands inside the three-line box, got ${textCols(clamped)} columns`);
+  assert.ok(
+    textCols(clamped.slice(0, -1)) <= BOX_COLS,
+    `the ellipsis lands inside the three-line box, got ${textCols(clamped)} columns`,
+  );
   assert.equal(mod.clampTitle("Curto", 258), "Curto", "a short title is left alone");
   assert.equal(mod.clampTitle("😀".repeat(10), 258), "😀".repeat(10), "a wide-glyph title that fits is left unclamped");
   const narrow = mod.clampTitle(longTitle, 160);
   assert.ok(narrow.endsWith("…") && narrow.length < clamped.length, "a narrower tile truncates sooner");
 
-  // Four glyph shapes, all longer than the box, all cut inside it and at a whole
+  // Six glyph shapes, all longer than the box, each cut inside it and at a whole
   // cluster: no trailing joiner or selector, no lone surrogate, ellipsis after a
-  // complete glyph.
+  // complete glyph. BMP emoji and CJK are the classes a Unicode table priced
+  // wrong before; the three-rule policy prices them at two without a table.
   const shapes = [
     ["plain", longTitle],
     ["astral", "😀".repeat(120)],
     ["presentation", "\u2764\ufe0f".repeat(100)],
-    ["joined", "👩‍💻".repeat(80)],
+    ["joined", "👩\u200d💻".repeat(80)],
+    ["bmp-emoji", "\u2705".repeat(120)],
+    ["cjk", "\u6f22".repeat(120)],
   ];
   for (const [name, source] of shapes) {
     const out = mod.clampTitle(source, 258);
     const body = out.slice(0, -1);
     assert.ok(out.endsWith("…"), `${name}: the title ends with an ellipsis`);
-    assert.ok(textCols(out) <= BOX_COLS + 1, `${name}: the ellipsis stays inside the three-line box, got ${textCols(out)} columns`);
+    assert.ok(
+      textCols(body) <= BOX_COLS,
+      `${name}: the retained title fits the three-line column budget, got ${textCols(body)} columns`,
+    );
     assert.ok(!body.endsWith("\u200d"), `${name}: the cut never leaves a dangling zero-width joiner`);
     assert.ok(
       glyphs(body).length > 0 && !Array.from(glyphs(body).at(-1)).every(mark),
@@ -276,13 +293,19 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
     assert.equal(glyphs(out).at(-1), "…", `${name}: the ellipsis directly follows a whole cluster`);
   }
 
-  // An anchor that does not go through any width table: a wide glyph costs two
-  // columns, so a title of wide glyphs keeps about half the glyphs a plain one does.
+  // Anchors that do not go through any width table: a glyph priced at two columns
+  // keeps about half the glyphs a plain ASCII one does, for astral and for BMP
+  // emoji alike. A table that priced a BMP emoji at one column fails this.
   const plainRun = mod.clampTitle("a".repeat(200), 258);
   const wideRun = mod.clampTitle("😀".repeat(120), 258);
+  const bmpRun = mod.clampTitle("\u2705".repeat(120), 258);
   assert.ok(
     glyphs(wideRun).length <= glyphs(plainRun).length * 0.6 + 2,
-    `a wide glyph keeps about half the glyphs of a plain one (${glyphs(wideRun).length} vs ${glyphs(plainRun).length})`,
+    `an astral glyph keeps about half the glyphs of a plain one (${glyphs(wideRun).length} vs ${glyphs(plainRun).length})`,
+  );
+  assert.ok(
+    glyphs(bmpRun).length <= glyphs(plainRun).length * 0.6 + 2,
+    `a BMP emoji keeps about half the glyphs of a plain one (${glyphs(bmpRun).length} vs ${glyphs(plainRun).length})`,
   );
   assert.equal(
     mod.clampTitle("a".repeat(BOX_COLS) + "\u0301" + "b".repeat(50), 258),

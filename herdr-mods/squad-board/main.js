@@ -138,56 +138,48 @@ function zeroWidth(point) {
   );
 }
 
-// Display columns one code point takes in this UI: astral and East Asian wide
-// glyphs take two, a combining mark or a joiner takes none, everything else one.
+// Display columns one code point costs in this UI. The policy is deliberately
+// coarse and deliberately never short: printable ASCII is one column, a combining
+// mark, a variation selector or the zero-width joiner is none, and every other
+// code point is two. That covers accented Latin, BMP emoji such as U+2705, astral
+// emoji, CJK, fullwidth forms and anything Unicode adds later, because none of
+// them is ever priced at one. Over-counting (an accented letter blocked as if it
+// were two columns wide) only shortens a title a little; under-counting would let
+// it overflow the tile, which is the failure this budget exists to prevent.
 function glyphColumns(ch) {
   const point = ch.codePointAt(0);
+  if (point >= 0x20 && point <= 0x7e) return 1;
   if (zeroWidth(point)) return 0;
-  if (
-    point >= 0x1100 &&
-    (point <= 0x115f ||
-      (point >= 0x2e80 && point <= 0xa4cf) ||
-      (point >= 0xac00 && point <= 0xd7a3) ||
-      (point >= 0xf900 && point <= 0xfaff) ||
-      (point >= 0xfe10 && point <= 0xfe19) ||
-      (point >= 0xfe30 && point <= 0xfe6f) ||
-      (point >= 0xff00 && point <= 0xff60) ||
-      (point >= 0xffe0 && point <= 0xffe6) ||
-      (point >= 0x1f000 && point <= 0x1faff) ||
-      (point >= 0x20000 && point <= 0x3fffd))
-  )
-    return 2;
-  return 1;
+  return 2;
 }
 
 // The glyph clusters a title really renders as: a base code point with its
-// combining marks and emoji-presentation selector, plus any ZWJ chain. A cluster
-// is wide (two columns) when any member is astral or wide, or when it carries
-// U+FE0F, which is what turns `❤` into one wide `❤️`; everything else is one
-// column. Clusters, not code points, are the unit a cut may fall between.
+// combining marks and variation selectors, plus any ZWJ chain. Clusters, not code
+// points, are the unit a cut may fall between, so the kept text can never end mid
+// sequence. A cluster costs the sum of its members' columns.
 function titleClusters(text) {
   const points = Array.from(String(text ?? ""));
   const clusters = [];
   let i = 0;
   while (i < points.length) {
     const members = [points[i]];
-    let wide = glyphColumns(points[i]) === 2;
     i += 1;
     for (;;) {
       while (i < points.length && zeroWidth(points[i].codePointAt(0)) && points[i].codePointAt(0) !== 0x200d) {
-        if (points[i].codePointAt(0) === 0xfe0f) wide = true;
         members.push(points[i]);
         i += 1;
       }
       if (i + 1 < points.length && points[i].codePointAt(0) === 0x200d) {
         members.push(points[i], points[i + 1]);
-        if (glyphColumns(points[i + 1]) === 2) wide = true;
         i += 2;
         continue;
       }
       break;
     }
-    clusters.push({ text: members.join(""), width: wide ? 2 : 1 });
+    clusters.push({
+      text: members.join(""),
+      width: members.reduce((n, member) => n + glyphColumns(member), 0),
+    });
   }
   return clusters;
 }
@@ -195,12 +187,11 @@ function titleClusters(text) {
 const clusterColumns = (clusters) => clusters.reduce((n, cluster) => n + cluster.width, 0);
 
 // This UI layer has no line clamp, so the three-line budget is spent here: a
-// column estimate from the tile's inner width, spent one cluster at a time (a
-// wide glyph or an FE0F cluster costs two columns, a combining mark none), cut at
-// a cluster and then at a word boundary, with an ellipsis that always lands
-// inside the tile. The card also caps the text block's height, but that cap is
-// only a backstop: the text itself already fits, so no glyph is ever sliced by
-// the card boundary.
+// column estimate from the tile's inner width, spent one cluster at a time under
+// glyphColumns' never-short policy, cut at a cluster and then at a word boundary,
+// with an ellipsis that always lands inside the tile. The card also caps the text
+// block's height, but that cap is only a backstop: the text itself already fits,
+// so no glyph is ever sliced by the card boundary.
 export function clampTitle(title, innerWidth, lines = TITLE_MAX_LINES) {
   const text = String(title ?? "")
     .replace(/\s+/g, " ")
