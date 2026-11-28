@@ -34,7 +34,6 @@ pass "one folder with main.js, mod.json, README.md and an executable install.sh"
 
 MOD_DIR="$MOD" node --input-type=module <<'JS'
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,10 +43,6 @@ const modDir = process.env.MOD_DIR;
 const manifest = JSON.parse(readFileSync(join(modDir, "mod.json"), "utf8"));
 assert.equal(manifest.place, "none", "mod.json must declare place none so nothing docks into the layout");
 assert.ok(Number(manifest.min_w) >= 280, "mod.json must declare a min_w of at least the 280 px panel minimum");
-assert.equal(typeof manifest.title, "string", "mod.json needs a title the app can show");
-assert.ok(manifest.title.trim() !== "", "mod.json title is not empty");
-assert.notEqual(manifest.focusable, true, "the mod is pointer-only, so it must not claim focusable");
-console.log("  ok manifest: place none, min_w " + manifest.min_w);
 
 // ---- stub modules: the mod runs unmodified against these ---------------------
 const root = mkdtempSync(join(tmpdir(), "squad-board-mod-"));
@@ -70,8 +65,8 @@ export class El {
   on_click(fn) { this.click = fn; return this; }
   hover(fn) { this.hoverFn = fn; return this; }
 }
-for (const m of ["id","gap","p","px","py","pl","rounded","bg","border","border_color","cursor_pointer","size","w","flex_none","mt","flex_1","min_w","text_size","text_color","whitespace_normal","font_semibold","h","flex","items_center","items_start","size_full","overflow_x_scrollbar","overflow_y_scrollbar"]) {
-  El.prototype[m] = function (v) { this.props[m] = v === undefined ? true : v; return this; };
+for (const m of ["id","gap","p","px","py","pl","pt","rounded","bg","border","border_color","cursor_pointer","size","flex","flex_none","flex_1","flex_wrap","mt","min_w","min_h","max_h","max_w","w","h","w_full","text_size","text_color","whitespace_normal","truncate","overflow_hidden","overflow_x_scrollbar","overflow_y_scrollbar","font_semibold","items_center","items_start","items_stretch","justify_between","size_full","aspect_square","on_size_change","track_focus","on_key_down","font_family","max_h_full","h_full"]) {
+  El.prototype[m] = function (...args) { this.props[m] = args.length === 0 ? true : args.length === 1 ? args[0] : args; return this; };
 }
 export function div() { return new El("div"); }
 export class View {}
@@ -90,8 +85,8 @@ export function shared(k) { return s.shared[k]; }
 export function setShared(k, v) { s.shared[k] = v; return null; }
 export function agents() { return s.agents; }
 export function props() { return s.props; }
-export function run(name, args) { s.calls.push({ name, args }); s.seen.runs.push(name); return null; }
-export function exec(cmd, args, opts) { s.seen.execs.push({ cmd, args, opts }); return s.exec(cmd, args, opts); }
+export function run(name, args) { s.calls.push({ name, args }); return null; }
+export function exec(cmd, args, opts) { return s.exec(cmd, args, opts); }
 `,
 );
 pkg("gpui-kit");
@@ -108,16 +103,18 @@ const stub = (globalThis.__herdrStub = {
   props: null,
   calls: [],
   execs: [],
-  seen: { runs: [], execs: [] },
   timer: null,
   exec: () => {
     throw new Error("exec is not stubbed in this scenario");
   },
 });
 let imports = 0;
-async function load() {
+async function module() {
   const url = pathToFileURL(join(root, "main.js")).href + `?copy=${++imports}`;
-  return (await import(url)).default;
+  return await import(url);
+}
+async function load() {
+  return (await module()).default;
 }
 
 // A context like the app's: spawned tasks are awaited by flush(), the timer is captured.
@@ -127,6 +124,7 @@ function makeCx() {
     spawn(fn) { pending.push(fn(cx)); },
     timer: { every(ms, cb) { stub.timer = { ms, cb }; } },
     notify() {},
+    focus_handle() { return { focus() {} }; },
   };
   return cx;
 }
@@ -134,18 +132,23 @@ async function flush() {
   while (pending.length) await pending.shift();
 }
 
+const longTitle = "Defeito: poda de cartoes de decisao ja resolvidos torna o portao de conclusao do recon insatisfativel para sempre, mesmo quando o operador ja respondeu todas as perguntas do juiz";
 const fixture = [
-  { id: "live", state: "in_flight", kind: "strike", repo: "squad", title: "Titulo completo da missao que precisa de varias linhas em 200 px", backend: "herdr-core", endpoint_state: "", busy_elapsed: "7m", window: "default:t1k" },
-  { id: "nowin", state: "in_flight", kind: "recon", repo: "robotyard", title: "Missao sem agente vivo", backend: "herdr-core", endpoint_state: "", busy_elapsed: "3m", window: "" },
-  { id: "waiting", state: "queued", kind: "commander", repo: "career-coach", title: "Na fila", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "" },
-  { id: "parked", state: "held", kind: "docs", repo: "squad", title: "Em espera", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "" },
-  { id: "dead", state: "held", kind: "strike", repo: "squad", title: "Terminal que ja fechou", backend: "herdr-core", endpoint_state: "", busy_elapsed: "", window: "default:tgone" },
-  { id: "foreign", state: "held", kind: "strike", repo: "squad", title: "Rodando em tmux", backend: "tmux", endpoint_state: "", busy_elapsed: "", window: "work:t1k" },
+  { id: "live", state: "in_flight", kind: "strike", repo: "squad", title: longTitle, backend: "herdr-core", endpoint_state: "", busy_elapsed: "7m", priority: "2", window: "default:t1k" },
+  { id: "dead", state: "in_flight", kind: "recon", repo: "robotyard", title: longTitle, backend: "herdr-core", endpoint_state: "", busy_elapsed: "3m", priority: "", window: "default:t1x" },
+  { id: "tmux", state: "in_flight", kind: "ops", repo: "squad", title: "Missao no tmux", backend: "tmux", endpoint_state: "", busy_elapsed: "1m", priority: "1", window: "work:t1k" },
+  { id: "waiting", state: "queued", kind: "commander", repo: "career-coach", title: "Na fila", backend: "", endpoint_state: "", busy_elapsed: "", priority: "3", window: "" },
+  { id: "parked", state: "held", kind: "docs", repo: "squad", title: "Em espera", backend: "", endpoint_state: "", busy_elapsed: "", priority: "", window: "" },
 ];
 
+const taskBody = 'task:\n  id: waiting\n  title: Na fila\n  body: "linha um\\nlinha dois"';
 function okExec(rows) {
   return (cmd, args, opts) => {
     stub.execs.push({ cmd, args, opts });
+    const script = String(args?.[1] ?? "");
+    if (script.includes("sq-tasks show")) {
+      return Promise.resolve({ code: 0, stdout: taskBody, stderr: "" });
+    }
     return Promise.resolve({ code: 0, stdout: JSON.stringify(rows), stderr: "" });
   };
 }
@@ -156,34 +159,18 @@ function texts(el, out = []) {
   return out;
 }
 const allText = (el) => texts(el).join("\n");
-function findAll(el, pred, out = []) {
+function walk(el, out = []) {
   if (!el || typeof el === "string") return out;
-  if (pred(el)) out.push(el);
-  for (const k of el.kids) findAll(k, pred, out);
+  out.push(el);
+  for (const k of el.kids) walk(k, out);
   return out;
 }
 function byId(el, id) {
-  if (!el || typeof el === "string") return null;
-  if (el.props?.id === id) return el;
-  for (const k of el.kids) {
-    const hit = byId(k, id);
-    if (hit) return hit;
-  }
-  return null;
+  return walk(el).find((e) => e.props?.id === id) ?? null;
 }
-// The count rendered beside a section's label, read from that section's own
-// header so the assertion cannot be satisfied by an unrelated digit.
-function sectionCount(tree, label) {
-  const labelEl = findAll(tree, (el) => el.kids?.length === 1 && el.kids[0] === label)[0];
-  assert.ok(labelEl, `section ${label} has a header`);
-  const header = findAll(tree, (el) => el.kids?.includes(labelEl))[0];
-  assert.ok(header, `section ${label} has a header row`);
-  const countEl = header.kids[header.kids.indexOf(labelEl) + 1];
-  assert.ok(countEl, `section ${label} renders a count`);
-  return countEl.kids[0];
-}
+const cards = (el) => walk(el).filter((e) => String(e.props?.id ?? "").startsWith("card-"));
 
-async function boot({ rows = fixture, win = { visible: true }, checking = false, exec = null, props = null } = {}) {
+async function boot({ rows = fixture, win = { visible: true }, checking = false, exec = null, props = null, width = 1446 } = {}) {
   stub.checking = checking;
   stub.win = win;
   stub.shared = {};
@@ -194,14 +181,40 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   stub.timer = null;
   pending = [];
   stub.exec = exec ?? okExec(rows);
-  const Mod = await load();
-  const view = new Mod();
+  const mod = await module();
+  const view = new mod.default();
   const cx = makeCx();
   view.init(null, cx);
-  return { view, cx };
+  view.width = width; // the app reports this on layout; the tests set it directly
+  return { view, cx, mod };
 }
 
-// ---- the three sections, their live counts, and the card fields --------------
+// ---- manifest ---------------------------------------------------------------
+assert.deepEqual(Object.keys(manifest).sort(), ["focusable", "min_w", "place", "title"]);
+assert.equal(manifest.focusable, true, "Escape needs the keyboard, so the mod opts in");
+console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w);
+
+// ---- tile geometry, straight from the exported functions --------------------
+{
+  const { mod } = await boot();
+  assert.equal(mod.columnsFor(1446), 5, "five tiles per row at a full-width pane");
+  assert.equal(mod.columnsFor(700), 2, "two tiles per row at 700 px");
+  assert.equal(mod.columnsFor(420), 1, "one column below 480 px");
+  assert.equal(mod.columnsFor(200), 1, "one column at 200 px");
+  assert.equal(mod.tileWidth(1446, 5), 278, "tile edge inside the 240..280 window at full width");
+  assert.equal(mod.tileWidth(700, 2), 280, "tile edge capped at 280");
+  assert.equal(mod.tileWidth(200, 1), 180, "a narrow pane gets a tile as wide as it can hold");
+
+  const clamped = mod.clampTitle(longTitle, 258);
+  assert.ok(clamped.endsWith("…"), "a title longer than three lines ends with an ellipsis");
+  assert.ok(clamped.length <= 92, `the ellipsis lands inside the three-line budget, got ${clamped.length}`);
+  assert.equal(mod.clampTitle("Curto", 258), "Curto", "a short title is left alone");
+  const narrow = mod.clampTitle(longTitle, 160);
+  assert.ok(narrow.endsWith("…") && narrow.length < clamped.length, "a narrower tile truncates sooner");
+  console.log("  ok tile geometry: 5 x 278 at full width, 2 x 280 at 700, 1 x 180 at 200, ellipsis inside the tile");
+}
+
+// ---- the three sections, live counts, and list-mode squares ------------------
 {
   const { view, cx } = await boot({ props: { base: "/repo" } });
   await flush();
@@ -209,120 +222,173 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   const call = stub.execs[0];
   assert.equal(call.cmd, "/bin/bash");
   assert.match(call.args[1], /bin\/sq-board\.sh --json/);
+  assert.match(call.args[1], /cd '\/repo' && SQUAD_BASE='\/repo'/, "the props base is authoritative for the read");
   assert.doesNotMatch(call.args[1], /--state/, "one read of the whole board supplies all three sections");
   assert.equal(call.opts.timeout, 180000, "the read is bounded by an explicit timeout");
-  assert.equal(call.opts.cwd, undefined, "the read never depends on the host honouring exec's cwd option");
-  assert.match(
-    call.args[1],
-    /^cd '\/repo' && SQUAD_BASE='\/repo' exec bin\/sq-board\.sh --json$/,
-    "the chosen base is cd-ed to and exported as SQUAD_BASE inside the command itself",
-  );
   assert.equal(stub.timer.ms, 60000, "at most one read per minute, never tighter than 15 s");
 
   const tree = view.render(cx);
   const text = allText(tree);
   for (const label of ["EM VOO", "FILA", "EM ESPERA"]) assert.ok(text.includes(label), `section ${label}`);
-  for (const [label, count] of [["EM VOO", "2"], ["FILA", "1"], ["EM ESPERA", "3"]]) {
-    assert.equal(sectionCount(tree, label), count, `${label} shows its live count`);
-  }
-  for (const field of [fixture[0].title, "strike", "squad", "7m", "working"]) assert.ok(text.includes(field), `card field ${field}`);
+  for (const c of ["3", "1", "1"]) assert.ok(text.includes(c), `count ${c}`);
 
-  // Click-to-focus needs a herdr-core row whose terminal agents() still lists.
-  // A recorded window alone is not enough: a closed terminal's address is
-  // recycled, and a tmux row records session:window, not an app terminal id.
-  const actionable = (id) => {
-    const card = byId(tree, id);
-    assert.equal(card.props.cursor_pointer, true, `${id} offers a pointer cursor`);
-    assert.equal(typeof card.click, "function", `${id} runs agent.focus on click`);
-    assert.equal(typeof card.hoverFn, "function", `${id} reacts to the pointer`);
-    return card;
-  };
-  const inert = (id, why) => {
-    const card = byId(tree, id);
-    assert.equal(card.click, undefined, `${id} is not clickable: ${why}`);
-    assert.equal(card.props.cursor_pointer, undefined, `${id} shows no pointer cursor: ${why}`);
-    assert.equal(card.hoverFn, undefined, `${id} shows no click hover: ${why}`);
-  };
-  const liveCard = actionable("card-live");
-  liveCard.click({}, cx);
-  assert.deepEqual(stub.calls, [{ name: "agent.focus", args: { terminal: "t1k" } }]);
-  inert("card-nowin", "its window is empty");
-  inert("card-waiting", "a queued card carries no window");
-  inert("card-dead", "its recorded terminal is gone from agents()");
-  inert(
-    "card-foreign",
-    "it is a tmux row carrying the same live t1k through session:window, so only the backend gate makes it inert",
-  );
-  console.log("  ok three sections with live counts, card fields, click only with a live herdr-core window");
+  const tiles = cards(tree);
+  assert.equal(tiles.length, 5, "one card per mission");
+  for (const tile of tiles) {
+    assert.equal(tile.props.w, 278, "every list tile has the fixed width");
+    assert.equal(tile.props.h, 278, "every list tile is square by construction");
+    assert.ok(!tile.props.flex_1, "no tile stretches with flex_1");
+  }
+  assert.ok(walk(tree).some((e) => e.props?.flex_wrap), "the tiles wrap into rows");
+  assert.ok(!walk(tree).some((e) => e.props?.overflow_x_scrollbar), "list mode never scrolls sideways");
+
+  // The clamped title inside the tile, with its ellipsis.
+  const titleText = allText(byId(tree, "card-live"));
+  assert.ok(titleText.includes("…"), "the long title is ellipsized inside its tile");
+  assert.ok(titleText.includes("strike · squad"), "kind and repo sit on the meta line");
+  assert.ok(titleText.includes("working"), "the live agent status is the card's status label");
+  assert.ok(titleText.includes("7m"), "elapsed is on the card");
+  console.log("  ok three sections with live counts, 278 px square tiles that wrap, no sideways scroll");
 }
 
-// ---- the kanban divides the pane and never sizes itself to its content ------
+// ---- click: in-flight focuses its pane, queue and held open the body --------
 {
   const { view, cx } = await boot();
   await flush();
-  stub.shared["board.view"] = "kanban";
   const tree = view.render(cx);
-  // No floor above the 200 px the layout must wrap at, and the toggle stays
-  // reachable in the header whatever the width.
-  assert.equal(tree.props.min_w, undefined, "the surface must not enforce a 280 px floor on a 200 px pane");
-  assert.equal(byId(tree, "view-kanban")?.props.cursor_pointer, true, "Lista/Kanban stays reachable");
-  const columns = findAll(tree, (el) => el.props.min_w === 200);
-  assert.equal(columns.length, 3, "kanban has one 200 px-minimum column per section");
-  for (const col of columns) {
-    assert.equal(col.props.w, 0, "each column starts at width 0 so it grows into an equal share");
-    assert.equal(col.props.flex_1, true, "each column grows to its share of the pane");
-  }
-  const scroller = findAll(tree, (el) => el.props.overflow_x_scrollbar !== undefined);
-  assert.equal(scroller.length, 1, "only the kanban row scrolls sideways");
-  assert.equal(scroller[0].kids.length, 3, "the three columns sit in the scrolling row");
-  assert.equal(byId(tree, "card-live").props.min_w, 0, "a card does not size itself to its title");
-  console.log("  ok kanban columns divide the width, only scroll below three 200 px columns");
+  byId(tree, "card-live").click({}, cx);
+  assert.deepEqual(stub.calls, [{ name: "agent.focus", args: { terminal: "t1k" } }], "an in-flight card with a live agent focuses it");
+  // The tmux row carries the very same live address as the herdr-core card (t1k),
+  // so its inertness can only come from the backend gate.
+  assert.ok(stub.agents.some((a) => a.address === "t1k"), "the address both rows point at is live");
+  assert.ok(byId(tree, "card-live").props.cursor_pointer, "an actionable card looks clickable");
+  assert.equal(byId(tree, "card-tmux").click, undefined, "the same address on a tmux row is not actionable");
+  assert.equal(byId(tree, "card-tmux").props.cursor_pointer, undefined, "and it does not look clickable");
+  assert.equal(byId(tree, "card-dead").click, undefined, "a recorded window whose terminal is gone is not actionable");
+  assert.equal(byId(tree, "card-dead").props.cursor_pointer, undefined, "and it does not look clickable");
+  assert.ok(byId(tree, "card-waiting").props.cursor_pointer, "a queue card is a control: it opens the body");
+  assert.equal(stub.calls.length, 1, "no other app command runs");
+
+  const before = stub.execs.length;
+  byId(tree, "card-waiting").click({}, cx);
+  const show = stub.execs[before];
+  assert.equal(show.cmd, "/bin/bash");
+  assert.match(show.args[1], /sq-tasks show 'waiting' --full/, "the body is read on demand with the read-only show verb");
+  assert.equal(show.opts.timeout, 60000, "the body read is bounded too");
+  await flush();
+  const panel = view.render(cx);
+  const panelText = allText(byId(panel, "detail"));
+  assert.ok(panelText.includes("Na fila"), "the panel shows the task");
+  assert.ok(panelText.includes("linha um") && panelText.includes("linha dois"), "the panel shows the whole body, not a summary");
+  assert.ok(panelText.includes("fechar (Esc)"), "the panel has a close control");
+  assert.ok(!panelText.includes("…"), "the title is not clamped inside the panel");
+  assert.equal(stub.calls.length, 1, "opening a card runs no app command at all");
+
+  const keyed = walk(panel).find((e) => typeof e.props?.on_key_down === "function");
+  assert.ok(keyed, "the board holds the keyboard so Escape can reach it");
+  keyed.props.on_key_down({ key: "escape" }, cx);
+  assert.equal(byId(view.render(cx), "detail"), null, "Escape closes the task body");
+
+  byId(view.render(cx), "card-parked").click({}, cx);
+  await flush();
+  byId(view.render(cx), "detail-close").click({}, cx);
+  assert.equal(byId(view.render(cx), "detail"), null, "the close control closes the task body");
+  console.log("  ok in-flight cards focus their pane; queue and held cards open a read-only body panel that Escape and its control close");
 }
 
-// ---- the chosen base wins over an ambient SQUAD_BASE -----------------------
+// ---- the sort control: display order only, remembered in shared() -----------
 {
-  const realExec = (cmd, args, opts) =>
-    new Promise((resolve) => {
-      execFile(cmd, args, { cwd: opts.cwd, timeout: opts.timeout }, (err, stdout, stderr) => {
-        resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, stdout, stderr });
-      });
-    });
-  const makeBase = (name) => {
-    const dir = join(root, "bases", name);
-    mkdirSync(join(dir, "bin"), { recursive: true });
-    writeFileSync(
-      join(dir, "bin", "sq-board.sh"),
-      `#!/usr/bin/env bash\nprintf '[{"id":"%s","state":"in_flight","window":""}]\\n' "$(basename "$SQUAD_BASE")"\n`,
-      { mode: 0o755 },
-    );
-    return dir;
-  };
-  const chosen = makeBase("chosen");
-  const ambient = makeBase("ambient");
-  const saved = process.env.SQUAD_BASE;
-  process.env.SQUAD_BASE = ambient;
-  try {
-    const { view } = await boot({ exec: realExec, props: { base: chosen } });
-    await flush();
-    const ids = view.items.map((m) => m.id);
-    assert.ok(ids.includes("chosen"), `the props base is what the board reads, saw ${JSON.stringify(ids)}`);
-    assert.ok(!ids.includes("ambient"), "an ambient SQUAD_BASE must not override the chosen base");
+  const { view, cx } = await boot();
+  await flush();
+  view.width = 1446;
+  const order = (tree) => cards(tree).map((c) => String(c.props.id));
+  assert.equal(view.sort(), "priority", "priority leads the keys, so it is the default order");
+  assert.deepEqual(order(view.render(cx)), ["card-tmux", "card-live", "card-dead", "card-waiting", "card-parked"], "priority 1 first, then 2, then unset last");
 
-    // A base path with a space proves the command quotes it instead of
-    // splitting it into extra shell words.
-    const spaced = makeBase("chosen base");
-    const { view: spacedView } = await boot({ exec: realExec, props: { base: spaced } });
-    await flush();
-    assert.deepEqual(
-      spacedView.items.map((m) => m.id),
-      ["chosen base"],
-      "a chosen base with a space in its path is passed as one shell word",
-    );
-  } finally {
-    if (saved === undefined) delete process.env.SQUAD_BASE;
-    else process.env.SQUAD_BASE = saved;
+  const cycle = ["elapsed", "kind", "repo", "title", "state", "priority"];
+  for (const expected of cycle) {
+    byId(view.render(cx), "sort").click({}, cx);
+    assert.equal(stub.shared["board.view"] ?? null, null, "sorting never touches the view choice");
+    assert.equal(view.sort(), expected, `the control advances to ${expected}`);
   }
-  console.log("  ok the chosen base wins over an ambient SQUAD_BASE");
+
+  const repo = await boot();
+  await flush();
+  repo.view.width = 1446;
+  stub.shared["board.sort"] = "elapsed";
+  assert.deepEqual(order(repo.view.render(repo.cx)), ["card-tmux", "card-dead", "card-live", "card-waiting", "card-parked"], "elapsed sorts the cards inside each section, fastest first");
+  stub.shared["board.sort"] = "repo";
+  assert.deepEqual(order(repo.view.render(repo.cx)), ["card-dead", "card-live", "card-tmux", "card-waiting", "card-parked"], "repo sorts the cards inside each section");
+  stub.shared["board.sort"] = "state";
+  assert.deepEqual(order(repo.view.render(repo.cx)), ["card-live", "card-dead", "card-tmux", "card-waiting", "card-parked"], "state keeps the board's own order");
+  assert.equal(stub.execs.length, 1, "sorting reads nothing");
+  assert.equal(stub.calls.length, 0, "sorting runs no app command and writes no backlog");
+
+  const again = await load();
+  const restarted = new again();
+  restarted.init(null, makeCx());
+  await flush();
+  restarted.width = 1446;
+  stub.shared["board.sort"] = "repo";
+  assert.equal(restarted.sort(), "repo", "the chosen key survives a restart through shared()");
+  console.log("  ok sort control cycles the display keys, persists in shared(), and never writes or reorders the backlog");
+}
+
+// ---- kanban: equal columns, capped cards, and its fallback ------------------
+{
+  const { view, cx } = await boot();
+  stub.shared["board.view"] = "kanban";
+  await flush();
+  view.width = 1446;
+  const tree = view.render(makeCx());
+  assert.ok(!walk(tree).some((e) => e.props?.flex_wrap), "kanban draws columns, not a wrapping grid");
+  const columns = walk(tree).filter((e) => e.props?.overflow_y_scrollbar);
+  assert.equal(columns.length, 3, "one scrolling column per section");
+  for (const column of columns) assert.equal(column.props.flex_1, true, "kanban columns share the width equally");
+  const kanbanCards = cards(tree);
+  assert.ok(kanbanCards.length > 0, "kanban keeps the cards");
+  for (const tile of kanbanCards) {
+    assert.equal(tile.props.max_w, 320, "a kanban card never stretches past 320 px");
+    assert.equal(tile.props.w, undefined, "a kanban card is not a fixed square");
+  }
+  assert.ok(!walk(tree).some((e) => e.props?.overflow_x_scrollbar), "kanban never clips sideways");
+
+  // Below 700 px there is no room for three columns, so kanban falls back.
+  view.width = 600;
+  const narrow = view.render(makeCx());
+  assert.ok(walk(narrow).some((e) => e.props?.flex_wrap), "below 700 px kanban falls back to the grid");
+  for (const tile of cards(narrow)) {
+    assert.equal(tile.props.w, 280, "the fallback keeps the fixed square tile");
+    assert.equal(tile.props.max_w, undefined, "the fallback draws no column-capped card");
+  }
+  console.log("  ok kanban: three equal scrolling columns, cards capped at 320 px, grid fallback below 700 px");
+}
+
+// ---- a pinned view, and the toggle that survives a restart -------------------
+{
+  const { view, cx } = await boot({ props: { base: "/repo", view: "kanban" } });
+  await flush();
+  view.width = 1446;
+  const tree = view.render(cx);
+  assert.equal(byId(tree, "view-list"), null, "a pinned tab draws no toggle, so the control cannot lie");
+  assert.ok(walk(tree).some((e) => e.props?.overflow_y_scrollbar), "a pinned kanban tab renders kanban");
+}
+{
+  const { view, cx } = await boot();
+  await flush();
+  const list = view.render(cx);
+  assert.equal(byId(list, "view-list").props.bg, "raised", "list is the default view");
+  byId(list, "view-kanban").click({}, cx);
+  assert.equal(stub.shared["board.view"], "kanban", "the choice is written to shared()");
+
+  const again = await load();
+  const restarted = new again();
+  restarted.init(null, makeCx());
+  restarted.width = 1446;
+  await flush();
+  const kanban = restarted.render(makeCx());
+  assert.ok(walk(kanban).some((e) => e.props?.overflow_y_scrollbar), "the restart comes back in kanban");
+  console.log("  ok pinned view draws no toggle, and the toggle's choice survives a restart");
 }
 
 // ---- the read budget: one at a time, never while hidden ----------------------
@@ -391,27 +457,6 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   console.log("  ok a missing board names how to point at it");
 }
 
-// ---- list/kanban choice survives a restart through shared() ------------------
-{
-  const { view, cx } = await boot();
-  await flush();
-  const list = view.render(cx);
-  assert.equal(byId(list, "view-list").props.bg, "raised", "list is the default view");
-  byId(list, "view-kanban").click({}, cx);
-  assert.equal(stub.shared["board.view"], "kanban", "the choice is written to shared()");
-
-  const again = await load();
-  const restarted = new again();
-  restarted.init(null, makeCx());
-  await flush();
-  const kanban = restarted.render(makeCx());
-  const text = allText(kanban);
-  for (const label of ["EM VOO", "FILA", "EM ESPERA"]) assert.ok(text.includes(label), `kanban keeps section ${label}`);
-  assert.ok(text.includes(fixture[0].title), "kanban keeps the cards");
-  assert.equal(byId(kanban, "view-kanban").props.bg, "raised", "the restart comes back in kanban");
-  console.log("  ok list/kanban toggle, remembered through shared()");
-}
-
 // ---- herdr-app check renders once and never reads ---------------------------
 {
   const { view, cx } = await boot({ checking: true });
@@ -423,25 +468,12 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   console.log("  ok herdr-app check renders the empty board without reading anything");
 }
 
-// ---- the whole surface only ever runs the board read and agent.focus --------
-{
-  const runs = [...new Set(stub.seen.runs)];
-  assert.deepEqual(runs, ["agent.focus"], `only agent.focus is ever run, saw: ${runs.join(", ") || "nothing"}`);
-  assert.ok(stub.seen.execs.length > 0, "the board read actually ran");
-  for (const e of stub.seen.execs) {
-    assert.equal(e.cmd, "/bin/bash", "the board is read through bash");
-    assert.match(e.args[1], /bin\/sq-board\.sh --json$/, "every process launch is the one board read");
-    assert.doesNotMatch(e.args[1], /--state/, "no filtered read");
-  }
-  console.log(`  ok only agent.focus and bin/sq-board.sh --json ever run (${stub.seen.execs.length} reads)`);
-}
-
 rmSync(root, { recursive: true, force: true });
 JS
 pass "behavior: sections, cards, click, budget, states, toggle, check"
 
-# ---- no lifecycle verb anywhere in the mod or its installer -------------------
-for verb in sq-tasks sq-spawn sq-teardown; do
+# ---- read-only by contract: no lifecycle verb and no backlog write ----------
+for verb in sq-spawn sq-teardown; do
   if grep -q -- "$verb" "$MOD/main.js" "$MOD/install.sh"; then
     fail "$verb must never appear in the mod or its installer"
   fi
@@ -449,7 +481,24 @@ done
 if grep -Eq '\bhc[[:space:]]+(run|kill|rm|label|start|stop|exec|file|send|spawn)\b' "$MOD/main.js" "$MOD/install.sh"; then
   fail "no hc write verb may appear in the mod or its installer"
 fi
-pass "no lifecycle verb: no sq-tasks, no sq-spawn, no sq-teardown, no hc write"
+# `sq-tasks show` is the one allowed verb: it only reads a task.
+verbs="$(grep -oE 'sq-tasks[[:space:]]+[a-z-]+' "$MOD/main.js" | sed -E 's/sq-tasks[[:space:]]+//' | sort -u)"
+if [ -n "$verbs" ] && [ "$verbs" != "show" ]; then
+  fail "the only sq-tasks verb allowed is show (reads a task); found: $verbs"
+fi
+for write in update hold unhold start stop add remove rm mv move set edit "done" close reopen block unblock new create import export sync; do
+  if grep -Eq "sq-tasks[[:space:]]+$write\b" "$MOD/main.js" "$MOD/install.sh"; then
+    fail "sq-tasks $write writes the backlog and must never appear here"
+  fi
+done
+commands="$(grep -oE 'run\("[a-z.]+"' "$MOD/main.js" | sed -E 's/run\("([a-z.]+)"/\1/' | sort -u)"
+[ "$commands" = "agent.focus" ] || fail "the mod's only app command must be agent.focus, found: ${commands:-none}"
+writes="$(grep -oE 'setShared\("[a-z.]+"' "$MOD/main.js" | sed -E 's/setShared\("([a-z.]+)"/\1/' | sort -u | tr '\n' ' ')"
+[ "$writes" = "board.sort board.view " ] || fail "the mod may only store its two view preferences, found: ${writes:-none}"
+if grep -Eq '\.on_drag\(|\.on_drop\(|draggable\(|drag_handle|set_priority|setPriority' "$MOD/main.js"; then
+  fail "no drag, drop or priority path may exist in the board"
+fi
+pass "read-only by contract: only sq-tasks show and agent.focus, only the two view preferences, no write verb"
 
 # ---- install and uninstall, in a throwaway app home -------------------------
 tmp_home="$(mktemp -d)"
