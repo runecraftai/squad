@@ -14,8 +14,9 @@ herdr-mods/squad-board/install.sh --link   # or link the folder, so edits here r
 ```
 
 `--link` is untested on herdr-app 0.1.18: prefer `--copy` unless you are changing the mod and want the app's own hot reload.
-The script is idempotent, touches only `mods/squad-board`, and refuses to overwrite or delete a folder it cannot prove it wrote.
-`--uninstall` also removes the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` writes in that folder, but refuses if it holds anything else.
+The script is idempotent, touches only `mods/squad-board`, refuses to overwrite a folder it cannot prove it wrote, and never deletes a file it did not write.
+On a copy, `--uninstall` removes this mod's `main.js` and `mod.json` plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` writes beside it, so the folder goes away too.
+On a `--link` install it removes only the link, and any editor files stay in this repository's folder.
 
 ## Open and close it
 
@@ -88,8 +89,8 @@ Dispatching, cleaning up, and merging stay Squad's, exactly as before this mod e
 herdr-mods/squad-board/install.sh --uninstall
 ```
 
-That removes the copy or the link it created and nothing else.
-If the folder holds files the script did not write, `--uninstall` refuses and leaves everything in place rather than deleting them.
+That removes the copy or the link it created, plus the two editor files the app writes beside a copy, and nothing else.
+If the folder also holds files the script did not write, they are left where they are and named on exit, and the folder itself stays; the mod is gone either way.
 Deleting `mods/squad-board` by hand has the same effect; no layout, key binding, or app setting was ever changed, so nothing else needs undoing.
 
 ## Evidence

@@ -44,6 +44,10 @@ const modDir = process.env.MOD_DIR;
 const manifest = JSON.parse(readFileSync(join(modDir, "mod.json"), "utf8"));
 assert.equal(manifest.place, "none", "mod.json must declare place none so nothing docks into the layout");
 assert.ok(Number(manifest.min_w) >= 280, "mod.json must declare a min_w of at least the 280 px panel minimum");
+assert.equal(typeof manifest.title, "string", "mod.json needs a title the app can show");
+assert.ok(manifest.title.trim() !== "", "mod.json title is not empty");
+assert.notEqual(manifest.focusable, true, "the mod is pointer-only, so it must not claim focusable");
+console.log("  ok manifest: place none, min_w " + manifest.min_w);
 
 // ---- stub modules: the mod runs unmodified against these ---------------------
 const root = mkdtempSync(join(tmpdir(), "squad-board-mod-"));
@@ -177,14 +181,6 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   view.init(null, cx);
   return { view, cx };
 }
-
-// ---- manifest ---------------------------------------------------------------
-assert.equal(manifest.place, "none", "mod.json must declare place none so nothing docks into the layout");
-assert.ok(Number(manifest.min_w) >= 280, "mod.json must declare a min_w of at least the 280 px panel minimum");
-assert.equal(typeof manifest.title, "string", "mod.json needs a title the app can show");
-assert.ok(manifest.title.trim() !== "", "mod.json title is not empty");
-assert.notEqual(manifest.focusable, true, "the mod is pointer-only, so it must not claim focusable");
-console.log("  ok manifest: place none, min_w " + manifest.min_w);
 
 // ---- the three sections, their live counts, and the card fields --------------
 {
@@ -402,19 +398,25 @@ if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; the
 fi
 rm -rf "$tmp_home/mods/squad-board"
 
-# Files a person put there are never deleted, by --uninstall or by --link.
+# Files a person put there are never deleted, and a copy is still removed.
 HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
 printf 'my notes\n' >"$tmp_home/mods/squad-board/notes.txt"
-if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null 2>&1; then
-  fail "--uninstall must refuse a folder that holds files it did not write"
-fi
+printf 'finder junk\n' >"$tmp_home/mods/squad-board/.DS_Store"
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --uninstall >/dev/null || fail "--uninstall must remove the mod from a folder that also holds other files"
 [ -f "$tmp_home/mods/squad-board/notes.txt" ] || fail "--uninstall must never delete a person's file"
-[ -f "$tmp_home/mods/squad-board/main.js" ] || fail "a refused --uninstall must leave the mod in place"
+[ -f "$tmp_home/mods/squad-board/.DS_Store" ] || fail "--uninstall must never delete a file it did not write"
+[ ! -e "$tmp_home/mods/squad-board/main.js" ] || fail "--uninstall must remove the mod's own main.js"
+[ ! -e "$tmp_home/mods/squad-board/mod.json" ] || fail "--uninstall must remove the mod's own mod.json"
+rm -rf "$tmp_home/mods/squad-board"
+
+# --link cannot turn a folder holding someone else's files into a link.
+HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" >/dev/null
+printf 'my notes\n' >"$tmp_home/mods/squad-board/notes.txt"
 if HERDR_APP_HOME="$tmp_home" "$MOD/install.sh" --link >/dev/null 2>&1; then
   fail "--link must refuse to replace a copy that holds files it did not write"
 fi
 [ -f "$tmp_home/mods/squad-board/notes.txt" ] || fail "--link must never delete a person's file"
-[ -d "$tmp_home/mods/squad-board" ] || fail "a refused --link must leave the copy in place"
+[ -f "$tmp_home/mods/squad-board/main.js" ] || fail "a refused --link must leave the copy in place"
 pass "install copies once, is idempotent, and only removes what it wrote"
 
 # ---- the app's own validator, where the app is installed ---------------------
