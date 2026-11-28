@@ -721,6 +721,47 @@ test_reconcile_closes_moot_decision_with_evidence() {
   pass "reconcile closes a moot decision with evidence and is idempotent"
 }
 
+# Backlog retention prunes resolved Done records out of the live backlog and into
+# the active home's done-archive.md. A decision answered and then archived is still
+# durably answered, so the completion gate must count it exactly like a live one.
+test_pruned_resolved_hold_satisfies_verify() {
+  local home origin hold archive
+  home=$(make_home pruned-resolved-hold)
+  origin=sample-pruned-review
+  mkdir -p "$home/data/$origin"
+  tasks_in "$home" add "$origin" "Review the sample prune path" --kind recon --repo sample --start >/dev/null \
+    || fail "could not create the prune-path origin"
+  write_origin_meta "$home" "$origin"
+  printf 'done: report complete\n' > "$home/state/$origin.status"
+  printf '# Sample prune review\n\nOne commander choice remains.\n' > "$home/data/$origin/report.md"
+
+  hold=$(run_decisions "$home" hold "$origin" layout \
+    --title "Choose the sample layout" --reason "commander layout choice pending" --repo sample) \
+    || fail "could not register the prune-path hold"
+  run_decisions "$home" complete "$origin" layout >/dev/null \
+    || fail "could not complete the prune-path inventory"
+  tasks_in "$home" add sample-prune-followup "Apply the chosen sample layout" \
+    --kind ship --repo sample --blocked-by "$hold" >/dev/null \
+    || fail "could not create the prune-path dependent"
+  printf 'Use the two-column layout.\n' > "$home/prune-decision.txt"
+  run_decisions "$home" resolve "$origin" layout --decision-file "$home/prune-decision.txt" \
+    --routed-to sample-prune-followup >/dev/null \
+    || fail "could not resolve the prune-path hold"
+  run_decisions "$home" verify "$origin" >/dev/null \
+    || fail "verify refused a live resolved hold before retention pruned it"
+
+  tasks_in "$home" prune --keep 0 >/dev/null || fail "could not prune the retained Done section"
+  assert_no_grep "$hold" "$home/data/backlog.md" "the pruned hold stayed in the live backlog"
+  archive="$home/data/done-archive.md"
+  assert_present "$archive" "retention did not archive the pruned Done record"
+  [ "$(grep -cE "^- \[x\] $hold - " "$archive")" = 1 ] \
+    || fail "the archived Done record is not exactly one identity line: $(grep -E "^- \[x\] $hold" "$archive")"
+  assert_absent "$ROOT/data/done-archive.md" "the fixture must use its own data directory, not the checkout's"
+  run_decisions "$home" verify "$origin" >/dev/null \
+    || fail "verify refused a resolved hold that retention archived"
+  pass "a resolved hold archived by retention still satisfies verify from the active home's data"
+}
+
 test_uninventoried_report_decision_refuses_completion
 
 test_scout_teardown_always_requires_inventory_verification
@@ -734,3 +775,4 @@ test_XO_hold_stays_in_authoritative_home
 test_resolve_matches_quoted_blocked_by_edges
 test_teardown_refuses_with_open_status_decisions
 test_reconcile_closes_moot_decision_with_evidence
+test_pruned_resolved_hold_satisfies_verify
