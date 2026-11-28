@@ -171,6 +171,17 @@ function byId(el, id) {
   }
   return null;
 }
+// The count rendered beside a section's label, read from that section's own
+// header so the assertion cannot be satisfied by an unrelated digit.
+function sectionCount(tree, label) {
+  const labelEl = findAll(tree, (el) => el.kids?.length === 1 && el.kids[0] === label)[0];
+  assert.ok(labelEl, `section ${label} has a header`);
+  const header = findAll(tree, (el) => el.kids?.includes(labelEl))[0];
+  assert.ok(header, `section ${label} has a header row`);
+  const countEl = header.kids[header.kids.indexOf(labelEl) + 1];
+  assert.ok(countEl, `section ${label} renders a count`);
+  return countEl.kids[0];
+}
 
 async function boot({ rows = fixture, win = { visible: true }, checking = false, exec = null, props = null } = {}) {
   stub.checking = checking;
@@ -206,8 +217,9 @@ async function boot({ rows = fixture, win = { visible: true }, checking = false,
   const tree = view.render(cx);
   const text = allText(tree);
   for (const label of ["EM VOO", "FILA", "EM ESPERA"]) assert.ok(text.includes(label), `section ${label}`);
-  const counts = ["2", "1", "3"];
-  for (const c of counts) assert.ok(text.includes(c), `count ${c}`);
+  for (const [label, count] of [["EM VOO", "2"], ["FILA", "1"], ["EM ESPERA", "3"]]) {
+    assert.equal(sectionCount(tree, label), count, `${label} shows its live count`);
+  }
   for (const field of [fixture[0].title, "strike", "squad", "7m", "working"]) assert.ok(text.includes(field), `card field ${field}`);
 
   // Click-to-focus needs a herdr-core row whose terminal agents() still lists.
@@ -497,7 +509,7 @@ checkout_link="$tmp_home/checkout-link"
 ln -s "$MOD" "$checkout_link"
 HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --link >/dev/null
 [ -L "$target" ] || fail "--link must create a link at the app's mods path"
-[ "$(readlink "$target")" = "$MOD" ] || fail "--link must point at this checkout's physical folder"
+[ "$(readlink "$target")" = "$(cd -P "$MOD" && pwd -P)" ] || fail "--link must point at this checkout's physical folder"
 HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --link >/dev/null || fail "a second --link through a symlinked checkout must be idempotent"
 HERDR_APP_HOME="$tmp_home" "$checkout_link/install.sh" --uninstall >/dev/null || fail "--uninstall must remove the link it created through a symlinked checkout"
 [ ! -e "$target" ] && [ ! -L "$target" ] || fail "--uninstall must remove only the link"
