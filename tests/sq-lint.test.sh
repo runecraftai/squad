@@ -6,7 +6,7 @@
 # commands.lint) invoke, so the local lint can never diverge from CI again.
 # Regression origin: with no commands.lint configured, the local drill
 # lint step never ran the deterministic
-# `shellcheck bin/*.sh bin/backends/*.sh tests/*.sh tmux/*.tmux`, so PRs passed local
+# `shellcheck bin/*.sh bin/backends/*.sh tests/*.sh tmux/*.tmux herdr-mods/*/*.sh`, so PRs passed local
 # validation yet failed that exact check in CI on info/warning findings such as
 # SC2015, SC1007, and SC2034. A second axis was tool-version skew: CI's
 # ShellCheck floated with the runner image and still emitted SC2015, which
@@ -29,15 +29,26 @@ pinned_ready() {
   [ "$(shellcheck --version | awk '/^version:/ {print $2; exit}')" = "$REQUIRED" ]
 }
 
+# The canonical shell inventory the lint owner must report: one level under each
+# shell root, plus each tracked mod folder under herdr-mods/.
+expected_shell_inventory() {
+  {
+    find bin bin/backends tests tmux -maxdepth 1 -type f \( -name '*.sh' -o -name '*.tmux' \) -print
+    find herdr-mods -mindepth 2 -maxdepth 2 -type f -name '*.sh' -print
+  } | LC_ALL=C sort
+}
+
 test_list_files_reports_the_shell_inventory() {
   local listed expected
   # CI=true forces the full canonical set regardless of the ambient branch or
   # working-tree diff a local test run happens to have, so this stays a pure
   # inventory check independent of sq-lint.sh's own changed-file mode below.
   listed=$(CI=true "$LINT" --list-files)
-  expected=$(find bin bin/backends tests tmux -maxdepth 1 -type f \( -name '*.sh' -o -name '*.tmux' \) -print | LC_ALL=C sort)
+  expected=$(expected_shell_inventory)
   [ "$(printf '%s\n' "$listed" | LC_ALL=C sort)" = "$expected" ] \
     || fail "sq-lint.sh --list-files did not return the complete shell inventory"
+  assert_contains "$listed" "herdr-mods/squad-board/install.sh" \
+    "the mod installer is missing from the canonical lint inventory"
   pass "sq-lint.sh --list-files reports the complete shell inventory"
 }
 
@@ -149,7 +160,7 @@ test_ci_forces_full_lint_even_with_empty_diff() {
   # No git stub: CI=true must short-circuit sq-lint.sh's mode selection before
   # it ever consults git, so this proves CI wins regardless of local diff state.
   listed=$(CI=true "$LINT" --list-files)
-  expected=$(find bin bin/backends tests tmux -maxdepth 1 -type f \( -name '*.sh' -o -name '*.tmux' \) -print | LC_ALL=C sort)
+  expected=$(expected_shell_inventory)
   [ "$(printf '%s\n' "$listed" | LC_ALL=C sort)" = "$expected" ] \
     || fail "CI=true did not force the full canonical file set"
   pass "sq-lint.sh forces a full lint in CI even when the local diff would be empty"
@@ -165,7 +176,7 @@ test_main_branch_forces_full_lint() {
   # not the ambient CI signal a real CI run would otherwise supply.
   listed=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' \
     SQUAD_TEST_GIT_BRANCH=main "$LINT" --list-files)
-  expected=$(find bin bin/backends tests tmux -maxdepth 1 -type f \( -name '*.sh' -o -name '*.tmux' \) -print | LC_ALL=C sort)
+  expected=$(expected_shell_inventory)
   [ "$(printf '%s\n' "$listed" | LC_ALL=C sort)" = "$expected" ] \
     || fail "sq-lint.sh did not force a full lint when HEAD is on main"
   pass "sq-lint.sh forces a full lint when HEAD is on main"
@@ -217,16 +228,17 @@ test_list_files_respects_changed_mode() {
   fakebin=$(fm_fakebin "$tmp")
   fm_lint_stub_git "$fakebin"
   diff_file="$tmp/diff.nul"
-  # A real canonical file, a non-canonical file, and a canonical-looking path
-  # that does not exist: only the first should survive into the listed set.
+  # Two real canonical files (one of them in a mod folder), a non-canonical
+  # file, and a canonical-looking path that does not exist: only the first two
+  # should survive into the listed set.
   fm_lint_write_diff_file "$diff_file" \
-    "tests/sq-lint.test.sh" "docs/README.md" "bin/definitely-not-real-file.sh"
+    "tests/sq-lint.test.sh" "docs/README.md" "herdr-mods/squad-board/install.sh" "bin/definitely-not-real-file.sh"
 
   # Clear CI/GITHUB_ACTIONS so --list-files reflects the changed set rather than
   # the full canonical set a CI run's ambient signals would otherwise force.
   listed=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' SQUAD_TEST_GIT_BRANCH=feature \
     SQUAD_TEST_GIT_DIFF_FILE="$diff_file" "$LINT" --list-files)
-  [ "$listed" = "tests/sq-lint.test.sh" ] \
+  [ "$listed" = $'herdr-mods/squad-board/install.sh\ntests/sq-lint.test.sh' ] \
     || fail "--list-files did not report the would-be changed set in changed mode"$'\n'"got: $listed"
   pass "sq-lint.sh --list-files reports the would-be changed set in changed mode"
 }

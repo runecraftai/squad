@@ -11,7 +11,8 @@
 # With no explicit paths, the file set depends on context:
 #   - In CI (GITHUB_ACTIONS=true or CI=true), on the main branch, or when no
 #     merge-base against origin/main (or local main) can be found, it lints
-#     the full canonical set: bin/*.sh bin/backends/*.sh tests/*.sh tmux/*.tmux. This is
+#     the full canonical set: bin/*.sh bin/backends/*.sh tests/*.sh tmux/*.tmux
+#     herdr-mods/*/*.sh. This is
 #     what CI always runs, so CI coverage never depends on a local diff.
 #   - Otherwise (an ordinary local branch with a real merge-base) it lints
 #     only the canonical-set files changed since that merge-base, including
@@ -97,7 +98,7 @@ if [ "${1:-}" = "--required-version" ]; then
 fi
 
 fm_lint_usage() {
-  sed -n '2,39{s/^# \{0,1\}//;p;}' "$SELF"
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$SELF"
 }
 
 JOBS=${SQUAD_LINT_JOBS:-2}
@@ -161,9 +162,9 @@ fm_lint_changed_base_ref() {
 }
 
 # fm_lint_is_canonical_root tests membership in the canonical set (a direct
-# *.sh child of bin/, bin/backends/, or tests/, or a direct *.tmux child of
-# tmux/) without the shell case statement's non-pathname wildcard matching a
-# path separator by accident.
+# *.sh child of bin/, bin/backends/, tests/, or a mod folder under herdr-mods/,
+# or a direct *.tmux child of tmux/) without the shell case statement's
+# non-pathname wildcard matching a path separator by accident.
 fm_lint_is_canonical_root() {
   local path=$1 dir base
   case "$path" in
@@ -175,7 +176,7 @@ fm_lint_is_canonical_root() {
     *) return 1 ;;
   esac
   case "$dir" in
-    bin|bin/backends|tests|tmux) return 0 ;;
+    bin|bin/backends|tests|tmux|herdr-mods/*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -196,7 +197,7 @@ else
   fi
 
   if [ "$full_lint" -eq 1 ]; then
-    ROOTS=(bin/*.sh bin/backends/*.sh tests/*.sh tmux/*.tmux)
+    ROOTS=(bin/*.sh bin/backends/*.sh tests/*.sh tmux/*.tmux herdr-mods/*/*.sh)
   else
     CHANGED_MODE=1
     ROOTS=()
