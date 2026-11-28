@@ -156,7 +156,7 @@ function glyphColumns(cluster) {
 // The glyph clusters a title really renders as: a base code point with its
 // combining marks and variation selectors, plus any ZWJ chain. Clusters, not code
 // points, are the unit a cut may fall between, so the kept text can never end mid
-// sequence. A cluster costs the sum of its members' columns.
+// sequence. Each cluster is priced once, whatever its members.
 function titleClusters(text) {
   const points = Array.from(String(text ?? ""));
   const clusters = [];
