@@ -178,6 +178,12 @@ herdr-mods/squad-board/install.sh --uninstall
 ```
 
 That removes the copy or the link it created, plus the two editor files the app regenerates beside a copy, and nothing else.
+On a `--link` install, `--uninstall` removes only the link, and these leftovers stay in the checkout:
+
+- `gpui-kit.d.ts` and `jsconfig.json` are editor aids that `herdr-app check` writes inside this folder.
+- They stay because the installer never deletes a file it did not create, and it did not create them in the checkout.
+- Both are gitignored, so you can delete them by hand if you want the checkout clean.
+
 If the folder holds any other file, or has no install marker, the script refuses and names the manual removal: delete `mods/squad-board` by hand, which removes the same files.
 Deleting `mods/squad-board` by hand has the same effect; no layout, key binding, or app setting was ever changed, so nothing else needs undoing.
 The app's shared state keeps the `board.view` and `board.sort` values the board last wrote: nothing reads them once the mod is gone and the app leaves them in place, so removal is not literally traceless, but it is harmless.

@@ -990,6 +990,30 @@ fi
 rm -f "$target"
 pass "install keeps a marker, updates and removes stale copies, converts between modes, and refuses anything it cannot prove it wrote"
 
+# --print and --help run in place, with a copy installed, and must change nothing
+# under the app home.
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" >/dev/null
+home_state() {
+  (cd "$tmp_home" && find . -print | LC_ALL=C sort | while IFS= read -r entry; do
+    printf '%s\n' "$entry"
+    if [ -f "$entry" ]; then cksum <"$entry"; fi
+  done)
+}
+before_print_help="$(home_state)"
+print_out="$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --print)" ||
+  fail "install.sh --print must exit 0 in place"
+[ "$print_out" = "$target" ] || fail "install.sh --print must print the target path, got: $print_out"
+help_out="$(HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --help)" ||
+  fail "install.sh --help must exit 0 in place"
+case "$help_out" in
+  *Usage*) ;;
+  *) fail "install.sh --help must print the usage in place" ;;
+esac
+[ "$(home_state)" = "$before_print_help" ] || fail "install.sh --print and --help in place must change nothing under the app home"
+HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
+[ ! -e "$target" ] || fail "the in-place print and help block must leave nothing installed"
+pass "install.sh --print and --help run in place, print the target and usage, and change nothing"
+
 # ---- the installer is read-only toward Squad, by behaviour --------------------
 # A copy run from inside the staged base reaches only shims for any repo-relative
 # Squad command; with every run above also shimmed on PATH, the log must be empty.
