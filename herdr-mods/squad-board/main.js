@@ -69,6 +69,11 @@ function firstLine(text) {
   return String(text ?? "").trim().split("\n")[0].trim();
 }
 
+// One shell word, safe for a path with spaces or quotes in it.
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
 export default class SquadBoard extends View {
   init(_props, cx) {
     this.items = [];
@@ -95,17 +100,18 @@ export default class SquadBoard extends View {
     if (this.loaded && Date.now() - this.at < READ_INTERVAL_MS) return;
     this.reading = true;
     const base = baseDir();
-    // `SQUAD_BASE` is set to the folder the read runs in, so the board script
-    // reads the base that was chosen here and not a stale one from the app's
-    // environment. The app passes no folder of its own, so without a base the
-    // board is looked for where the app was started or at `$SQUAD_BASE`.
+    // `SQUAD_BASE` is set to the base that was chosen here, so the board script
+    // reads it and not a stale one from the app's environment. A chosen base is
+    // `cd`-ed to inside the command itself, so the read never depends on the
+    // host honouring an exec working-directory option. Without a base, the
+    // board is looked for at `$SQUAD_BASE` or where the app was started.
     const script = base
-      ? 'SQUAD_BASE="$(pwd -P)" exec bin/sq-board.sh --json'
+      ? `cd ${shellQuote(base)} && SQUAD_BASE=${shellQuote(base)} exec bin/sq-board.sh --json`
       : 'cd "${SQUAD_BASE:-.}" && SQUAD_BASE="$(pwd -P)" exec bin/sq-board.sh --json';
     cx.spawn(async (cx) => {
       const started = Date.now();
       try {
-        const r = await exec("/bin/bash", ["-c", script], { cwd: base || undefined, timeout: READ_TIMEOUT_MS });
+        const r = await exec("/bin/bash", ["-c", script], { timeout: READ_TIMEOUT_MS });
         if (r.code !== 0) {
           const why = firstLine(r.stderr);
           throw new Error(
