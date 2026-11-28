@@ -29,7 +29,7 @@ cat > "$MOCK_BASE/data/backlog.md" <<'BACKLOG'
 
 ## Queued
 - [ ] gamma-held - Gamma waiting for decision (repo: other-repo) (kind: commander) (hold: waiting for approval) (hold-kind: commander) (since 2025-08-16)
-- [ ] delta-queued - Delta ready to go (repo: test-repo) (since 2025-08-15)
+- [ ] delta-queued - Delta ready to go (repo: test-repo) (priority: 1) (since 2025-08-15)
 - [ ] scout-queue - SCOUT probe of new area (repo: test-repo) (since 2025-08-15)
 
 ## Done
@@ -55,6 +55,7 @@ effort=medium
 mode=herdr
 kind=recon
 backend=herdr
+priority=4
 META
 
 cat > "$MOCK_BASE/state/delta-queued.meta" <<'META'
@@ -227,6 +228,21 @@ assert_json_field "JSON alpha-task has mode" "alpha-task" "drill" "$output_json"
 assert_json_field "JSON gamma-held derives held state" "gamma-held" "held" "$output_json" "state"
 assert_json_field_matches "JSON busy_elapsed from sidecar mtime" "alpha-task" '^[0-9]+[smh]$' "$output_json" "busy_elapsed"
 assert_json_field_matches "JSON busy_elapsed falls back to meta busy_gen" "delta-queued" '^[0-9]+[smh]$' "$output_json" "busy_elapsed"
+
+# Priority comes from the backlog's own tag, else the task's meta record, else empty.
+assert_json_field "JSON carries the backlog's priority tag" "delta-queued" "1" "$output_json" "priority"
+assert_json_field "JSON falls back to the task's meta priority" "beta-recon" "4" "$output_json" "priority"
+assert_json_field "JSON leaves priority empty when the task has none" "gamma-held" "" "$output_json" "priority"
+if printf '%s' "$output_json" | python3 -c "
+import json, sys
+rows = json.load(sys.stdin)
+missing = [r.get('id') for r in rows if 'priority' not in r]
+raise SystemExit(1 if missing else 0)
+"; then
+  pass "JSON carries priority for every state"
+else
+  fail "JSON carries priority for every state"
+fi
 
 # Test 11: --state held
 echo
