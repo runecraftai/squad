@@ -169,6 +169,19 @@ function byId(el, id) {
   return walk(el).find((e) => e.props?.id === id) ?? null;
 }
 const cards = (el) => walk(el).filter((e) => String(e.props?.id ?? "").startsWith("card-"));
+function headerFor(el, label) {
+  return (
+    walk(el).find(
+      (e) =>
+        e &&
+        Array.isArray(e.kids) &&
+        e.kids.length === 2 &&
+        e.kids[0]?.kids?.length === 1 &&
+        e.kids[0].kids[0] === label &&
+        e.kids[1]?.kids?.length === 1,
+    ) ?? null
+  );
+}
 
 async function boot({ rows = fixture, win = { visible: true }, checking = false, exec = null, props = null, width = 1446 } = {}) {
   stub.checking = checking;
@@ -211,6 +224,15 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   assert.equal(mod.clampTitle("Curto", 258), "Curto", "a short title is left alone");
   const narrow = mod.clampTitle(longTitle, 160);
   assert.ok(narrow.endsWith("…") && narrow.length < clamped.length, "a narrower tile truncates sooner");
+  const emoji = mod.clampTitle("😀".repeat(120), 258);
+  assert.ok(emoji.endsWith("…"), "an emoji title still ends with an ellipsis");
+  assert.ok(
+    Array.from(emoji.slice(0, -1)).every((ch) => {
+      const point = ch.codePointAt(0);
+      return point < 0xd800 || point > 0xdfff;
+    }),
+    "truncation never leaves a lone surrogate",
+  );
   console.log("  ok tile geometry: 5 x 278 at full width, 2 x 280 at 700, 1 x 180 at 200, ellipsis inside the tile");
 }
 
@@ -230,7 +252,11 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   const tree = view.render(cx);
   const text = allText(tree);
   for (const label of ["EM VOO", "FILA", "EM ESPERA"]) assert.ok(text.includes(label), `section ${label}`);
-  for (const c of ["3", "1", "1"]) assert.ok(text.includes(c), `count ${c}`);
+  for (const [label, count] of Object.entries({ "EM VOO": "3", FILA: "1", "EM ESPERA": "1" })) {
+    const header = headerFor(tree, label);
+    assert.ok(header, `section ${label} has its own header`);
+    assert.equal(texts(header.kids[1]).join(""), count, `section ${label} shows its own count`);
+  }
 
   const tiles = cards(tree);
   assert.equal(tiles.length, 5, "one card per mission");
@@ -536,6 +562,37 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   console.log("  ok herdr-app check renders the empty board without reading anything");
 }
 
+// ---- every control runs only agent.focus and stores only the two views ------
+{
+  const { view, cx } = await boot();
+  await flush();
+  view.width = 1446;
+  const controls = [
+    "card-live",
+    "card-waiting",
+    "detail-close",
+    "card-parked",
+    "detail-close",
+    "view-kanban",
+    "sort",
+    "view-list",
+    "sort",
+  ];
+  for (const id of controls) {
+    const control = byId(view.render(cx), id);
+    if (control?.click) control.click({}, cx);
+    await flush();
+  }
+  assert.ok(stub.calls.length > 0, "a card ran the one focus command");
+  for (const call of stub.calls) assert.equal(call.name, "agent.focus", "the board runs no app command but agent.focus");
+  assert.deepEqual(
+    Object.keys(stub.shared).sort(),
+    ["board.sort", "board.view"],
+    "the board stores exactly its two view preferences",
+  );
+  console.log("  ok every control runs only agent.focus and stores only board.view and board.sort");
+}
+
 rmSync(root, { recursive: true, force: true });
 JS
 pass "behavior: sections, cards, click, budget, states, toggle, check"
@@ -559,10 +616,6 @@ for write in update hold unhold start stop add remove rm mv move set edit "done"
     fail "sq-tasks $write writes the backlog and must never appear here"
   fi
 done
-commands="$(grep -oE 'run\("[a-z.]+"' "$MOD/main.js" | sed -E 's/run\("([a-z.]+)"/\1/' | sort -u)"
-[ "$commands" = "agent.focus" ] || fail "the mod's only app command must be agent.focus, found: ${commands:-none}"
-writes="$(grep -oE 'setShared\("[a-z.]+"' "$MOD/main.js" | sed -E 's/setShared\("([a-z.]+)"/\1/' | sort -u | tr '\n' ' ')"
-[ "$writes" = "board.sort board.view " ] || fail "the mod may only store its two view preferences, found: ${writes:-none}"
 if grep -Eq '\.on_drag\(|\.on_drop\(|draggable\(|drag_handle|set_priority|setPriority' "$MOD/main.js"; then
   fail "no drag, drop or priority path may exist in the board"
 fi

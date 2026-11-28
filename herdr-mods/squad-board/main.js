@@ -138,11 +138,20 @@ export function clampTitle(title, innerWidth, lines = TITLE_MAX_LINES) {
   // Two and a bit lines of characters for a three-line box: word wrapping loses a
   // few characters per line, and this margin is what keeps the ellipsis inside.
   const budget = Math.max(8, Math.floor(perLine * 2.7));
-  if (text.length <= budget) return text;
-  const cut = text.slice(0, budget);
+  const points = Array.from(text);
+  if (points.length <= budget) return text;
+  let end = budget;
+  while (end < points.length && /\p{M}/u.test(points[end])) end += 1;
+  const cut = points
+    .slice(0, end)
+    .filter((ch) => {
+      const point = ch.codePointAt(0);
+      return point < 0xd800 || point > 0xdfff;
+    })
+    .join("");
   const space = cut.lastIndexOf(" ");
-  const kept = space > budget * 0.5 ? cut.slice(0, space) : cut;
-  return `${kept.replace(/[\s,;:.\-]+$/, "")}…`;
+  const kept = (space > budget * 0.5 ? cut.slice(0, space) : cut).replace(/[\s,;:.\-]+$/, "");
+  return `${kept}…`;
 }
 
 // Seconds behind the board's `busy_elapsed` (`7m`, `1h20m`, `3h4m`, `<1m`), so the
