@@ -1011,7 +1011,7 @@ case "$help_out" in
 esac
 [ "$(home_state)" = "$before_print_help" ] || fail "install.sh --print and --help in place must change nothing under the app home"
 HERDR_APP_HOME="$tmp_home" PATH="$shim_path" SHIM_LOG="$install_log" "$MOD/install.sh" --uninstall >/dev/null
-[ ! -e "$target" ] || fail "the in-place print and help block must leave nothing installed"
+[ ! -e "$target" ] || fail "install.sh --uninstall in place must remove the copy it installed for the print and help block"
 pass "install.sh --print and --help run in place, print the target and usage, and change nothing"
 
 # ---- the installer is read-only toward Squad, by behaviour --------------------
