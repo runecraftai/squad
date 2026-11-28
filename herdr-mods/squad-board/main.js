@@ -45,8 +45,11 @@ function terminalOf(m) {
 }
 
 // Where Squad lives: a tab may name it (`--props '{"base":"/path/to/squad"}'`),
-// else a shared key the person set once. With neither, the command runs in the
-// app's own folder and `$SQUAD_BASE` still gets its chance inside the shell.
+// else a shared key the person set once. A chosen base is handed to the read as
+// `SQUAD_BASE`, because that is what the board script consults first: an ambient
+// value from the app's environment must not win over the base that was chosen.
+// With neither, the command runs in the app's own folder and `$SQUAD_BASE` still
+// gets its chance inside the shell.
 function baseDir() {
   const fromProps = props()?.base;
   if (fromProps) return String(fromProps);
@@ -84,11 +87,13 @@ export default class SquadBoard extends View {
     if (this.loaded && Date.now() - this.at < READ_INTERVAL_MS) return;
     this.reading = true;
     const base = baseDir();
-    // `cd` is what makes the base override work; the app passes no folder of its
-    // own, so without one the board is looked for where the app was started.
+    // `SQUAD_BASE` is set to the folder the read runs in, so the board script
+    // reads the base that was chosen here and not a stale one from the app's
+    // environment. The app passes no folder of its own, so without a base the
+    // board is looked for where the app was started or at `$SQUAD_BASE`.
     const script = base
-      ? "exec bin/sq-board.sh --json"
-      : 'cd "${SQUAD_BASE:-.}" && exec bin/sq-board.sh --json';
+      ? 'SQUAD_BASE="$(pwd)" exec bin/sq-board.sh --json'
+      : 'cd "${SQUAD_BASE:-.}" && SQUAD_BASE="$(pwd)" exec bin/sq-board.sh --json';
     cx.spawn(async (cx) => {
       const started = Date.now();
       try {
