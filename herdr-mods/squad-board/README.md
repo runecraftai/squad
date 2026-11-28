@@ -16,9 +16,8 @@ herdr-mods/squad-board/install.sh --link   # or link the folder, so edits here r
 `--link` is untested on herdr-app 0.1.18: prefer `--copy` unless you are changing the mod and want the app's own hot reload.
 The script is idempotent, touches nothing under the app home beyond `mods/` (created when missing) and `mods/squad-board`, and proves ownership with a marker file, `.squad-board-install`, that it writes last so an interrupted copy carries none.
 The requested mode wins over what the target already is: the default run or `--copy` replaces a link this script created with a copy, and `--link` replaces its own copy.
-Installing over an existing folder and `--uninstall` both require that marker, and both refuse a folder holding any other entry; the refusal names the manual removal (delete the folder, then install) and deletes nothing.
-On a copy, `--uninstall` removes this mod's `main.js`, `mod.json` and marker plus the `gpui-kit.d.ts` and `jsconfig.json` editor files `herdr-app check` regenerates beside it, and never anything else.
-On a `--link` install it removes only the link, and any editor files stay in this repository's folder.
+Installing over an existing folder requires that marker and refuses a folder holding any other entry; the refusal names the manual removal (delete the folder, then install) and deletes nothing.
+Removal is covered under "Removing it" below.
 
 ## Open and close it
 
@@ -120,6 +119,7 @@ The board is a view and never an editor: it reads `bin/sq-board.sh --json` and `
 It has no drag and drop, no reorder, no priority write, and no backlog write of any kind.
 Reordering the queue, changing a hold, and moving a task between states are Squad operations, not
 board operations.
+So is dispatching, cleaning up, and merging: no `sq-spawn`, `sq-teardown`, `hc` write, `push` or merge runs from the board.
 The test proves it by behaviour, not by reading the source: it replaces every Squad command, `sq-tasks`, `hc`, `herdr`, `herdr-app`, `git`, `gh`, `sq-gh` and `drill` with a shim that records each call, runs the board's own command requests against a staged Squad base built from those shims, and replaces node's process API with a recorder.
 Across the first read, a card click, the panel opening and closing, every sort key, both views and a timed re-read, it asserts that the only commands recorded are `bin/sq-board.sh --json` and `sq-tasks show <id> --full`, that the only app command is `agent.focus`, that only `board.view` and `board.sort` are stored, and that no drag, drop or press handler is ever registered.
 It runs every installer mode the same way, in place and from a copy inside the staged base, and asserts that the installer runs none of those commands at all.
@@ -161,12 +161,6 @@ Everything else - the view toggle, the sort control, a card - is pointer-only: t
 keys, no shortcuts, and no focus ring.
 The app's UI layer exposes no roles or labels to a mod either, so there is no screen-reader story to
 claim here.
-
-## No lifecycle action
-
-The board can only show and focus.
-It runs no `sq-tasks` write verb (only the read-only `sq-tasks show`), no `sq-spawn`, no `sq-teardown`, no `hc` write, no `push`, and no merge: its only app command is `agent.focus`, and the only programs it runs are `bin/sq-board.sh` and `sq-tasks show`.
-Dispatching, cleaning up, and merging stay Squad's, exactly as before this mod existed.
 
 ## Removing it
 
