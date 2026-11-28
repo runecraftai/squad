@@ -40,10 +40,13 @@ Without `props`, the mod uses a `board.base` value in the app's shared state, th
 When none of them finds `bin/sq-board.sh`, the board says so in the pane and names the two ways to point at the base.
 
 The pane is whatever the app gives it and the layout adapts to it: nothing in the view forces a
-minimum on the pane, and `mod.json`'s `"min_w": 280` records the width the layout should open it at,
-which is the shipped panel minimum.
-The app itself does not read that key, it sizes panes from the layout block's `min`, so the
-declaration is for readers and for this mod's own checks.
+minimum on the pane.
+`mod.json` declares `"min_w": 280` - the shipped panel minimum - for readers and for this mod's own
+checks; with `"place": "none"` the mod emits no layout block, so the app opens the tab at whatever
+width the tab gives it, and this repository records no evidence that the app applies `min_w` itself.
+What the board can show is that the view stays readable down to a single square tile: the 200 px
+readability claim rests on the measured captures and on the thresholds asserted in
+`tests/sq-board-mod-thin.test.sh`, not on the app honouring `min_w`.
 
 ## What it draws
 
@@ -74,6 +77,11 @@ list.
 A recorded window alone would not be safe to focus: a core recycles a closed terminal's address, and
 two rows can record the same `session:address`, so the live list is what decides.
 An in-flight card with no live terminal offers no action.
+The live bare address is the strongest identity a mod can compare: the app's API exposes no session or
+core name on `agents()`, `terminals()`, `panes()` or `window()`, so the recorded `session:` prefix
+cannot be checked against the core attached here.
+A row recorded against another core could only mis-target if that exact address were simultaneously
+live in this app; the adapter's own session refusal guards its own commands, not `agent.focus`.
 
 A `FILA` or `EM ESPERA` card opens a detail panel with the task's whole body, read on demand with
 `sq-tasks show <id> --full` - the read-only verb that prints one task.

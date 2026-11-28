@@ -124,34 +124,67 @@ export function tileWidth(width, cols) {
   return Math.max(0, Math.min(CARD_MAX, each));
 }
 
+// Display columns one code point takes in this UI: astral and East Asian wide
+// glyphs take two, a combining mark or a joiner takes none, everything else one.
+export function glyphColumns(ch) {
+  const point = ch.codePointAt(0);
+  if (
+    point === 0x200d ||
+    (point >= 0x0300 && point <= 0x036f) ||
+    (point >= 0x1ab0 && point <= 0x1aff) ||
+    (point >= 0x1dc0 && point <= 0x1dff) ||
+    (point >= 0x20d0 && point <= 0x20ff) ||
+    (point >= 0xfe00 && point <= 0xfe0f) ||
+    (point >= 0xfe20 && point <= 0xfe2f)
+  )
+    return 0;
+  if (
+    point >= 0x1100 &&
+    (point <= 0x115f ||
+      (point >= 0x2e80 && point <= 0xa4cf) ||
+      (point >= 0xac00 && point <= 0xd7a3) ||
+      (point >= 0xf900 && point <= 0xfaff) ||
+      (point >= 0xfe10 && point <= 0xfe19) ||
+      (point >= 0xfe30 && point <= 0xfe6f) ||
+      (point >= 0xff00 && point <= 0xff60) ||
+      (point >= 0xffe0 && point <= 0xffe6) ||
+      (point >= 0x1f000 && point <= 0x1faff) ||
+      (point >= 0x20000 && point <= 0x3fffd))
+  )
+    return 2;
+  return 1;
+}
+
 // This UI layer has no line clamp, so the three-line budget is spent here: a
-// character estimate from the tile's inner width, cut at a word boundary with an
+// column estimate from the tile's inner width, spent one glyph at a time (a wide
+// glyph costs two columns, a combining mark none), cut at a word boundary with an
 // ellipsis that always lands inside the tile. The card also caps the text block's
-// height, but that cap is only a backstop: the text itself is already short
-// enough, so no glyph is ever sliced by the card boundary.
+// height, but that cap is only a backstop: the text itself already fits, so no
+// glyph is ever sliced by the card boundary.
 export function clampTitle(title, innerWidth, lines = TITLE_MAX_LINES) {
   const text = String(title ?? "")
     .replace(/\s+/g, " ")
     .trim();
   if (!text) return "";
   const perLine = Math.max(8, Math.floor(innerWidth / (TITLE_FONT * CHAR_W)));
-  // Two and a bit lines of characters for a three-line box: word wrapping loses a
-  // few characters per line, and this margin is what keeps the ellipsis inside.
-  const budget = Math.max(8, Math.floor(perLine * 2.7));
+  // Two and a bit lines of columns for a three-line box: word wrapping loses a
+  // few columns per line, and this margin is what keeps the ellipsis inside.
+  const budget = Math.max(8, Math.floor(perLine * lines * 0.9));
   const points = Array.from(text);
-  if (points.length <= budget) return text;
-  let end = budget;
-  while (end < points.length && /\p{M}/u.test(points[end])) end += 1;
-  const cut = points
-    .slice(0, end)
-    .filter((ch) => {
-      const point = ch.codePointAt(0);
-      return point < 0xd800 || point > 0xdfff;
-    })
-    .join("");
+  const columns = (list) => list.reduce((n, ch) => n + glyphColumns(ch), 0);
+  if (columns(points) <= budget) return text;
+  let used = 0;
+  let end = 0;
+  while (end < points.length && used + glyphColumns(points[end]) <= budget) {
+    used += glyphColumns(points[end]);
+    end += 1;
+  }
+  while (end < points.length && glyphColumns(points[end]) === 0) end += 1;
+  const cut = points.slice(0, end).join("");
   const space = cut.lastIndexOf(" ");
-  const kept = (space > budget * 0.5 ? cut.slice(0, space) : cut).replace(/[\s,;:.\-]+$/, "");
-  return `${kept}…`;
+  const head = space > 0 ? cut.slice(0, space) : "";
+  const kept = (head && columns(Array.from(head)) > budget * 0.5 ? head : cut).replace(/[\s,;:.\-]+$/, "");
+  return kept ? `${kept}…` : "…";
 }
 
 // Seconds behind the board's `busy_elapsed` (`7m`, `1h20m`, `3h4m`, `<1m`), so the
@@ -343,6 +376,13 @@ export default class SquadBoard extends View {
   // agent list. A core recycles an address when a terminal closes and two rows can
   // share `<session>:<address>`, so a recorded window alone would sometimes open a
   // dead terminal or another mission's - the live list is what makes it safe.
+  //
+  // The live bare address is the strongest identity the app's API allows: it
+  // exposes no session or core name (the agent list carries only address, pane,
+  // space, tab and title), so the recorded `session:` prefix cannot be compared
+  // with the core attached here. A row recorded against another core could only
+  // mis-target if that exact address were simultaneously live in this core; the
+  // adapter's own session refusal guards its own commands, not `agent.focus`.
   addressFor(m, live) {
     if (String(m?.backend ?? "") !== "herdr-core") return "";
     const address = terminalOf(m);

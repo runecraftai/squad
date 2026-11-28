@@ -218,20 +218,34 @@ console.log("  ok manifest: place none, focusable true, min_w " + manifest.min_w
   assert.equal(mod.tileWidth(700, 2), 280, "tile edge capped at 280");
   assert.equal(mod.tileWidth(200, 1), 180, "a narrow pane gets a tile as wide as it can hold");
 
+  const titleCols = (s) => Array.from(s).reduce((n, ch) => n + mod.glyphColumns(ch), 0);
+  // 258 px of inner tile is about 34 columns a line, so the three-line box holds ~91.
+  const BOX_COLS = 91;
+
   const clamped = mod.clampTitle(longTitle, 258);
   assert.ok(clamped.endsWith("…"), "a title longer than three lines ends with an ellipsis");
-  assert.ok(clamped.length <= 92, `the ellipsis lands inside the three-line budget, got ${clamped.length}`);
+  assert.ok(titleCols(clamped) <= BOX_COLS + 1, `the ellipsis lands inside the three-line box, got ${titleCols(clamped)} columns`);
   assert.equal(mod.clampTitle("Curto", 258), "Curto", "a short title is left alone");
   const narrow = mod.clampTitle(longTitle, 160);
   assert.ok(narrow.endsWith("…") && narrow.length < clamped.length, "a narrower tile truncates sooner");
   const emoji = mod.clampTitle("😀".repeat(120), 258);
   assert.ok(emoji.endsWith("…"), "an emoji title still ends with an ellipsis");
+  assert.ok(titleCols(emoji) <= BOX_COLS + 1, `a wide glyph costs two columns, got ${titleCols(emoji)}`);
+  assert.ok(
+    Math.abs(titleCols(emoji) - titleCols(clamped)) <= 8,
+    `an emoji title keeps about the columns a plain title does (${titleCols(emoji)} vs ${titleCols(clamped)})`,
+  );
   assert.ok(
     Array.from(emoji.slice(0, -1)).every((ch) => {
       const point = ch.codePointAt(0);
       return point < 0xd800 || point > 0xdfff;
     }),
     "truncation never leaves a lone surrogate",
+  );
+  assert.equal(
+    mod.clampTitle("a".repeat(BOX_COLS) + "\u0301" + "b".repeat(50), 258),
+    "a".repeat(BOX_COLS) + "\u0301…",
+    "a combining mark past the cut stays with its base glyph instead of being orphaned",
   );
   console.log("  ok tile geometry: 5 x 278 at full width, 2 x 280 at 700, 1 x 180 at 200, ellipsis inside the tile");
 }
